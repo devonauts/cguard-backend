@@ -8,7 +8,7 @@ import Sequelize, { DataTypes } from 'sequelize';
 import { getConfig } from '../../config';
 const highlight = require('cli-highlight').highlight;
 
-const basename = path.basename(module.filename);
+const basename = path.basename(__filename);
 
 function models() {
   const database = {} as any;

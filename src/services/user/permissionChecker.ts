@@ -119,7 +119,7 @@ export default class PermissionChecker {
       return [];
     }
 
-    return tenant.roles;
+    return Array.isArray(tenant.roles) ? tenant.roles : [];
   }
 
   /**
