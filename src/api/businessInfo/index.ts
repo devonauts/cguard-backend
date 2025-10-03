@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/business-info`,
+    require('./businessInfoCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/business-info/:id`,
+    require('./businessInfoUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/business-info/import`,
+    require('./businessInfoImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/business-info`,
+    require('./businessInfoDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/business-info/autocomplete`,
+    require('./businessInfoAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/business-info`,
+    require('./businessInfoList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/business-info/:id`,
+    require('./businessInfoFind').default,
+  );
+};

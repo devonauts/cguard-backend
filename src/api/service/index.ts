@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/service`,
+    require('./serviceCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/service/:id`,
+    require('./serviceUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/service/import`,
+    require('./serviceImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/service`,
+    require('./serviceDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/service/autocomplete`,
+    require('./serviceAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/service`,
+    require('./serviceList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/service/:id`,
+    require('./serviceFind').default,
+  );
+};

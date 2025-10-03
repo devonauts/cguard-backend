@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/inquiries`,
+    require('./inquiriesCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/inquiries/:id`,
+    require('./inquiriesUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/inquiries/import`,
+    require('./inquiriesImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/inquiries`,
+    require('./inquiriesDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/inquiries/autocomplete`,
+    require('./inquiriesAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/inquiries`,
+    require('./inquiriesList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/inquiries/:id`,
+    require('./inquiriesFind').default,
+  );
+};

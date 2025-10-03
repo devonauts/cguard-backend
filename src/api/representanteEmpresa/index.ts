@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/representante-empresa`,
+    require('./representanteEmpresaCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/representante-empresa/:id`,
+    require('./representanteEmpresaUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/representante-empresa/import`,
+    require('./representanteEmpresaImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/representante-empresa`,
+    require('./representanteEmpresaDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/representante-empresa/autocomplete`,
+    require('./representanteEmpresaAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/representante-empresa`,
+    require('./representanteEmpresaList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/representante-empresa/:id`,
+    require('./representanteEmpresaFind').default,
+  );
+};

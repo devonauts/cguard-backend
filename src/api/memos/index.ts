@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/memos`,
+    require('./memosCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/memos/:id`,
+    require('./memosUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/memos/import`,
+    require('./memosImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/memos`,
+    require('./memosDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/memos/autocomplete`,
+    require('./memosAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/memos`,
+    require('./memosList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/memos/:id`,
+    require('./memosFind').default,
+  );
+};

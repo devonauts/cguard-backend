@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/patrol-log`,
+    require('./patrolLogCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/patrol-log/:id`,
+    require('./patrolLogUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/patrol-log/import`,
+    require('./patrolLogImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/patrol-log`,
+    require('./patrolLogDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/patrol-log/autocomplete`,
+    require('./patrolLogAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/patrol-log`,
+    require('./patrolLogList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/patrol-log/:id`,
+    require('./patrolLogFind').default,
+  );
+};

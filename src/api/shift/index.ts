@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/shift`,
+    require('./shiftCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/shift/:id`,
+    require('./shiftUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/shift/import`,
+    require('./shiftImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/shift`,
+    require('./shiftDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/shift/autocomplete`,
+    require('./shiftAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/shift`,
+    require('./shiftList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/shift/:id`,
+    require('./shiftFind').default,
+  );
+};

@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/notification`,
+    require('./notificationCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/notification/:id`,
+    require('./notificationUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/notification/import`,
+    require('./notificationImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/notification`,
+    require('./notificationDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/notification/autocomplete`,
+    require('./notificationAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/notification`,
+    require('./notificationList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/notification/:id`,
+    require('./notificationFind').default,
+  );
+};

@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/inventory`,
+    require('./inventoryCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/inventory/:id`,
+    require('./inventoryUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/inventory/import`,
+    require('./inventoryImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/inventory`,
+    require('./inventoryDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/inventory/autocomplete`,
+    require('./inventoryAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/inventory`,
+    require('./inventoryList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/inventory/:id`,
+    require('./inventoryFind').default,
+  );
+};

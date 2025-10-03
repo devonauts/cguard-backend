@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/certification`,
+    require('./certificationCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/certification/:id`,
+    require('./certificationUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/certification/import`,
+    require('./certificationImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/certification`,
+    require('./certificationDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/certification/autocomplete`,
+    require('./certificationAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/certification`,
+    require('./certificationList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/certification/:id`,
+    require('./certificationFind').default,
+  );
+};

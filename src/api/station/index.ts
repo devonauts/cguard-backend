@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/station`,
+    require('./stationCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/station/:id`,
+    require('./stationUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/station/import`,
+    require('./stationImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/station`,
+    require('./stationDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/station/autocomplete`,
+    require('./stationAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/station`,
+    require('./stationList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/station/:id`,
+    require('./stationFind').default,
+  );
+};

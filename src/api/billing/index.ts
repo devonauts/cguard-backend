@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/billing`,
+    require('./billingCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/billing/:id`,
+    require('./billingUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/billing/import`,
+    require('./billingImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/billing`,
+    require('./billingDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/billing/autocomplete`,
+    require('./billingAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/billing`,
+    require('./billingList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/billing/:id`,
+    require('./billingFind').default,
+  );
+};

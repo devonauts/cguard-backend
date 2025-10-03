@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/incident`,
+    require('./incidentCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/incident/:id`,
+    require('./incidentUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/incident/import`,
+    require('./incidentImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/incident`,
+    require('./incidentDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/incident/autocomplete`,
+    require('./incidentAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/incident`,
+    require('./incidentList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/incident/:id`,
+    require('./incidentFind').default,
+  );
+};

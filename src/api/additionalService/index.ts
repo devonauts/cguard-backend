@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/additional-service`,
+    require('./additionalServiceCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/additional-service/:id`,
+    require('./additionalServiceUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/additional-service/import`,
+    require('./additionalServiceImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/additional-service`,
+    require('./additionalServiceDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/additional-service/autocomplete`,
+    require('./additionalServiceAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/additional-service`,
+    require('./additionalServiceList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/additional-service/:id`,
+    require('./additionalServiceFind').default,
+  );
+};

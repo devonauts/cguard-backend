@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/completion-of-tutorial`,
+    require('./completionOfTutorialCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/completion-of-tutorial/:id`,
+    require('./completionOfTutorialUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/completion-of-tutorial/import`,
+    require('./completionOfTutorialImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/completion-of-tutorial`,
+    require('./completionOfTutorialDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/completion-of-tutorial/autocomplete`,
+    require('./completionOfTutorialAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/completion-of-tutorial`,
+    require('./completionOfTutorialList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/completion-of-tutorial/:id`,
+    require('./completionOfTutorialFind').default,
+  );
+};

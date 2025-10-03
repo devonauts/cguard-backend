@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/insurance`,
+    require('./insuranceCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/insurance/:id`,
+    require('./insuranceUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/insurance/import`,
+    require('./insuranceImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/insurance`,
+    require('./insuranceDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/insurance/autocomplete`,
+    require('./insuranceAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/insurance`,
+    require('./insuranceList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/insurance/:id`,
+    require('./insuranceFind').default,
+  );
+};

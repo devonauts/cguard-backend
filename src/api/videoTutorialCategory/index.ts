@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/video-tutorial-category`,
+    require('./videoTutorialCategoryCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/video-tutorial-category/:id`,
+    require('./videoTutorialCategoryUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/video-tutorial-category/import`,
+    require('./videoTutorialCategoryImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/video-tutorial-category`,
+    require('./videoTutorialCategoryDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/video-tutorial-category/autocomplete`,
+    require('./videoTutorialCategoryAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/video-tutorial-category`,
+    require('./videoTutorialCategoryList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/video-tutorial-category/:id`,
+    require('./videoTutorialCategoryFind').default,
+  );
+};
