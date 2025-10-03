@@ -8,6 +8,12 @@ import Error401 from '../errors/Error401';
  * If userAutoAuthenticatedEmailForTests exists and no token is passed, it fills with this user for tests.
  */
 export async function authMiddleware(req, res, next) {
+  // Allow signup and signin routes without authentication
+  const publicRoutes = ['/api/auth/sign-up', '/api/auth/sign-in', '/api/auth/send-password-reset-email'];
+  if (publicRoutes.some(route => req.path === route)) {
+    return next();
+  }
+
   const isTokenEmpty =
     (!req.headers.authorization ||
       !req.headers.authorization.startsWith('Bearer ')) &&

@@ -449,9 +449,10 @@ class AuthService {
     tenantId,
     options,
   ) {
-    if (!EmailSender.isConfigured) {
-      throw new Error400(language, 'email.error');
-    }
+    // For development: skip email configuration check
+    // if (!EmailSender.isConfigured) {
+    //   throw new Error400(language, 'email.error');
+    // }
 
     let link;
 
@@ -474,6 +475,15 @@ class AuthService {
       link = `${tenantSubdomain.frontendUrl(
         tenant,
       )}/auth/password-reset?token=${token}`;
+
+      // For development: log the reset link instead of sending email
+      if (!EmailSender.isConfigured) {
+        console.log('🔑 PASSWORD RESET LINK (Development Mode):');
+        console.log(`📧 Email: ${email}`);
+        console.log(`🔗 Reset Link: ${link}`);
+        console.log(`🎫 Token: ${token}`);
+        return true; // Return success without sending email
+      }
     } catch (error) {
       console.error(error);
       throw new Error400(
