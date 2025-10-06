@@ -22,28 +22,28 @@ Este proyecto es el backend para la plataforma CGuard, desarrollado en Node.js y
    npm install
    ```
 
-## Ejecución
 
-### Desarrollo
+## Ejecución
 
 Para iniciar el servidor en modo desarrollo:
 ```sh
-npm run dev
-```
-
-### Producción
-
-Para compilar y ejecutar en producción:
-```sh
-npm run build
 npm start
 ```
 
+Para compilar el proyecto TypeScript y copiar la documentación:
+```sh
+npm run build
+```
+
+
 ## Scripts útiles
 
-- `npm run dev`: Ejecuta el servidor con hot reload (usando nodemon o ts-node-dev)
-- `npm run build`: Compila el código TypeScript a JavaScript
-- `npm start`: Ejecuta el servidor compilado
+- `npm start`: Ejecuta el servidor en modo desarrollo usando nodemon y ts-node
+- `npm run build`: Compila el código TypeScript y copia la documentación
+- `npm test`: Ejecuta los tests con mocha
+- `npm run db:create`: Ejecuta migraciones de base de datos
+- `npm run stripe:login`: Inicia sesión en Stripe CLI
+- `npm run stripe:start`: Inicia Stripe webhook listener
 
 ## Estructura del proyecto
 
