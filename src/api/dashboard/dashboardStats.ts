@@ -1,12 +1,12 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
-import Permissions from '../../security/permissions';
+import permissions from '../../security/permissions';
 import DashboardService from '../../services/dashboardService';
 
 export default async (req, res, next) => {
   try {
-    new PermissionChecker(req).validateHas(
-      Permissions.values.businessInfoRead,
+    await new PermissionChecker(req).validateHas(
+      permissions.values.businessInfoRead,
     );
 
     const payload = await new DashboardService(

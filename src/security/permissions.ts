@@ -83,7 +83,7 @@ class Permissions {
       },
       userRead: {
         id: 'userRead',
-        allowedRoles: [roles.admin],
+        allowedRoles: [roles.admin, roles.custom],
         allowedPlans: [
           plans.free,
           plans.growth,
