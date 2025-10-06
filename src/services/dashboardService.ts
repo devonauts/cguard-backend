@@ -43,26 +43,24 @@ export default class DashboardService {
     const database = this.options.database;
     const tenant = SequelizeRepository.getCurrentTenant(this.options);
 
-    // Get incidents grouped by type/priority
+    // Get incidents grouped by wasRead status (since priority column doesn't exist)
     const incidents = await database.incident.findAll({
       where: {
         tenantId: tenant.id
       },
-      attributes: ['priority', [database.sequelize.fn('COUNT', database.sequelize.col('id')), 'count']],
-      group: ['priority'],
+      attributes: ['wasRead', [database.sequelize.fn('COUNT', database.sequelize.col('id')), 'count']],
+      group: ['wasRead'],
       raw: true
     });
 
-    // Map priority to incident types
+    // Map wasRead status to incident types
     const incidentTypes = {
-      'high': 'Security Breach',
-      'medium': 'False Alarm',
-      'low': 'Equipment Issue',
-      'urgent': 'Emergency Response'
+      'true': 'Resolved Incidents',
+      'false': 'Pending Incidents',
     };
 
     return incidents.map(incident => ({
-      type: incidentTypes[incident.priority] || incident.priority || 'Other',
+      type: incidentTypes[incident.wasRead.toString()] || 'Other',
       count: parseInt(incident.count)
     }));
   }
@@ -79,7 +77,7 @@ export default class DashboardService {
       const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
       const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 0);
       
-      const revenue = await database.billing.sum('monthlyPrice', {
+      const revenue = await database.billing.sum('montoPorPagar', {
         where: {
           tenantId: tenant.id,
           createdAt: {
@@ -109,7 +107,7 @@ export default class DashboardService {
       include: [{
         model: database.service,
         as: 'purchasedServices',
-        attributes: ['serviceName']
+        attributes: ['title']
       }]
     });
 
@@ -123,11 +121,11 @@ export default class DashboardService {
 
     clientsWithServices.forEach(client => {
       const services = client.purchasedServices || [];
-      if (services.some(s => s.serviceName?.toLowerCase().includes('residential'))) {
+      if (services.some(s => s.title?.toLowerCase().includes('residential'))) {
         categories.residential++;
-      } else if (services.some(s => s.serviceName?.toLowerCase().includes('commercial'))) {
+      } else if (services.some(s => s.title?.toLowerCase().includes('commercial'))) {
         categories.commercial++;
-      } else if (services.some(s => s.serviceName?.toLowerCase().includes('industrial'))) {
+      } else if (services.some(s => s.title?.toLowerCase().includes('industrial'))) {
         categories.industrial++;
       } else {
         categories.government++;
@@ -144,27 +142,24 @@ export default class DashboardService {
     const database = this.options.database;
     const tenant = SequelizeRepository.getCurrentTenant(this.options);
 
-    // Get billing data grouped by service type
+    // TODO: Fix billing-service association issue
+    // For now, return simple billing data without service association
     const serviceRevenue = await database.billing.findAll({
       where: {
         tenantId: tenant.id
       },
-      include: [{
-        model: database.service,
-        as: 'billingService',
-        attributes: ['serviceName']
-      }],
       attributes: [
-        [database.sequelize.fn('SUM', database.sequelize.col('monthlyPrice')), 'totalRevenue']
+        [database.sequelize.fn('SUM', database.sequelize.col('montoPorPagar')), 'totalRevenue']
       ],
-      group: ['billingService.id', 'billingService.serviceName'],
+      group: ['tenantId'],
       raw: true
     });
 
-    return serviceRevenue.map(service => ({
-      serviceName: service['billingService.serviceName'] || 'Unknown Service',
-      revenue: parseFloat(service.totalRevenue) || 0
-    }));
+    // Return a simple revenue summary for now
+    return [{
+      title: 'Total Services',
+      revenue: serviceRevenue.length > 0 ? parseFloat(serviceRevenue[0].totalRevenue) || 0 : 0
+    }];
   }
 
   async getGuardPerformanceStats() {

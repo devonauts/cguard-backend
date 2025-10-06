@@ -25,9 +25,16 @@ export default class PermissionChecker {
    * and throws a Error403 if it doesn't.
    */
   validateHas(permission) {
+    console.log('🔍 PermissionChecker.validateHas called with permission:', permission);
+    console.log('  👤 currentUser:', this.currentUser?.id, this.currentUser?.email);
+    console.log('  🏢 currentTenant:', this.currentTenant?.id);
+    console.log('  🌐 language:', this.language);
+    
     if (!this.has(permission)) {
+      console.log('❌ Permission check failed - user does not have permission');
       throw new Error403(this.language);
     }
+    console.log('✅ Permission check passed');
   }
 
   /**
@@ -35,16 +42,23 @@ export default class PermissionChecker {
    */
   has(permission) {
     assert(permission, 'permission is required');
+    console.log('🔍 PermissionChecker.has called with permission:', permission);
 
     if (!this.isEmailVerified) {
+      console.log('❌ Email not verified');
       return false;
     }
+    console.log('✅ Email is verified');
 
     if (!this.hasPlanPermission(permission)) {
+      console.log('❌ Plan does not have permission');
       return false;
     }
+    console.log('✅ Plan has permission');
 
-    return this.hasRolePermission(permission);
+    const rolePermission = this.hasRolePermission(permission);
+    console.log('🔍 Role permission result:', rolePermission);
+    return rolePermission;
   }
 
   /**
@@ -69,11 +83,18 @@ export default class PermissionChecker {
    * Checks if the current user roles allows the permission.
    */
   hasRolePermission(permission) {
-    return this.currentUserRolesIds.some((role) =>
+    console.log('🔍 hasRolePermission called');
+    console.log('  👤 currentUserRolesIds:', this.currentUserRolesIds);
+    console.log('  🔑 permission.allowedRoles:', permission.allowedRoles);
+    
+    const result = this.currentUserRolesIds.some((role) =>
       permission.allowedRoles.some(
         (allowedRole) => allowedRole === role,
       ),
     );
+    
+    console.log('  🎯 Role permission result:', result);
+    return result;
   }
 
   /**
@@ -101,9 +122,21 @@ export default class PermissionChecker {
    * Returns the Current User Roles.
    */
   get currentUserRolesIds() {
+    console.log('🔍 currentUserRolesIds getter called');
+    console.log('  👤 currentUser:', this.currentUser?.id);
+    console.log('  🏢 currentTenant:', this.currentTenant?.id);
+    
     if (!this.currentUser || !this.currentUser.tenants) {
+      console.log('  ❌ No currentUser or currentUser.tenants');
       return [];
     }
+    
+    console.log('  📋 currentUser.tenants:', this.currentUser.tenants?.length, 'tenants');
+    console.log('  📋 tenants details:', this.currentUser.tenants?.map(t => ({
+      id: t.tenant?.id, 
+      status: t.status, 
+      roles: t.roles
+    })));
 
     const tenant = this.currentUser.tenants
       .filter(
@@ -116,10 +149,29 @@ export default class PermissionChecker {
       });
 
     if (!tenant) {
+      console.log('  ❌ No matching active tenant found');
       return [];
     }
+    
+    console.log('  ✅ Found matching tenant:', tenant.tenant?.id);
+    console.log('  🔑 Tenant roles:', tenant.roles);
+    console.log('  🔍 Tenant roles type:', typeof tenant.roles);
 
-    return Array.isArray(tenant.roles) ? tenant.roles : [];
+    // Handle both array and JSON string formats
+    let roles = [];
+    if (Array.isArray(tenant.roles)) {
+      roles = tenant.roles;
+    } else if (typeof tenant.roles === 'string') {
+      try {
+        roles = JSON.parse(tenant.roles);
+      } catch (e) {
+        console.log('  ❌ Failed to parse roles JSON:', e);
+        roles = [];
+      }
+    }
+    
+    console.log('  🎯 Processed roles:', roles);
+    return roles;
   }
 
   /**

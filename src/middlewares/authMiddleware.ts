@@ -31,24 +31,28 @@ export async function authMiddleware(req, res, next) {
   ) {
     // Read the ID Token from the Authorization header.
     idToken = req.headers.authorization.split('Bearer ')[1];
+    console.log('🔍 Auth middleware - Bearer token found:', idToken?.substring(0, 20) + '...');
   } else if (req.cookies) {
     // Read the ID Token from cookie.
     idToken = req.cookies.__session;
+    console.log('🔍 Auth middleware - Cookie token found:', idToken?.substring(0, 20) + '...');
   } else {
+    console.log('🔍 Auth middleware - No token found, continuing without auth');
     return next();
   }
 
   try {
+    console.log('🔍 Auth middleware - Validating token with AuthService...');
     const currentUser: any = await AuthService.findByToken(
       idToken,
       req,
     );
-
+    console.log('✅ Auth middleware - User found:', currentUser?.id, currentUser?.email);
     req.currentUser = currentUser;
 
     return next();
   } catch (error) {
-    console.error(error);
+    console.error('❌ Auth middleware - Token validation failed:', error);
     await ApiResponseHandler.error(
       req,
       res,

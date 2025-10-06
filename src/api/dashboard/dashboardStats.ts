@@ -5,7 +5,11 @@ import DashboardService from '../../services/dashboardService';
 
 export default async (req, res, next) => {
   try {
-    await new PermissionChecker(req).validateHas(
+    new PermissionChecker({
+      currentTenant: req.currentTenant,
+      language: req.language,
+      currentUser: req.currentUser
+    }).validateHas(
       permissions.values.businessInfoRead,
     );
 
@@ -15,6 +19,7 @@ export default async (req, res, next) => {
 
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {
+    console.error('❌ Dashboard API error:', error);
     await ApiResponseHandler.error(req, res, error);
   }
 };
