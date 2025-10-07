@@ -107,7 +107,7 @@ export default class DashboardService {
       include: [{
         model: database.service,
         as: 'purchasedServices',
-        attributes: ['title']
+        attributes: ['id', 'title']
       }]
     });
 

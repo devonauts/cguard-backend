@@ -38,7 +38,10 @@ app.use(defaultRateLimiter);
 
 // Enables Helmet, a set of tools to
 // increase security.
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
+}));
 
 // Parses the body of POST/PUT request
 // to JSON

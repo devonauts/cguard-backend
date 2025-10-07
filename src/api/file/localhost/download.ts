@@ -14,6 +14,11 @@ export default async (req, res, next) => {
       });
     }
 
+    // Set CORS headers for file downloads
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+
     await ApiResponseHandler.download(
       req,
       res,

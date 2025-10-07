@@ -118,6 +118,23 @@ export default class TenantUserRepository {
       options,
     );
 
+    // Ensure roles is a proper array
+    if (!Array.isArray(roles)) {
+      if (typeof roles === 'string') {
+        try {
+          roles = JSON.parse(roles);
+        } catch (e) {
+          console.warn('Failed to parse roles parameter, defaulting to empty array:', roles);
+          roles = [];
+        }
+      } else if (roles) {
+        // If it's a single value, wrap it in an array
+        roles = [roles];
+      } else {
+        roles = [];
+      }
+    }
+
     let user = await options.database.user.findByPk(id, {
       transaction,
     });
@@ -147,6 +164,20 @@ export default class TenantUserRepository {
     }
 
     let { roles: existingRoles } = tenantUser;
+
+    // Ensure existingRoles is a proper array
+    if (!Array.isArray(existingRoles)) {
+      if (typeof existingRoles === 'string') {
+        try {
+          existingRoles = JSON.parse(existingRoles);
+        } catch (e) {
+          console.warn('Failed to parse existing roles, defaulting to empty array:', existingRoles);
+          existingRoles = [];
+        }
+      } else {
+        existingRoles = [];
+      }
+    }
 
     let newRoles = [] as Array<string>;
 

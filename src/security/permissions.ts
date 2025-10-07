@@ -6,1385 +6,307 @@ const storage = Storage.values;
 const roles = Roles.values;
 const plans = Plans.values;
 
+// Role groups for easier permission management
+const ADMIN_ROLES = [roles.admin];
+const MANAGEMENT_ROLES = [roles.admin, roles.operationsManager];
+const SUPERVISOR_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor];
+const HR_ROLES = [roles.admin, roles.operationsManager, roles.hrManager];
+const CLIENT_MANAGEMENT_ROLES = [roles.admin, roles.operationsManager, roles.clientAccountManager];
+const DISPATCHER_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.dispatcher];
+const GUARD_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.dispatcher, roles.securityGuard];
+const ALL_STAFF_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.clientAccountManager, roles.hrManager, roles.dispatcher, roles.securityGuard];
+const ALL_ROLES = [...ALL_STAFF_ROLES, roles.customer, roles.custom];
+
+// Helper function to create permission with all required properties
+const createPermission = (id: string, allowedRoles: string[], allowedPlans: string[] = [plans.free, plans.growth, plans.enterprise], allowedStorage: any[] = []) => ({
+  id,
+  allowedRoles,
+  allowedPlans,
+  allowedStorage,
+});
+
 class Permissions {
   static get values() {
     return {
-      tenantEdit: {
-        id: 'tenantEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      tenantDestroy: {
-        id: 'tenantDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      planEdit: {
-        id: 'planEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      planRead: {
-        id: 'planRead',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      userEdit: {
-        id: 'userEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      userDestroy: {
-        id: 'userDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      userCreate: {
-        id: 'userCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      userImport: {
-        id: 'userImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      userRead: {
-        id: 'userRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      userAutocomplete: {
-        id: 'userAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      auditLogRead: {
-        id: 'auditLogRead',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-      },
-      settingsEdit: {
-        id: 'settingsEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [
-          plans.free,
-          plans.growth,
-          plans.enterprise,
-        ],
-        allowedStorage: [
-          storage.settingsBackgroundImages,
-          storage.settingsLogos,
-        ],
-      },
-      bannerSuperiorAppImport: {
-        id: 'bannerSuperiorAppImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      bannerSuperiorAppCreate: {
-        id: 'bannerSuperiorAppCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.bannerSuperiorAppImageUrl,
-        ],
-      },
-      bannerSuperiorAppEdit: {
-        id: 'bannerSuperiorAppEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.bannerSuperiorAppImageUrl,
-        ],
-      },
-      bannerSuperiorAppDestroy: {
-        id: 'bannerSuperiorAppDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.bannerSuperiorAppImageUrl,
-        ],
-      },
-      bannerSuperiorAppRead: {
-        id: 'bannerSuperiorAppRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      bannerSuperiorAppAutocomplete: {
-        id: 'bannerSuperiorAppAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      serviceImport: {
-        id: 'serviceImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      serviceCreate: {
-        id: 'serviceCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.serviceIconImage,
-          storage.serviceServiceImages,
-        ],
-      },
-      serviceEdit: {
-        id: 'serviceEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.serviceIconImage,
-          storage.serviceServiceImages,
-        ],
-      },
-      serviceDestroy: {
-        id: 'serviceDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.serviceIconImage,
-          storage.serviceServiceImages,
-        ],
-      },
-      serviceRead: {
-        id: 'serviceRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      serviceAutocomplete: {
-        id: 'serviceAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      certificationImport: {
-        id: 'certificationImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      certificationCreate: {
-        id: 'certificationCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.certificationImage,
-          storage.certificationIcon,
-        ],
-      },
-      certificationEdit: {
-        id: 'certificationEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.certificationImage,
-          storage.certificationIcon,
-        ],
-      },
-      certificationDestroy: {
-        id: 'certificationDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.certificationImage,
-          storage.certificationIcon,
-        ],
-      },
-      certificationRead: {
-        id: 'certificationRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      certificationAutocomplete: {
-        id: 'certificationAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      securityGuardImport: {
-        id: 'securityGuardImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      securityGuardCreate: {
-        id: 'securityGuardCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.securityGuardProfileImage,
-          storage.securityGuardCredentialImage,
-          storage.securityGuardRecordPolicial,
-        ],
-      },
-      securityGuardEdit: {
-        id: 'securityGuardEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.securityGuardProfileImage,
-          storage.securityGuardCredentialImage,
-          storage.securityGuardRecordPolicial,
-        ],
-      },
-      securityGuardDestroy: {
-        id: 'securityGuardDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.securityGuardProfileImage,
-          storage.securityGuardCredentialImage,
-          storage.securityGuardRecordPolicial,
-        ],
-      },
-      securityGuardRead: {
-        id: 'securityGuardRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      securityGuardAutocomplete: {
-        id: 'securityGuardAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      clientAccountImport: {
-        id: 'clientAccountImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      clientAccountCreate: {
-        id: 'clientAccountCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.clientAccountLogoUrl,
-          storage.clientAccountPlacePictureUrl,
-        ],
-      },
-      clientAccountEdit: {
-        id: 'clientAccountEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.clientAccountLogoUrl,
-          storage.clientAccountPlacePictureUrl,
-        ],
-      },
-      clientAccountDestroy: {
-        id: 'clientAccountDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.clientAccountLogoUrl,
-          storage.clientAccountPlacePictureUrl,
-        ],
-      },
-      clientAccountRead: {
-        id: 'clientAccountRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      clientAccountAutocomplete: {
-        id: 'clientAccountAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      representanteEmpresaImport: {
-        id: 'representanteEmpresaImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      representanteEmpresaCreate: {
-        id: 'representanteEmpresaCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      representanteEmpresaEdit: {
-        id: 'representanteEmpresaEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      representanteEmpresaDestroy: {
-        id: 'representanteEmpresaDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      representanteEmpresaRead: {
-        id: 'representanteEmpresaRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      representanteEmpresaAutocomplete: {
-        id: 'representanteEmpresaAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      incidentImport: {
-        id: 'incidentImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      incidentCreate: {
-        id: 'incidentCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.incidentImageUrl,
-        ],
-      },
-      incidentEdit: {
-        id: 'incidentEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.incidentImageUrl,
-        ],
-      },
-      incidentDestroy: {
-        id: 'incidentDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.incidentImageUrl,
-        ],
-      },
-      incidentRead: {
-        id: 'incidentRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      incidentAutocomplete: {
-        id: 'incidentAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      inventoryImport: {
-        id: 'inventoryImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      inventoryCreate: {
-        id: 'inventoryCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inventoryEdit: {
-        id: 'inventoryEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inventoryDestroy: {
-        id: 'inventoryDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inventoryRead: {
-        id: 'inventoryRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      inventoryAutocomplete: {
-        id: 'inventoryAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      additionalServiceImport: {
-        id: 'additionalServiceImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      additionalServiceCreate: {
-        id: 'additionalServiceCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      additionalServiceEdit: {
-        id: 'additionalServiceEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      additionalServiceDestroy: {
-        id: 'additionalServiceDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      additionalServiceRead: {
-        id: 'additionalServiceRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      additionalServiceAutocomplete: {
-        id: 'additionalServiceAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      patrolCheckpointImport: {
-        id: 'patrolCheckpointImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      patrolCheckpointCreate: {
-        id: 'patrolCheckpointCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.patrolCheckpointAssignedQrImage,
-        ],
-      },
-      patrolCheckpointEdit: {
-        id: 'patrolCheckpointEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.patrolCheckpointAssignedQrImage,
-        ],
-      },
-      patrolCheckpointDestroy: {
-        id: 'patrolCheckpointDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.patrolCheckpointAssignedQrImage,
-        ],
-      },
-      patrolCheckpointRead: {
-        id: 'patrolCheckpointRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      patrolCheckpointAutocomplete: {
-        id: 'patrolCheckpointAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      patrolLogImport: {
-        id: 'patrolLogImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      patrolLogCreate: {
-        id: 'patrolLogCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      patrolLogEdit: {
-        id: 'patrolLogEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      patrolLogDestroy: {
-        id: 'patrolLogDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      patrolLogRead: {
-        id: 'patrolLogRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      patrolLogAutocomplete: {
-        id: 'patrolLogAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      patrolImport: {
-        id: 'patrolImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      patrolCreate: {
-        id: 'patrolCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      patrolEdit: {
-        id: 'patrolEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      patrolDestroy: {
-        id: 'patrolDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      patrolRead: {
-        id: 'patrolRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      patrolAutocomplete: {
-        id: 'patrolAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      stationImport: {
-        id: 'stationImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      stationCreate: {
-        id: 'stationCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      stationEdit: {
-        id: 'stationEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      stationDestroy: {
-        id: 'stationDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      stationRead: {
-        id: 'stationRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      stationAutocomplete: {
-        id: 'stationAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      billingImport: {
-        id: 'billingImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      billingCreate: {
-        id: 'billingCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.billingBill,
-        ],
-      },
-      billingEdit: {
-        id: 'billingEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.billingBill,
-        ],
-      },
-      billingDestroy: {
-        id: 'billingDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.billingBill,
-        ],
-      },
-      billingRead: {
-        id: 'billingRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      billingAutocomplete: {
-        id: 'billingAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      inquiriesImport: {
-        id: 'inquiriesImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      inquiriesCreate: {
-        id: 'inquiriesCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inquiriesEdit: {
-        id: 'inquiriesEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inquiriesDestroy: {
-        id: 'inquiriesDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inquiriesRead: {
-        id: 'inquiriesRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      inquiriesAutocomplete: {
-        id: 'inquiriesAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      taskImport: {
-        id: 'taskImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      taskCreate: {
-        id: 'taskCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.taskImageOptional,
-          storage.taskTaskCompletedImage,
-        ],
-      },
-      taskEdit: {
-        id: 'taskEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.taskImageOptional,
-          storage.taskTaskCompletedImage,
-        ],
-      },
-      taskDestroy: {
-        id: 'taskDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.taskImageOptional,
-          storage.taskTaskCompletedImage,
-        ],
-      },
-      taskRead: {
-        id: 'taskRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      taskAutocomplete: {
-        id: 'taskAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      notificationImport: {
-        id: 'notificationImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      notificationCreate: {
-        id: 'notificationCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.notificationImageUrl,
-        ],
-      },
-      notificationEdit: {
-        id: 'notificationEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.notificationImageUrl,
-        ],
-      },
-      notificationDestroy: {
-        id: 'notificationDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.notificationImageUrl,
-        ],
-      },
-      notificationRead: {
-        id: 'notificationRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      notificationAutocomplete: {
-        id: 'notificationAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      deviceIdInformationImport: {
-        id: 'deviceIdInformationImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      deviceIdInformationCreate: {
-        id: 'deviceIdInformationCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      deviceIdInformationEdit: {
-        id: 'deviceIdInformationEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      deviceIdInformationDestroy: {
-        id: 'deviceIdInformationDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      deviceIdInformationRead: {
-        id: 'deviceIdInformationRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      deviceIdInformationAutocomplete: {
-        id: 'deviceIdInformationAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      guardShiftImport: {
-        id: 'guardShiftImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      guardShiftCreate: {
-        id: 'guardShiftCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      guardShiftEdit: {
-        id: 'guardShiftEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      guardShiftDestroy: {
-        id: 'guardShiftDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      guardShiftRead: {
-        id: 'guardShiftRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      guardShiftAutocomplete: {
-        id: 'guardShiftAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      memosImport: {
-        id: 'memosImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      memosCreate: {
-        id: 'memosCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.memosMemoDocumentPdf,
-        ],
-      },
-      memosEdit: {
-        id: 'memosEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.memosMemoDocumentPdf,
-        ],
-      },
-      memosDestroy: {
-        id: 'memosDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.memosMemoDocumentPdf,
-        ],
-      },
-      memosRead: {
-        id: 'memosRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      memosAutocomplete: {
-        id: 'memosAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      requestImport: {
-        id: 'requestImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      requestCreate: {
-        id: 'requestCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.requestRequestDocumentPDF,
-        ],
-      },
-      requestEdit: {
-        id: 'requestEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.requestRequestDocumentPDF,
-        ],
-      },
-      requestDestroy: {
-        id: 'requestDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.requestRequestDocumentPDF,
-        ],
-      },
-      requestRead: {
-        id: 'requestRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      requestAutocomplete: {
-        id: 'requestAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      videoTutorialCategoryImport: {
-        id: 'videoTutorialCategoryImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      videoTutorialCategoryCreate: {
-        id: 'videoTutorialCategoryCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      videoTutorialCategoryEdit: {
-        id: 'videoTutorialCategoryEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      videoTutorialCategoryDestroy: {
-        id: 'videoTutorialCategoryDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      videoTutorialCategoryRead: {
-        id: 'videoTutorialCategoryRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      videoTutorialCategoryAutocomplete: {
-        id: 'videoTutorialCategoryAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      videoTutorialImport: {
-        id: 'videoTutorialImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      videoTutorialCreate: {
-        id: 'videoTutorialCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      videoTutorialEdit: {
-        id: 'videoTutorialEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      videoTutorialDestroy: {
-        id: 'videoTutorialDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      videoTutorialRead: {
-        id: 'videoTutorialRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      videoTutorialAutocomplete: {
-        id: 'videoTutorialAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      tutorialImport: {
-        id: 'tutorialImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      tutorialCreate: {
-        id: 'tutorialCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      tutorialEdit: {
-        id: 'tutorialEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      tutorialDestroy: {
-        id: 'tutorialDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      tutorialRead: {
-        id: 'tutorialRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      tutorialAutocomplete: {
-        id: 'tutorialAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      completionOfTutorialImport: {
-        id: 'completionOfTutorialImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      completionOfTutorialCreate: {
-        id: 'completionOfTutorialCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      completionOfTutorialEdit: {
-        id: 'completionOfTutorialEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      completionOfTutorialDestroy: {
-        id: 'completionOfTutorialDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      completionOfTutorialRead: {
-        id: 'completionOfTutorialRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      completionOfTutorialAutocomplete: {
-        id: 'completionOfTutorialAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      inventoryHistoryImport: {
-        id: 'inventoryHistoryImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      inventoryHistoryCreate: {
-        id: 'inventoryHistoryCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inventoryHistoryEdit: {
-        id: 'inventoryHistoryEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inventoryHistoryDestroy: {
-        id: 'inventoryHistoryDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      inventoryHistoryRead: {
-        id: 'inventoryHistoryRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      inventoryHistoryAutocomplete: {
-        id: 'inventoryHistoryAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      businessInfoImport: {
-        id: 'businessInfoImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      businessInfoCreate: {
-        id: 'businessInfoCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.businessInfoLogo,
-        ],
-      },
-      businessInfoEdit: {
-        id: 'businessInfoEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.businessInfoLogo,
-        ],
-      },
-      businessInfoDestroy: {
-        id: 'businessInfoDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.businessInfoLogo,
-        ],
-      },
-      businessInfoRead: {
-        id: 'businessInfoRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      businessInfoAutocomplete: {
-        id: 'businessInfoAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      insuranceImport: {
-        id: 'insuranceImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      insuranceCreate: {
-        id: 'insuranceCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.insuranceDocument,
-        ],
-      },
-      insuranceEdit: {
-        id: 'insuranceEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.insuranceDocument,
-        ],
-      },
-      insuranceDestroy: {
-        id: 'insuranceDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-          storage.insuranceDocument,
-        ],
-      },
-      insuranceRead: {
-        id: 'insuranceRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      insuranceAutocomplete: {
-        id: 'insuranceAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      notificationRecipientImport: {
-        id: 'notificationRecipientImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      notificationRecipientCreate: {
-        id: 'notificationRecipientCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      notificationRecipientEdit: {
-        id: 'notificationRecipientEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      notificationRecipientDestroy: {
-        id: 'notificationRecipientDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      notificationRecipientRead: {
-        id: 'notificationRecipientRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      notificationRecipientAutocomplete: {
-        id: 'notificationRecipientAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      reportImport: {
-        id: 'reportImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      reportCreate: {
-        id: 'reportCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      reportEdit: {
-        id: 'reportEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      reportDestroy: {
-        id: 'reportDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      reportRead: {
-        id: 'reportRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      reportAutocomplete: {
-        id: 'reportAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-
-      shiftImport: {
-        id: 'shiftImport',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      shiftCreate: {
-        id: 'shiftCreate',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      shiftEdit: {
-        id: 'shiftEdit',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      shiftDestroy: {
-        id: 'shiftDestroy',
-        allowedRoles: [roles.admin],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-        allowedStorage: [
-
-        ],
-      },
-      shiftRead: {
-        id: 'shiftRead',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },
-      shiftAutocomplete: {
-        id: 'shiftAutocomplete',
-        allowedRoles: [roles.admin, roles.custom],
-        allowedPlans: [plans.free, plans.growth, plans.enterprise],
-      },      
+      // === SYSTEM ADMINISTRATION ===
+      tenantEdit: createPermission('tenantEdit', ADMIN_ROLES),
+      tenantDestroy: createPermission('tenantDestroy', ADMIN_ROLES),
+      planEdit: createPermission('planEdit', ADMIN_ROLES),
+      planRead: createPermission('planRead', ADMIN_ROLES),
+
+      // === USER MANAGEMENT ===
+      userEdit: createPermission('userEdit', HR_ROLES),
+      userDestroy: createPermission('userDestroy', HR_ROLES),
+      userCreate: createPermission('userCreate', HR_ROLES),
+      userImport: createPermission('userImport', HR_ROLES),
+      userRead: createPermission('userRead', ALL_STAFF_ROLES),
+      userAutocomplete: createPermission('userAutocomplete', ALL_STAFF_ROLES),
+
+      // === AUDIT LOGS ===
+      auditLogRead: createPermission('auditLogRead', MANAGEMENT_ROLES),
+
+      // === SETTINGS ===
+      settingsEdit: createPermission('settingsEdit', ADMIN_ROLES, [plans.free, plans.growth, plans.enterprise], [storage.settingsBackgroundImages, storage.settingsLogos]),
+      settingsRead: createPermission('settingsRead', ALL_STAFF_ROLES),
+
+      // === BANNER/ANNOUNCEMENTS ===
+      bannerSuperiorAppImport: createPermission('bannerSuperiorAppImport', MANAGEMENT_ROLES),
+      bannerSuperiorAppCreate: createPermission('bannerSuperiorAppCreate', MANAGEMENT_ROLES),
+      bannerSuperiorAppEdit: createPermission('bannerSuperiorAppEdit', MANAGEMENT_ROLES),
+      bannerSuperiorAppDestroy: createPermission('bannerSuperiorAppDestroy', MANAGEMENT_ROLES),
+      bannerSuperiorAppRead: createPermission('bannerSuperiorAppRead', ALL_STAFF_ROLES),
+      bannerSuperiorAppAutocomplete: createPermission('bannerSuperiorAppAutocomplete', ALL_STAFF_ROLES),
+
+      // === SERVICES ===
+      serviceImport: createPermission('serviceImport', CLIENT_MANAGEMENT_ROLES),
+      serviceCreate: createPermission('serviceCreate', CLIENT_MANAGEMENT_ROLES),
+      serviceEdit: createPermission('serviceEdit', CLIENT_MANAGEMENT_ROLES),
+      serviceDestroy: createPermission('serviceDestroy', CLIENT_MANAGEMENT_ROLES),
+      serviceRead: createPermission('serviceRead', ALL_STAFF_ROLES),
+      serviceAutocomplete: createPermission('serviceAutocomplete', ALL_STAFF_ROLES),
+
+      // === CERTIFICATIONS ===
+      certificationImport: createPermission('certificationImport', HR_ROLES),
+      certificationCreate: createPermission('certificationCreate', HR_ROLES),
+      certificationEdit: createPermission('certificationEdit', HR_ROLES),
+      certificationDestroy: createPermission('certificationDestroy', HR_ROLES),
+      certificationRead: createPermission('certificationRead', ALL_STAFF_ROLES),
+      certificationAutocomplete: createPermission('certificationAutocomplete', ALL_STAFF_ROLES),
+
+      // === SECURITY GUARD MANAGEMENT ===
+      securityGuardImport: createPermission('securityGuardImport', HR_ROLES),
+      securityGuardCreate: createPermission('securityGuardCreate', HR_ROLES),
+      securityGuardEdit: createPermission('securityGuardEdit', [...SUPERVISOR_ROLES, roles.hrManager]),
+      securityGuardDestroy: createPermission('securityGuardDestroy', HR_ROLES),
+      securityGuardRead: createPermission('securityGuardRead', ALL_STAFF_ROLES),
+      securityGuardAutocomplete: createPermission('securityGuardAutocomplete', ALL_STAFF_ROLES),
+
+      // === CLIENT ACCOUNTS ===
+      clientAccountImport: createPermission('clientAccountImport', CLIENT_MANAGEMENT_ROLES),
+      clientAccountCreate: createPermission('clientAccountCreate', CLIENT_MANAGEMENT_ROLES),
+      clientAccountEdit: createPermission('clientAccountEdit', CLIENT_MANAGEMENT_ROLES),
+      clientAccountDestroy: createPermission('clientAccountDestroy', CLIENT_MANAGEMENT_ROLES),
+      clientAccountRead: createPermission('clientAccountRead', [...ALL_STAFF_ROLES, roles.customer]),
+      clientAccountAutocomplete: createPermission('clientAccountAutocomplete', ALL_STAFF_ROLES),
+
+      // === BUSINESS INFO ===
+      businessInfoImport: createPermission('businessInfoImport', MANAGEMENT_ROLES),
+      businessInfoCreate: createPermission('businessInfoCreate', MANAGEMENT_ROLES),
+      businessInfoEdit: createPermission('businessInfoEdit', MANAGEMENT_ROLES),
+      businessInfoDestroy: createPermission('businessInfoDestroy', ADMIN_ROLES),
+      businessInfoRead: createPermission('businessInfoRead', ALL_STAFF_ROLES),
+      businessInfoAutocomplete: createPermission('businessInfoAutocomplete', ALL_STAFF_ROLES),
+
+      // === COMPANY REPRESENTATIVES ===
+      representanteEmpresaImport: createPermission('representanteEmpresaImport', CLIENT_MANAGEMENT_ROLES),
+      representanteEmpresaCreate: createPermission('representanteEmpresaCreate', CLIENT_MANAGEMENT_ROLES),
+      representanteEmpresaEdit: createPermission('representanteEmpresaEdit', CLIENT_MANAGEMENT_ROLES),
+      representanteEmpresaDestroy: createPermission('representanteEmpresaDestroy', CLIENT_MANAGEMENT_ROLES),
+      representanteEmpresaRead: createPermission('representanteEmpresaRead', ALL_STAFF_ROLES),
+      representanteEmpresaAutocomplete: createPermission('representanteEmpresaAutocomplete', ALL_STAFF_ROLES),
+
+      // === INCIDENTS ===
+      incidentImport: createPermission('incidentImport', SUPERVISOR_ROLES),
+      incidentCreate: createPermission('incidentCreate', GUARD_ROLES),
+      incidentEdit: createPermission('incidentEdit', SUPERVISOR_ROLES),
+      incidentDestroy: createPermission('incidentDestroy', SUPERVISOR_ROLES),
+      incidentRead: createPermission('incidentRead', [...ALL_STAFF_ROLES, roles.customer]),
+      incidentAutocomplete: createPermission('incidentAutocomplete', ALL_STAFF_ROLES),
+
+      // === STATIONS ===
+      stationImport: createPermission('stationImport', MANAGEMENT_ROLES),
+      stationCreate: createPermission('stationCreate', MANAGEMENT_ROLES),
+      stationEdit: createPermission('stationEdit', SUPERVISOR_ROLES),
+      stationDestroy: createPermission('stationDestroy', MANAGEMENT_ROLES),
+      stationRead: createPermission('stationRead', [...ALL_STAFF_ROLES, roles.customer]),
+      stationAutocomplete: createPermission('stationAutocomplete', ALL_STAFF_ROLES),
+
+      // === SHIFTS & SCHEDULING ===
+      shiftImport: createPermission('shiftImport', DISPATCHER_ROLES),
+      shiftCreate: createPermission('shiftCreate', DISPATCHER_ROLES),
+      shiftEdit: createPermission('shiftEdit', DISPATCHER_ROLES),
+      shiftDestroy: createPermission('shiftDestroy', DISPATCHER_ROLES),
+      shiftRead: createPermission('shiftRead', ALL_STAFF_ROLES),
+      shiftAutocomplete: createPermission('shiftAutocomplete', ALL_STAFF_ROLES),
+
+      // === GUARD SHIFTS ===
+      guardShiftImport: createPermission('guardShiftImport', DISPATCHER_ROLES),
+      guardShiftCreate: createPermission('guardShiftCreate', DISPATCHER_ROLES),
+      guardShiftEdit: createPermission('guardShiftEdit', DISPATCHER_ROLES),
+      guardShiftDestroy: createPermission('guardShiftDestroy', DISPATCHER_ROLES),
+      guardShiftRead: createPermission('guardShiftRead', ALL_STAFF_ROLES),
+      guardShiftAutocomplete: createPermission('guardShiftAutocomplete', ALL_STAFF_ROLES),
+
+      // === PATROLS ===
+      patrolImport: createPermission('patrolImport', SUPERVISOR_ROLES),
+      patrolCreate: createPermission('patrolCreate', GUARD_ROLES),
+      patrolEdit: createPermission('patrolEdit', SUPERVISOR_ROLES),
+      patrolDestroy: createPermission('patrolDestroy', SUPERVISOR_ROLES),
+      patrolRead: createPermission('patrolRead', [...ALL_STAFF_ROLES, roles.customer]),
+      patrolAutocomplete: createPermission('patrolAutocomplete', ALL_STAFF_ROLES),
+
+      // === PATROL CHECKPOINTS ===
+      patrolCheckpointImport: createPermission('patrolCheckpointImport', SUPERVISOR_ROLES),
+      patrolCheckpointCreate: createPermission('patrolCheckpointCreate', SUPERVISOR_ROLES),
+      patrolCheckpointEdit: createPermission('patrolCheckpointEdit', SUPERVISOR_ROLES),
+      patrolCheckpointDestroy: createPermission('patrolCheckpointDestroy', SUPERVISOR_ROLES),
+      patrolCheckpointRead: createPermission('patrolCheckpointRead', ALL_STAFF_ROLES),
+      patrolCheckpointAutocomplete: createPermission('patrolCheckpointAutocomplete', ALL_STAFF_ROLES),
+
+      // === PATROL LOGS ===
+      patrolLogImport: createPermission('patrolLogImport', SUPERVISOR_ROLES),
+      patrolLogCreate: createPermission('patrolLogCreate', GUARD_ROLES),
+      patrolLogEdit: createPermission('patrolLogEdit', SUPERVISOR_ROLES),
+      patrolLogDestroy: createPermission('patrolLogDestroy', SUPERVISOR_ROLES),
+      patrolLogRead: createPermission('patrolLogRead', [...ALL_STAFF_ROLES, roles.customer]),
+      patrolLogAutocomplete: createPermission('patrolLogAutocomplete', ALL_STAFF_ROLES),
+
+      // === REPORTS ===
+      reportImport: createPermission('reportImport', SUPERVISOR_ROLES),
+      reportCreate: createPermission('reportCreate', GUARD_ROLES),
+      reportEdit: createPermission('reportEdit', SUPERVISOR_ROLES),
+      reportDestroy: createPermission('reportDestroy', SUPERVISOR_ROLES),
+      reportRead: createPermission('reportRead', [...ALL_STAFF_ROLES, roles.customer]),
+      reportAutocomplete: createPermission('reportAutocomplete', ALL_STAFF_ROLES),
+
+      // === INVENTORY ===
+      inventoryImport: createPermission('inventoryImport', SUPERVISOR_ROLES),
+      inventoryCreate: createPermission('inventoryCreate', SUPERVISOR_ROLES),
+      inventoryEdit: createPermission('inventoryEdit', SUPERVISOR_ROLES),
+      inventoryDestroy: createPermission('inventoryDestroy', SUPERVISOR_ROLES),
+      inventoryRead: createPermission('inventoryRead', ALL_STAFF_ROLES),
+      inventoryAutocomplete: createPermission('inventoryAutocomplete', ALL_STAFF_ROLES),
+
+      // === INVENTORY HISTORY ===
+      inventoryHistoryImport: createPermission('inventoryHistoryImport', SUPERVISOR_ROLES),
+      inventoryHistoryCreate: createPermission('inventoryHistoryCreate', GUARD_ROLES),
+      inventoryHistoryEdit: createPermission('inventoryHistoryEdit', SUPERVISOR_ROLES),
+      inventoryHistoryDestroy: createPermission('inventoryHistoryDestroy', SUPERVISOR_ROLES),
+      inventoryHistoryRead: createPermission('inventoryHistoryRead', ALL_STAFF_ROLES),
+      inventoryHistoryAutocomplete: createPermission('inventoryHistoryAutocomplete', ALL_STAFF_ROLES),
+
+      // === ADDITIONAL SERVICES ===
+      additionalServiceImport: createPermission('additionalServiceImport', CLIENT_MANAGEMENT_ROLES),
+      additionalServiceCreate: createPermission('additionalServiceCreate', CLIENT_MANAGEMENT_ROLES),
+      additionalServiceEdit: createPermission('additionalServiceEdit', CLIENT_MANAGEMENT_ROLES),
+      additionalServiceDestroy: createPermission('additionalServiceDestroy', CLIENT_MANAGEMENT_ROLES),
+      additionalServiceRead: createPermission('additionalServiceRead', ALL_STAFF_ROLES),
+      additionalServiceAutocomplete: createPermission('additionalServiceAutocomplete', ALL_STAFF_ROLES),
+
+      // === BILLING ===
+      billingImport: createPermission('billingImport', MANAGEMENT_ROLES),
+      billingCreate: createPermission('billingCreate', MANAGEMENT_ROLES),
+      billingEdit: createPermission('billingEdit', MANAGEMENT_ROLES),
+      billingDestroy: createPermission('billingDestroy', MANAGEMENT_ROLES),
+      billingRead: createPermission('billingRead', [...MANAGEMENT_ROLES, roles.clientAccountManager, roles.customer]),
+      billingAutocomplete: createPermission('billingAutocomplete', MANAGEMENT_ROLES),
+
+      // === NOTIFICATIONS ===
+      notificationImport: createPermission('notificationImport', MANAGEMENT_ROLES),
+      notificationCreate: createPermission('notificationCreate', SUPERVISOR_ROLES),
+      notificationEdit: createPermission('notificationEdit', SUPERVISOR_ROLES),
+      notificationDestroy: createPermission('notificationDestroy', SUPERVISOR_ROLES),
+      notificationRead: createPermission('notificationRead', ALL_STAFF_ROLES),
+      notificationAutocomplete: createPermission('notificationAutocomplete', ALL_STAFF_ROLES),
+
+      // === NOTIFICATION RECIPIENTS ===
+      notificationRecipientImport: createPermission('notificationRecipientImport', SUPERVISOR_ROLES),
+      notificationRecipientCreate: createPermission('notificationRecipientCreate', SUPERVISOR_ROLES),
+      notificationRecipientEdit: createPermission('notificationRecipientEdit', SUPERVISOR_ROLES),
+      notificationRecipientDestroy: createPermission('notificationRecipientDestroy', SUPERVISOR_ROLES),
+      notificationRecipientRead: createPermission('notificationRecipientRead', ALL_STAFF_ROLES),
+      notificationRecipientAutocomplete: createPermission('notificationRecipientAutocomplete', ALL_STAFF_ROLES),
+
+      // === INQUIRIES ===
+      inquiriesImport: createPermission('inquiriesImport', CLIENT_MANAGEMENT_ROLES),
+      inquiriesCreate: createPermission('inquiriesCreate', [...ALL_STAFF_ROLES, roles.customer]),
+      inquiriesEdit: createPermission('inquiriesEdit', CLIENT_MANAGEMENT_ROLES),
+      inquiriesDestroy: createPermission('inquiriesDestroy', CLIENT_MANAGEMENT_ROLES),
+      inquiriesRead: createPermission('inquiriesRead', [...ALL_STAFF_ROLES, roles.customer]),
+      inquiriesAutocomplete: createPermission('inquiriesAutocomplete', ALL_STAFF_ROLES),
+
+      // === REQUESTS ===
+      requestImport: createPermission('requestImport', CLIENT_MANAGEMENT_ROLES),
+      requestCreate: createPermission('requestCreate', [...ALL_STAFF_ROLES, roles.customer]),
+      requestEdit: createPermission('requestEdit', CLIENT_MANAGEMENT_ROLES),
+      requestDestroy: createPermission('requestDestroy', CLIENT_MANAGEMENT_ROLES),
+      requestRead: createPermission('requestRead', [...ALL_STAFF_ROLES, roles.customer]),
+      requestAutocomplete: createPermission('requestAutocomplete', ALL_STAFF_ROLES),
+
+      // === TASKS ===
+      taskImport: createPermission('taskImport', SUPERVISOR_ROLES),
+      taskCreate: createPermission('taskCreate', SUPERVISOR_ROLES),
+      taskEdit: createPermission('taskEdit', SUPERVISOR_ROLES),
+      taskDestroy: createPermission('taskDestroy', SUPERVISOR_ROLES),
+      taskRead: createPermission('taskRead', ALL_STAFF_ROLES),
+      taskAutocomplete: createPermission('taskAutocomplete', ALL_STAFF_ROLES),
+
+      // === MEMOS ===
+      memosImport: createPermission('memosImport', SUPERVISOR_ROLES),
+      memosCreate: createPermission('memosCreate', SUPERVISOR_ROLES),
+      memosEdit: createPermission('memosEdit', SUPERVISOR_ROLES),
+      memosDestroy: createPermission('memosDestroy', SUPERVISOR_ROLES),
+      memosRead: createPermission('memosRead', ALL_STAFF_ROLES),
+      memosAutocomplete: createPermission('memosAutocomplete', ALL_STAFF_ROLES),
+
+      // === TUTORIALS & TRAINING ===
+      tutorialImport: createPermission('tutorialImport', HR_ROLES),
+      tutorialCreate: createPermission('tutorialCreate', HR_ROLES),
+      tutorialEdit: createPermission('tutorialEdit', HR_ROLES),
+      tutorialDestroy: createPermission('tutorialDestroy', HR_ROLES),
+      tutorialRead: createPermission('tutorialRead', ALL_STAFF_ROLES),
+      tutorialAutocomplete: createPermission('tutorialAutocomplete', ALL_STAFF_ROLES),
+
+      // === VIDEO TUTORIALS ===
+      videoTutorialImport: createPermission('videoTutorialImport', HR_ROLES),
+      videoTutorialCreate: createPermission('videoTutorialCreate', HR_ROLES),
+      videoTutorialEdit: createPermission('videoTutorialEdit', HR_ROLES),
+      videoTutorialDestroy: createPermission('videoTutorialDestroy', HR_ROLES),
+      videoTutorialRead: createPermission('videoTutorialRead', ALL_STAFF_ROLES),
+      videoTutorialAutocomplete: createPermission('videoTutorialAutocomplete', ALL_STAFF_ROLES),
+
+      // === VIDEO TUTORIAL CATEGORIES ===
+      videoTutorialCategoryImport: createPermission('videoTutorialCategoryImport', HR_ROLES),
+      videoTutorialCategoryCreate: createPermission('videoTutorialCategoryCreate', HR_ROLES),
+      videoTutorialCategoryEdit: createPermission('videoTutorialCategoryEdit', HR_ROLES),
+      videoTutorialCategoryDestroy: createPermission('videoTutorialCategoryDestroy', HR_ROLES),
+      videoTutorialCategoryRead: createPermission('videoTutorialCategoryRead', ALL_STAFF_ROLES),
+      videoTutorialCategoryAutocomplete: createPermission('videoTutorialCategoryAutocomplete', ALL_STAFF_ROLES),
+
+      // === COMPLETION OF TUTORIAL ===
+      completionOfTutorialImport: createPermission('completionOfTutorialImport', HR_ROLES),
+      completionOfTutorialCreate: createPermission('completionOfTutorialCreate', [...HR_ROLES, ...GUARD_ROLES]),
+      completionOfTutorialEdit: createPermission('completionOfTutorialEdit', HR_ROLES),
+      completionOfTutorialDestroy: createPermission('completionOfTutorialDestroy', HR_ROLES),
+      completionOfTutorialRead: createPermission('completionOfTutorialRead', ALL_STAFF_ROLES),
+      completionOfTutorialAutocomplete: createPermission('completionOfTutorialAutocomplete', ALL_STAFF_ROLES),
+
+      // === DEVICE ID INFORMATION ===
+      deviceIdInformationImport: createPermission('deviceIdInformationImport', ADMIN_ROLES),
+      deviceIdInformationCreate: createPermission('deviceIdInformationCreate', ALL_STAFF_ROLES),
+      deviceIdInformationEdit: createPermission('deviceIdInformationEdit', ADMIN_ROLES),
+      deviceIdInformationDestroy: createPermission('deviceIdInformationDestroy', ADMIN_ROLES),
+      deviceIdInformationRead: createPermission('deviceIdInformationRead', MANAGEMENT_ROLES),
+      deviceIdInformationAutocomplete: createPermission('deviceIdInformationAutocomplete', MANAGEMENT_ROLES),
+
+      // === INSURANCE ===
+      insuranceImport: createPermission('insuranceImport', MANAGEMENT_ROLES),
+      insuranceCreate: createPermission('insuranceCreate', MANAGEMENT_ROLES),
+      insuranceEdit: createPermission('insuranceEdit', MANAGEMENT_ROLES),
+      insuranceDestroy: createPermission('insuranceDestroy', MANAGEMENT_ROLES),
+      insuranceRead: createPermission('insuranceRead', ALL_STAFF_ROLES),
+      insuranceAutocomplete: createPermission('insuranceAutocomplete', ALL_STAFF_ROLES),
+
+      // === FILE STORAGE ===
+      fileCreate: createPermission('fileCreate', ALL_STAFF_ROLES, [plans.free, plans.growth, plans.enterprise], Object.values(storage)),
+      fileEdit: createPermission('fileEdit', ALL_STAFF_ROLES, [plans.free, plans.growth, plans.enterprise], Object.values(storage)),
+      fileDestroy: createPermission('fileDestroy', ALL_STAFF_ROLES, [plans.free, plans.growth, plans.enterprise], Object.values(storage)),
+      fileRead: createPermission('fileRead', ALL_STAFF_ROLES, [plans.free, plans.growth, plans.enterprise], Object.values(storage)),
     };
   }
 
   static get asArray() {
-    return Object.keys(this.values).map((value) => {
-      return this.values[value];
-    });
+    return Object.values(this.values);
   }
 }
 

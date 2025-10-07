@@ -17,20 +17,41 @@ export default function (sequelize, DataTypes) {
             if (!value || !value.length) {
               return value;
             }
+
+            // Ensure value is an array
+            let arrayValue = value;
+            if (!Array.isArray(value)) {
+              // If it's a string that looks like JSON, try to parse it
+              if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
+                try {
+                  arrayValue = JSON.parse(value);
+                } catch (e) {
+                  throw new Error(`Invalid roles format: ${value}`);
+                }
+              } else {
+                // If it's a single value, wrap it in an array
+                arrayValue = [value];
+              }
+            }
+
+            // Ensure arrayValue is indeed an array at this point
+            if (!Array.isArray(arrayValue)) {
+              throw new Error(`Roles must be an array, got: ${typeof value}`);
+            }
       
             const validOptions: any = Object.keys(Roles.values);
       
             if (
-              value.some(
+              arrayValue.some(
                 (item) => !validOptions.includes(item),
               )
             ) {
               throw new Error(
-                `${value} is not a valid option`,
+                `${arrayValue} contains invalid roles. Valid options: ${validOptions.join(', ')}`,
               );
             }
       
-            return value;
+            return arrayValue;
           },
         },
       },
