@@ -1,5 +1,5 @@
-import ApiResponseHandler from '../apiResponseHandler';
-import AuthService from '../../services/auth/authService';
+import ApiResponseHandler from '../apiResponseHandler'
+import AuthService from '../../services/auth/authService'
 
 export default async (req, res, next) => {
   try {
@@ -9,10 +9,9 @@ export default async (req, res, next) => {
       req.body.invitationToken,
       req.body.tenantId,
       req,
-    );
-
-    await ApiResponseHandler.success(req, res, payload);
+    )
+    await ApiResponseHandler.success(req, res, payload)
   } catch (error) {
-    await ApiResponseHandler.error(req, res, error);
+    await ApiResponseHandler.error(req, res, error)
   }
-};
+}

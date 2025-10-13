@@ -1,62 +1,29 @@
-import AuthService from '../services/auth/authService';
-import ApiResponseHandler from '../api/apiResponseHandler';
-import Error401 from '../errors/Error401';
+import { Request, Response, NextFunction } from 'express'
+import AuthService from '../services/auth/authService'
+import ApiResponseHandler from '../api/apiResponseHandler'
+import Error401 from '../errors/Error401'
 
-/**
- * Authenticates and fills the request with the user if it exists.
- * If no token is passed, it continues the request but without filling the currentUser.
- * If userAutoAuthenticatedEmailForTests exists and no token is passed, it fills with this user for tests.
- */
-export async function authMiddleware(req, res, next) {
-  // Allow signup and signin routes without authentication
-  const publicRoutes = ['/api/auth/sign-up', '/api/auth/sign-in', '/api/auth/send-password-reset-email'];
-  if (publicRoutes.some(route => req.path === route)) {
-    return next();
-  }
+const PUBLIC_PREFIXES = [
+  '/api/auth/sign-in',
+  '/api/auth/sign-up',
+  '/api/auth/send-password-reset-email',
+  '/api/plan/stripe/webhook',
+  '/api/docs'
+]
 
-  const isTokenEmpty =
-    (!req.headers.authorization ||
-      !req.headers.authorization.startsWith('Bearer ')) &&
-    !(req.cookies && req.cookies.__session);
-
-  if (isTokenEmpty) {
-    return next();
-  }
-
-  let idToken;
-
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer ')
-  ) {
-    // Read the ID Token from the Authorization header.
-    idToken = req.headers.authorization.split('Bearer ')[1];
-    console.log('🔍 Auth middleware - Bearer token found:', idToken?.substring(0, 20) + '...');
-  } else if (req.cookies) {
-    // Read the ID Token from cookie.
-    idToken = req.cookies.__session;
-    console.log('🔍 Auth middleware - Cookie token found:', idToken?.substring(0, 20) + '...');
-  } else {
-    console.log('🔍 Auth middleware - No token found, continuing without auth');
-    return next();
-  }
-
+export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  const url = req.originalUrl || req.path || ''
+  if (PUBLIC_PREFIXES.some((p) => url.startsWith(p))) return next()
+  const auth = req.headers.authorization || ''
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : null
+  const cookie = (req as any).cookies?.__session
+  if (!bearer && !cookie) return next()
+  const idToken = bearer || cookie
   try {
-    console.log('🔍 Auth middleware - Validating token with AuthService...');
-    const currentUser: any = await AuthService.findByToken(
-      idToken,
-      req,
-    );
-    console.log('✅ Auth middleware - User found:', currentUser?.id, currentUser?.email);
-    req.currentUser = currentUser;
-
-    return next();
+    const currentUser: any = await AuthService.findByToken(idToken, req)
+    ;(req as any).currentUser = currentUser
+    return next()
   } catch (error) {
-    console.error('❌ Auth middleware - Token validation failed:', error);
-    await ApiResponseHandler.error(
-      req,
-      res,
-      new Error401(),
-    );
+    return ApiResponseHandler.error(req, res, new Error401())
   }
 }

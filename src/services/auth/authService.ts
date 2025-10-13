@@ -23,14 +23,14 @@ class AuthService {
     tenantId,
     options: any = {},
   ) {
-    
+
     const transaction = await SequelizeRepository.createTransaction(
       options.database,
     );
-      
+
     try {
       email = email.toLowerCase();
-      
+
       const existingUser = await UserRepository.findByEmail(
         email,
         options,
@@ -211,79 +211,67 @@ class AuthService {
   ) {
     const transaction = await SequelizeRepository.createTransaction(
       options.database,
-    );
+    )
 
     try {
-      email = email.toLowerCase();
-      const user = await UserRepository.findByEmail(
-        email,
-        options,
-      );
+      email = email.toLowerCase()
 
+      const user = await UserRepository.findByEmail(email, options)
       if (!user) {
-        throw new Error400(
-          options.language,
-          'auth.userNotFound',
-        );
+        throw new Error400(options.language, 'auth.userNotFound')
       }
 
-      const currentPassword = await UserRepository.findPassword(
-        user.id,
-        options,
-      );
-
+      const currentPassword = await UserRepository.findPassword(user.id, options)
       if (!currentPassword) {
-        throw new Error400(
-          options.language,
-          'auth.wrongPassword',
-        );
+        throw new Error400(options.language, 'auth.wrongPassword')
       }
 
-      const passwordsMatch = await bcrypt.compare(
-        password,
-        currentPassword,
-      );
-
+      const passwordsMatch = await bcrypt.compare(password, currentPassword)
       if (!passwordsMatch) {
-        throw new Error400(
-          options.language,
-          'auth.wrongPassword',
-        );
+        throw new Error400(options.language, 'auth.wrongPassword')
       }
 
-      // Handles onboarding process like
-      // invitation, creation of default tenant,
-      // or default joining the current tenant
+      if (!user.emailVerified) {
+        if (EmailSender.isConfigured) {
+          await this.sendEmailAddressVerificationEmail(
+            options.language,
+            user.email,
+            tenantId,
+            { ...options, transaction, bypassPermissionValidation: true },
+          )
+        }
+        throw new Error400(options.language, 'auth.emailNotVerified')
+      }
+
       await this.handleOnboard(
         user,
         invitationToken,
         tenantId,
-        {
-          ...options,
-          currentUser: user,
-          transaction,
-        },
-      );
+        { ...options, currentUser: user, transaction },
+      )
 
       const token = jwt.sign(
         { id: user.id },
         getConfig().AUTH_JWT_SECRET,
         { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
-      );
+      )
 
-      await SequelizeRepository.commitTransaction(
-        transaction,
-      );
+      await SequelizeRepository.commitTransaction(transaction)
 
-      return token;
+      const safeUser = {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName || null,
+        lastName: user.lastName || null,
+      }
+
+      return { token, user: safeUser }
     } catch (error) {
-      await SequelizeRepository.rollbackTransaction(
-        transaction,
-      );
-
-      throw error;
+      await SequelizeRepository.rollbackTransaction(transaction)
+      throw error
     }
   }
+
 
   static async handleOnboard(
     currentUser,
@@ -413,7 +401,7 @@ class AuthService {
     let link;
     try {
       let tenant;
-      
+
       if (tenantId) {
         tenant = await TenantRepository.findById(
           tenantId,
@@ -458,7 +446,7 @@ class AuthService {
 
     try {
       let tenant;
-      
+
       if (tenantId) {
         tenant = await TenantRepository.findById(
           tenantId,
