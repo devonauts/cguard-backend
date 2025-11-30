@@ -47,11 +47,16 @@ export default (app) => {
     `/auth/sign-up`,
     signUpRateLimiter,
     require('./authSignUp').default,
-  );  
+  );
 
   app.put(
     `/auth/profile`,
     require('./authUpdateProfile').default,
+  );
+
+  app.post(
+    `/auth/change-email`,
+    require('./authChangeEmail').default,
   );
 
   app.put(
@@ -62,6 +67,16 @@ export default (app) => {
   app.put(
     `/auth/verify-email`,
     require('./authVerifyEmail').default,
+  );
+
+  app.post(
+    `/auth/send-phone-verification`,
+    require('./authSendPhoneVerification').default,
+  );
+
+  app.post(
+    `/auth/verify-phone`,
+    require('./authVerifyPhone').default,
   );
 
   app.get(`/auth/me`, require('./authMe').default);

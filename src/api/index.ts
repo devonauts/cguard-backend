@@ -13,7 +13,7 @@ import setupSwaggerUI from './apiDocumentation';
 const app = express();
 
 // Enables CORS
-app.use(cors({ origin: true }));
+app.use(cors({ origin: true, credentials: true }));
 
 // Initializes and adds the database middleware.
 app.use(databaseMiddleware);
@@ -77,6 +77,7 @@ require('./service').default(routes);
 require('./certification').default(routes);
 require('./securityGuard').default(routes);
 require('./clientAccount').default(routes);
+require('./category').default(routes);
 require('./representanteEmpresa').default(routes);
 require('./incident').default(routes);
 require('./inventory').default(routes);

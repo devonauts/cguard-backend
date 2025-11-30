@@ -42,6 +42,14 @@ class Permissions {
       userRead: createPermission('userRead', ALL_STAFF_ROLES),
       userAutocomplete: createPermission('userAutocomplete', ALL_STAFF_ROLES),
 
+      // === CATEGORIES ===
+      categoryImport: createPermission('categoryImport', MANAGEMENT_ROLES),
+      categoryCreate: createPermission('categoryCreate', ALL_STAFF_ROLES),
+      categoryEdit: createPermission('categoryEdit', MANAGEMENT_ROLES),
+      categoryDestroy: createPermission('categoryDestroy', MANAGEMENT_ROLES),
+      categoryRead: createPermission('categoryRead', ALL_STAFF_ROLES),
+      categoryAutocomplete: createPermission('categoryAutocomplete', ALL_STAFF_ROLES),
+
       // === AUDIT LOGS ===
       auditLogRead: createPermission('auditLogRead', MANAGEMENT_ROLES),
 

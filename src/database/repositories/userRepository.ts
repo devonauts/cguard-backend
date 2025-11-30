@@ -355,6 +355,52 @@ export default class UserRepository {
     return this.findById(user.id, options);
   }
 
+  static async changeEmail(
+    id,
+    newEmail: string,
+    options: IRepositoryOptions,
+  ) {
+    const currentUser = SequelizeRepository.getCurrentUser(
+      options,
+    );
+
+    const transaction = SequelizeRepository.getTransaction(
+      options,
+    );
+
+    const user = await options.database.user.findByPk(id, {
+      transaction,
+    });
+
+    if (!user) {
+      throw new Error404();
+    }
+
+    await user.update(
+      {
+        email: newEmail,
+        emailVerified: false,
+        updatedById: currentUser.id,
+      },
+      { transaction },
+    );
+
+    await AuditLogRepository.log(
+      {
+        entityName: 'user',
+        entityId: user.id,
+        action: AuditLogRepository.UPDATE,
+        values: {
+          email: newEmail,
+          emailVerified: false,
+        },
+      },
+      options,
+    );
+
+    return user;
+  }
+
   static async findByEmail(
     email,
     options: IRepositoryOptions,

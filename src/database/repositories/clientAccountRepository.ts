@@ -3,8 +3,7 @@ import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
-import Sequelize from 'sequelize';import UserRepository from './userRepository';
-import FileRepository from './fileRepository';
+import Sequelize from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -27,16 +26,16 @@ class ClientAccountRepository {
     const record = await options.database.clientAccount.create(
       {
         ...lodash.pick(data, [
-          'contractDate',
-          'rucNumber',
-          'commercialName',
-          'address',
+          'name',
+          'email',
           'phoneNumber',
+          'address',
           'faxNumber',
-          'email',          
+          'website',
           'importHash',
+          'categoryId',
         ]),
-        representanteId: data.representante || null,
+        // categoryId: data.categoryId || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -46,38 +45,6 @@ class ClientAccountRepository {
       },
     );
 
-    await record.setPurchasedServices(data.purchasedServices || [], {
-      transaction,
-    });
-    await record.setStations(data.stations || [], {
-      transaction,
-    });
-    await record.setBillingInvoices(data.billingInvoices || [], {
-      transaction,
-    });
-    await record.setPushNotifications(data.pushNotifications || [], {
-      transaction,
-    });    
-  
-    await FileRepository.replaceRelationFiles(
-      {
-        belongsTo: options.database.clientAccount.getTableName(),
-        belongsToColumn: 'logoUrl',
-        belongsToId: record.id,
-      },
-      data.logoUrl,
-      options,
-    );
-    await FileRepository.replaceRelationFiles(
-      {
-        belongsTo: options.database.clientAccount.getTableName(),
-        belongsToColumn: 'placePictureUrl',
-        belongsToId: record.id,
-      },
-      data.placePictureUrl,
-      options,
-    );
-  
     await this._createAuditLog(
       AuditLogRepository.CREATE,
       record,
@@ -102,7 +69,7 @@ class ClientAccountRepository {
       options,
     );
 
-    let record = await options.database.clientAccount.findOne(      
+    let record = await options.database.clientAccount.findOne(
       {
         where: {
           id,
@@ -119,53 +86,21 @@ class ClientAccountRepository {
     record = await record.update(
       {
         ...lodash.pick(data, [
-          'contractDate',
-          'rucNumber',
-          'commercialName',
-          'address',
+          'name',
+          'email',
           'phoneNumber',
+          'address',
           'faxNumber',
-          'email',          
+          'website',
           'importHash',
+          'categoryId',
         ]),
-        representanteId: data.representante || null,
+        // categoryId: data.categoryId || null,
         updatedById: currentUser.id,
       },
       {
         transaction,
       },
-    );
-
-    await record.setPurchasedServices(data.purchasedServices || [], {
-      transaction,
-    });
-    await record.setStations(data.stations || [], {
-      transaction,
-    });
-    await record.setBillingInvoices(data.billingInvoices || [], {
-      transaction,
-    });
-    await record.setPushNotifications(data.pushNotifications || [], {
-      transaction,
-    });
-
-    await FileRepository.replaceRelationFiles(
-      {
-        belongsTo: options.database.clientAccount.getTableName(),
-        belongsToColumn: 'logoUrl',
-        belongsToId: record.id,
-      },
-      data.logoUrl,
-      options,
-    );
-    await FileRepository.replaceRelationFiles(
-      {
-        belongsTo: options.database.clientAccount.getTableName(),
-        belongsToColumn: 'placePictureUrl',
-        belongsToId: record.id,
-      },
-      data.placePictureUrl,
-      options,
     );
 
     await this._createAuditLog(
@@ -218,12 +153,7 @@ class ClientAccountRepository {
       options,
     );
 
-    const include = [
-      {
-        model: options.database.user,
-        as: 'representante',
-      },
-    ];
+    const include = [];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
       options,
@@ -315,12 +245,7 @@ class ClientAccountRepository {
     );
 
     let whereAnd: Array<any> = [];
-    let include = [
-      {
-        model: options.database.user,
-        as: 'representante',
-      },      
-    ];
+    let include = [];
 
     whereAnd.push({
       tenantId: tenant.id,
@@ -333,42 +258,12 @@ class ClientAccountRepository {
         });
       }
 
-      if (filter.contractDateRange) {
-        const [start, end] = filter.contractDateRange;
-
-        if (start !== undefined && start !== null && start !== '') {
-          whereAnd.push({
-            contractDate: {
-              [Op.gte]: start,
-            },
-          });
-        }
-
-        if (end !== undefined && end !== null && end !== '') {
-          whereAnd.push({
-            contractDate: {
-              [Op.lte]: end,
-            },
-          });
-        }
-      }
-
-      if (filter.rucNumber) {
+      if (filter.name) {
         whereAnd.push(
           SequelizeFilterUtils.ilikeIncludes(
             'clientAccount',
-            'rucNumber',
-            filter.rucNumber,
-          ),
-        );
-      }
-
-      if (filter.commercialName) {
-        whereAnd.push(
-          SequelizeFilterUtils.ilikeIncludes(
-            'clientAccount',
-            'commercialName',
-            filter.commercialName,
+            'name',
+            filter.name,
           ),
         );
       }
@@ -413,10 +308,20 @@ class ClientAccountRepository {
         );
       }
 
-      if (filter.representante) {
+      if (filter.website) {
+        whereAnd.push(
+          SequelizeFilterUtils.ilikeIncludes(
+            'clientAccount',
+            'website',
+            filter.website,
+          ),
+        );
+      }
+
+      if (filter.category) {
         whereAnd.push({
-          ['representanteId']: SequelizeFilterUtils.uuid(
-            filter.representante,
+          ['categoryId']: SequelizeFilterUtils.uuid(
+            filter.category,
           ),
         });
       }
@@ -492,7 +397,7 @@ class ClientAccountRepository {
           {
             [Op.and]: SequelizeFilterUtils.ilikeIncludes(
               'clientAccount',
-              'commercialName',
+              'name',
               query,
             ),
           },
@@ -504,16 +409,16 @@ class ClientAccountRepository {
 
     const records = await options.database.clientAccount.findAll(
       {
-        attributes: ['id', 'commercialName'],
+        attributes: ['id', 'name'],
         where,
         limit: limit ? Number(limit) : undefined,
-        order: [['commercialName', 'ASC']],
+        order: [['name', 'ASC']],
       },
     );
 
     return records.map((record) => ({
       id: record.id,
-      label: record.commercialName,
+      label: record.name,
     }));
   }
 
@@ -528,12 +433,6 @@ class ClientAccountRepository {
     if (data) {
       values = {
         ...record.get({ plain: true }),
-        logoUrl: data.logoUrl,
-        placePictureUrl: data.placePictureUrl,
-        purchasedServicesIds: data.purchasedServices,
-        stationsIds: data.stations,
-        billingInvoicesIds: data.billingInvoices,
-        pushNotificationsIds: data.pushNotifications,
       };
     }
 
@@ -569,40 +468,6 @@ class ClientAccountRepository {
     }
 
     const output = record.get({ plain: true });
-
-    const transaction = SequelizeRepository.getTransaction(
-      options,
-    );
-
-    output.logoUrl = await FileRepository.fillDownloadUrl(
-      await record.getLogoUrl({
-        transaction,
-      }),
-    );
-
-    output.placePictureUrl = await FileRepository.fillDownloadUrl(
-      await record.getPlacePictureUrl({
-        transaction,
-      }),
-    );
-
-    output.representante = UserRepository.cleanupForRelationships(output.representante);
-
-    output.purchasedServices = await record.getPurchasedServices({
-      transaction,
-    });
-
-    output.stations = await record.getStations({
-      transaction,
-    });
-
-    output.billingInvoices = await record.getBillingInvoices({
-      transaction,
-    });
-
-    output.pushNotifications = await record.getPushNotifications({
-      transaction,
-    });
 
     return output;
   }

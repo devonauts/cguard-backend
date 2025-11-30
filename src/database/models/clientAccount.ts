@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';import moment from 'moment';
+import { DataTypes } from 'sequelize';
 
 export default function (sequelize) {
   const clientAccount = sequelize.define(
@@ -9,50 +9,12 @@ export default function (sequelize) {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
       },
-      contractDate: {
-        type: DataTypes.DATEONLY,
-        get: function() {
-          // @ts-ignore
-          return this.getDataValue('contractDate')
-            ? moment
-                // @ts-ignore
-                .utc(this.getDataValue('contractDate'))
-                .format('YYYY-MM-DD')
-            : null;
-        },
-      },
-      rucNumber: {
-        type: DataTypes.STRING(13),
-        validate: {
-          len: [0, 13],
-        }
-      },
-      commercialName: {
-        type: DataTypes.STRING(200),
-        validate: {
-          len: [0, 200],
-        }
-      },
-      address: {
+      name: {
         type: DataTypes.STRING(200),
         allowNull: false,
         validate: {
           len: [0, 200],
           notEmpty: true,
-        }
-      },
-      phoneNumber: {
-        type: DataTypes.STRING(10),
-        allowNull: false,
-        validate: {
-          len: [0, 10],
-          notEmpty: true,
-        }
-      },
-      faxNumber: {
-        type: DataTypes.STRING(10),
-        validate: {
-          len: [0, 10],
         }
       },
       email: {
@@ -63,12 +25,40 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
-      importHash: {
+      phoneNumber: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        validate: {
+          len: [0, 20],
+          notEmpty: true,
+        }
+      },
+      address: {
+        type: DataTypes.STRING(200),
+        allowNull: false,
+        validate: {
+          len: [0, 200],
+          notEmpty: true,
+        }
+      },
+      faxNumber: {
+        type: DataTypes.STRING(20),
+        validate: {
+          len: [0, 20],
+        }
+      },
+      website: {
         type: DataTypes.STRING(255),
-        allowNull: true,    
         validate: {
           len: [0, 255],
-        },    
+        }
+      },
+      importHash: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        validate: {
+          len: [0, 255],
+        },
       },
     },
     {
@@ -80,7 +70,6 @@ export default function (sequelize) {
             deletedAt: null,
           },
         },
-
       ],
       timestamps: true,
       paranoid: true,
@@ -88,55 +77,7 @@ export default function (sequelize) {
   );
 
   clientAccount.associate = (models) => {
-    models.clientAccount.belongsTo(models.user, {
-      as: 'representante',
-      constraints: false,
-    });
-
-    models.clientAccount.belongsToMany(models.service, {
-      as: 'purchasedServices',
-      constraints: false,
-      through: 'clientAccountPurchasedServicesService',
-    });
-
-    models.clientAccount.belongsToMany(models.station, {
-      as: 'stations',
-      constraints: false,
-      through: 'clientAccountStationsStation',
-    });
-
-    models.clientAccount.belongsToMany(models.billing, {
-      as: 'billingInvoices',
-      constraints: false,
-      through: 'clientAccountBillingInvoicesBilling',
-    });
-
-    models.clientAccount.belongsToMany(models.notificationRecipient, {
-      as: 'pushNotifications',
-      constraints: false,
-      through: 'clientAccountPushNotificationsNotificationRecipient',
-    });
-
-    models.clientAccount.hasMany(models.file, {
-      as: 'logoUrl',
-      foreignKey: 'belongsToId',
-      constraints: false,
-      scope: {
-        belongsTo: models.clientAccount.getTableName(),
-        belongsToColumn: 'logoUrl',
-      },
-    });
-
-    models.clientAccount.hasMany(models.file, {
-      as: 'placePictureUrl',
-      foreignKey: 'belongsToId',
-      constraints: false,
-      scope: {
-        belongsTo: models.clientAccount.getTableName(),
-        belongsToColumn: 'placePictureUrl',
-      },
-    });
-    
+    // Multi-tenant relationship
     models.clientAccount.belongsTo(models.tenant, {
       as: 'tenant',
       foreignKey: {
@@ -144,6 +85,17 @@ export default function (sequelize) {
       },
     });
 
+    // Category relationship - DESCOMENTADO Y ARREGLADO
+    models.clientAccount.belongsTo(models.category, {
+      as: 'category',
+      foreignKey: {
+        name: 'categoryId',
+        allowNull: true, // Permitir null si la categoría es opcional
+      },
+      constraints: false,
+    });
+
+    // Audit relationships
     models.clientAccount.belongsTo(models.user, {
       as: 'createdBy',
     });

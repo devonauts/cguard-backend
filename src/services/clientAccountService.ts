@@ -2,11 +2,6 @@ import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import ClientAccountRepository from '../database/repositories/clientAccountRepository';
-import ServiceRepository from '../database/repositories/serviceRepository';
-import StationRepository from '../database/repositories/stationRepository';
-import BillingRepository from '../database/repositories/billingRepository';
-import NotificationRecipientRepository from '../database/repositories/notificationRecipientRepository';
-import UserRepository from '../database/repositories/userRepository';
 
 export default class ClientAccountService {
   options: IServiceOptions;
@@ -21,12 +16,7 @@ export default class ClientAccountService {
     );
 
     try {
-      data.representante = await UserRepository.filterIdInTenant(data.representante, { ...this.options, transaction });
-      data.purchasedServices = await ServiceRepository.filterIdsInTenant(data.purchasedServices, { ...this.options, transaction });
-      data.stations = await StationRepository.filterIdsInTenant(data.stations, { ...this.options, transaction });
-      data.billingInvoices = await BillingRepository.filterIdsInTenant(data.billingInvoices, { ...this.options, transaction });
-      data.pushNotifications = await NotificationRecipientRepository.filterIdsInTenant(data.pushNotifications, { ...this.options, transaction });
-
+      // No relationship filtering needed for simplified model
       const record = await ClientAccountRepository.create(data, {
         ...this.options,
         transaction,
@@ -58,12 +48,7 @@ export default class ClientAccountService {
     );
 
     try {
-      data.representante = await UserRepository.filterIdInTenant(data.representante, { ...this.options, transaction });
-      data.purchasedServices = await ServiceRepository.filterIdsInTenant(data.purchasedServices, { ...this.options, transaction });
-      data.stations = await StationRepository.filterIdsInTenant(data.stations, { ...this.options, transaction });
-      data.billingInvoices = await BillingRepository.filterIdsInTenant(data.billingInvoices, { ...this.options, transaction });
-      data.pushNotifications = await NotificationRecipientRepository.filterIdsInTenant(data.pushNotifications, { ...this.options, transaction });
-
+      // No relationship filtering needed for simplified model
       const record = await ClientAccountRepository.update(
         id,
         data,

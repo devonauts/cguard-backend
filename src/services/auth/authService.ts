@@ -352,7 +352,7 @@ class AuthService {
             return;
           }
 
-          const id = decoded.id;
+          const id = decoded?.id;
           const jwtTokenIat = decoded.iat;
 
           UserRepository.findById(id, {
