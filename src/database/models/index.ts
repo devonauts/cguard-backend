@@ -19,6 +19,7 @@ function models() {
     getConfig().DATABASE_PASSWORD,
     {
       host: getConfig().DATABASE_HOST,
+      port: getConfig().DATABASE_PORT || 3307,
       dialect: getConfig().DATABASE_DIALECT,
       logging:
         getConfig().DATABASE_LOGGING === 'true'

@@ -8,8 +8,9 @@ const en = {
   },
 
   auth: {
-    userNotFound: `Sorry, we don't recognize your credentials`,
-    wrongPassword: `Sorry, we don't recognize your credentials`,
+    userNotFound: 'The email is not registered.',
+    wrongPassword: 'The password is incorrect.',
+    emailNotVerified: 'Email not verified. Check your inbox.',
     weakPassword: 'This password is too weak',
     emailAlreadyInUse: 'Email is already in use',
     invalidEmail: 'Please provide a valid email',

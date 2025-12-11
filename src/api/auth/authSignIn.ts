@@ -1,7 +1,7 @@
 import ApiResponseHandler from '../apiResponseHandler'
 import AuthService from '../../services/auth/authService'
 
-export default async (req, res, next) => {
+export default async (req, res) => {
   try {
     const payload = await AuthService.signin(
       req.body.email,
@@ -10,8 +10,12 @@ export default async (req, res, next) => {
       req.body.tenantId,
       req,
     )
-    await ApiResponseHandler.success(req, res, payload)
+
+    // ✅ RETORNO OBLIGATORIO para evitar doble respuesta
+    return ApiResponseHandler.success(req, res, payload)
+
   } catch (error) {
-    await ApiResponseHandler.error(req, res, error)
+    // ✅ RETORNO OBLIGATORIO para evitar doble respuesta
+    return ApiResponseHandler.error(req, res, error)
   }
 }

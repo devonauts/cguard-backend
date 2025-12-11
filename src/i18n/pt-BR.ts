@@ -8,8 +8,9 @@ const ptBR = {
   },
 
   auth: {
-    userNotFound: `Desculpe, não reconhecemos suas credenciais`,
-    wrongPassword: `Desculpe, não reconhecemos suas credenciais`,
+    userNotFound: 'O e-mail não está cadastrado.',
+    wrongPassword: 'A senha está incorreta.',
+    emailNotVerified: 'E-mail não verificado. Verifique sua caixa de entrada.',
     weakPassword: 'Esta senha é muito fraca',
     emailAlreadyInUse: 'O email já está sendo usado',
     invalidEmail: 'Por favor forneça um email válido',

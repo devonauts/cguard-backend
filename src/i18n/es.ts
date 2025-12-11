@@ -4,9 +4,11 @@ const es = {
   },
   auth: {
     userNotFound:
-      'Lo sentimos, no reconocemos tus credenciales',
+      'El correo no está registrado.',
     wrongPassword:
-      'Lo sentimos, no reconocemos tus credenciales',
+      'La contraseña es incorrecta.',
+    emailNotVerified:
+      'Correo no verificado. Revisa tu email.',
     weakPassword: 'Esta contraseña es muy débil.',
     emailAlreadyInUse: 'Correo electrónico ya está en uso',
     invalidEmail:
@@ -14,7 +16,7 @@ const es = {
     passwordReset: {
       invalidToken:
         'El enlace de restablecimiento de contraseña no es válido o ha expirado',
-      error: 'Correo electrónico no reconocido',
+      error: 'El correo no consta en la base. Intenta nuevamente',
     },
     emailAddressVerificationEmail: {
       invalidToken:
