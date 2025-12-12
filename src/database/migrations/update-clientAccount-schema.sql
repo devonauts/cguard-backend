@@ -45,3 +45,19 @@ MODIFY COLUMN `faxNumber` VARCHAR(20);
 -- Verification queries:
 -- SELECT * FROM `clientAccounts` LIMIT 5;
 -- DESCRIBE `clientAccounts`;
+
+
+
+-- Agregar nuevos campos a clientAccounts
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "lastName" VARCHAR(200);
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "company" VARCHAR(200);
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "taxId" VARCHAR(50);
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "addressComplement" VARCHAR(200);
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "zipCode" VARCHAR(20);
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "city" VARCHAR(100);
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "country" VARCHAR(100);
+ALTER TABLE "clientAccounts" ADD COLUMN IF NOT EXISTS "useSameAddressForBilling" BOOLEAN DEFAULT true;
+
+-- Modificar campos existentes para que sean opcionales
+ALTER TABLE "clientAccounts" ALTER COLUMN "email" DROP NOT NULL;
+ALTER TABLE "clientAccounts" ALTER COLUMN "phoneNumber" DROP NOT NULL;

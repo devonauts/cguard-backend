@@ -17,20 +17,25 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
+      lastName: {
+        type: DataTypes.STRING(200),
+        allowNull: true,
+        validate: {
+          len: [0, 200],
+        }
+      },
       email: {
         type: DataTypes.STRING(150),
-        allowNull: false,
+        allowNull: true,
         validate: {
           len: [0, 150],
-          notEmpty: true,
         }
       },
       phoneNumber: {
         type: DataTypes.STRING(20),
-        allowNull: false,
+        allowNull: true,
         validate: {
           len: [0, 20],
-          notEmpty: true,
         }
       },
       address: {
@@ -41,14 +46,49 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
+      addressComplement: {
+        type: DataTypes.STRING(200),
+        allowNull: true,
+        validate: {
+          len: [0, 200],
+        }
+      },
+      zipCode: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+        validate: {
+          len: [0, 20],
+        }
+      },
+      city: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        validate: {
+          len: [0, 100],
+        }
+      },
+      country: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        validate: {
+          len: [0, 100],
+        }
+      },
+      useSameAddressForBilling: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
       faxNumber: {
         type: DataTypes.STRING(20),
+        allowNull: true,
         validate: {
           len: [0, 20],
         }
       },
       website: {
         type: DataTypes.STRING(255),
+        allowNull: true,
         validate: {
           len: [0, 255],
         }

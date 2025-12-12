@@ -9,9 +9,23 @@ export default async (req, res, next) => {
       Permissions.values.clientAccountEdit,
     );
 
+    // Mapear nombres de campos del frontend al backend
+    const rawData = req.body.data || req.body;
+    const data = {
+      ...rawData,
+      // Mapear addressLine2 -> addressComplement
+      addressComplement: rawData.addressLine2 || rawData.addressComplement,
+      // Mapear postalCode -> zipCode
+      zipCode: rawData.postalCode || rawData.zipCode,
+    };
+
+    // Remover campos del frontend que no existen en el modelo
+    delete data.addressLine2;
+    delete data.postalCode;
+
     const payload = await new ClientAccountService(req).update(
       req.params.id,
-      req.body.data,
+      data,
     );
 
     await ApiResponseHandler.success(req, res, payload);

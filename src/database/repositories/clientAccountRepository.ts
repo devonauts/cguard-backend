@@ -27,9 +27,15 @@ class ClientAccountRepository {
       {
         ...lodash.pick(data, [
           'name',
+          'lastName',
           'email',
           'phoneNumber',
           'address',
+          'addressComplement',
+          'zipCode',
+          'city',
+          'country',
+          'useSameAddressForBilling',
           'faxNumber',
           'website',
           'importHash',
@@ -82,26 +88,35 @@ class ClientAccountRepository {
     if (!record) {
       throw new Error404();
     }
+    const updateData = {
+      ...lodash.pick(data, [
+        'name',
+        'lastName',
+        'email',
+        'phoneNumber',
+        'address',
+        'addressComplement',
+        'zipCode',
+        'city',
+        'country',
+        'useSameAddressForBilling',
+        'faxNumber',
+        'website',
+        'importHash',
+        'categoryId',
+      ]),
+      // categoryId: data.categoryId || null,
+      updatedById: currentUser.id,
+    };
+
 
     record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'name',
-          'email',
-          'phoneNumber',
-          'address',
-          'faxNumber',
-          'website',
-          'importHash',
-          'categoryId',
-        ]),
-        // categoryId: data.categoryId || null,
-        updatedById: currentUser.id,
-      },
+      updateData,
       {
         transaction,
       },
     );
+
 
     await this._createAuditLog(
       AuditLogRepository.UPDATE,
@@ -110,7 +125,10 @@ class ClientAccountRepository {
       options,
     );
 
-    return this.findById(record.id, options);
+    // Reload the record to get fresh data from the database
+    await record.reload({ transaction });
+
+    return this._fillWithRelationsAndFiles(record, options);
   }
 
   static async destroy(id, options: IRepositoryOptions) {
@@ -153,7 +171,14 @@ class ClientAccountRepository {
       options,
     );
 
-    const include = [];
+    const include = [
+      {
+        model: options.database.category,
+        as: 'category',
+        required: false,
+        attributes: ['id', 'name'],
+      },
+    ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
       options,
@@ -245,7 +270,14 @@ class ClientAccountRepository {
     );
 
     let whereAnd: Array<any> = [];
-    let include = [];
+    let include = [
+      {
+        model: options.database.category,
+        as: 'category',
+        required: false,
+        attributes: ['id', 'name'],
+      },
+    ];
 
     whereAnd.push({
       tenantId: tenant.id,
@@ -259,13 +291,20 @@ class ClientAccountRepository {
       }
 
       if (filter.name) {
-        whereAnd.push(
-          SequelizeFilterUtils.ilikeIncludes(
-            'clientAccount',
-            'name',
-            filter.name,
-          ),
-        );
+        whereAnd.push({
+          [Op.or]: [
+            SequelizeFilterUtils.ilikeIncludes(
+              'clientAccount',
+              'name',
+              filter.name,
+            ),
+            SequelizeFilterUtils.ilikeIncludes(
+              'clientAccount',
+              'lastName',
+              filter.name,
+            ),
+          ],
+        });
       }
 
       if (filter.address) {
@@ -318,12 +357,35 @@ class ClientAccountRepository {
         );
       }
 
-      if (filter.category) {
-        whereAnd.push({
-          ['categoryId']: SequelizeFilterUtils.uuid(
-            filter.category,
+      if (filter.city) {
+        whereAnd.push(
+          SequelizeFilterUtils.ilikeIncludes(
+            'clientAccount',
+            'city',
+            filter.city,
           ),
+        );
+      }
+
+      if (filter.country) {
+        whereAnd.push(
+          SequelizeFilterUtils.ilikeIncludes(
+            'clientAccount',
+            'country',
+            filter.country,
+          ),
+        );
+      }
+
+      if (filter.category) {
+        console.log('🔍 Filtro de categoría recibido:', filter.category);
+        console.log('🔍 Tipo de filtro:', typeof filter.category);
+        
+        // Simplemente filtrar por categoryId directamente
+        whereAnd.push({
+          ['categoryId']: SequelizeFilterUtils.uuid(filter.category),
         });
+        console.log('✅ Filtrando por categoryId:', filter.category);
       }
 
       if (filter.createdAtRange) {

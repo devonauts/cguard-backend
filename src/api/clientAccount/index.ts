@@ -20,6 +20,10 @@ export default (app) => {
     require('./clientAccountAutocomplete').default,
   );
   app.get(
+    `/tenant/:tenantId/client-account/export`,
+    require('./clientAccountExport').default,
+  );
+  app.get(
     `/tenant/:tenantId/client-account`,
     require('./clientAccountList').default,
   );
