@@ -20,6 +20,10 @@ export default (app) => {
     require('./stationAutocomplete').default,
   );
   app.get(
+    `/tenant/:tenantId/station/export`,
+    require('./stationExport').default,
+  );
+  app.get(
     `/tenant/:tenantId/station`,
     require('./stationList').default,
   );

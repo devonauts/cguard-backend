@@ -100,6 +100,11 @@ export default function (sequelize) {
           len: [0, 255],
         },
       },
+      active: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
     },
     {
       indexes: [

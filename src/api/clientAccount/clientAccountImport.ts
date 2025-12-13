@@ -91,6 +91,7 @@ export default [
                 country: country || '',
                 faxNumber: faxNumber,
                 website: website,
+                 active: true,
                 // categoryId se puede buscar por nombre si es necesario
               });
             }

@@ -40,6 +40,7 @@ class ClientAccountRepository {
           'website',
           'importHash',
           'categoryId',
+          'active',
         ]),
         // categoryId: data.categoryId || null,
         tenantId: tenant.id,
@@ -88,6 +89,10 @@ class ClientAccountRepository {
     if (!record) {
       throw new Error404();
     }
+
+    console.log('📤 Data recibida del controlador:', data);
+    console.log('📤 Data recibida (active):', data.active);
+
     const updateData = {
       ...lodash.pick(data, [
         'name',
@@ -104,11 +109,14 @@ class ClientAccountRepository {
         'website',
         'importHash',
         'categoryId',
+        'active',
       ]),
       // categoryId: data.categoryId || null,
       updatedById: currentUser.id,
     };
 
+    console.log('📥 UpdateData a guardar:', updateData);
+    console.log('📥 UpdateData (active):', updateData.active);
 
     record = await record.update(
       updateData,
@@ -116,6 +124,9 @@ class ClientAccountRepository {
         transaction,
       },
     );
+
+    console.log('✅ Registro actualizado en BD:', record.toJSON());
+    console.log('✅ Registro (active):', record.active);
 
 
     await this._createAuditLog(
@@ -355,6 +366,24 @@ class ClientAccountRepository {
             filter.website,
           ),
         );
+      }
+
+      // Filter by active (supports true/false and 1/0 and strings)
+      if (filter.active !== undefined && filter.active !== null && filter.active !== '') {
+        const raw = filter.active;
+        let activeBool: boolean;
+        if (typeof raw === 'boolean') {
+          activeBool = raw;
+        } else if (typeof raw === 'number') {
+          activeBool = raw === 1;
+        } else if (typeof raw === 'string') {
+          const val = raw.toLowerCase();
+          activeBool = val === '1' || val === 'true';
+        } else {
+          // Fallback: treat truthy as true
+          activeBool = !!raw;
+        }
+        whereAnd.push({ ['active']: activeBool });
       }
 
       if (filter.city) {

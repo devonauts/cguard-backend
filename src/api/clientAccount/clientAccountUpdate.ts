@@ -11,6 +11,9 @@ export default async (req, res, next) => {
 
     // Mapear nombres de campos del frontend al backend
     const rawData = req.body.data || req.body;
+    console.log('🔍 Raw data recibida del frontend:', rawData);
+    console.log('🔍 Active recibido:', rawData.active);
+
     const data = {
       ...rawData,
       // Mapear addressLine2 -> addressComplement
@@ -18,6 +21,9 @@ export default async (req, res, next) => {
       // Mapear postalCode -> zipCode
       zipCode: rawData.postalCode || rawData.zipCode,
     };
+
+    console.log('📝 Data mapeada:', data);
+    console.log('📝 Active mapeado:', data.active);
 
     // Remover campos del frontend que no existen en el modelo
     delete data.addressLine2;

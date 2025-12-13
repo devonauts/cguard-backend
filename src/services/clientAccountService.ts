@@ -246,7 +246,8 @@ export default class ClientAccountService {
         const doc = new PDFDocument({ 
           margin: 30,
           size: 'A3',
-          layout: 'landscape'
+          layout: 'landscape',
+          bufferPages: true,
         });
         const chunks: Buffer[] = [];
 
@@ -276,7 +277,7 @@ export default class ClientAccountService {
         doc.fontSize(fontSize).font('Helvetica-Bold');
         
         // Distribuir columnas uniformemente en el ancho disponible
-        const colWidth = usableWidth / 12;
+        const colWidth = usableWidth / 13;
         const cols = [
           { label: 'Nombre', x: marginLeft, width: colWidth * 1.5 },
           { label: 'Apellidos', x: marginLeft + colWidth * 1.5, width: colWidth * 1.5 },
@@ -289,6 +290,7 @@ export default class ClientAccountService {
           { label: 'País', x: marginLeft + colWidth * 9.8, width: colWidth },
           { label: 'Fax', x: marginLeft + colWidth * 10.8, width: colWidth * 0.6 },
           { label: 'Categoría', x: marginLeft + colWidth * 11.4, width: colWidth * 0.6 },
+          { label: 'Activo', x: marginLeft + colWidth * 12, width: colWidth * 0.6 },
         ];
 
         cols.forEach(col => {
@@ -336,6 +338,7 @@ export default class ClientAccountService {
             { text: client.country || '', x: marginLeft + colWidth * 9.8, width: colWidth },
             { text: client.faxNumber || '', x: marginLeft + colWidth * 10.8, width: colWidth * 0.6 },
             { text: client.category?.name || '-', x: marginLeft + colWidth * 11.4, width: colWidth * 0.6 },
+            { text: (client.active ? 'true' : 'false'), x: marginLeft + colWidth * 12, width: colWidth * 0.6 },
           ];
 
           doc.fontSize(8);
@@ -347,15 +350,14 @@ export default class ClientAccountService {
         });
 
         // Agregar footer a TODAS las páginas al final
-        const totalPages = doc.bufferedPageRange().count;
+        const range = doc.bufferedPageRange();
+        const totalPages = range.count;
+        
         for (let i = 0; i < totalPages; i++) {
-          doc.switchToPage(i);
+          // switchToPage usa índice desde range.start
+          doc.switchToPage(range.start + i);
           
-          // Guardar estado actual
-          const savedX = doc.x;
-          const savedY = doc.y;
-          
-          // Dibujar footer en posición fija sin mover cursor
+          // Dibujar footer en posición fija
           doc.fontSize(9).font('Helvetica');
           const footerText = `Página ${i + 1} de ${totalPages}`;
           const textWidth = doc.widthOfString(footerText);
@@ -366,10 +368,6 @@ export default class ClientAccountService {
             lineBreak: false,
             continued: false
           });
-          
-          // Restaurar posición del cursor
-          doc.x = savedX;
-          doc.y = savedY;
         }
 
         doc.end();
@@ -386,7 +384,7 @@ export default class ClientAccountService {
     const worksheet = workbook.addWorksheet('Clientes');
 
     // Agregar título
-    worksheet.mergeCells('A1:L1');
+    worksheet.mergeCells('A1:M1');
     const titleCell = worksheet.getCell('A1');
     titleCell.value = 'Lista de Clientes';
     titleCell.font = { bold: true, size: 16, color: { argb: 'FF000000' } };
@@ -398,7 +396,7 @@ export default class ClientAccountService {
     };
 
     // Agregar fecha
-    worksheet.mergeCells('A2:L2');
+    worksheet.mergeCells('A2:M2');
     const dateCell = worksheet.getCell('A2');
     dateCell.value = `Fecha: ${new Date().toLocaleDateString()}`;
     dateCell.font = { size: 11, color: { argb: 'FF000000' } };
@@ -409,8 +407,8 @@ export default class ClientAccountService {
 
     // Add headers en la fila 4
     const headerRow = worksheet.getRow(4);
-    const headers = ['Nombre', 'Apellidos', 'Email', 'Teléfono', 'Dirección', 'Dirección Complementaria', 'Código Postal', 'Ciudad', 'País', 'Fax', 'Sitio Web', 'Categoría'];
-    const widths = [25, 25, 30, 20, 35, 30, 15, 20, 20, 20, 30, 25];
+    const headers = ['Nombre', 'Apellidos', 'Email', 'Teléfono', 'Dirección', 'Dirección Complementaria', 'Código Postal', 'Ciudad', 'País', 'Fax', 'Sitio Web', 'Categoría', 'Activo'];
+    const widths = [25, 25, 30, 20, 35, 30, 15, 20, 20, 20, 30, 25, 12];
     
     headers.forEach((header, index) => {
       const cell = headerRow.getCell(index + 1);
@@ -450,6 +448,7 @@ export default class ClientAccountService {
         client.faxNumber || '',
         client.website || '',
         client.category?.name || '-',
+        (client.active ? 'true' : 'false'),
       ];
       
       // Add borders to data cells
