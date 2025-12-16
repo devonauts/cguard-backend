@@ -113,6 +113,28 @@ export default class TenantUserRepository {
     );
   }
 
+  /**
+   * 🔵 MULTI-TENANT METHOD
+   * Encuentra todos los tenants a los que pertenece un usuario.
+   * Útil para verificar si un usuario ya tiene un tenant antes de crear uno nuevo.
+   * Se usa en modo multi-tenant para evitar crear múltiples tenants por usuario.
+   */
+  static async findByUser(userId, options: IRepositoryOptions) {
+    const transaction = SequelizeRepository.getTransaction(
+      options,
+    );
+
+    const records = await options.database.tenantUser.findAll({
+      where: {
+        userId,
+      },
+      include: ['tenant', 'user'],
+      transaction,
+    });
+
+    return records;
+  }
+
   static async updateRoles(tenantId, id, roles, options) {
     const transaction = SequelizeRepository.getTransaction(
       options,

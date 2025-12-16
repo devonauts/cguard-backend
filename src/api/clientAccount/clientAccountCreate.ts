@@ -18,6 +18,8 @@ export default async (req, res, next) => {
       addressComplement: req.body.addressLine2 || req.body.addressComplement,
       // Mapear postalCode -> zipCode
       zipCode: req.body.postalCode || req.body.zipCode,
+      // Keep categoryIds array for N:N relationship
+      categoryIds: req.body.categoryIds || [],
     };
 
     // Remover campos del frontend que no existen en el modelo

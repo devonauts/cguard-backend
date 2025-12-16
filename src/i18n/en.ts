@@ -89,6 +89,11 @@ const en = {
   },
 
   entities: {
+    category: {
+      errors: {
+        inUse: 'Cannot delete category because it is in use by {0} client(s).',
+      }
+    },
     bannerSuperiorApp: {
       errors: {
         unique: {

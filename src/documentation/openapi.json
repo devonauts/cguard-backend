@@ -18420,7 +18420,7 @@
             "items": {
               "$ref": "#/components/schemas/TenantUser"
             }
-          },
+          }
         }
       },
       "TenantUser": {

@@ -207,6 +207,7 @@ export default class UserRepository {
     email,
     options: IRepositoryOptions,
   ) {
+       
     const currentUser = SequelizeRepository.getCurrentUser(
       options,
     );
@@ -220,20 +221,33 @@ export default class UserRepository {
       transaction,
     });
 
+    if (!user) {
+      throw new Error404();
+    }
+    
+
     const emailVerificationToken = crypto
       .randomBytes(20)
       .toString('hex');
     const emailVerificationTokenExpiresAt =
       Date.now() + 24 * 60 * 60 * 1000;
 
-    await user.update(
-      {
-        emailVerificationToken,
-        emailVerificationTokenExpiresAt,
-        updatedById: currentUser.id,
-      },
-      { transaction },
-    );
+    console.log('🎫 [generateEmailVerificationToken] Token generado:', emailVerificationToken);
+    console.log('⏰ [generateEmailVerificationToken] Expira en:', new Date(emailVerificationTokenExpiresAt));
+
+    const updateData: any = {
+      emailVerificationToken,
+      emailVerificationTokenExpiresAt,
+    };
+
+    // updatedById es opcional cuando no hay usuario autenticado
+    if (currentUser && currentUser.id) {
+      updateData.updatedById = currentUser.id;
+    }
+
+  
+    await user.update(updateData, { transaction });
+    
 
     await AuditLogRepository.log(
       {
@@ -269,20 +283,27 @@ export default class UserRepository {
       transaction,
     });
 
+    if (!user) {
+      throw new Error404();
+    }
+
     const passwordResetToken = crypto
       .randomBytes(20)
       .toString('hex');
     const passwordResetTokenExpiresAt =
       Date.now() + 24 * 60 * 60 * 1000;
 
-    await user.update(
-      {
-        passwordResetToken,
-        passwordResetTokenExpiresAt,
-        updatedById: currentUser.id,
-      },
-      { transaction },
-    );
+    const updateData: any = {
+      passwordResetToken,
+      passwordResetTokenExpiresAt,
+    };
+
+    // updatedById es opcional cuando no hay usuario autenticado
+    if (currentUser && currentUser.id) {
+      updateData.updatedById = currentUser.id;
+    }
+
+    await user.update(updateData, { transaction });
 
     await AuditLogRepository.log(
       {

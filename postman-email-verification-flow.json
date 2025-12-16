@@ -1,0 +1,192 @@
+{
+  "info": {
+    "name": "Email Verification Flow - CGuard",
+    "description": "Flujo completo de verificación de email",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "dcd8181a-2536-4db3-b4b1-08858c92cb39",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testEmail",
+      "value": "test@example.com",
+      "type": "string"
+    },
+    {
+      "key": "verificationToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Sign Up (Registro)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"Test123456!\",\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/sign-up",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "sign-up"]
+        },
+        "description": "Registra un nuevo usuario. Si EmailSender está configurado, requiere verificación de email."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Sign In (Login) - Email No Verificado",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"Test123456!\",\n  \"tenantId\": \"{{tenantId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/sign-in",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "sign-in"]
+        },
+        "description": "Intenta hacer login. Si el email no está verificado, devolverá error 400 con mensaje 'auth.emailNotVerified'"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Reenviar Email de Verificación",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{testEmail}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/tenant/{{tenantId}}/auth/send-email-address-verification-email",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "tenant", "{{tenantId}}", "auth", "send-email-address-verification-email"]
+        },
+        "description": "Envía un email con el link de verificación. El token se genera y se guarda en la BD."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Verificar Email (con token)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{verificationToken}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/verify-email",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "verify-email"]
+        },
+        "description": "Verifica el email usando el token. IMPORTANTE: Debes copiar el token de la BD o del email antes de ejecutar esta petición."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Sign In (Login) - Email Verificado",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const responseJson = pm.response.json();",
+              "    if (responseJson.token) {",
+              "        pm.collectionVariables.set('token', responseJson.token);",
+              "        console.log('✅ Token guardado:', responseJson.token);",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"Test123456!\",\n  \"tenantId\": \"{{tenantId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/sign-in",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "sign-in"]
+        },
+        "description": "Login exitoso después de verificar el email. Guarda automáticamente el token en las variables."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Get Current User (con token)",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/me",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "me"]
+        },
+        "description": "Obtiene la información del usuario actual usando el token. Verifica que emailVerified sea true."
+      },
+      "response": []
+    }
+  ]
+}

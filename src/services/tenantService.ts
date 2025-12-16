@@ -19,12 +19,21 @@ export default class TenantService {
   }
 
   /**
-   * Creates the default tenant or joins the default with
-   * roles passed.
-   * If default roles are empty, the admin will have to asign the roles
-   * to new users.
+   * Creates the default tenant or joins the default with roles passed.
+   * 
+   * 🏢 MODO ACTUAL: SINGLE TENANT (Una sola empresa)
+   * - Todos los usuarios comparten el mismo tenant
+   * - Ideal para una empresa con múltiples empleados
+   * 
+   * 🔄 PARA CAMBIAR A MULTI-TENANT (Plataforma digital para múltiples empresas):
+   * - Descomentar el bloque "MULTI-TENANT MODE" abajo
+   * - Comentar el bloque "SINGLE TENANT MODE"
+   * - Cada usuario tendrá su propio tenant aislado
    */
   async createOrJoinDefault({ roles }, transaction) {
+    // ========================================
+    // 🟢 SINGLE TENANT MODE (ACTIVO)
+    // ========================================
     const tenant = await TenantRepository.findDefault({
       ...this.options,
       transaction,
@@ -77,6 +86,71 @@ export default class TenantService {
         transaction,
       },
     );
+    // ========================================
+    // FIN SINGLE TENANT MODE
+    // ========================================
+
+    /* ========================================
+     * 🔵 MULTI-TENANT MODE (COMENTADO)
+     * ========================================
+     * Descomentar este bloque para convertir la aplicación en una
+     * plataforma digital donde cada empresa tiene su propio tenant.
+     * 
+     * Cada usuario que se registre creará automáticamente su propia
+     * organización con datos completamente aislados.
+     * ========================================
+    
+    // Check if user already has a tenant
+    const existingTenantUser = await TenantUserRepository.findByUser(
+      this.options.currentUser.id,
+      {
+        ...this.options,
+        transaction,
+      },
+    );
+
+    // If user already belongs to a tenant, don't create a new one
+    if (existingTenantUser && existingTenantUser.length > 0) {
+      console.log('👤 Usuario ya tiene tenant, no se crea uno nuevo');
+      return;
+    }
+
+    // Create a unique tenant name for this user
+    const tenantName = `${this.options.currentUser.email.split('@')[0]}-org`;
+    const tenantUrl = `${this.options.currentUser.id.substring(0, 8)}`;
+
+    console.log('🏢 Creando nuevo tenant para usuario:', this.options.currentUser.email);
+    console.log('📝 Nombre del tenant:', tenantName);
+
+    let record = await TenantRepository.create(
+      { name: tenantName, url: tenantUrl },
+      {
+        ...this.options,
+        transaction,
+      },
+    );
+
+    await SettingsService.findOrCreateDefault({
+      ...this.options,
+      currentTenant: record,
+      transaction,
+    });
+
+    await TenantUserRepository.create(
+      record,
+      this.options.currentUser,
+      [Roles.values.admin],
+      {
+        ...this.options,
+        transaction,
+      },
+    );
+
+    console.log('✅ Tenant creado con ID:', record.id);
+    
+     * ========================================
+     * FIN MULTI-TENANT MODE
+     * ======================================== */
   }
 
   async joinWithDefaultRolesOrAskApproval(

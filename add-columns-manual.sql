@@ -16,7 +16,9 @@ ADD COLUMN IF NOT EXISTS addressComplement VARCHAR(200) NULL AFTER address,
 ADD COLUMN IF NOT EXISTS zipCode VARCHAR(20) NULL AFTER addressComplement,
 ADD COLUMN IF NOT EXISTS city VARCHAR(100) NULL AFTER zipCode,
 ADD COLUMN IF NOT EXISTS country VARCHAR(100) NULL AFTER city,
-ADD COLUMN IF NOT EXISTS useSameAddressForBilling TINYINT(1) NOT NULL DEFAULT 1 AFTER country;
+ADD COLUMN IF NOT EXISTS useSameAddressForBilling TINYINT(1) NOT NULL DEFAULT 1 AFTER country,
+ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,8) NULL AFTER active,
+ADD COLUMN IF NOT EXISTS longitude DECIMAL(11,8) NULL AFTER latitude;
 
 -- 3. Modificar email y phoneNumber para que sean opcionales
 ALTER TABLE clientAccounts 

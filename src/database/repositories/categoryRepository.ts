@@ -3,6 +3,7 @@ import AuditLogRepository from './auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
+import Error400 from '../../errors/Error400';
 import Sequelize from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
@@ -101,6 +102,35 @@ class CategoryRepository {
             throw new Error404();
         }
 
+        // Prevent deleting a category in use by client accounts (check JSON array)
+        const { sequelize } = options.database;
+        const [results] = await sequelize.query(
+            `SELECT COUNT(*) as count 
+             FROM clientAccounts 
+             WHERE tenantId = :tenantId 
+             AND deletedAt IS NULL 
+             AND JSON_CONTAINS(categoryIds, :categoryId, '$')`,
+            {
+                replacements: {
+                    tenantId: currentTenant.id,
+                    categoryId: JSON.stringify(id),
+                },
+                transaction,
+            }
+        );
+        const inUseCount = (results as any)[0]?.count || 0;
+        
+        console.log('🔍 Category delete validation:', {
+            categoryId: id,
+            tenantId: currentTenant.id,
+            inUseCount,
+            query: `JSON_CONTAINS(categoryIds, '${JSON.stringify(id)}', '$')`
+        });
+
+        if (inUseCount > 0) {
+            throw new Error400(options.language, 'entities.category.errors.inUse', inUseCount);
+        }
+
         await record.destroy({
             transaction,
         });
@@ -184,6 +214,8 @@ class CategoryRepository {
         { filter, limit = 0, offset = 0, orderBy = '' },
         options: IRepositoryOptions,
     ) {
+        console.log('🧭 [CategoryRepository.findAndCountAll] incoming filter:', JSON.stringify(filter));
+        console.log('🧭 [CategoryRepository.findAndCountAll] incoming limit/offset:', limit, offset);
         const tenant = SequelizeRepository.getCurrentTenant(options);
 
         let whereAnd: Array<any> = [];
@@ -211,6 +243,7 @@ class CategoryRepository {
             }
 
             if (filter.module) {
+                console.log('🧭 [CategoryRepository] applying module filter:', filter.module);
                 whereAnd.push({
                     module: filter.module,
                 });
@@ -238,6 +271,7 @@ class CategoryRepository {
         }
 
         const where = { [Op.and]: whereAnd };
+        console.log('🧭 [CategoryRepository] final where:', JSON.stringify(where));
 
         let { rows, count } = await options.database.category.findAndCountAll({
             where,
@@ -249,6 +283,7 @@ class CategoryRepository {
                 : [['name', 'ASC']],
             transaction: SequelizeRepository.getTransaction(options),
         });
+        console.log('🧭 [CategoryRepository] result rows/count:', rows?.length, count);
 
         rows = await this._fillWithRelationsAndFilesForRows(rows, options);
 

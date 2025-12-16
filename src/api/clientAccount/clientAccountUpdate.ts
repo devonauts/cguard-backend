@@ -20,10 +20,13 @@ export default async (req, res, next) => {
       addressComplement: rawData.addressLine2 || rawData.addressComplement,
       // Mapear postalCode -> zipCode
       zipCode: rawData.postalCode || rawData.zipCode,
+      // Keep categoryIds array for N:N relationship
+      categoryIds: rawData.categoryIds || [],
     };
 
     console.log('📝 Data mapeada:', data);
     console.log('📝 Active mapeado:', data.active);
+    console.log('📝 CategoryIds:', data.categoryIds);
 
     // Remover campos del frontend que no existen en el modelo
     delete data.addressLine2;

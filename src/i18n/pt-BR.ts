@@ -87,6 +87,11 @@ const ptBR = {
   },
 
   entities: {
+    category: {
+      errors: {
+        inUse: 'Não é possível excluir a categoria porque está em uso por {0} cliente(s).',
+      }
+    },
     bannerSuperiorApp: {
       errors: {
         unique: {

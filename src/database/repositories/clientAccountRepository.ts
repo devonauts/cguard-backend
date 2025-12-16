@@ -38,11 +38,12 @@ class ClientAccountRepository {
           'useSameAddressForBilling',
           'faxNumber',
           'website',
+              'latitude',
+              'longitude',
           'importHash',
-          'categoryId',
+          'categoryIds',
           'active',
         ]),
-        // categoryId: data.categoryId || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -107,16 +108,18 @@ class ClientAccountRepository {
         'useSameAddressForBilling',
         'faxNumber',
         'website',
+        'latitude',
+        'longitude',
         'importHash',
-        'categoryId',
+        'categoryIds',
         'active',
       ]),
-      // categoryId: data.categoryId || null,
       updatedById: currentUser.id,
     };
 
     console.log('📥 UpdateData a guardar:', updateData);
     console.log('📥 UpdateData (active):', updateData.active);
+    console.log('📥 UpdateData (categoryIds):', updateData.categoryIds);
 
     record = await record.update(
       updateData,
@@ -182,14 +185,7 @@ class ClientAccountRepository {
       options,
     );
 
-    const include = [
-      {
-        model: options.database.category,
-        as: 'category',
-        required: false,
-        attributes: ['id', 'name'],
-      },
-    ];
+    const include = [];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
       options,
@@ -276,19 +272,13 @@ class ClientAccountRepository {
     { filter, limit = 0, offset = 0, orderBy = '' },
     options: IRepositoryOptions,
   ) {
+    console.log('🔍 [ClientAccountRepo] incoming filter:', JSON.stringify(filter));
     const tenant = SequelizeRepository.getCurrentTenant(
       options,
     );
 
     let whereAnd: Array<any> = [];
-    let include = [
-      {
-        model: options.database.category,
-        as: 'category',
-        required: false,
-        attributes: ['id', 'name'],
-      },
-    ];
+    let include = [];
 
     whereAnd.push({
       tenantId: tenant.id,
@@ -302,6 +292,7 @@ class ClientAccountRepository {
       }
 
       if (filter.name) {
+        console.log('🔍 [ClientAccountRepo] searching name/lastName with:', filter.name);
         whereAnd.push({
           [Op.or]: [
             SequelizeFilterUtils.ilikeIncludes(
@@ -406,15 +397,17 @@ class ClientAccountRepository {
         );
       }
 
-      if (filter.category) {
-        console.log('🔍 Filtro de categoría recibido:', filter.category);
-        console.log('🔍 Tipo de filtro:', typeof filter.category);
+      if (filter.categoryIds) {
+        console.log('🔍 Filtro de categoryIds recibido:', filter.categoryIds);
+        console.log('🔍 Tipo de filtro:', typeof filter.categoryIds);
         
-        // Simplemente filtrar por categoryId directamente
-        whereAnd.push({
-          ['categoryId']: SequelizeFilterUtils.uuid(filter.category),
-        });
-        console.log('✅ Filtrando por categoryId:', filter.category);
+        // Filter by category using JSON_CONTAINS for MySQL
+        whereAnd.push(
+          Sequelize.literal(
+            `JSON_CONTAINS(categoryIds, '"${filter.categoryIds}"')`
+          )
+        );
+        console.log('✅ Filtrando por categoryIds en JSON field:', filter.categoryIds);
       }
 
       if (filter.createdAtRange) {
@@ -447,6 +440,7 @@ class ClientAccountRepository {
     }
 
     const where = { [Op.and]: whereAnd };
+    console.log('🔍 [ClientAccountRepo] final where:', JSON.stringify(where, null, 2));
 
     let {
       rows,
@@ -463,6 +457,8 @@ class ClientAccountRepository {
         options,
       ),
     });
+    console.log('🔍 [ClientAccountRepo] found rows:', rows?.length, 'count:', count);
+    console.log('🔍 [ClientAccountRepo] raw results:', rows?.map(r => ({ id: r.id, name: r.name, email: r.email, tenantId: r.tenantId })));
 
     rows = await this._fillWithRelationsAndFilesForRows(
       rows,
@@ -559,6 +555,22 @@ class ClientAccountRepository {
     }
 
     const output = record.get({ plain: true });
+
+    // Load categories from categoryIds JSON array
+    if (output.categoryIds && Array.isArray(output.categoryIds) && output.categoryIds.length > 0) {
+      const transaction = SequelizeRepository.getTransaction(options);
+      const categories = await options.database.category.findAll({
+        where: {
+          id: {
+            [Op.in]: output.categoryIds,
+          },
+        },
+        transaction,
+      });
+      output.categories = categories.map(cat => cat.get({ plain: true }));
+    } else {
+      output.categories = [];
+    }
 
     return output;
   }

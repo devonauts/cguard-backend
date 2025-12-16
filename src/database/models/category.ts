@@ -99,11 +99,12 @@ export default function (sequelize) {
             },
         });
 
-        // Relationship with client accounts
-        models.category.hasMany(models.clientAccount, {
+        // Many-to-Many relationship with client accounts
+        models.category.belongsToMany(models.clientAccount, {
             as: 'clientAccounts',
+            through: 'clientAccountCategories',
             foreignKey: 'categoryId',
-            constraints: false,
+            otherKey: 'clientAccountId',
         });
     };
 

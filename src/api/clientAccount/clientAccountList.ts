@@ -9,9 +9,12 @@ export default async (req, res, next) => {
       Permissions.values.clientAccountRead,
     );
 
+    console.log('📥 [ClientAccountList] query params:', JSON.stringify(req.query));
     const payload = await new ClientAccountService(
       req,
     ).findAndCountAll(req.query);
+    console.log('📤 [ClientAccountList] rows:', payload?.rows?.length, 'count:', payload?.count);
+    console.log('📤 [ClientAccountList] first 3 names:', payload?.rows?.slice(0, 3).map(r => r.name));
 
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {

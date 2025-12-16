@@ -11,6 +11,7 @@ import TenantRepository from '../../database/repositories/tenantRepository';
 import { tenantSubdomain } from '../tenantSubdomain';
 import Error401 from '../../errors/Error401';
 import dayjs from 'dayjs';
+import Roles from '../../security/roles';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -100,17 +101,30 @@ class AuthService {
           ),
         );
 
-        if (!isEmailVerified && EmailSender.isConfigured) {
-          await this.sendEmailAddressVerificationEmail(
-            options.language,
-            existingUser.email,
-            tenantId,
-            {
-              ...options,
-              transaction,
-              bypassPermissionValidation: true,
-            },
-          );
+        if (!isEmailVerified) {
+          if (EmailSender.isConfigured) {
+            console.log('📤 [Signup] Enviando email de verificación...');
+            await this.sendEmailAddressVerificationEmail(
+              options.language,
+              existingUser.email,
+              tenantId,
+              {
+                ...options,
+                transaction,
+                bypassPermissionValidation: true,
+              },
+            );
+          } else {
+            console.log('⚠️ [Signup] EmailSender no configurado, generando token de todas formas...');
+            const token = await UserRepository.generateEmailVerificationToken(
+              existingUser.email,
+              {
+                ...options,
+                transaction,
+                bypassPermissionValidation: true,
+              },
+            );
+          }
         }
 
         const token = jwt.sign(
@@ -165,16 +179,30 @@ class AuthService {
         ),
       );
 
-      if (!isEmailVerified && EmailSender.isConfigured) {
-        await this.sendEmailAddressVerificationEmail(
-          options.language,
-          newUser.email,
-          tenantId,
-          {
-            ...options,
-            transaction,
-          },
-        );
+
+
+      if (!isEmailVerified) {
+        if (EmailSender.isConfigured) {
+          console.log('📤 [Signup] Enviando email de verificación...');
+          await this.sendEmailAddressVerificationEmail(
+            options.language,
+            newUser.email,
+            tenantId,
+            {
+              ...options,
+              transaction,
+            },
+          );
+        } else {
+          const token = await UserRepository.generateEmailVerificationToken(
+            newUser.email,
+            {
+              ...options,
+              transaction,
+              bypassPermissionValidation: true,
+            },
+          );
+        }
       }
 
       const token = jwt.sign(
@@ -308,8 +336,8 @@ class AuthService {
       }).joinWithDefaultRolesOrAskApproval(
         {
           tenantId,
-          // leave empty to require admin's approval
-          roles: [],
+          // Assign admin role for new users in multi-tenant mode
+          roles: [Roles.values.admin],
         },
         options,
       );
@@ -333,8 +361,8 @@ class AuthService {
         currentUser,
       }).createOrJoinDefault(
         {
-          // leave empty to require admin's approval
-          roles: [],
+          // Assign admin role for the first user of the tenant
+          roles: [Roles.values.admin],
         },
         options.transaction,
       );
@@ -466,10 +494,6 @@ class AuthService {
 
       // For development: log the reset link instead of sending email
       if (!EmailSender.isConfigured) {
-        console.log('🔑 PASSWORD RESET LINK (Development Mode):');
-        console.log(`📧 Email: ${email}`);
-        console.log(`🔗 Reset Link: ${link}`);
-        console.log(`🎫 Token: ${token}`);
         return true; // Return success without sending email
       }
     } catch (error) {

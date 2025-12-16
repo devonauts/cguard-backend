@@ -93,12 +93,25 @@ export default function (sequelize) {
           len: [0, 255],
         }
       },
+      latitude: {
+        type: DataTypes.DECIMAL(10, 8),
+        allowNull: true,
+      },
+      longitude: {
+        type: DataTypes.DECIMAL(11, 8),
+        allowNull: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,
         validate: {
           len: [0, 255],
         },
+      },
+      categoryIds: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
       },
       active: {
         type: DataTypes.BOOLEAN,
@@ -128,16 +141,6 @@ export default function (sequelize) {
       foreignKey: {
         allowNull: false,
       },
-    });
-
-    // Category relationship - DESCOMENTADO Y ARREGLADO
-    models.clientAccount.belongsTo(models.category, {
-      as: 'category',
-      foreignKey: {
-        name: 'categoryId',
-        allowNull: true, // Permitir null si la categoría es opcional
-      },
-      constraints: false,
     });
 
     // Audit relationships

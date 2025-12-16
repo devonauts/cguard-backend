@@ -92,6 +92,11 @@ const es = {
   },
 
   entities: {
+    category: {
+      errors: {
+        inUse: 'No se puede eliminar la categoría porque está en uso por {0} cliente(s).',
+      }
+    },
     bannerSuperiorApp: {
       errors: {
         unique: {
