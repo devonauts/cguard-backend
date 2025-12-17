@@ -9,9 +9,11 @@ export default async (req, res, next) => {
       Permissions.values.businessInfoEdit,
     );
 
+    const input = req.body.data || req.body || {};
+
     const payload = await new BusinessInfoService(req).update(
       req.params.id,
-      req.body.data,
+      input,
     );
 
     await ApiResponseHandler.success(req, res, payload);

@@ -7,13 +7,13 @@ export default (app) => {
     `/tenant/:tenantId/business-info/:id`,
     require('./businessInfoUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/business-info/import`,
-    require('./businessInfoImport').default,
+  app.get(
+    `/tenant/:tenantId/business-info/export`,
+    require('./businessInfoExport').default,
   );
-  app.delete(
-    `/tenant/:tenantId/business-info`,
-    require('./businessInfoDestroy').default,
+  app.get(
+    `/tenant/:tenantId/business-info/:id`,
+    require('./businessInfoFind').default,
   );
   app.get(
     `/tenant/:tenantId/business-info/autocomplete`,
@@ -26,5 +26,13 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/business-info/:id`,
     require('./businessInfoFind').default,
+  );
+  app.get(
+    `/tenant/:tenantId/business-info/export`,
+    require('./businessInfoExport').default,
+  );
+  app.post(
+    `/tenant/:tenantId/business-info/import-file`,
+    require('./businessInfoFileImport').default,
   );
 };

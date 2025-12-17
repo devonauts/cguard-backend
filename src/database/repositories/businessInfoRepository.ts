@@ -30,7 +30,16 @@ class BusinessInfoRepository {
           'description',
           'contactPhone',
           'contactEmail',
-          'address',          
+          'address',
+          'latitud',
+          'longitud',
+          'categoryIds',
+          'clientAccountId',
+          'secondAddress',
+          'country',
+          'city',
+          'postalCode',
+          'active',
           'importHash',
         ]),
 
@@ -100,7 +109,16 @@ class BusinessInfoRepository {
           'description',
           'contactPhone',
           'contactEmail',
-          'address',          
+          'address',
+          'latitud',
+          'longitud',
+          'categoryIds',
+          'clientAccountId',
+          'secondAddress',
+          'country',
+          'city',
+          'postalCode',
+          'active',
           'importHash',
         ]),
 
@@ -174,7 +192,10 @@ class BusinessInfoRepository {
     );
 
     const include = [
-
+      {
+        model: options.database.clientAccount,
+        as: 'clientAccount',
+      },
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
@@ -268,7 +289,10 @@ class BusinessInfoRepository {
 
     let whereAnd: Array<any> = [];
     let include = [
-      
+      {
+        model: options.database.clientAccount,
+        as: 'clientAccount',
+      },
     ];
 
     whereAnd.push({
@@ -282,12 +306,14 @@ class BusinessInfoRepository {
         });
       }
 
-      if (filter.companyName) {
+      // Support multiple possible incoming filter keys for name (legacy compat)
+      const nameFilter = filter.companyName || filter.name || filter.postSiteName;
+      if (nameFilter) {
         whereAnd.push(
           SequelizeFilterUtils.ilikeIncludes(
             'businessInfo',
             'companyName',
-            filter.companyName,
+            nameFilter,
           ),
         );
       }
@@ -330,6 +356,64 @@ class BusinessInfoRepository {
             filter.address,
           ),
         );
+      }
+
+      if (filter.secondAddress) {
+        whereAnd.push(
+          SequelizeFilterUtils.ilikeIncludes(
+            'businessInfo',
+            'secondAddress',
+            filter.secondAddress,
+          ),
+        );
+      }
+
+      if (filter.city) {
+        whereAnd.push(
+          SequelizeFilterUtils.ilikeIncludes(
+            'businessInfo',
+            'city',
+            filter.city,
+          ),
+        );
+      }
+
+      if (filter.country) {
+        whereAnd.push(
+          SequelizeFilterUtils.ilikeIncludes(
+            'businessInfo',
+            'country',
+            filter.country,
+          ),
+        );
+      }
+
+      if (filter.postalCode) {
+        whereAnd.push(
+          SequelizeFilterUtils.ilikeIncludes(
+            'businessInfo',
+            'postalCode',
+            filter.postalCode,
+          ),
+        );
+      }
+
+      // Filter by active (supports true/false, 1/0 and string values)
+      if (filter.active !== undefined && filter.active !== null && filter.active !== '') {
+        const raw = filter.active;
+        let activeBool;
+        if (typeof raw === 'boolean') {
+          activeBool = raw;
+        } else if (typeof raw === 'number') {
+          activeBool = raw === 1;
+        } else if (typeof raw === 'string') {
+          const val = raw.toLowerCase();
+          activeBool = val === '1' || val === 'true';
+        } else {
+          activeBool = !!raw;
+        }
+
+        whereAnd.push({ active: activeBool });
       }
 
       if (filter.createdAtRange) {
@@ -485,6 +569,18 @@ class BusinessInfoRepository {
         transaction,
       }),
     );
+
+    // Attach clientAccount object and a combined name field
+    try {
+      const client = await record.getClientAccount({ transaction });
+      output.clientAccount = client ? client.get({ plain: true }) : null;
+      output.clientAccountName = output.clientAccount
+        ? `${output.clientAccount.name || ''} ${output.clientAccount.lastName || ''}`.trim()
+        : null;
+    } catch (e) {
+      output.clientAccount = null;
+      output.clientAccountName = null;
+    }
 
     return output;
   }

@@ -100,6 +100,7 @@ require('./tutorial').default(routes);
 require('./completionOfTutorial').default(routes);
 require('./inventoryHistory').default(routes);
 require('./businessInfo').default(routes);
+require('./postSite').default(routes);
 require('./insurance').default(routes);
 require('./notificationRecipient').default(routes);
 require('./report').default(routes);

@@ -38,6 +38,58 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
+      latitud: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        validate: {
+          len: [0, 100],
+        }
+      },
+      longitud: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        validate: {
+          len: [0, 100],
+        }
+      },
+      categoryIds: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
+      active: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      secondAddress: {
+        type: DataTypes.STRING(200),
+        allowNull: true,
+        validate: {
+          len: [0, 200],
+        }
+      },
+      country: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        validate: {
+          len: [0, 100],
+        }
+      },
+      city: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        validate: {
+          len: [0, 100],
+        }
+      },
+      postalCode: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+        validate: {
+          len: [0, 20],
+        }
+      },
       address: {
         type: DataTypes.TEXT,
         allowNull: false,
@@ -71,6 +123,14 @@ export default function (sequelize) {
 
   businessInfo.associate = (models) => {
 
+    // Relación con cliente (opcional)
+    models.businessInfo.belongsTo(models.clientAccount, {
+      as: 'clientAccount',
+      foreignKey: {
+        allowNull: true,
+      },
+      constraints: false,
+    });
 
     models.businessInfo.hasMany(models.file, {
       as: 'logo',
