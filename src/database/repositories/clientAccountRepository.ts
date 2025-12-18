@@ -297,7 +297,6 @@ class ClientAccountRepository {
     { filter, limit = 0, offset = 0, orderBy = '' },
     options: IRepositoryOptions,
   ) {
-    console.log('🔍 [ClientAccountRepo] incoming filter:', JSON.stringify(filter));
     const tenant = SequelizeRepository.getCurrentTenant(
       options,
     );
@@ -317,7 +316,6 @@ class ClientAccountRepository {
       }
 
       if (filter.name) {
-        console.log('🔍 [ClientAccountRepo] searching name/lastName with:', filter.name);
         whereAnd.push({
           [Op.or]: [
             SequelizeFilterUtils.ilikeIncludes(
@@ -465,8 +463,6 @@ class ClientAccountRepository {
     }
 
     const where = { [Op.and]: whereAnd };
-    console.log('🔍 [ClientAccountRepo] final where:', JSON.stringify(where, null, 2));
-
     let {
       rows,
       count,

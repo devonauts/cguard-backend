@@ -174,11 +174,9 @@ class BusinessInfoRepository {
       throw new Error404();
     }
 
-    // Force physical deletion to remove the row from the database
-    // (model is paranoid; default destroy() only sets `deletedAt`).
+    // Soft-delete the record (set `deletedAt`) instead of physical deletion.
     await record.destroy({
       transaction,
-      force: true,
     });
 
     await this._createAuditLog(

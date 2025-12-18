@@ -83,10 +83,6 @@ export default class PermissionChecker {
    * Checks if the current user roles allows the permission.
    */
   hasRolePermission(permission) {
-    console.log('🔍 hasRolePermission called');
-    console.log('  👤 currentUserRolesIds:', this.currentUserRolesIds);
-    console.log('  🔑 permission.allowedRoles:', permission.allowedRoles);
-    
     const result = this.currentUserRolesIds.some((role) =>
       permission.allowedRoles.some(
         (allowedRole) => allowedRole === role,

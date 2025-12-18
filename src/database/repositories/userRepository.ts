@@ -74,12 +74,29 @@ export default class UserRepository {
       options,
     );
 
+    // Map only allowed fields from incoming data to avoid unexpected DB writes
+    const createData: any = {
+      id: data.id || undefined,
+      fullName: data.fullName ?? undefined,
+      firstName: data.firstName ?? null,
+      lastName: data.lastName ?? null,
+      phoneNumber: data.phoneNumber ?? null,
+      importHash: data.importHash ?? null,
+      email: data.email,
+      password: data.password,
+      emailVerified: typeof data.emailVerified !== 'undefined' ? data.emailVerified : false,
+      emailVerificationToken: data.emailVerificationToken ?? null,
+      emailVerificationTokenExpiresAt: data.emailVerificationTokenExpiresAt ?? null,
+      provider: data.provider ?? null,
+      providerId: data.providerId ?? null,
+      passwordResetToken: data.passwordResetToken ?? null,
+      passwordResetTokenExpiresAt: data.passwordResetTokenExpiresAt ?? null,
+      jwtTokenInvalidBefore: data.jwtTokenInvalidBefore ?? null,
+      // createdAt/updatedAt/deletedAt/createdById/updatedById are managed by Sequelize or audit, avoid forcing them here
+    };
+
     const user = await options.database.user.create(
-      {
-        email: data.email,
-        firstName: data.firstName,
-        password: data.password,
-      },
+      createData,
       { transaction },
     );
 

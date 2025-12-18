@@ -140,12 +140,31 @@ class AuthService {
         return token;
       }
 
+      const body = options && options.body ? options.body : {};
+
+      const createData: any = {
+        id: body.id || undefined,
+        fullName: body.fullName ?? undefined,
+        firstName: body.firstName || email.split('@')[0],
+        lastName: body.lastName ?? null,
+        phoneNumber: body.phoneNumber ?? null,
+        importHash: body.importHash ?? null,
+        email: email,
+        password: hashedPassword,
+        emailVerified: typeof body.emailVerified !== 'undefined' ? body.emailVerified : false,
+        emailVerificationToken: body.emailVerificationToken ?? null,
+        emailVerificationTokenExpiresAt: body.emailVerificationTokenExpiresAt ?? null,
+        provider: body.provider ?? null,
+        providerId: body.providerId ?? null,
+        passwordResetToken: body.passwordResetToken ?? null,
+        passwordResetTokenExpiresAt: body.passwordResetTokenExpiresAt ?? null,
+        jwtTokenInvalidBefore: body.jwtTokenInvalidBefore ?? null,
+      };
+
+      console.log('📥 Creating new user with data keys:', Object.keys(createData));
+
       const newUser = await UserRepository.createFromAuth(
-        {
-          firstName: email.split('@')[0],
-          password: hashedPassword,
-          email: email,
-        },
+        createData,
         {
           ...options,
           transaction,
