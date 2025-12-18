@@ -174,8 +174,11 @@ class BusinessInfoRepository {
       throw new Error404();
     }
 
+    // Force physical deletion to remove the row from the database
+    // (model is paranoid; default destroy() only sets `deletedAt`).
     await record.destroy({
       transaction,
+      force: true,
     });
 
     await this._createAuditLog(
@@ -307,7 +310,15 @@ class BusinessInfoRepository {
       }
 
       // Support multiple possible incoming filter keys for name (legacy compat)
-      const nameFilter = filter.companyName || filter.name || filter.postSiteName;
+      // Accept common aliases from frontend search inputs: `companyName`, `name`,
+      // `postSiteName`, `q`, `query`, `search` — always search on `companyName`.
+      const nameFilter =
+        filter.companyName ||
+        filter.name ||
+        filter.postSiteName ||
+        filter.q ||
+        filter.query ||
+        filter.search;
       if (nameFilter) {
         whereAnd.push(
           SequelizeFilterUtils.ilikeIncludes(
@@ -398,22 +409,60 @@ class BusinessInfoRepository {
         );
       }
 
-      // Filter by active (supports true/false, 1/0 and string values)
+      if (filter.categoryIds) {
+        // Qualify column with main table name to avoid ambiguity when joins exist
+        // Use model alias `businessInfo` (Sequelize uses model name as alias)
+        const mainAlias = 'businessInfo';
+
+        // Support filtering by single category id or array of category ids.
+        if (Array.isArray(filter.categoryIds)) {
+          whereAnd.push({
+            [Op.or]: filter.categoryIds.map((id) =>
+              Sequelize.literal(
+                `JSON_CONTAINS(${mainAlias}.categoryIds, '${JSON.stringify(id)}')`,
+              ),
+            ),
+          });
+        } else {
+          whereAnd.push(
+            Sequelize.literal(
+              `JSON_CONTAINS(${mainAlias}.categoryIds, '${JSON.stringify(
+                filter.categoryIds,
+              )}')`,
+            ),
+          );
+        }
+      }
+
+      // Filter by active. Accepts true/false, 1/0, string values.
+      // Special case: treat 'all'/'todos'/'both' as "no filter" (show both active and archived).
       if (filter.active !== undefined && filter.active !== null && filter.active !== '') {
         const raw = filter.active;
-        let activeBool;
-        if (typeof raw === 'boolean') {
-          activeBool = raw;
-        } else if (typeof raw === 'number') {
-          activeBool = raw === 1;
-        } else if (typeof raw === 'string') {
-          const val = raw.toLowerCase();
-          activeBool = val === '1' || val === 'true';
-        } else {
-          activeBool = !!raw;
-        }
 
-        whereAnd.push({ active: activeBool });
+        // If frontend explicitly requests 'all' variants, skip adding any active filter
+        if (typeof raw === 'string') {
+          const val = raw.toLowerCase();
+          if (['all', 'todos', 'both', 'any'].includes(val)) {
+            // do not add active filter => show both active and archived
+          } else {
+            let activeBool: boolean;
+            if (val === '1' || val === 'true') {
+              activeBool = true;
+            } else if (val === '0' || val === 'false') {
+              activeBool = false;
+            } else {
+              // Fallback: try to coerce
+              activeBool = !!raw;
+            }
+            whereAnd.push({ active: activeBool });
+          }
+        } else if (typeof raw === 'boolean') {
+          whereAnd.push({ active: raw });
+        } else if (typeof raw === 'number') {
+          whereAnd.push({ active: raw === 1 });
+        } else {
+          whereAnd.push({ active: !!raw });
+        }
       }
 
       if (filter.createdAtRange) {

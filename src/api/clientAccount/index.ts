@@ -11,6 +11,10 @@ export default (app) => {
     `/tenant/:tenantId/client-account/import`,
     require('./clientAccountImport').default,
   );
+  app.post(
+    `/tenant/:tenantId/client-account/destroy-all`,
+    require('./clientAccountDestroy').default,
+  );
   app.delete(
     `/tenant/:tenantId/client-account`,
     require('./clientAccountDestroy').default,

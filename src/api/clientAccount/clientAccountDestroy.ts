@@ -9,8 +9,10 @@ export default async (req, res, next) => {
       Permissions.values.clientAccountDestroy,
     );
 
+    const ids = req.query.ids || (req.body && req.body.ids);
+
     await new ClientAccountService(req).destroyAll(
-      req.query.ids,
+      ids,
     );
 
     const payload = true;

@@ -7,6 +7,10 @@ export default (app) => {
     `/tenant/:tenantId/business-info/:id`,
     require('./businessInfoUpdate').default,
   );
+  app.delete(
+    `/tenant/:tenantId/business-info`,
+    require('./businessInfoDestroy').default,
+  );
   app.get(
     `/tenant/:tenantId/business-info/export`,
     require('./businessInfoExport').default,
@@ -33,6 +37,11 @@ export default (app) => {
   );
   app.post(
     `/tenant/:tenantId/business-info/import-file`,
+    require('./businessInfoFileImport').default,
+  );
+  // Backwards-compatible route: accept '/import' as alternative to '/import-file'
+  app.post(
+    `/tenant/:tenantId/business-info/import`,
     require('./businessInfoFileImport').default,
   );
 };

@@ -19,10 +19,10 @@ export default class ApiResponseHandler {
       error &&
       [400, 401, 403, 404].includes(error.code)
     ) {
-      res.status(error.code).send(error.message);
+      res.status(error.code).json({ message: error.message });
     } else {
       console.error(error);
-      res.status(500).send(error.message);
+      res.status(500).json({ message: error.message || 'Internal server error' });
     }
   }
 }

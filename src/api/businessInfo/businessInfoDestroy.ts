@@ -9,8 +9,11 @@ export default async (req, res, next) => {
       Permissions.values.businessInfoDestroy,
     );
 
+    // Support ids passed either as query params or in the request body (axios.delete sends body in `data`).
+    const ids = req.query.ids || req.body && req.body.ids;
+
     await new BusinessInfoService(req).destroyAll(
-      req.query.ids,
+      ids,
     );
 
     const payload = true;

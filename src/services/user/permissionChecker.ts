@@ -122,21 +122,10 @@ export default class PermissionChecker {
    * Returns the Current User Roles.
    */
   get currentUserRolesIds() {
-    console.log('🔍 currentUserRolesIds getter called');
-    console.log('  👤 currentUser:', this.currentUser?.id);
-    console.log('  🏢 currentTenant:', this.currentTenant?.id);
-    
     if (!this.currentUser || !this.currentUser.tenants) {
-      console.log('  ❌ No currentUser or currentUser.tenants');
       return [];
     }
     
-    console.log('  📋 currentUser.tenants:', this.currentUser.tenants?.length, 'tenants');
-    console.log('  📋 tenants details:', this.currentUser.tenants?.map(t => ({
-      id: t.tenant?.id, 
-      status: t.status, 
-      roles: t.roles
-    })));
 
     const tenant = this.currentUser.tenants
       .filter(
@@ -149,13 +138,8 @@ export default class PermissionChecker {
       });
 
     if (!tenant) {
-      console.log('  ❌ No matching active tenant found');
       return [];
     }
-    
-    console.log('  ✅ Found matching tenant:', tenant.tenant?.id);
-    console.log('  🔑 Tenant roles:', tenant.roles);
-    console.log('  🔍 Tenant roles type:', typeof tenant.roles);
 
     // Handle both array and JSON string formats
     let roles = [];
@@ -169,9 +153,7 @@ export default class PermissionChecker {
         roles = [];
       }
     }
-    
-    console.log('  🎯 Processed roles:', roles);
-    return roles;
+        return roles;
   }
 
   /**

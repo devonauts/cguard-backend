@@ -62,11 +62,6 @@ export default async (req, res, next) => {
           };
         });
       }
-
-      // Debug: log payload that will be sent to frontend
-      console.log('businessInfoList payload sample:',
-        Array.isArray(payload.rows) ? payload.rows.slice(0,3) : payload.rows,
-      );
     } catch (e) {
       console.error('Error logging businessInfoList payload:', e);
     }

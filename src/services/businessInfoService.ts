@@ -103,7 +103,47 @@ export default class BusinessInfoService {
     );
 
     try {
-      for (const id of ids) {
+      // Normalize incoming ids to an array so we accept:
+      // - Array of ids
+      // - JSON string like '["id1","id2"]'
+      // - Comma-separated string 'id1,id2'
+      // - Object with numeric keys (from some querystring parsers)
+      let idsArray: any[] = [];
+
+      if (!ids) {
+        idsArray = [];
+      } else if (Array.isArray(ids)) {
+        idsArray = ids;
+      } else if (typeof ids === 'string') {
+        const raw = ids.trim();
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            idsArray = parsed;
+          } else if (typeof parsed === 'string') {
+            idsArray = parsed.split(',').map((s) => s.trim()).filter(Boolean);
+          } else {
+            idsArray = [parsed];
+          }
+        } catch (err) {
+          idsArray = raw.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      } else if (typeof ids === 'object') {
+        try {
+          // If it's array-like (has length), convert to array
+          if (typeof (ids as any).length === 'number') {
+            idsArray = Array.from(ids as any);
+          } else {
+            idsArray = Object.values(ids as any).map(String);
+          }
+        } catch (err) {
+          idsArray = [];
+        }
+      } else {
+        idsArray = [ids];
+      }
+
+      for (const id of idsArray) {
         await BusinessInfoRepository.destroy(id, {
           ...this.options,
           transaction,
@@ -159,10 +199,64 @@ export default class BusinessInfoService {
           continue;
         }
 
-        // Basic validation: companyName and address required
-        if (!data.companyName || !data.address) {
+        // Normalize CSV/Front field names to internal fields
+        // Accept both the backend template and the frontend CSV headers.
+        if (data.clientId && !data.clientAccountId) {
+          data.clientAccountId = data.clientId;
+        }
+
+        if (data.clientName && !data.clientAccountName) {
+          data.clientAccountName = data.clientName;
+        }
+
+        if (data.clientEmail && !data.clientEmail) {
+          // redundant guard but keep the field available for client creation
+          data.clientEmail = data.clientEmail;
+        }
+
+        if (data.siteName && !data.companyName) {
+          data.companyName = data.siteName;
+        }
+
+        if (data.secondAddress && !data.addressComplement) {
+          data.addressComplement = data.secondAddress;
+        }
+
+        // categoryIds: accept CSV as JSON string or comma/semicolon separated
+        if (data.categoryIds && !Array.isArray(data.categoryIds)) {
+          const raw = String(data.categoryIds).trim();
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              data.categoryIds = parsed;
+            } else if (typeof parsed === 'string') {
+              data.categoryIds = parsed.split(/[,;|]/).map((s) => s.trim()).filter(Boolean);
+            }
+          } catch (err) {
+            data.categoryIds = raw.split(/[,;|]/).map((s) => s.trim()).filter(Boolean);
+          }
+        }
+
+        // Keep clientEmail/contactEmail for possible client creation
+        if (!data.clientEmail && data.contactEmail) {
+          data.clientEmail = data.contactEmail;
+        }
+
+        // Basic validation: required fields per UI
+        const missingFields: string[] = [];
+        if (!data.clientAccountId && !data.clientAccountName) missingFields.push('clientAccount');
+        if (!data.companyName) missingFields.push('companyName');
+        if (!data.description) missingFields.push('description');
+        if (!data.contactPhone) missingFields.push('contactPhone');
+        if (!data.contactEmail) missingFields.push('contactEmail');
+        if (!data.address) missingFields.push('address');
+        if (!data.postalCode) missingFields.push('postalCode');
+        if (!data.city) missingFields.push('city');
+        if (!data.country) missingFields.push('country');
+
+        if (missingFields.length > 0) {
           results.failed++;
-          results.errors.push({ row: i + 1, name: data.companyName, error: 'Campos obligatorios faltantes' });
+          results.errors.push({ row: i + 1, name: data.companyName, error: `Campos obligatorios faltantes: ${missingFields.join(', ')}` });
           continue;
         }
 
@@ -170,6 +264,23 @@ export default class BusinessInfoService {
           ...data,
           importHash,
         };
+
+        // If clientAccountName was provided (not an id), try to resolve it to an id
+        if (dataToCreate.clientAccountName && !dataToCreate.clientAccountId) {
+          try {
+            const matches = await ClientAccountRepository.findAllAutocomplete(
+              dataToCreate.clientAccountName,
+              1,
+              this.options,
+            );
+            if (matches && matches.length > 0) {
+              dataToCreate.clientAccountId = matches[0].id;
+            }
+          } catch (err) {
+            // resolution failed silently; creation will proceed without clientAccountId
+            console.log('⚠️ No se pudo resolver clientAccountName a id:', dataToCreate.clientAccountName);
+          }
+        }
 
         await this.create(dataToCreate);
         results.success++;
@@ -225,11 +336,14 @@ export default class BusinessInfoService {
         doc.fontSize(fontSize).font('Helvetica-Bold');
 
         const cols = [
-          { label: 'Nombre', width: usableWidth * 0.2 },
-          { label: 'Email', width: usableWidth * 0.2 },
-          { label: 'Teléfono', width: usableWidth * 0.15 },
-          { label: 'Dirección', width: usableWidth * 0.25 },
-          { label: 'Ciudad', width: usableWidth * 0.1 },
+          { label: 'Nombre', width: usableWidth * 0.18 },
+          { label: 'Cliente', width: usableWidth * 0.15 },
+          { label: 'Email', width: usableWidth * 0.16 },
+          { label: 'Teléfono', width: usableWidth * 0.12 },
+          { label: 'Dirección', width: usableWidth * 0.20 },
+          { label: 'Ciudad', width: usableWidth * 0.09 },
+          { label: 'País', width: usableWidth * 0.06 },
+          { label: 'Estado', width: usableWidth * 0.04 },
         ];
 
         let x = marginLeft;
@@ -262,13 +376,20 @@ export default class BusinessInfoService {
           let xx = marginLeft;
           doc.text(row.companyName || '', xx, currentY, { width: cols[0].width });
           xx += cols[0].width;
-          doc.text(row.contactEmail || '', xx, currentY, { width: cols[1].width });
+          doc.text(row.clientAccountName || '', xx, currentY, { width: cols[1].width });
           xx += cols[1].width;
-          doc.text(row.contactPhone || '', xx, currentY, { width: cols[2].width });
+          doc.text(row.contactEmail || '', xx, currentY, { width: cols[2].width });
           xx += cols[2].width;
-          doc.text(row.address || '', xx, currentY, { width: cols[3].width });
+          doc.text(row.contactPhone || '', xx, currentY, { width: cols[3].width });
           xx += cols[3].width;
-          doc.text(row.city || '', xx, currentY, { width: cols[4].width });
+          doc.text(row.address || '', xx, currentY, { width: cols[4].width });
+          xx += cols[4].width;
+          doc.text(row.city || '', xx, currentY, { width: cols[5].width });
+          xx += cols[5].width;
+          doc.text(row.country || '', xx, currentY, { width: cols[6].width });
+          xx += cols[6].width;
+          const status = row.active === false || row.active === 'false' ? 'Archivado' : 'Activo';
+          doc.text(status, xx, currentY, { width: cols[7].width });
 
           currentY += 18;
         });
@@ -300,8 +421,8 @@ export default class BusinessInfoService {
     worksheet.getRow(3).height = 5;
 
     const headerRow = worksheet.getRow(4);
-    const headers = ['Nombre', 'Email', 'Teléfono', 'Dirección', 'Ciudad'];
-    const widths = [40, 35, 25, 50, 20];
+    const headers = ['Nombre', 'Cliente', 'Email', 'Teléfono', 'Dirección', 'Ciudad', 'País', 'Estado'];
+    const widths = [30, 25, 30, 20, 50, 18, 12, 10];
 
     headers.forEach((header, index) => {
       const cell = headerRow.getCell(index + 1);
@@ -313,7 +434,17 @@ export default class BusinessInfoService {
     let currentRow = 5;
     rows.forEach((r) => {
       const row = worksheet.getRow(currentRow);
-      row.values = [r.companyName || '', r.contactEmail || '', r.contactPhone || '', r.address || '', r.city || ''];
+      const status = r.active === false || r.active === 'false' ? 'Archivado' : 'Activo';
+      row.values = [
+        r.companyName || '',
+        r.clientAccountName || '',
+        r.contactEmail || '',
+        r.contactPhone || '',
+        r.address || '',
+        r.city || '',
+        r.country || '',
+        status,
+      ];
       currentRow++;
     });
 

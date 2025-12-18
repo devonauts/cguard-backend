@@ -3,6 +3,7 @@ import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
+import Error400 from '../../errors/Error400';
 import Sequelize from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
@@ -166,6 +167,30 @@ class ClientAccountRepository {
 
     if (!record) {
       throw new Error404();
+    }
+
+    // Prevent deleting a client account if it has related businessInfo records
+    const { sequelize } = options.database;
+    const [results] = await sequelize.query(
+      `SELECT COUNT(*) as count
+       FROM businessInfos
+       WHERE tenantId = :tenantId
+       AND deletedAt IS NULL
+       AND clientAccountId = :clientAccountId`,
+      {
+        replacements: {
+          tenantId: currentTenant.id,
+          clientAccountId: id,
+        },
+        transaction,
+      },
+    );
+
+    const inUseCount = (results as any)[0]?.count || 0;
+    if (inUseCount > 0) {
+      const err: any = new Error(`No se puede eliminar: existen ${inUseCount} sitio(s) asociados`);
+      err.code = 400;
+      throw err;
     }
 
     await record.destroy({
@@ -457,9 +482,6 @@ class ClientAccountRepository {
         options,
       ),
     });
-    console.log('🔍 [ClientAccountRepo] found rows:', rows?.length, 'count:', count);
-    console.log('🔍 [ClientAccountRepo] raw results:', rows?.map(r => ({ id: r.id, name: r.name, email: r.email, tenantId: r.tenantId })));
-
     rows = await this._fillWithRelationsAndFilesForRows(
       rows,
       options,
