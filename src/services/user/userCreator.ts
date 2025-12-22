@@ -98,8 +98,35 @@ export default class UserCreator {
     );
 
     if (!user) {
+      const createData: any = { email };
+
+      // If names are provided at top-level, prefer them
+      if (this.data.firstName) {
+        createData.firstName = this.data.firstName;
+      }
+      if (this.data.lastName) {
+        createData.lastName = this.data.lastName;
+      }
+      if (this.data.fullName) {
+        createData.fullName = this.data.fullName;
+      }
+
+      // Support emails passed as objects: [{ email, firstName, lastName, fullName }, ...]
+      if (Array.isArray(this.data.emails)) {
+        const matched = this.data.emails.find((e) => {
+          if (!e) return false;
+          if (typeof e === 'string') return false;
+          return (e.email === email) || (e.value === email);
+        });
+        if (matched && typeof matched === 'object') {
+          if (matched.firstName) createData.firstName = matched.firstName;
+          if (matched.lastName) createData.lastName = matched.lastName;
+          if (matched.fullName) createData.fullName = matched.fullName;
+        }
+      }
+
       user = await UserRepository.create(
-        { email },
+        createData,
         {
           ...this.options,
           transaction: this.transaction,

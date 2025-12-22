@@ -74,6 +74,27 @@ class AuthService {
           },
         );
 
+        // If frontend provided an emailVerificationToken, try to verify email
+        try {
+          const body = options && options.body ? options.body : {};
+          const providedEmailToken = body.emailVerificationToken;
+          if (providedEmailToken) {
+            await this.verifyEmail(providedEmailToken, {
+              ...options,
+              transaction,
+              currentUser: existingUser,
+              bypassPermissionValidation: true,
+            });
+          }
+        } catch (err) {
+          // Do not block signup if verification fails here; continue to onboarding
+          const errMsg =
+            err && typeof err === 'object' && 'message' in err
+              ? (err as any).message
+              : String(err);
+          console.warn('Email auto-verify during signup failed:', errMsg);
+        }
+
         // Handles onboarding process like
         // invitation, creation of default tenant,
         // or default joining the current tenant
@@ -170,6 +191,26 @@ class AuthService {
           transaction,
         },
       );
+
+      // If frontend provided an emailVerificationToken, try to verify email for the newly created user
+      try {
+        const providedEmailToken = body.emailVerificationToken;
+        if (providedEmailToken) {
+          await this.verifyEmail(providedEmailToken, {
+            ...options,
+            transaction,
+            currentUser: newUser,
+            bypassPermissionValidation: true,
+          });
+        }
+      } catch (err) {
+        // Do not block signup if verification fails here; continue to onboarding
+        const errMsg =
+          err && typeof err === 'object' && 'message' in err
+            ? (err as any).message
+            : String(err);
+        console.warn('Email auto-verify during signup failed for new user:', errMsg);
+      }
 
       // Handles onboarding process like
       // invitation, creation of default tenant,

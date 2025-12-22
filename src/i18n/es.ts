@@ -122,6 +122,11 @@ const es = {
       errors: {
         unique: {
 
+        },
+        validation: {
+          governmentIdTooLong: 'El número de identificación es demasiado largo (máx 50 caracteres)',
+          guardCredentialsTooLong: 'Las credenciales del guardia son demasiado largas (máx 255 caracteres)',
+          mustBeAdult: 'El guardia debe ser mayor de edad (18 años o más)',
         }
       }
     },

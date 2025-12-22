@@ -42,8 +42,6 @@ export default class PermissionChecker {
    */
   has(permission) {
     assert(permission, 'permission is required');
-    console.log('🔍 PermissionChecker.has called with permission:', permission);
-
     if (!this.isEmailVerified) {
       console.log('❌ Email not verified');
       return false;

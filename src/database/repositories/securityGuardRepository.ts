@@ -24,28 +24,65 @@ class SecurityGuardRepository {
       options,
     );
 
+    // If caller marked this as a draft (partial) creation flow, fill required DB fields
+    // with safe placeholders to avoid NOT NULL DB errors. These must be updated later.
+    let createPayload: any = lodash.pick(data, [
+      'governmentId',
+      'fullName',
+      'hiringContractDate',
+      'gender',
+      'isOnDuty',
+      'bloodType',
+      'guardCredentials',
+      'birthDate',
+      'birthPlace',
+      'maritalStatus',
+      'academicInstruction',
+      'address',          
+      'importHash',
+    ]);
+
+    createPayload.guardId = data.guard || null;
+    createPayload.tenantId = tenant.id;
+    createPayload.createdById = currentUser.id;
+    createPayload.updatedById = currentUser.id;
+
+    if (data && data.isDraft) {
+      // Ensure guardId exists (required FK)
+      if (!createPayload.guardId) {
+        throw new Error('Draft securityGuard requires a valid guard id');
+      }
+
+      // Try to fetch user to build sensible defaults
+      try {
+        const guardUser = await options.database.user.findByPk(createPayload.guardId, { transaction });
+        const userFullName = guardUser
+          ? (guardUser.fullName || [guardUser.firstName, guardUser.lastName].filter(Boolean).join(' '))
+          : null;
+
+        // Prefer any name sent in the incoming payload (e.g. firstName/lastName or fullName)
+        const incomingFullName = data.fullName || ((data.firstName || data.lastName)
+          ? [data.firstName, data.lastName].filter(Boolean).join(' ')
+          : null);
+
+        // governmentId has max length 20 in the model; use a short placeholder when not provided
+        createPayload.governmentId = createPayload.governmentId || 'PENDING';
+        createPayload.fullName = createPayload.fullName || incomingFullName || userFullName || 'PENDING NAME';
+        createPayload.gender = createPayload.gender || 'Masculino';
+        createPayload.bloodType = createPayload.bloodType || 'O+';
+        createPayload.birthDate = createPayload.birthDate || new Date('1970-01-01');
+        createPayload.maritalStatus = createPayload.maritalStatus || 'Soltero';
+        createPayload.academicInstruction = createPayload.academicInstruction || 'Secundaria';
+      } catch (err) {
+        // If something goes wrong getting the user, rethrow a clearer error
+        const message =
+          err instanceof Error ? err.message : String(err);
+        throw new Error('Error preparing draft security guard: ' + message);
+      }
+    }
+
     const record = await options.database.securityGuard.create(
-      {
-        ...lodash.pick(data, [
-          'governmentId',
-          'fullName',
-          'hiringContractDate',
-          'gender',
-          'isOnDuty',
-          'bloodType',
-          'guardCredentials',
-          'birthDate',
-          'birthPlace',
-          'maritalStatus',
-          'academicInstruction',
-          'address',          
-          'importHash',
-        ]),
-        guardId: data.guard || null,
-        tenantId: tenant.id,
-        createdById: currentUser.id,
-        updatedById: currentUser.id,
-      },
+      createPayload,
       {
         transaction,
       },
@@ -151,6 +188,14 @@ class SecurityGuardRepository {
         transaction,
       },
     );
+
+    // If updating a draft, allow keeping placeholders when data.isDraft === true
+    if (data && data.isDraft) {
+      // Ensure guardId exists
+      if (!data.guard && !record.guardId) {
+        throw new Error('Draft securityGuard update requires a valid guard id');
+      }
+    }
 
     await record.setMemos(data.memos || [], {
       transaction,

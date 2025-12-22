@@ -119,6 +119,11 @@ const en = {
       errors: {
         unique: {
 
+        },
+        validation: {
+          governmentIdTooLong: 'Government ID is too long (max 50 characters)',
+          guardCredentialsTooLong: 'Guard credentials are too long (max 255 characters)',
+          mustBeAdult: 'The guard must be an adult (18 years or older)',
         }
       }
     },

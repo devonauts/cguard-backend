@@ -17,6 +17,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   const auth = req.headers.authorization || ''
   const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : null
   const cookie = (req as any).cookies?.__session
+  console.log('🔐 authMiddleware — Authorization header:', auth, 'cookie __session:', cookie)
   if (!bearer && !cookie) return next()
   const idToken = bearer || cookie
   try {

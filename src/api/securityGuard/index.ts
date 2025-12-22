@@ -1,4 +1,8 @@
 export default (app) => {
+  app.get(
+    `/security-guard/public`,
+    require('./securityGuardPublicFind').default,
+  );
   app.post(
     `/tenant/:tenantId/security-guard`,
     require('./securityGuardCreate').default,
@@ -7,9 +11,21 @@ export default (app) => {
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardUpdate').default,
   );
+  app.put(
+    `/tenant/:tenantId/security-guard/self`,
+    require('./securityGuardSelfUpdate').default,
+  );
   app.post(
     `/tenant/:tenantId/security-guard/import`,
     require('./securityGuardImport').default,
+  );
+  app.get(
+    `/tenant/:tenantId/security-guard/public`,
+    require('./securityGuardPublicFind').default,
+  );
+  app.post(
+    `/tenant/:tenantId/security-guard/invite`,
+    require('./securityGuardInvite').default,
   );
   app.delete(
     `/tenant/:tenantId/security-guard`,

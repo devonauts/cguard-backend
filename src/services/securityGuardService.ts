@@ -15,6 +15,27 @@ export default class SecurityGuardService {
   }
 
   async create(data) {
+    // If a draft securityGuard already exists for this user (guard),
+    // update that record instead of creating a duplicate.
+    if (data && data.guard) {
+      try {
+        const existing = await SecurityGuardRepository.findAndCountAll(
+          { filter: { guard: data.guard }, limit: 1 },
+          this.options,
+        );
+
+        if (existing && existing.count > 0) {
+          const first = existing.rows && existing.rows[0];
+          // The repository creates draft records with governmentId = 'PENDING'.
+          if (first && first.governmentId === 'PENDING') {
+            return this.update(first.id, data);
+          }
+        }
+      } catch (err) {
+        // ignore lookup errors and proceed to create a new record
+      }
+    }
+
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
     );

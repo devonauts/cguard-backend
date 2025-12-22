@@ -10,10 +10,10 @@ export default function (sequelize) {
         primaryKey: true,
       },
       governmentId: {
-        type: DataTypes.STRING(10),
+        type: DataTypes.STRING(50),
         allowNull: false,
         validate: {
-          len: [0, 10],
+          len: [0, 50],
           notEmpty: true,
         }
       },
@@ -116,7 +116,8 @@ export default function (sequelize) {
           isIn: [[
             "Secundaria",
             "Universitaria",
-            "Especial"
+            "Especial",
+            "Primaria"
           ]],
         }
       },
