@@ -308,7 +308,9 @@ class SecurityGuardRepository {
     );
 
     if (!record) {
-      throw new Error404();
+      // Use custom error message for not found guard
+      const language = options && options.language ? options.language : 'es';
+      throw new Error404(language, 'entities.securityGuard.errors.notFound');
     }
 
     return this._fillWithRelationsAndFiles(record, options);
@@ -688,7 +690,29 @@ class SecurityGuardRepository {
       options,
     );
 
-    output.guard = UserRepository.cleanupForRelationships(output.guard);
+
+    // Buscar status en tenantUser usando userId (guardId)
+    let guardUserId = null;
+    if (output.guard && output.guard.id) {
+      guardUserId = output.guard.id;
+    } else if (output.guardId) {
+      guardUserId = output.guardId;
+    }
+    if (guardUserId && output.tenantId) {
+      const tenantUser = await options.database.tenantUser.findOne({
+        where: {
+          tenantId: output.tenantId,
+          userId: guardUserId,
+        },
+      });
+      const guardObj = UserRepository.cleanupForRelationships(output.guard);
+      output.guard = {
+        ...guardObj,
+        status: tenantUser ? tenantUser.status : null,
+      };
+    } else {
+      output.guard = UserRepository.cleanupForRelationships(output.guard);
+    }
 
     output.profileImage = await FileRepository.fillDownloadUrl(
       await record.getProfileImage({

@@ -116,6 +116,7 @@ export default function (sequelize) {
           isIn: [[
             "Secundaria",
             "Universitaria",
+            "Universidad",
             "Especial",
             "Primaria"
           ]],

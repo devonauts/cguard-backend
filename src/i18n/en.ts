@@ -118,8 +118,8 @@ const en = {
     securityGuard: {
       errors: {
         unique: {
-
         },
+        notFound: 'No security guard found with the provided ID.',
         validation: {
           governmentIdTooLong: 'Government ID is too long (max 50 characters)',
           guardCredentialsTooLong: 'Guard credentials are too long (max 255 characters)',

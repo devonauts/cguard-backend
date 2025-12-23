@@ -56,7 +56,12 @@ export default class PermissionChecker {
 
     const rolePermission = this.hasRolePermission(permission);
     console.log('🔍 Role permission result:', rolePermission);
-    return rolePermission;
+    if (!rolePermission) {
+      console.log('❌ Role does not have permission');
+      return false;
+    }
+    console.log('✅ Role has permission');
+    return true;
   }
 
   /**
@@ -117,6 +122,7 @@ export default class PermissionChecker {
    */
   get currentUserRolesIds() {
     if (!this.currentUser || !this.currentUser.tenants) {
+      console.log('❌ No currentUser or no tenants');
       return [];
     }
     
@@ -132,8 +138,12 @@ export default class PermissionChecker {
       });
 
     if (!tenant) {
+      console.log('❌ No active tenantUser found for tenant:', this.currentTenant.id);
+      console.log('  Available tenants:', this.currentUser.tenants.map(t => ({ id: t.tenant.id, status: t.status })));
       return [];
     }
+
+    console.log('✅ Found tenantUser for tenant:', this.currentTenant.id);
 
     // Handle both array and JSON string formats
     let roles = [];

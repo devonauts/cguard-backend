@@ -22,6 +22,8 @@ export default async (req, res, next) => {
         req,
       );
 
+      console.log('tenantUser found:', !!tenantUser);
+
       if (!tenantUser) {
         // continue to fallback to securityGuardId if provided
         if (!securityGuardId) {
@@ -42,18 +44,43 @@ export default async (req, res, next) => {
             tenantId: tenant.id,
           },
         });
+
+        console.log('securityGuard record found by guardId:', !!record);
       }
     }
 
     // Fallback: if token not provided or invalid, allow fetching by securityGuardId
     if (!record && securityGuardId) {
       const tenantIdParam = req.params && req.params.tenantId;
+
+      const whereClause: any = { id: securityGuardId };
+      if (tenantIdParam) {
+        whereClause.tenantId = tenantIdParam;
+      }
+
+      console.log('Searching securityGuard by id:', securityGuardId, 'whereClause:', whereClause);
+
       record = await db.securityGuard.findOne({
-        where: {
-          id: securityGuardId,
-          tenantId: tenantIdParam || undefined,
-        },
+        where: whereClause,
       });
+
+      console.log('securityGuard record found by id:', !!record);
+
+      // If not found by id, try by guardId
+      if (!record) {
+        const whereClauseGuard: any = { guardId: securityGuardId };
+        if (tenantIdParam) {
+          whereClauseGuard.tenantId = tenantIdParam;
+        }
+
+        console.log('Searching securityGuard by guardId:', securityGuardId, 'whereClause:', whereClauseGuard);
+
+        record = await db.securityGuard.findOne({
+          where: whereClauseGuard,
+        });
+
+        console.log('securityGuard record found by guardId:', !!record);
+      }
 
       if (record) {
         tenant = await db.tenant.findByPk(record.tenantId);
@@ -62,6 +89,12 @@ export default async (req, res, next) => {
 
     if (!record) {
       throw new Error('No security guard draft found for this invitation or id');
+    }
+    // Si el guardia ya existe y no es borrador, enviar error especial
+    if (record && record.governmentId && record.governmentId !== 'PENDING') {
+      const err = new Error('El usuario ya fue creado y no puede ser modificado nuevamente.');
+      err.name = 'GuardAlreadyCreated';
+      return await ApiResponseHandler.error(req, res, err);
     }
 
     const options = {

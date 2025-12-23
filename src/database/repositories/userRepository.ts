@@ -937,6 +937,7 @@ export default class UserRepository {
           'firstName',
           'lastName',
           'email',
+          'phoneNumber',
         ]),
       );
     }
@@ -946,6 +947,7 @@ export default class UserRepository {
       'firstName',
       'lastName',
       'email',
+      'phoneNumber',
     ]);
   }
 
