@@ -120,6 +120,11 @@ const en = {
         unique: {
         },
         notFound: 'No security guard found with the provided ID.',
+        mustBeArchivedBeforeDelete: 'The guard must be archived before it can be deleted.',
+        noTenantUser: 'No tenant-user relationship found for the guard user.',
+        guardOccupiedByGuardShift: 'The guard has active guardShift records and cannot be archived/deleted.',
+        guardOccupiedByShift: 'The guard has active shifts and cannot be archived/deleted.',
+        guardOccupiedByPatrol: 'The guard is assigned to pending patrols and cannot be archived/deleted.',
         validation: {
           governmentIdTooLong: 'Government ID is too long (max 50 characters)',
           guardCredentialsTooLong: 'Guard credentials are too long (max 255 characters)',

@@ -4,6 +4,7 @@ import { authMiddleware } from '../middlewares/authMiddleware';
 import { tenantMiddleware } from '../middlewares/tenantMiddleware';
 import { databaseMiddleware } from '../middlewares/databaseMiddleware';
 import bodyParser from 'body-parser';
+import multer from 'multer';
 import helmet from 'helmet';
 import { createRateLimiter } from './apiRateLimiter';
 import { languageMiddleware } from '../middlewares/languageMiddleware';
@@ -57,6 +58,22 @@ app.use(
     },
   }),
 );
+
+// Parse multipart/form-data for import endpoints so frontends
+// that send FormData (files or JSON fields) can provide the
+// `data` and `importHash` fields as text form fields or upload files.
+const multipartParser = multer();
+app.use((req, res, next) => {
+  if (
+    req.originalUrl &&
+    req.originalUrl.endsWith('/import') &&
+    req.method === 'POST'
+  ) {
+    // Accept both fields and files for import endpoints
+    return multipartParser.any()(req, res, next);
+  }
+  return next();
+});
 
 // Configure the Entity routes
 const routes = express.Router();

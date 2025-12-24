@@ -114,8 +114,14 @@ export default async (req, res, next) => {
     try {
       const guardUser = await options.database.user.findByPk(record.guardId);
       if (guardUser) {
-        let emailVerificationToken = guardUser.emailVerificationToken;
-        if (!emailVerificationToken) {
+        // Only generate email verification token for real emails (not synthetic phone emails)
+        let emailVerificationToken = null;
+        if (
+          guardUser &&
+          guardUser.email &&
+          guardUser.provider !== 'phone' &&
+          !String(guardUser.email).endsWith('@phone.local')
+        ) {
           try {
             emailVerificationToken = await UserRepository.generateEmailVerificationToken(
               guardUser.email,
@@ -132,6 +138,7 @@ export default async (req, res, next) => {
           firstName: guardUser.firstName || null,
           lastName: guardUser.lastName || null,
           email: guardUser.email,
+          phoneNumber: guardUser.phoneNumber || null,
           emailVerificationToken: emailVerificationToken || null,
         };
       }

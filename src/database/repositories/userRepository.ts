@@ -95,6 +95,23 @@ export default class UserRepository {
       // createdAt/updatedAt/deletedAt/createdById/updatedById are managed by Sequelize or audit, avoid forcing them here
     };
 
+    // If fullName is provided but firstName/lastName are missing,
+    // derive them from fullName so the model hooks buildFullName
+    // will produce the expected `fullName` value and DB rows
+    // contain `firstName` and `lastName`.
+    if ((createData.firstName === null || createData.firstName === undefined) &&
+        (createData.lastName === null || createData.lastName === undefined) &&
+        createData.fullName) {
+      const parts = String(createData.fullName).trim().split(/\s+/);
+      if (parts.length === 1) {
+        createData.firstName = parts[0];
+        createData.lastName = null;
+      } else {
+        createData.firstName = parts.shift();
+        createData.lastName = parts.join(' ');
+      }
+    }
+
     const user = await options.database.user.create(
       createData,
       { transaction },
@@ -476,6 +493,24 @@ export default class UserRepository {
           'email',
           email,
         ),
+      },
+      transaction,
+    });
+
+    return this._fillWithRelationsAndFiles(record, options);
+  }
+
+  static async findByPhone(
+    phoneNumber,
+    options: IRepositoryOptions,
+  ) {
+    const transaction = SequelizeRepository.getTransaction(
+      options,
+    );
+
+    const record = await options.database.user.findOne({
+      where: {
+        phoneNumber,
       },
       transaction,
     });

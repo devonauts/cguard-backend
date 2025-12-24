@@ -64,7 +64,8 @@ export default function (sequelize, DataTypes) {
         allowNull: false,
         validate: {
           notEmpty: true,
-          isIn: [['active', 'invited', 'empty-permissions']],
+          // include 'archived' and 'pending' as valid tenant user statuses
+          isIn: [['active', 'invited', 'pending', 'archived']],
         }
       },
     },

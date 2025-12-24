@@ -123,6 +123,11 @@ const es = {
         unique: {
         },
         notFound: 'No se encontró un guardia con el ID proporcionado.',
+        mustBeArchivedBeforeDelete: 'El guardia debe ser archivado antes de poder eliminarlo.',
+        noTenantUser: 'No se encontró relación de tenant con el usuario del guardia.',
+        guardOccupiedByGuardShift: 'El guardia tiene guardias activas (guardShift) y no puede ser archivado/eliminado.',
+        guardOccupiedByShift: 'El guardia tiene turnos activos y no puede ser archivado/eliminado.',
+        guardOccupiedByPatrol: 'El guardia está asignado a patrullas pendientes y no puede ser archivado/eliminado.',
         validation: {
           governmentIdTooLong: 'El número de identificación es demasiado largo (máx 50 caracteres)',
           guardCredentialsTooLong: 'Las credenciales del guardia son demasiado largas (máx 255 caracteres)',

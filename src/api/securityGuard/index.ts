@@ -20,6 +20,10 @@ export default (app) => {
     require('./securityGuardImport').default,
   );
   app.get(
+    `/tenant/:tenantId/security-guard/export`,
+    require('./securityGuardExport').default,
+  );
+  app.get(
     `/tenant/:tenantId/security-guard/public`,
     require('./securityGuardPublicFind').default,
   );
@@ -30,6 +34,14 @@ export default (app) => {
   app.delete(
     `/tenant/:tenantId/security-guard`,
     require('./securityGuardDestroy').default,
+  );
+  app.post(
+    `/tenant/:tenantId/security-guard/restore`,
+    require('./securityGuardRestore').default,
+  );
+  app.post(
+    `/tenant/:tenantId/security-guard/archive`,
+    require('./securityGuardArchive').default,
   );
   app.get(
     `/tenant/:tenantId/security-guard/autocomplete`,

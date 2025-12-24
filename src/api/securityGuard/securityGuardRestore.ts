@@ -6,25 +6,18 @@ import SecurityGuardService from '../../services/securityGuardService';
 export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(
-      Permissions.values.securityGuardDestroy,
+      Permissions.values.securityGuardRestore,
     );
 
-    // Normalize ids: accept from query or body, accept single id or comma-separated string
+    // normalize ids from query or body
     let ids = req.query.ids ?? (req.body && req.body.ids);
-
     if (typeof ids === 'string') {
-      // support comma-separated lists like "1,2,3"
-      ids = ids.includes(',')
-        ? ids.split(',').map((s) => s.trim()).filter(Boolean)
-        : [ids];
-    } else if (typeof ids === 'number' || typeof ids === 'bigint') {
-      ids = [String(ids)];
+      ids = ids.includes(',') ? ids.split(',').map((s) => s.trim()).filter(Boolean) : [ids];
     } else if (!Array.isArray(ids)) {
-      // if undefined/null or other type, wrap into an array if truthy, else empty array
       ids = ids ? [ids] : [];
     }
 
-    await new SecurityGuardService(req).destroyAll(
+    await new SecurityGuardService(req).restoreAll(
       ids,
     );
 

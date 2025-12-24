@@ -356,7 +356,7 @@ function selectStatus(oldStatus, newRoles) {
   }
 
   if (!newRoles.length) {
-    return 'empty-permissions';
+    return 'pending';
   }
 
   return 'active';

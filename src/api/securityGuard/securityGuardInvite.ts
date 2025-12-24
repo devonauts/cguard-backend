@@ -24,17 +24,57 @@ export default async (req, res, next) => {
       return await ApiResponseHandler.error(req, res, new Error('Empty invite payload'));
     }
 
-    // If contact provided but no guard id, create/invite the user
+    // If contact provided but no guard id, create/invite the user.
+    // Support both email invites and phone (SMS) invites.
     let invitedUser: any = null;
     if ((!incoming.guard) && incoming.contact) {
-      await new UserCreator(req).execute(
-        { emails: [incoming.contact], roles: [Roles.values.securityGuard] },
-        true,
-      );
+      const contact = String(incoming.contact).trim();
 
-      invitedUser = await UserRepository.findByEmailWithoutAvatar(incoming.contact, req);
-      if (!invitedUser) {
-        throw new Error('Unable to create or find user for contact ' + incoming.contact);
+      // Simple detection: if contains '@' treat as email, otherwise phone
+      const isEmail = contact.includes('@');
+
+      if (isEmail) {
+        await new UserCreator(req).execute(
+          { emails: [contact], roles: [Roles.values.securityGuard] },
+          true,
+        );
+
+        invitedUser = await UserRepository.findByEmailWithoutAvatar(contact, req);
+        if (!invitedUser) {
+          throw new Error('Unable to create or find user for contact ' + contact);
+        }
+      } else {
+        // Phone invite: try to find existing user by phone, otherwise create one
+        invitedUser = await UserRepository.findByPhone(contact, req);
+
+        if (!invitedUser) {
+          const digits = contact.replace(/\D/g, '');
+          const syntheticEmail = `${digits || Date.now()}@phone.local`;
+          // create minimal user record with phoneNumber and synthetic email
+          invitedUser = await UserRepository.create(
+            {
+              phoneNumber: contact,
+              email: syntheticEmail,
+              provider: 'phone',
+              firstName: incoming.firstName || null,
+              lastName: incoming.lastName || null,
+              fullName: incoming.fullName || null,
+            },
+            req,
+          );
+        }
+
+        // Ensure tenant user entry is created with invitation token
+        try {
+          await TenantUserRepository.updateRoles(
+            req.params.tenantId,
+            invitedUser.id,
+            [Roles.values.securityGuard],
+            req,
+          );
+        } catch (e) {
+          // ignore - updateRoles will throw only in unexpected cases
+        }
       }
 
       incoming.guard = invitedUser.id;

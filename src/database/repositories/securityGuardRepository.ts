@@ -280,6 +280,42 @@ class SecurityGuardRepository {
     );
   }
 
+  static async restore(id, options: IRepositoryOptions) {
+    const transaction = SequelizeRepository.getTransaction(
+      options,
+    );
+
+    const currentTenant = SequelizeRepository.getCurrentTenant(
+      options,
+    );
+
+    // find the record including soft-deleted ones
+    let record = await options.database.securityGuard.findOne(
+      {
+        where: {
+          id,
+          tenantId: currentTenant.id,
+        },
+        paranoid: false,
+        transaction,
+      },
+    );
+
+    if (!record) {
+      throw new Error404();
+    }
+
+    // restore the record (Sequelize instance method)
+    await record.restore({ transaction });
+
+    await this._createAuditLog(
+      AuditLogRepository.UPDATE,
+      record,
+      record,
+      options,
+    );
+  }
+
   static async findById(id, options: IRepositoryOptions) {
     const transaction = SequelizeRepository.getTransaction(
       options,
@@ -391,6 +427,10 @@ class SecurityGuardRepository {
       },      
     ];
 
+    // By default Sequelize `paranoid` excludes soft-deleted rows.
+    // Allow returning archived (soft-deleted) records when requested.
+    let includeDeleted = false;
+
     whereAnd.push({
       tenantId: tenant.id,
     });
@@ -428,6 +468,75 @@ class SecurityGuardRepository {
             filter.guard,
           ),
         });
+      }
+
+      // Support explicit request to include archived/deleted records
+      if (
+        filter.archived === true ||
+        filter.archived === 'true' ||
+        filter.deleted === true ||
+        filter.deleted === 'true' ||
+        filter.includeDeleted === true ||
+        filter.includeDeleted === 'true'
+      ) {
+        includeDeleted = true;
+      }
+
+      // Server-side filter by guard status (e.g. 'active', 'invited', 'pending', 'archived')
+      if (filter.status) {
+        // Normalize common frontend aliases
+        let statuses = [];
+        if (typeof filter.status === 'string' && filter.status.includes(',')) {
+          statuses = filter.status.split(',').map((s) => s.trim());
+        } else if (Array.isArray(filter.status)) {
+          statuses = filter.status;
+        } else {
+          statuses = [String(filter.status)];
+        }
+
+        // Map aliases
+        statuses = statuses.map((s) => {
+          if (!s) return s;
+          const lower = s.toLowerCase();
+          if (lower === 'pending') return 'pending';
+          if (lower === 'todos' || lower === 'all' || lower === 'any') return 'ALL';
+          return lower;
+        });
+
+        // If any requested 'archived', include deleted rows
+        if (statuses.includes('archived')) {
+          includeDeleted = true;
+        }
+
+        // If request wanted all statuses, skip filtering by tenantUser.status
+        if (statuses.includes('ALL')) {
+          // no-op: don't filter by tenantUser
+        } else {
+          // Find tenantUser entries matching the tenant and any of the statuses
+          const whereTenantUser = {
+            tenantId: tenant.id,
+            status: { [Op.in]: statuses },
+          };
+
+          const tenantUsers = await options.database.tenantUser.findAll({
+            attributes: ['userId'],
+            where: whereTenantUser,
+            transaction: SequelizeRepository.getTransaction(options),
+          });
+
+          const userIds = tenantUsers.map((t) => t.userId).filter(Boolean);
+
+          // If no users match the status, return empty result set early
+          if (!userIds.length) {
+            return { rows: [], count: 0 };
+          }
+
+          whereAnd.push({
+            guardId: {
+              [Op.in]: userIds,
+            },
+          });
+        }
       }
 
       if (filter.hiringContractDateRange) {
@@ -582,6 +691,8 @@ class SecurityGuardRepository {
       transaction: SequelizeRepository.getTransaction(
         options,
       ),
+      // When includeDeleted is true, set paranoid:false to include soft-deleted rows
+      paranoid: includeDeleted ? false : undefined,
     });
 
     rows = await this._fillWithRelationsAndFilesForRows(
@@ -713,6 +824,19 @@ class SecurityGuardRepository {
     } else {
       output.guard = UserRepository.cleanupForRelationships(output.guard);
     }
+
+    // Add explicit archived boolean for convenience (soft-deleted records)
+    output.archived = Boolean(output.deletedAt);
+
+    // Add top-level status for easier frontend filtering. Prefer 'archived' when soft-deleted.
+    output.status = output.guard && output.guard.status ? output.guard.status : null;
+    if (output.archived) {
+      output.status = 'archived';
+    }
+
+    // Expose phoneNumber at top-level so frontend can choose email or phone invites
+    // (phoneNumber is stored on the related `guard` user record).
+    output.phoneNumber = output.guard && output.guard.phoneNumber ? output.guard.phoneNumber : null;
 
     output.profileImage = await FileRepository.fillDownloadUrl(
       await record.getProfileImage({

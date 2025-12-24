@@ -84,6 +84,8 @@ class Permissions {
       // === SECURITY GUARD MANAGEMENT ===
       securityGuardImport: createPermission('securityGuardImport', HR_ROLES),
       securityGuardCreate: createPermission('securityGuardCreate', HR_ROLES),
+      securityGuardRestore: createPermission('securityGuardRestore', HR_ROLES),
+      securityGuardArchive: createPermission('securityGuardArchive', HR_ROLES),
       securityGuardEdit: createPermission('securityGuardEdit', [...SUPERVISOR_ROLES, roles.hrManager]),
       securityGuardDestroy: createPermission('securityGuardDestroy', HR_ROLES),
       securityGuardRead: createPermission('securityGuardRead', ALL_STAFF_ROLES),

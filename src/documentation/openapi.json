@@ -18412,7 +18412,7 @@
             "enum": [
               "active",
               "invited",
-              "empty-permissions"
+              "pending"
             ]
           },
           "tenants": {
@@ -18450,7 +18450,7 @@
             "enum": [
               "active",
               "invited",
-              "empty-permissions"
+              "pending"
             ]
           },
           "tenantId": {

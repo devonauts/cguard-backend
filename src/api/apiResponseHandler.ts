@@ -15,14 +15,14 @@ export default class ApiResponseHandler {
   }
 
   static async error(req, res, error) {
-    if (
-      error &&
-      [400, 401, 403, 404].includes(error.code)
-    ) {
-      res.status(error.code).json({ message: error.message });
+    const message = (error && error.message) ? error.message : 'Internal server error';
+
+    // For simpler frontend consumption (toasts, alerts), return plain text instead of JSON object
+    if (error && [400, 401, 403, 404].includes(error.code)) {
+      res.status(error.code).type('text').send(message);
     } else {
       console.error(error);
-      res.status(500).json({ message: error.message || 'Internal server error' });
+      res.status(500).type('text').send(message);
     }
   }
 }
