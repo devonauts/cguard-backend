@@ -49,15 +49,14 @@ export default class UserEditor {
   }
 
   get _roles() {
-    if (
-      this.data.roles &&
-      !Array.isArray(this.data.roles)
-    ) {
-      return [this.data.roles];
-    } else {
-      const uniqueRoles = [...new Set(this.data.roles)];
-      return uniqueRoles;
+    const raw = this.data && this.data.roles;
+    if (!raw) {
+      return [];
     }
+    if (!Array.isArray(raw)) {
+      return [raw];
+    }
+    return [...new Set(raw)];
   }
 
   /**
@@ -86,6 +85,8 @@ export default class UserEditor {
       this.data.id,
       this.data.roles,
       this.options,
+      this.data.clientIds,
+      this.data.postSiteIds,
     );
   }
 

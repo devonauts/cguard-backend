@@ -50,29 +50,35 @@ export default class UserCreator {
   }
 
   get _roles() {
-    if (
-      this.data.roles &&
-      !Array.isArray(this.data.roles)
-    ) {
-      return [this.data.roles];
-    } else {
-      const uniqueRoles = [...new Set(this.data.roles)];
-      return uniqueRoles;
+    const raw = this.data && this.data.roles;
+    if (!raw) {
+      return [];
     }
+    if (!Array.isArray(raw)) {
+      return [raw];
+    }
+    return [...new Set(raw)];
   }
 
   get _emails() {
-    if (
-      this.data.emails &&
-      !Array.isArray(this.data.emails)
-    ) {
-      this.emails = [this.data.emails];
+    const rawEmails =
+      this.data && (this.data.emails ?? this.data.email);
+
+    let list: any[] = [];
+    if (!rawEmails) {
+      list = [];
+    } else if (Array.isArray(rawEmails)) {
+      list = rawEmails;
     } else {
-      const uniqueEmails = [...new Set(this.data.emails)];
-      this.emails = uniqueEmails;
+      list = [rawEmails];
     }
 
-    return this.emails.map((email) => email.trim());
+    const uniqueEmails = [...new Set(list)];
+    this.emails = uniqueEmails.map((email) =>
+      typeof email === 'string' ? email.trim() : email,
+    );
+
+    return this.emails;
   }
 
   /**
@@ -125,6 +131,22 @@ export default class UserCreator {
         }
       }
 
+      // If only fullName is present, derive firstName/lastName so repository.save will persist them
+      if (
+        (createData.firstName === null || createData.firstName === undefined) &&
+        (createData.lastName === null || createData.lastName === undefined) &&
+        createData.fullName
+      ) {
+        const parts = String(createData.fullName).trim().split(/\s+/);
+        if (parts.length === 1) {
+          createData.firstName = parts[0];
+          createData.lastName = null;
+        } else {
+          createData.firstName = parts.shift();
+          createData.lastName = parts.join(' ');
+        }
+      }
+
       user = await UserRepository.create(
         createData,
         {
@@ -132,13 +154,87 @@ export default class UserCreator {
           transaction: this.transaction,
         },
       );
+
+      // Ensure email verification token is created and emailed for new users
+      try {
+        if (!user.emailVerified) {
+          const token = await UserRepository.generateEmailVerificationToken(
+            user.email,
+            {
+              ...this.options,
+              transaction: this.transaction,
+              bypassPermissionValidation: true,
+            },
+          );
+
+          if (EmailSender.isConfigured) {
+            const link = `${tenantSubdomain.frontendUrl(
+              this.options.currentTenant,
+            )}/auth/verify-email?token=${token}`;
+
+            try {
+              await new EmailSender(
+                EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION,
+                { link },
+              ).sendTo(user.email);
+            } catch (err) {
+              console.error('Failed to send email verification in UserCreator:', err);
+            }
+          }
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error
+          ? err.message
+          : (typeof err === 'object' && err && 'message' in err ? (err as any).message : String(err));
+        console.warn('Could not generate/send email verification token in UserCreator:', errorMessage);
+      }
     }
 
-    const isUserAlreadyInTenant = user.tenants.some(
+    else {
+      // If user already exists, ensure profile fields are updated when provided
+      const profileUpdate: any = {};
+      if (this.data.firstName) profileUpdate.firstName = this.data.firstName;
+      if (this.data.lastName) profileUpdate.lastName = this.data.lastName;
+      if (this.data.fullName) profileUpdate.fullName = this.data.fullName;
+      if (this.data.phoneNumber) profileUpdate.phoneNumber = this.data.phoneNumber;
+
+      const hasProfileUpdates = Object.keys(profileUpdate).length > 0;
+      if (hasProfileUpdates) {
+        try {
+          await UserRepository.updateProfile(user.id, profileUpdate, {
+            ...this.options,
+            transaction: this.transaction,
+            bypassPermissionValidation: true,
+          });
+        } catch (e) {
+          const errorMessage = e instanceof Error
+            ? e.message
+            : (typeof e === 'object' && e && 'message' in e ? (e as any).message : String(e));
+          console.warn('Failed to update existing user profile in UserCreator:', errorMessage);
+        }
+      }
+    }
+
+    const isUserAlreadyInTenant = (user.tenants || []).some(
       (userTenant) =>
         userTenant.tenant.id ===
         this.options.currentTenant.id,
     );
+
+    // Determine optional assigned clients/post sites for this user (either top-level or per-email object)
+    let clientIds = this.data.clientIds;
+    let postSiteIds = this.data.postSiteIds;
+    if (Array.isArray(this.data.emails)) {
+      const matched = this.data.emails.find((e) => {
+        if (!e) return false;
+        if (typeof e === 'string') return false;
+        return (e.email === email) || (e.value === email);
+      });
+      if (matched && typeof matched === 'object') {
+        if (matched.clientIds) clientIds = matched.clientIds;
+        if (matched.postSiteIds) postSiteIds = matched.postSiteIds;
+      }
+    }
 
     const tenantUser = await TenantUserRepository.updateRoles(
       this.options.currentTenant.id,
@@ -149,6 +245,8 @@ export default class UserCreator {
         addRoles: true,
         transaction: this.transaction,
       },
+      clientIds,
+      postSiteIds,
     );
 
     if (!isUserAlreadyInTenant) {
@@ -175,22 +273,40 @@ export default class UserCreator {
     if (!this.sendInvitationEmails) {
       return;
     }
+    const results: any[] = [];
+    for (const emailToInvite of this.emailsToInvite) {
+      const link = `${tenantSubdomain.frontendUrl(
+        this.options.currentTenant,
+      )}/auth/invitation?token=${emailToInvite.token}`;
 
-    return Promise.all(
-      this.emailsToInvite.map((emailToInvite) => {
-        const link = `${tenantSubdomain.frontendUrl(
-          this.options.currentTenant,
-        )}/auth/invitation?token=${emailToInvite.token}`;
+      // Log the invitation for debugging (non-production)
+      try {
+        if (process.env.NODE_ENV !== 'production') {
+          console.info('Sending invitation to:', emailToInvite.email, 'link:', link);
+        }
+      } catch (e) {
+        // ignore logging errors
+      }
 
-        return new EmailSender(
+      try {
+        const sender = new EmailSender(
           EmailSender.TEMPLATES.INVITATION,
           {
             tenant: this.options.currentTenant,
             link,
           },
-        ).sendTo(emailToInvite.email);
-      }),
-    );
+        );
+
+        const r = await sender.sendTo(emailToInvite.email);
+        results.push(r);
+      } catch (err) {
+        // Log error but do not throw to avoid breaking other invites
+        console.error('Failed to send invitation to', emailToInvite.email, err);
+        results.push({ error: String(err) });
+      }
+    }
+
+    return results;
   }
 
   /**

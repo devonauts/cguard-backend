@@ -21,6 +21,7 @@ function models() {
       host: getConfig().DATABASE_HOST,
       port: getConfig().DATABASE_PORT || 3307,
       dialect: getConfig().DATABASE_DIALECT,
+        timezone: getConfig().DATABASE_TIMEZONE || '+00:00',
       logging:
         getConfig().DATABASE_LOGGING === 'true'
           ? (log) =>

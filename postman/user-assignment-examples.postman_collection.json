@@ -1,0 +1,48 @@
+{
+  "info": {
+    "name": "User Assignment Examples",
+    "_postman_id": "user-assign-examples",
+    "description": "Examples for creating/updating users with clientIds and postSiteIds",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create User with Assignments",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/user",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","user"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": {\n    \"emails\": [\"newguard@example.com\"],\n    \"roles\": [\"securityGuard\"],\n    \"clientIds\": [\"<client-id-1>\", \"<client-id-2>\"],\n    \"postSiteIds\": [\"<postsite-id-1>\"]\n  }\n}"
+        }
+      }
+    },
+    {
+      "name": "Update User Assignments",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/user",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","user"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": {\n    \"id\": \"<user-id>\",\n    \"roles\": [\"securityGuard\"],\n    \"clientIds\": [\"<client-id-1>\"],\n    \"postSiteIds\": [\"<postsite-id-2>\"]\n  }\n}"
+        }
+      }
+    }
+  ]
+}

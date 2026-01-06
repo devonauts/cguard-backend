@@ -5,6 +5,7 @@ import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Error400 from '../../errors/Error400';
 import Sequelize from 'sequelize';
+import Roles from '../../security/roles';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -23,6 +24,29 @@ class ClientAccountRepository {
     const transaction = SequelizeRepository.getTransaction(
       options,
     );
+
+    // Validate uniqueness of email and phoneNumber within the tenant
+    try {
+      const whereOr: any[] = [];
+      if (data.email) whereOr.push({ email: data.email });
+      if (data.phoneNumber) whereOr.push({ phoneNumber: data.phoneNumber });
+      if (whereOr.length) {
+        const existing = await options.database.clientAccount.findOne({
+          where: {
+            tenantId: tenant.id,
+            [Op.or]: whereOr,
+          },
+          transaction,
+        });
+        if (existing) {
+          console.warn('ClientAccount create validation: duplicate email/phone detected', { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber });
+          throw new Error400(options.language, 'entities.clientAccount.errors.exists');
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error400) throw err;
+      // if DB check failed unexpectedly, continue and let create surface the error
+    }
 
     const record = await options.database.clientAccount.create(
       {
@@ -61,7 +85,10 @@ class ClientAccountRepository {
       options,
     );
 
-    return this.findById(record.id, options);
+    // After create, bypass permission validation for the immediate read-back
+    // so creators with create permission can receive the created record
+    // even if they are not assigned to it yet.
+    return this.findById(record.id, { ...options, bypassPermissionValidation: true });
   }
 
   static async update(id, data, options: IRepositoryOptions) {
@@ -117,6 +144,29 @@ class ClientAccountRepository {
       ]),
       updatedById: currentUser.id,
     };
+
+    // Validate uniqueness of email and phoneNumber within the tenant (exclude self)
+    try {
+      const whereOr: any[] = [];
+      if (typeof updateData.email !== 'undefined' && updateData.email) whereOr.push({ email: updateData.email });
+      if (typeof updateData.phoneNumber !== 'undefined' && updateData.phoneNumber) whereOr.push({ phoneNumber: updateData.phoneNumber });
+      if (whereOr.length) {
+        const existing = await options.database.clientAccount.findOne({
+          where: {
+            tenantId: currentTenant.id,
+            id: { [Op.ne]: id },
+            [Op.or]: whereOr,
+          },
+          transaction,
+        });
+        if (existing) {
+          console.warn('ClientAccount update validation: duplicate email/phone detected', { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber });
+          throw new Error400(options.language, 'entities.clientAccount.errors.exists');
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error400) throw err;
+    }
 
     console.log('📥 UpdateData a guardar:', updateData);
     console.log('📥 UpdateData (active):', updateData.active);
@@ -215,6 +265,74 @@ class ClientAccountRepository {
     const currentTenant = SequelizeRepository.getCurrentTenant(
       options,
     );
+
+    // If caller requested to bypass permission validation, return the record
+    // directly (used right after create to avoid read ACL race conditions).
+    if (options && (options as any).bypassPermissionValidation) {
+      const record = await options.database.clientAccount.findOne({
+        where: { id, tenantId: currentTenant.id },
+        include,
+        transaction,
+      });
+
+      if (!record) {
+        throw new Error404();
+      }
+
+      return this._fillWithRelationsAndFiles(record, options);
+    }
+
+    // Enforce ACL: if current user is not admin, ensure the client is assigned to them
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    let isAdmin = false;
+    try {
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === currentTenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes(Roles.values.admin);
+        }
+      }
+    } catch (e) {
+      isAdmin = false;
+    }
+
+    if (!isAdmin) {
+      // fetch tenantUser to get assignedClients
+      const tenantUser = await options.database.tenantUser.findOne({
+        where: { tenantId: currentTenant.id, userId: currentUser.id },
+        include: [{ model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] }],
+        transaction,
+      });
+
+      const allowedIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+      if (!allowedIds.length) {
+        throw new Error404();
+      }
+
+      if (!allowedIds.includes(id)) {
+        throw new Error404();
+      }
+
+      const record = await options.database.clientAccount.findOne({
+        where: {
+          id,
+          tenantId: currentTenant.id,
+        },
+        include,
+        transaction,
+      });
+
+      if (!record) {
+        throw new Error404();
+      }
+
+      return this._fillWithRelationsAndFiles(record, options);
+    }
 
     const record = await options.database.clientAccount.findOne(
       {
@@ -463,6 +581,39 @@ class ClientAccountRepository {
     }
 
     const where = { [Op.and]: whereAnd };
+    // ACL: if current user is not admin, restrict list to assigned clients
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes(Roles.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: tenant.id, userId: currentUser.id },
+          include: [{ model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] }],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        const allowedIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+        if (!allowedIds.length) {
+          return { rows: [], count: 0 };
+        }
+
+        where[Op.and].push({ id: { [Op.in]: allowedIds } });
+      }
+    } catch (e) {
+      // If ACL check fails, fall back to default behavior
+    }
     let {
       rows,
       count,
@@ -494,6 +645,40 @@ class ClientAccountRepository {
     let whereAnd: Array<any> = [{
       tenantId: tenant.id,
     }];
+
+    // ACL: if not admin, restrict autocomplete to assigned clients
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes(Roles.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: tenant.id, userId: currentUser.id },
+          include: [{ model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] }],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        const allowedIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+        if (!allowedIds.length) {
+          return [];
+        }
+
+        whereAnd.push({ id: { [Op.in]: allowedIds } });
+      }
+    } catch (e) {
+      // ignore and continue
+    }
 
     if (query) {
       whereAnd.push({

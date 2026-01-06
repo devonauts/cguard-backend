@@ -3,8 +3,25 @@ export default (app) => {
     `/tenant/:tenantId/user`,
     require('./userCreate').default,
   );
+  app.post(
+    `/tenant/:tenantId/user/suspend`,
+    require('./userBulkSuspend').default,
+  );
+  app.post(
+    `/tenant/:tenantId/user/restore`,
+    require('./userBulkRestore').default,
+  );
+  app.get(
+    `/tenant/:tenantId/user/export`,
+    require('./userExport').default,
+  );
   app.put(
     `/tenant/:tenantId/user`,
+    require('./userEdit').default,
+  );
+  // Support update by id route used by frontend
+  app.put(
+    `/tenant/:tenantId/user/:id`,
     require('./userEdit').default,
   );
   app.post(
@@ -26,5 +43,17 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/user/:id`,
     require('./userFind').default,
+  );
+  app.post(
+    `/tenant/:tenantId/user/:id/resend-invitation`,
+    require('./userResendInvitation').default,
+  );
+  app.post(
+    `/tenant/:tenantId/user/:id/suspend`,
+    require('./userSuspend').default,
+  );
+  app.post(
+    `/tenant/:tenantId/user/:id/restore`,
+    require('./userRestore').default,
   );
 };

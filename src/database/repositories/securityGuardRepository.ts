@@ -485,7 +485,7 @@ class SecurityGuardRepository {
       // Server-side filter by guard status (e.g. 'active', 'invited', 'pending', 'archived')
       if (filter.status) {
         // Normalize common frontend aliases
-        let statuses = [];
+        let statuses: string[] = [];
         if (typeof filter.status === 'string' && filter.status.includes(',')) {
           statuses = filter.status.split(',').map((s) => s.trim());
         } else if (Array.isArray(filter.status)) {

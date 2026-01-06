@@ -1,0 +1,26 @@
+export default (app) => {
+  app.post(
+        `/tenant/:tenantId/role`, 
+        require('./roleCreate').default
+    );
+  app.put(
+        `/tenant/:tenantId/role/:id`, 
+        require('./roleUpdate').default
+    );
+  app.delete(
+        `/tenant/:tenantId/role/:id`, 
+        require('./roleDestroy').default
+    );
+  app.get(
+        `/tenant/:tenantId/role`, 
+        require('./roleList').default
+    );
+  app.get(
+        `/tenant/:tenantId/role/autocomplete`, 
+        require('./roleAutocomplete').default
+    );
+  app.get(
+        `/tenant/:tenantId/role/:id`, 
+        require('./roleFind').default
+    );
+};

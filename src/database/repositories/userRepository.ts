@@ -23,17 +23,48 @@ export default class UserRepository {
       options,
     );
 
+    const createData: any = {
+      id: data.id || undefined,
+      email: data.email,
+      firstName: data.firstName ?? null,
+      lastName: data.lastName ?? null,
+      phoneNumber: data.phoneNumber ?? null,
+      importHash: data.importHash ?? null,
+      createdById: currentUser.id,
+      updatedById: currentUser.id,
+    };
+
+    // If only fullName is provided, derive firstName/lastName so they are persisted
+    if (
+      (createData.firstName === null || createData.firstName === undefined) &&
+      (createData.lastName === null || createData.lastName === undefined) &&
+      data.fullName
+    ) {
+      const parts = String(data.fullName).trim().split(/\s+/);
+      if (parts.length === 1) {
+        createData.firstName = parts[0];
+        createData.lastName = null;
+      } else {
+        createData.firstName = parts.shift();
+        createData.lastName = parts.join(' ');
+      }
+    }
+
+    // Debugging aid: log what will be created when running in development
+    try {
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('UserRepository.create payload:', {
+          email: createData.email,
+          firstName: createData.firstName,
+          lastName: createData.lastName,
+        });
+      }
+    } catch (e) {
+      // ignore logging errors
+    }
+
     const user = await options.database.user.create(
-      {
-        id: data.id || undefined,
-        email: data.email,
-        firstName: data.firstName || null,
-        lastName: data.lastName || null,
-        phoneNumber: data.phoneNumber || null,
-        importHash: data.importHash || null,
-        createdById: currentUser.id,
-        updatedById: currentUser.id,
-      },
+      createData,
       { transaction },
     );
 
@@ -100,8 +131,8 @@ export default class UserRepository {
     // will produce the expected `fullName` value and DB rows
     // contain `firstName` and `lastName`.
     if ((createData.firstName === null || createData.firstName === undefined) &&
-        (createData.lastName === null || createData.lastName === undefined) &&
-        createData.fullName) {
+      (createData.lastName === null || createData.lastName === undefined) &&
+      createData.fullName) {
       const parts = String(createData.fullName).trim().split(/\s+/);
       if (parts.length === 1) {
         createData.firstName = parts[0];
@@ -241,7 +272,7 @@ export default class UserRepository {
     email,
     options: IRepositoryOptions,
   ) {
-       
+
     const currentUser = SequelizeRepository.getCurrentUser(
       options,
     );
@@ -258,7 +289,7 @@ export default class UserRepository {
     if (!user) {
       throw new Error404();
     }
-    
+
 
     const emailVerificationToken = crypto
       .randomBytes(20)
@@ -279,9 +310,9 @@ export default class UserRepository {
       updateData.updatedById = currentUser.id;
     }
 
-  
+
     await user.update(updateData, { transaction });
-    
+
 
     await AuditLogRepository.log(
       {
@@ -407,7 +438,19 @@ export default class UserRepository {
       options,
     );
 
+
     return this.findById(user.id, options);
+  }
+
+  static async markLoggedIn(id, options: IRepositoryOptions) {
+    const transaction = SequelizeRepository.getTransaction(
+      options,
+    );
+
+    await options.database.user.update(
+      { lastLoginAt: new Date() },
+      { where: { id }, transaction },
+    );
   }
 
   static async changeEmail(
@@ -533,6 +576,8 @@ export default class UserRepository {
       options,
     );
 
+    // Always include tenantUser relation for the current tenant and eagerly load
+    // assignedClients and assignedPostSites so the frontend receives pivot data.
     if (!filter || (!filter.role && !filter.status)) {
       include.push({
         model: options.database.tenantUser,
@@ -540,6 +585,10 @@ export default class UserRepository {
         where: {
           ['tenantId']: currentTenant.id,
         },
+        include: [
+          { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
+          { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+        ],
       });
     }
 
@@ -589,6 +638,10 @@ export default class UserRepository {
           model: options.database.tenantUser,
           as: 'tenants',
           where: { [Op.and]: innerWhereAnd },
+          include: [
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+          ],
         });
       }
 
@@ -600,6 +653,10 @@ export default class UserRepository {
             ['tenantId']: currentTenant.id,
             status: filter.status,
           },
+          include: [
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+          ],
         });
       }
 
@@ -735,8 +792,20 @@ export default class UserRepository {
       options,
     );
 
+    // Eager-load tenantUser relation with assigned clients and post sites
     let record = await options.database.user.findByPk(id, {
       transaction,
+      include: [
+        {
+          model: options.database.tenantUser,
+          as: 'tenants',
+          include: [
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+            { model: options.database.tenant, as: 'tenant' },
+          ],
+        },
+      ],
     });
 
     record = await this._fillWithRelationsAndFiles(
@@ -875,6 +944,38 @@ export default class UserRepository {
       },
       options,
     );
+
+    // Promote any tenant invitations to active when the user's email is verified
+    try {
+      const invitedTenantUsers = await options.database.tenantUser.findAll({
+        where: { userId: user.id, status: 'invited' },
+        transaction,
+      });
+
+      for (const invited of invitedTenantUsers) {
+        invited.invitationToken = null;
+        invited.status = 'active';
+        await invited.save({ transaction });
+
+        await AuditLogRepository.log(
+          {
+            entityName: 'user',
+            entityId: user.id,
+            action: AuditLogRepository.UPDATE,
+            values: {
+              id: user.id,
+              email: user.email,
+              roles: invited.roles,
+              status: invited.status,
+            },
+          },
+          options,
+        );
+      }
+    } catch (e) {
+      // If something goes wrong promoting tenant users, log and continue
+      console.error('Error promoting invited tenant users on email verification:', e);
+    }
 
     return true;
   }
@@ -1066,6 +1167,7 @@ export default class UserRepository {
       }),
     );
 
+    // Load tenant-user relationships and include assigned clients/post sites
     output.tenants = await record.getTenants({
       include: [
         {
@@ -1073,6 +1175,18 @@ export default class UserRepository {
           as: 'tenant',
           required: true,
           include: ['settings'],
+        },
+        {
+          model: options.database.clientAccount,
+          as: 'assignedClients',
+          attributes: ['id', 'name'],
+          through: { attributes: [] },
+        },
+        {
+          model: options.database.businessInfo,
+          as: 'assignedPostSites',
+          attributes: ['id', 'companyName'],
+          through: { attributes: [] },
         },
       ],
       transaction: SequelizeRepository.getTransaction(
@@ -1116,9 +1230,25 @@ export default class UserRepository {
     const status = tenantUser ? tenantUser.status : null;
     const roles = tenantUser ? tenantUser.roles : [];
 
-    // If the user is only invited,
-    // tenant members can only see its email
-    const otherData = status === 'active' ? user : {};
+    // assigned clients / post sites (if available on the tenantUser relation)
+    const assignedClients = (tenantUser && tenantUser.assignedClients)
+      ? (tenantUser.assignedClients || []).map((c) => ({ id: c.id, name: c.name }))
+      : [];
+
+    const assignedPostSites = (tenantUser && tenantUser.assignedPostSites)
+      ? (tenantUser.assignedPostSites || []).map((p) => ({ id: p.id, name: p.companyName || p.name }))
+      : [];
+
+    // If the user is only invited, previously we returned only email.
+    // Keep invitation flow intact but expose basic name fields so UI can display them.
+    const otherData =
+      status === 'active'
+        ? user
+        : {
+          firstName: user.firstName,
+          lastName: user.lastName,
+          fullName: user.fullName,
+        };
 
     return {
       ...otherData,
@@ -1126,6 +1256,8 @@ export default class UserRepository {
       email: user.email,
       roles,
       status,
+      assignedClients,
+      assignedPostSites,
     };
   }
 }

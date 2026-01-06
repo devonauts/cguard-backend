@@ -19,10 +19,16 @@ export default class ApiResponseHandler {
 
     // For simpler frontend consumption (toasts, alerts), return plain text instead of JSON object
     if (error && [400, 401, 403, 404].includes(error.code)) {
-      res.status(error.code).type('text').send(message);
+      // Return structured JSON so frontends can display localized messages reliably.
+      const payload = {
+        message,
+        code: error.code,
+        messageCode: error.messageCode || null,
+      };
+      res.status(error.code).json(payload);
     } else {
       console.error(error);
-      res.status(500).type('text').send(message);
+      res.status(500).json({ message, code: 500 });
     }
   }
 }

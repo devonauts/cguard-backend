@@ -151,6 +151,15 @@ export default function (sequelize) {
     models.clientAccount.belongsTo(models.user, {
       as: 'updatedBy',
     });
+
+    // Assign clients to tenantUsers
+    models.clientAccount.belongsToMany(models.tenantUser, {
+      through: 'tenant_user_client_accounts',
+      foreignKey: 'clientAccountId',
+      otherKey: 'tenantUserId',
+      as: 'assignedTenantUsers',
+      constraints: false,
+    });
   };
 
   return clientAccount;

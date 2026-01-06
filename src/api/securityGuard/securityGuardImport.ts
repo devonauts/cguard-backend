@@ -131,7 +131,7 @@ export default async (req, res, next) => {
           console.log('🔔 [securityGuardImport] parsed CSV rows:', rows.length);
         }
       } catch (e) {
-        console.warn('⚠️ [securityGuardImport] error parsing CSV file:', e && e.message ? e.message : e);
+        console.warn('⚠️ [securityGuardImport] error parsing CSV file:', e && (e as any).message ? (e as any).message : e);
       }
     }
 

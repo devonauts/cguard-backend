@@ -4,6 +4,7 @@ import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import FileRepository from './fileRepository';
+import Roles from '../../security/roles';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -202,6 +203,57 @@ class BusinessInfoRepository {
     const currentTenant = SequelizeRepository.getCurrentTenant(
       options,
     );
+
+    // ACL: restrict access to assigned post sites for non-admin users
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    let isAdmin = false;
+    try {
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === currentTenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes(Roles.values.admin);
+        }
+      }
+    } catch (e) {
+      isAdmin = false;
+    }
+
+    if (!isAdmin) {
+      const tenantUser = await options.database.tenantUser.findOne({
+        where: { tenantId: currentTenant.id, userId: currentUser.id },
+        include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+        transaction,
+      });
+
+      const allowedIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+      if (!allowedIds.length) {
+        throw new Error404();
+      }
+
+      if (!allowedIds.includes(id)) {
+        throw new Error404();
+      }
+
+      const record = await options.database.businessInfo.findOne({
+        where: {
+          id,
+          tenantId: currentTenant.id,
+        },
+        include,
+        transaction,
+      });
+
+      if (!record) {
+        throw new Error404();
+      }
+
+      return this._fillWithRelationsAndFiles(record, options);
+    }
 
     const record = await options.database.businessInfo.findOne(
       {
@@ -493,6 +545,40 @@ class BusinessInfoRepository {
     }
 
     const where = { [Op.and]: whereAnd };
+
+    // ACL: if current user is not admin, restrict list to assigned post sites
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes(Roles.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: tenant.id, userId: currentUser.id },
+          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        const allowedIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        if (!allowedIds.length) {
+          return { rows: [], count: 0 };
+        }
+
+        where[Op.and].push({ id: { [Op.in]: allowedIds } });
+      }
+    } catch (e) {
+      // ignore and proceed
+    }
 
     let {
       rows,

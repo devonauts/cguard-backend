@@ -156,6 +156,15 @@ export default function (sequelize) {
     models.businessInfo.belongsTo(models.user, {
       as: 'updatedBy',
     });
+    
+    // Assign postSites to tenantUsers
+    models.businessInfo.belongsToMany(models.tenantUser, {
+      through: 'tenant_user_post_sites',
+      foreignKey: 'businessInfoId',
+      otherKey: 'tenantUserId',
+      as: 'assignedTenantUsers',
+      constraints: false,
+    });
   };
 
   return businessInfo;

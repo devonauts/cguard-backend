@@ -14,6 +14,15 @@ export default async (req, res, next) => {
     console.log('🔍 Raw data recibida del frontend:', rawData);
     console.log('🔍 Active recibido:', rawData.active);
 
+    const parseDecimal = (value) => {
+      if (value === undefined || value === null || value === '') {
+        return null;
+      }
+      const s = String(value).replace(',', '.');
+      const n = parseFloat(s);
+      return Number.isFinite(n) ? n : null;
+    };
+
     const data = {
       ...rawData,
       // Mapear addressLine2 -> addressComplement
@@ -22,6 +31,9 @@ export default async (req, res, next) => {
       zipCode: rawData.postalCode || rawData.zipCode,
       // Keep categoryIds array for N:N relationship
       categoryIds: rawData.categoryIds || [],
+      // Mapear y sanear lat/long
+      latitude: parseDecimal(rawData.latitude ?? rawData.latitud ?? rawData.lat),
+      longitude: parseDecimal(rawData.longitude ?? rawData.longitud ?? rawData.lng),
     };
 
     console.log('📝 Data mapeada:', data);

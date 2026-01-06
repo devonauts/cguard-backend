@@ -11,6 +11,16 @@ export default async (req, res, next) => {
 
     console.log('📥 req.body ORIGINAL:', JSON.stringify(req.body, null, 2));
 
+    // Función auxiliar para parsear decimales y convertir valores vacíos a null
+    const parseDecimal = (value) => {
+      if (value === undefined || value === null || value === '') {
+        return null;
+      }
+      const s = String(value).replace(',', '.');
+      const n = parseFloat(s);
+      return Number.isFinite(n) ? n : null;
+    };
+
     // Mapear nombres de campos del frontend al backend
     const data = {
       ...req.body,
@@ -20,6 +30,9 @@ export default async (req, res, next) => {
       zipCode: req.body.postalCode || req.body.zipCode,
       // Keep categoryIds array for N:N relationship
       categoryIds: req.body.categoryIds || [],
+      // Mapear latitud/longitud (posibles nombres en frontend) y sanear valores
+      latitude: parseDecimal(req.body.latitude ?? req.body.latitud ?? req.body.lat),
+      longitude: parseDecimal(req.body.longitude ?? req.body.longitud ?? req.body.lng),
     };
 
     // Remover campos del frontend que no existen en el modelo

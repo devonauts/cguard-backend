@@ -115,7 +115,7 @@ export default async (req, res, next) => {
       const guardUser = await options.database.user.findByPk(record.guardId);
       if (guardUser) {
         // Only generate email verification token for real emails (not synthetic phone emails)
-        let emailVerificationToken = null;
+        let emailVerificationToken: string | null = null;
         if (
           guardUser &&
           guardUser.email &&

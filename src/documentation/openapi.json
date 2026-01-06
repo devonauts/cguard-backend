@@ -15769,6 +15769,23 @@
                           "example": "admin"
                         }
                       }
+                      ,
+                      "clientIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "description": "Optional list of clientAccount ids to assign to this user"
+                      },
+                      "postSiteIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "description": "Optional list of businessInfo (post site) ids to assign to this user"
+                      }
                     }
                   }
                 }
@@ -15838,6 +15855,23 @@
                           "type": "string",
                           "example": "admin"
                         }
+                      }
+                      ,
+                      "clientIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "description": "Optional list of clientAccount ids to assign to the created users"
+                      },
+                      "postSiteIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "description": "Optional list of businessInfo (post site) ids to assign to the created users"
                       }
                     }
                   }
@@ -18442,6 +18476,22 @@
               "example": "admin"
             }
           },
+            "assignedClients": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "description": "List of assigned clientAccount ids for this tenantUser"
+            },
+            "assignedPostSites": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "description": "List of assigned businessInfo (post site) ids for this tenantUser"
+            },
           "invitationToken": {
             "type": "string"
           },

@@ -260,16 +260,16 @@ export default async (req, res, next) => {
                         console.log('✅ [securityGuardCreate] accepted invitation and activated tenantUser for user id', userId);
                       }
                     } catch (acceptErr) {
-                      console.warn('🔔 [securityGuardCreate] failed to accept invitation for impersonated user:', acceptErr && acceptErr.message ? acceptErr.message : acceptErr);
+                      console.warn('🔔 [securityGuardCreate] failed to accept invitation for impersonated user:', acceptErr && (acceptErr as any).message ? (acceptErr as any).message : acceptErr);
                     }
                   } catch (err) {
-                    console.warn('🔔 [securityGuardCreate] failed to set password for impersonated user:', err && err.message ? err.message : err);
+                    console.warn('🔔 [securityGuardCreate] failed to set password for impersonated user:', err && (err as any).message ? (err as any).message : err);
                   }
                 }
               }
             }
           } catch (e) {
-            console.warn('🔔 [securityGuardCreate] failed to update impersonated user before create:', e && e.message ? e.message : e);
+            console.warn('🔔 [securityGuardCreate] failed to update impersonated user before create:', e && (e as any).message ? (e as any).message : e);
           }
         } else {
           try {
@@ -434,7 +434,7 @@ export default async (req, res, next) => {
           const guardUser = await UserRepository.findById(entry.guard, req);
 
           // Only generate email verification token for real emails (not phone synthetic)
-          let emailVerificationToken = null;
+          let emailVerificationToken: string | null = null;
           if (
             guardUser &&
             guardUser.email &&
@@ -498,7 +498,7 @@ export default async (req, res, next) => {
         const guardUser = await UserRepository.findById(entry.guard, req);
 
         // Only generate email verification token for real emails (not phone synthetic)
-        let emailVerificationToken = null;
+        let emailVerificationToken: string | null = null;
         if (
           guardUser &&
           guardUser.email &&

@@ -13,7 +13,7 @@ export default function (sequelize, DataTypes) {
       roles: {
         type: SequelizeArrayUtils.DataType,
         validate: {
-          isValidOption: function (value) {
+          isValidOption: async function (value) {
             if (!value || !value.length) {
               return value;
             }
@@ -39,8 +39,25 @@ export default function (sequelize, DataTypes) {
               throw new Error(`Roles must be an array, got: ${typeof value}`);
             }
       
+            // Start with built-in roles
             const validOptions: any = Object.keys(Roles.values);
-      
+
+            // If tenantId is present, also include dynamic role slugs from the DB
+            try {
+              const tenantIdVal = (this as any).tenantId;
+              if (tenantIdVal && tenantIdVal !== '') {
+                const roleRecords = await sequelize.models.role.findAll({
+                  where: { tenantId: tenantIdVal },
+                  attributes: ['slug'],
+                });
+                roleRecords.forEach((r) => {
+                  if (r && r.slug) validOptions.push(r.slug);
+                });
+              }
+            } catch (e) {
+              // If DB isn't available during validation, silently proceed with built-in roles only
+            }
+
             if (
               arrayValue.some(
                 (item) => !validOptions.includes(item),
@@ -50,7 +67,7 @@ export default function (sequelize, DataTypes) {
                 `${arrayValue} contains invalid roles. Valid options: ${validOptions.join(', ')}`,
               );
             }
-      
+
             return arrayValue;
           },
         },
@@ -94,6 +111,23 @@ export default function (sequelize, DataTypes) {
 
     models.tenantUser.belongsTo(models.user, {
       as: 'updatedBy',
+    });
+
+    // Relations to clients and postSites via pivot tables
+    models.tenantUser.belongsToMany(models.clientAccount, {
+      through: 'tenant_user_client_accounts',
+      foreignKey: 'tenantUserId',
+      otherKey: 'clientAccountId',
+      as: 'assignedClients',
+      constraints: false,
+    });
+
+    models.tenantUser.belongsToMany(models.businessInfo, {
+      through: 'tenant_user_post_sites',
+      foreignKey: 'tenantUserId',
+      otherKey: 'businessInfoId',
+      as: 'assignedPostSites',
+      constraints: false,
     });
   };
 

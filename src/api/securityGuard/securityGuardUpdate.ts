@@ -56,7 +56,7 @@ export default async (req, res, next) => {
 
     const payload = await new SecurityGuardService(req).update(
       targetId,
-      req.body.data,
+      incoming || req.body.data || req.body,
     );
 
     await ApiResponseHandler.success(req, res, payload);

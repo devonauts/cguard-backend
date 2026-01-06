@@ -12,6 +12,7 @@ import { tenantSubdomain } from '../tenantSubdomain';
 import Error401 from '../../errors/Error401';
 import dayjs from 'dayjs';
 import Roles from '../../security/roles';
+import RoleRepository from '../../database/repositories/roleRepository';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -344,16 +345,83 @@ class AuthService {
         { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
       )
 
-      await SequelizeRepository.commitTransaction(transaction)
-
-      const safeUser = {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName || null,
-        lastName: user.lastName || null,
+      // Mark user last login timestamp
+      try {
+        await UserRepository.markLoggedIn(user.id, {
+          ...options,
+          transaction,
+        });
+      } catch (err) {
+        console.warn('Could not mark lastLoginAt for user:', err);
       }
 
-      return { token, user: safeUser }
+      await SequelizeRepository.commitTransaction(transaction)
+
+      // Load full user with tenant relations and compute tenant permissions
+      // Use a loose type to avoid TS narrowing issues when fullUser is assigned later
+      let fullUser: any = null;
+      try {
+        fullUser = await UserRepository.findById(user.id, {
+          ...options,
+          bypassPermissionValidation: true,
+        });
+      } catch (err) {
+        // If reading the full user fails, fall back to minimal safe user
+        const errMsg = err && typeof err === 'object' && 'message' in err
+          ? (err as any).message
+          : String(err);
+        console.warn('Could not load full user during signin response enrichment:', errMsg);
+      }
+
+      if (fullUser && Array.isArray(fullUser.tenants) && options && options.database) {
+        for (const t of fullUser.tenants) {
+          try {
+            const tenantId = (t && (t.tenantId || (t.tenant && t.tenant.id))) ? (t.tenantId || t.tenant.id) : null;
+            if (!tenantId) continue;
+            const roleMap = await RoleRepository.getPermissionsMapForTenant(tenantId, { database: options.database });
+            const perms = new Set();
+            if (Array.isArray(t.roles)) {
+              for (const r of t.roles) {
+                const rp = roleMap && roleMap[r] ? roleMap[r] : [];
+                if (Array.isArray(rp)) rp.forEach((p) => perms.add(p));
+              }
+            }
+            // Attach computed permissions array to the tenant entry
+            t.permissions = Array.from(perms);
+            } catch (e) {
+            // non-fatal per-tenant
+            const tenantPermsWarnMsg = e && typeof e === 'object' && 'message' in e ? (e as any).message : String(e);
+            console.warn('Could not compute tenant permissions for signin response', tenantPermsWarnMsg);
+            t.permissions = t.permissions || [];
+          }
+        }
+      }
+
+      const safeUser = fullUser
+        ? {
+            id: fullUser.id,
+            email: fullUser.email,
+            firstName: fullUser.firstName || null,
+            lastName: fullUser.lastName || null,
+            tenants: (fullUser.tenants || []).map((t) => ({
+              id: t.id,
+              tenantId: t.tenantId,
+              tenant: t.tenant || null,
+              roles: t.roles || [],
+              permissions: t.permissions || [],
+              assignedClients: t.assignedClients || [],
+              assignedPostSites: t.assignedPostSites || [],
+              status: t.status || null,
+            })),
+          }
+        : {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName || null,
+            lastName: user.lastName || null,
+          };
+
+      return { token, user: safeUser };
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(transaction)
       throw error
@@ -468,7 +536,29 @@ class AuthService {
                 user.emailVerified = true;
               }
 
-              resolve(user);
+                // Prime role permissions cache for the user's tenants so
+                // synchronous permission checks can consult the in-memory cache.
+                try {
+                  const tenantIds = (user && Array.isArray(user.tenants))
+                    ? user.tenants.map((t) => (t && t.id) ? t.id : null).filter(Boolean)
+                    : [];
+                  if (tenantIds.length && options && options.database) {
+                    tenantIds.forEach((tid) => {
+                      RoleRepository.getPermissionsMapForTenant(tid, { database: options.database })
+                        .catch((err) => {
+                          try {
+                            console.warn('RoleRepository cache priming failed for tenant', tid, err && err.message ? err.message : err);
+                          } catch (e) {
+                            // ignore
+                          }
+                        });
+                    });
+                  }
+                } catch (e) {
+                  // non-fatal
+                }
+
+                resolve(user);
             })
             .catch((error) => reject(error));
         },

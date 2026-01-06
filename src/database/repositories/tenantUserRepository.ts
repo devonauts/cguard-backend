@@ -3,6 +3,8 @@ import AuditLogRepository from './auditLogRepository';
 import Roles from '../../security/roles';
 import crypto from 'crypto';
 import { IRepositoryOptions } from './IRepositoryOptions';
+import ClientAccountRepository from './clientAccountRepository';
+import BusinessInfoRepository from './businessInfoRepository';
 
 export default class TenantUserRepository {
   
@@ -135,7 +137,7 @@ export default class TenantUserRepository {
     return records;
   }
 
-  static async updateRoles(tenantId, id, roles, options) {
+  static async updateRoles(tenantId, id, roles, options, clientIds?, postSiteIds?) {
     const transaction = SequelizeRepository.getTransaction(
       options,
     );
@@ -157,6 +159,55 @@ export default class TenantUserRepository {
       }
     }
 
+    // Map incoming role identifiers (ids, objects) to slugs
+    async function mapToSlugs(inputRoles) {
+      const mapped: string[] = [];
+      for (const r of inputRoles) {
+        if (!r && r !== 0) continue;
+
+        // If object with slug
+        if (typeof r === 'object') {
+          if (r.slug) {
+            mapped.push(r.slug);
+            continue;
+          }
+          if (r.id) {
+            const roleRec = await options.database.role.findByPk(r.id, { transaction });
+            if (roleRec) mapped.push(roleRec.slug);
+            continue;
+          }
+          // Fallback: try name
+          if (r.name) {
+            // try to find by name
+            const roleByName = await options.database.role.findOne({ where: { name: r.name, tenantId }, transaction });
+            if (roleByName) mapped.push(roleByName.slug);
+            continue;
+          }
+          continue;
+        }
+
+        // If string that looks like a UUID, try find by id
+        if (typeof r === 'string') {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          if (uuidRegex.test(r)) {
+            const roleRec = await options.database.role.findByPk(r, { transaction });
+            if (roleRec) {
+              mapped.push(roleRec.slug);
+              continue;
+            }
+          }
+
+          // If string looks like JSON array, ignore here (already parsed earlier)
+
+          // Otherwise assume it's already a slug
+          mapped.push(r);
+        }
+      }
+
+      // unique
+      return [...new Set(mapped)];
+    }
+
     let user = await options.database.user.findByPk(id, {
       transaction,
     });
@@ -171,14 +222,19 @@ export default class TenantUserRepository {
 
     if (!tenantUser) {
       isCreation = true;
+      // Decide initial status based on whether the user already verified their email.
+      const initialStatus = user && user.emailVerified
+        ? selectStatus('active', roles || [])
+        : selectStatus('invited', roles || []);
+
+      const invitationToken = user && user.emailVerified ? null : crypto.randomBytes(20).toString('hex');
+
       tenantUser = await options.database.tenantUser.create(
         {
           tenantId,
           userId: id,
-          status: selectStatus('invited', []),
-          invitationToken: crypto
-            .randomBytes(20)
-            .toString('hex'),
+          status: initialStatus,
+          invitationToken,
           roles: [],
         },
         { transaction },
@@ -203,14 +259,17 @@ export default class TenantUserRepository {
 
     let newRoles = [] as Array<string>;
 
+    // Map provided roles (ids/objects/slugs) to slugs before merging
+    const incomingSlugs = await mapToSlugs(roles);
+
     if (options.addRoles) {
-      newRoles = [...new Set([...existingRoles, ...roles])];
+      newRoles = [...new Set([...existingRoles, ...incomingSlugs])];
     } else if (options.removeOnlyInformedRoles) {
       newRoles = existingRoles.filter(
-        (existingRole) => !roles.includes(existingRole),
+        (existingRole) => !incomingSlugs.includes(existingRole),
       );
     } else {
-      newRoles = roles || [];
+      newRoles = incomingSlugs || [];
     }
 
     tenantUser.roles = newRoles;
@@ -222,6 +281,157 @@ export default class TenantUserRepository {
     await tenantUser.save({
       transaction,
     });
+
+    // Persist assigned clients (many-to-many pivot)
+    try {
+      if (clientIds !== undefined) {
+        let clientsArray = clientIds || [];
+        if (!Array.isArray(clientsArray)) {
+          try {
+            clientsArray = JSON.parse(clientsArray);
+          } catch (e) {
+            clientsArray = [clientsArray];
+          }
+        }
+        // Normalize to id strings
+        clientsArray = clientsArray.map((c) => (c && c.id ? c.id : c)).filter(Boolean);
+
+        // Validate IDs belong to tenant and get the valid subset
+        let validClientIds = [];
+        try {
+          validClientIds = await ClientAccountRepository.filterIdsInTenant(clientsArray, options);
+        } catch (e) {
+          validClientIds = clientsArray;
+        }
+
+        // Ensure we have a Sequelize instance with association helpers
+        if (!tenantUser || typeof tenantUser.getAssignedClients !== 'function') {
+          tenantUser = await options.database.tenantUser.findOne({
+            where: { id: tenantUser && tenantUser.id ? tenantUser.id : id, tenantId },
+            include: [{ model: options.database.clientAccount, as: 'assignedClients' }],
+            transaction,
+          });
+        }
+
+        // Merge with existing assigned clients instead of replacing to avoid accidental deletion
+        const existingClients = typeof tenantUser.getAssignedClients === 'function'
+          ? await tenantUser.getAssignedClients({ transaction })
+          : (tenantUser && tenantUser.assignedClients) || [];
+        const existingIds = Array.isArray(existingClients)
+          ? existingClients.map((c) => c.id)
+          : [];
+
+        const merged = [...new Set([...(existingIds || []), ...(validClientIds || [])])];
+
+        // Debug info: show tenantUser and arrays involved in the pivot operation
+        console.debug('tenantUser assignment debug - clients', {
+          tenantUserId: tenantUser && tenantUser.id,
+          incomingClientIds: clientsArray,
+          validClientIds,
+          existingIds,
+          merged,
+        });
+
+        // Insert missing pivot rows manually with generated UUIDs to avoid relying on DB defaults
+        const toInsertClientIds = (merged || []).filter((cid) => !existingIds.includes(cid));
+        if (toInsertClientIds.length) {
+          const now = new Date();
+          const rows = toInsertClientIds.map((clientId) => ({
+            id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
+            tenantUserId: tenantUser.id,
+            clientAccountId: clientId,
+            createdAt: now,
+            updatedAt: now,
+          }));
+
+          try {
+            await options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_client_accounts', rows, { transaction });
+          } catch (e) {
+            console.error('Failed bulkInsert tenant_user_client_accounts:', e);
+            throw e;
+          }
+        }
+      }
+    } catch (e) {
+      // Surface the error so we can debug why the pivot insert failed
+      console.error('Failed to persist tenantUser assigned clients:', e);
+      throw e;
+    }
+
+    // Persist assigned post sites (businessInfo) via pivot
+    try {
+      if (postSiteIds !== undefined) {
+        let postsArray = postSiteIds || [];
+        if (!Array.isArray(postsArray)) {
+          try {
+            postsArray = JSON.parse(postsArray);
+          } catch (e) {
+            postsArray = [postsArray];
+          }
+        }
+        postsArray = postsArray.map((p) => (p && p.id ? p.id : p)).filter(Boolean);
+
+        // Validate IDs belong to tenant
+        let validPostSiteIds = [];
+        try {
+          validPostSiteIds = await BusinessInfoRepository.filterIdsInTenant(postsArray, options);
+        } catch (e) {
+          validPostSiteIds = postsArray;
+        }
+
+        // Merge with existing assigned post sites
+        // Ensure we have association helpers for post sites as well
+        if (!tenantUser || typeof tenantUser.getAssignedPostSites !== 'function') {
+          tenantUser = await options.database.tenantUser.findOne({
+            where: { id: tenantUser && tenantUser.id ? tenantUser.id : id, tenantId },
+            include: [{ model: options.database.businessInfo, as: 'assignedPostSites' }],
+            transaction,
+          });
+        }
+
+        const existingPosts = typeof tenantUser.getAssignedPostSites === 'function'
+          ? await tenantUser.getAssignedPostSites({ transaction })
+          : (tenantUser && tenantUser.assignedPostSites) || [];
+        const existingPostIds = Array.isArray(existingPosts)
+          ? existingPosts.map((p) => p.id)
+          : [];
+
+        const mergedPosts = [...new Set([...(existingPostIds || []), ...(validPostSiteIds || [])])];
+
+        // Debug info: show tenantUser and arrays involved in the pivot operation
+        console.debug('tenantUser assignment debug - posts', {
+          tenantUserId: tenantUser && tenantUser.id,
+          incomingPostSiteIds: postsArray,
+          validPostSiteIds,
+          existingPostIds,
+          mergedPosts,
+        });
+
+        // Insert missing pivot rows for post sites manually with generated UUIDs
+        const toInsertPostIds = (mergedPosts || []).filter((pid) => !existingPostIds.includes(pid));
+        if (toInsertPostIds.length) {
+          const now = new Date();
+          const rows = toInsertPostIds.map((postId) => ({
+            id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
+            tenantUserId: tenantUser.id,
+            businessInfoId: postId,
+            createdAt: now,
+            updatedAt: now,
+          }));
+
+          try {
+            await options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', rows, { transaction });
+          } catch (e) {
+            console.error('Failed bulkInsert tenant_user_post_sites:', e);
+            throw e;
+          }
+        }
+      }
+    } catch (e) {
+      // Surface the error so we can debug why the pivot insert failed
+      console.error('Failed to persist tenantUser assigned post sites:', e);
+      throw e;
+    }
 
     await AuditLogRepository.log(
       {

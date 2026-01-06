@@ -55,7 +55,7 @@ export default class SecurityGuardService {
             console.log('🔔 [SecurityGuardService.create] ensured tenantUser roles include securityGuard for user:', data.guard);
           }
         } catch (e) {
-          console.warn('⚠️ [SecurityGuardService.create] failed to ensure tenantUser roles for guard:', e && e.message ? e.message : e);
+          console.warn('⚠️ [SecurityGuardService.create] failed to ensure tenantUser roles for guard:', (e && (e as any).message) ? (e as any).message : e);
         }
       }
       data.memos = await MemosRepository.filterIdsInTenant(data.memos, { ...this.options, transaction });
@@ -111,7 +111,7 @@ export default class SecurityGuardService {
               phoneNumber: data.phoneNumber || data.phone || null,
             }, { ...this.options, transaction, bypassPermissionValidation: true });
           } catch (e) {
-            console.warn('⚠️ [SecurityGuardService.create] failed to update user profile names:', e && e.message ? e.message : e);
+            console.warn('⚠️ [SecurityGuardService.create] failed to update user profile names:', (e && (e as any).message) ? (e as any).message : e);
           }
           
 
@@ -129,7 +129,7 @@ export default class SecurityGuardService {
 
           data.guard = user.id;
         } catch (e) {
-          console.warn('⚠️ [SecurityGuardService.create] import user/tenantUser creation failed:', e && e.message ? e.message : e);
+          console.warn('⚠️ [SecurityGuardService.create] import user/tenantUser creation failed:', (e && (e as any).message) ? (e as any).message : e);
         }
       }
 
@@ -185,7 +185,7 @@ export default class SecurityGuardService {
               phoneNumber: data.phoneNumber || data.phone || null,
             }, { ...this.options, transaction, bypassPermissionValidation: true });
           } catch (e) {
-            console.warn('⚠️ [SecurityGuardService.create] failed to update new user profile names:', e && e.message ? e.message : e);
+            console.warn('⚠️ [SecurityGuardService.create] failed to update new user profile names:', (e && (e as any).message) ? (e as any).message : e);
           }
         }
       }
@@ -224,6 +224,8 @@ export default class SecurityGuardService {
   }
 
   async update(id, data) {
+    // Normalize data to avoid TypeErrors when caller passes undefined
+    data = data || {};
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
     );
@@ -470,7 +472,7 @@ export default class SecurityGuardService {
 
     // Support importing a single record or an array of records (rows)
     if (Array.isArray(data)) {
-      const results = [];
+      const results: any[] = [];
       for (const row of data) {
         const rowToCreate = { ...row, importHash };
         const created = await this.create(rowToCreate);
@@ -480,7 +482,7 @@ export default class SecurityGuardService {
     }
 
     if (data && Array.isArray(data.rows)) {
-      const results = [];
+      const results: any[] = [];
       for (const row of data.rows) {
         const rowToCreate = { ...row, importHash };
         const created = await this.create(rowToCreate);
@@ -521,7 +523,7 @@ export default class SecurityGuardService {
         console.log('🔔 [SecurityGuardService.exportToFile] sample row keys:', sampleKeys);
       }
     } catch (e) {
-      console.warn('🔔 [SecurityGuardService.exportToFile] failed to log rows sample:', e && e.message ? e.message : e);
+      console.warn('🔔 [SecurityGuardService.exportToFile] failed to log rows sample:', (e && (e as any).message) ? (e as any).message : e);
     }
 
     if (format === 'pdf') {

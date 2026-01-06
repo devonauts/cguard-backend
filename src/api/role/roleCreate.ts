@@ -1,22 +1,15 @@
-import UserDestroyer from '../../services/user/userDestroyer';
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+import RoleService from '../../services/roleService';
 
-export default async (req, res) => {
+export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(
-      Permissions.values.userDestroy,
+      Permissions.values.settingsEdit,
     );
 
-    let remover = new UserDestroyer(req);
-
-    // Accept ids from either query string or request body.
-    const data = Object.assign({}, req.query || {}, req.body || {});
-
-    await remover.destroyAll(data);
-
-    const payload = true;
+    const payload = await new RoleService(req).create(req.body.data || req.body);
 
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {

@@ -6,6 +6,11 @@ const en = {
   app: {
     title: 'Application',
   },
+    role: {
+      errors: {
+        inUse: 'Cannot delete role because it is in use by {0} user(s).',
+      }
+    },
 
   auth: {
     userNotFound: 'The email is not registered.',
@@ -36,6 +41,9 @@ const en = {
         'User with this email already exists.',
       userNotFound: 'User not found.',
       destroyingHimself: `You can't delete yourself.`,
+      suspendingHimself: `You can't suspend yourself.`,
+      invalidClientIds: 'One or more provided clientIds are invalid for this tenant. ',
+      invalidPostSiteIds: 'One or more provided postSiteIds are invalid for this tenant. ',
       revokingOwnPermission: `You can't revoke your own admin permission.`,
       revokingPlanUser: `You can't revoke the admin permission of the plan manager.`,
       destroyingPlanUser: `You can't delete the plan manager.`,
@@ -136,7 +144,8 @@ const en = {
       errors: {
         unique: {
 
-        }
+        },
+        exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
       }
     },
     representanteEmpresa: {

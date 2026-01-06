@@ -7,9 +7,10 @@ import es from './es';
  * Object with the languages available.
  */
 const languages = {
+  es: es,
   en: en,
   'pt-BR': ptBR,
-  es: es,
+ 
 };
 
 /**

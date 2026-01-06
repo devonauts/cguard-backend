@@ -6,6 +6,11 @@ const ptBR = {
   app: {
     title: 'Aplicação',
   },
+    role: {
+      errors: {
+        inUse: 'Não é possível excluir a função porque está em uso por {0} usuário(s).',
+      }
+    },
 
   auth: {
     userNotFound: 'O e-mail não está cadastrado.',
@@ -35,6 +40,9 @@ const ptBR = {
       userAlreadyExists: 'Usuário com este email já existe',
       userNotFound: 'Usuário não encontrado',
       destroyingHimself: `Você não pode deletar-se`,
+      suspendingHimself: `Você não pode se suspender.`,
+      invalidClientIds: 'Um ou mais clientIds fornecidos são inválidos para este tenant.',
+      invalidPostSiteIds: 'Um ou mais postSiteIds fornecidos são inválidos para este tenant.',
       revokingOwnPermission: `Você não pode revogar sua própria permissão de proprietário`,
       revokingPlanUser: `Você não pode revogar a permissão do responsável pelo plano ativo`,
       destroyingPlanUser: `Você não pode deletar o responsável pelo plano ativo`,
@@ -124,7 +132,8 @@ const ptBR = {
       errors: {
         unique: {
 
-        }
+        },
+        exists: 'Já existe um cliente com este e-mail ou número de telefone.'
       }
     },
     representanteEmpresa: {

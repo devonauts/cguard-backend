@@ -41,6 +41,7 @@ class Permissions {
       userImport: createPermission('userImport', HR_ROLES),
       userRead: createPermission('userRead', ALL_STAFF_ROLES),
       userAutocomplete: createPermission('userAutocomplete', ALL_STAFF_ROLES),
+      userExport: createPermission('userExport', HR_ROLES),
 
       // === CATEGORIES ===
       categoryImport: createPermission('categoryImport', MANAGEMENT_ROLES),

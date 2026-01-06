@@ -65,6 +65,6 @@
     "nodemon": "^3.1.7",
     "sequelize-cli": "^6.6.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.2"
+    "typescript": "^5.9.3"
   }
 }

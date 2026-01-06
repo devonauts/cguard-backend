@@ -10,7 +10,7 @@ const es = {
     emailNotVerified:
       'Correo no verificado. Revisa tu email.',
     weakPassword: 'Esta contraseña es muy débil.',
-    emailAlreadyInUse: 'Correo electrónico ya está en uso',
+    emailAlreadyInUse: 'Correo electrónico ya está en uso por otro usuario.',
     invalidEmail:
       'Por favor proporcione un correo electrónico válido',
     passwordReset: {
@@ -36,6 +36,9 @@ const es = {
         'El usuario con este correo electrónico ya existe.',
       userNotFound: 'Usuario no encontrado.',
       destroyingHimself: 'No puedes eliminarte a ti mismo.',
+      suspendingHimself: 'No puedes suspenderte a ti mismo.',
+      invalidClientIds: 'Uno o más clientIds proporcionados son inválidos para este tenant.',
+      invalidPostSiteIds: 'Uno o más postSiteIds proporcionados son inválidos para este tenant.',
       revokingOwnPermission:
         'No puede revocar su propio permiso de administrador.',
       revokingPlanUser:
@@ -97,236 +100,242 @@ const es = {
         inUse: 'No se puede eliminar la categoría porque está en uso por {0} cliente(s).',
       }
     },
-    bannerSuperiorApp: {
+    role: {
       errors: {
-        unique: {
+        inUse: 'No se puede eliminar el rol porque está en uso.',
+      }
+    },
+  },
+  bannerSuperiorApp: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    service: {
-      errors: {
-        unique: {
+    }
+  },
+  service: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    certification: {
-      errors: {
-        unique: {
-          code: 'Código de Permiso debe ser único',
-        }
+    }
+  },
+  certification: {
+    errors: {
+      unique: {
+        code: 'Código de Permiso debe ser único',
       }
-    },
-    securityGuard: {
-      errors: {
-        unique: {
-        },
-        notFound: 'No se encontró un guardia con el ID proporcionado.',
-        mustBeArchivedBeforeDelete: 'El guardia debe ser archivado antes de poder eliminarlo.',
-        noTenantUser: 'No se encontró relación de tenant con el usuario del guardia.',
-        guardOccupiedByGuardShift: 'El guardia tiene guardias activas (guardShift) y no puede ser archivado/eliminado.',
-        guardOccupiedByShift: 'El guardia tiene turnos activos y no puede ser archivado/eliminado.',
-        guardOccupiedByPatrol: 'El guardia está asignado a patrullas pendientes y no puede ser archivado/eliminado.',
-        validation: {
-          governmentIdTooLong: 'El número de identificación es demasiado largo (máx 50 caracteres)',
-          guardCredentialsTooLong: 'Las credenciales del guardia son demasiado largas (máx 255 caracteres)',
-          mustBeAdult: 'El guardia debe ser mayor de edad (18 años o más)',
-        }
+    }
+  },
+  securityGuard: {
+    errors: {
+      unique: {
+      },
+      notFound: 'No se encontró un guardia con el ID proporcionado.',
+      mustBeArchivedBeforeDelete: 'El guardia debe ser archivado antes de poder eliminarlo.',
+      noTenantUser: 'No se encontró relación de tenant con el usuario del guardia.',
+      guardOccupiedByGuardShift: 'El guardia tiene guardias activas (guardShift) y no puede ser archivado/eliminado.',
+      guardOccupiedByShift: 'El guardia tiene turnos activos y no puede ser archivado/eliminado.',
+      guardOccupiedByPatrol: 'El guardia está asignado a patrullas pendientes y no puede ser archivado/eliminado.',
+      validation: {
+        governmentIdTooLong: 'El número de identificación es demasiado largo (máx 50 caracteres)',
+        guardCredentialsTooLong: 'Las credenciales del guardia son demasiado largas (máx 255 caracteres)',
+        mustBeAdult: 'El guardia debe ser mayor de edad (18 años o más)',
       }
-    },
-    clientAccount: {
-      errors: {
-        unique: {
+    }
+  },
+  clientAccount: {
+    errors: {
+      unique: {
 
-        }
-      }
-    },
-    representanteEmpresa: {
-      errors: {
-        unique: {
+      },
+      exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
+    }
+  },
+  representanteEmpresa: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    incident: {
-      errors: {
-        unique: {
+    }
+  },
+  incident: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    inventory: {
-      errors: {
-        unique: {
-          radioSerialNumber: 'No de Serie del Radio debe ser único',
-          gunSerialNumber: 'Número de Serie de la Arma debe ser único',
-          armorSerialNumber: 'Número de Serie de Chaleco Antibalas debe ser único',
-        }
+    }
+  },
+  inventory: {
+    errors: {
+      unique: {
+        radioSerialNumber: 'No de Serie del Radio debe ser único',
+        gunSerialNumber: 'Número de Serie de la Arma debe ser único',
+        armorSerialNumber: 'Número de Serie de Chaleco Antibalas debe ser único',
       }
-    },
-    additionalService: {
-      errors: {
-        unique: {
-          dvrSerialCode: 'No de Serie debe ser único',
-        }
+    }
+  },
+  additionalService: {
+    errors: {
+      unique: {
+        dvrSerialCode: 'No de Serie debe ser único',
       }
-    },
-    patrolCheckpoint: {
-      errors: {
-        unique: {
+    }
+  },
+  patrolCheckpoint: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    patrolLog: {
-      errors: {
-        unique: {
+    }
+  },
+  patrolLog: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    patrol: {
-      errors: {
-        unique: {
+    }
+  },
+  patrol: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    station: {
-      errors: {
-        unique: {
+    }
+  },
+  station: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    billing: {
-      errors: {
-        unique: {
-          invoiceNumber: 'Número de Factura debe ser único',
-        }
+    }
+  },
+  billing: {
+    errors: {
+      unique: {
+        invoiceNumber: 'Número de Factura debe ser único',
       }
-    },
-    inquiries: {
-      errors: {
-        unique: {
+    }
+  },
+  inquiries: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    task: {
-      errors: {
-        unique: {
+    }
+  },
+  task: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    notification: {
-      errors: {
-        unique: {
+    }
+  },
+  notification: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    deviceIdInformation: {
-      errors: {
-        unique: {
+    }
+  },
+  deviceIdInformation: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    guardShift: {
-      errors: {
-        unique: {
+    }
+  },
+  guardShift: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    memos: {
-      errors: {
-        unique: {
+    }
+  },
+  memos: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    request: {
-      errors: {
-        unique: {
+    }
+  },
+  request: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    videoTutorialCategory: {
-      errors: {
-        unique: {
+    }
+  },
+  videoTutorialCategory: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    videoTutorial: {
-      errors: {
-        unique: {
+    }
+  },
+  videoTutorial: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    tutorial: {
-      errors: {
-        unique: {
+    }
+  },
+  tutorial: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    completionOfTutorial: {
-      errors: {
-        unique: {
+    }
+  },
+  completionOfTutorial: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    inventoryHistory: {
-      errors: {
-        unique: {
+    }
+  },
+  inventoryHistory: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    businessInfo: {
-      errors: {
-        unique: {
+    }
+  },
+  businessInfo: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    insurance: {
-      errors: {
-        unique: {
+    }
+  },
+  insurance: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    notificationRecipient: {
-      errors: {
-        unique: {
+    }
+  },
+  notificationRecipient: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    report: {
-      errors: {
-        unique: {
+    }
+  },
+  report: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-    shift: {
-      errors: {
-        unique: {
+    }
+  },
+  shift: {
+    errors: {
+      unique: {
 
-        }
       }
-    },
-  }
+    }
+  },
 };
 
 export default es;
