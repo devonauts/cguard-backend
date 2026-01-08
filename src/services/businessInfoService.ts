@@ -3,6 +3,9 @@ import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import ClientAccountRepository from '../database/repositories/clientAccountRepository';
+import TenantUserRepository from '../database/repositories/tenantUserRepository';
+import Roles from '../security/roles';
+import crypto from 'crypto';
 
 export default class BusinessInfoService {
   options: IServiceOptions;
@@ -31,6 +34,94 @@ export default class BusinessInfoService {
         ...this.options,
         transaction,
       });
+
+      // If the creator is not admin, auto-assign the created post site and optionally the client to that tenant user.
+      try {
+        const currentUser = this.options.currentUser;
+        const currentTenant = this.options.currentTenant;
+
+        if (currentUser && currentTenant) {
+          console.debug('Auto-assign post site - preparing to assign', {
+            tenantId: currentTenant.id,
+            userId: currentUser.id,
+            postSiteId: record.id,
+            clientAccountId: data && data.clientAccountId,
+          });
+
+            // Determine tenant roles for the current user to avoid passing undefined
+            const tenantEntry = Array.isArray(currentUser.tenants)
+              ? currentUser.tenants.find(
+                  (t) => t && t.tenant && String(t.tenant.id) === String(currentTenant.id),
+                )
+              : null;
+
+            const rolesToPass = tenantEntry && Array.isArray(tenantEntry.roles) ? tenantEntry.roles : [];
+
+            // If front provided a tenantUserId, prefer to insert the pivot row(s) directly for that tenantUser
+            const providedTenantUserId = data && (data.tenantUserId || data.tenantUser || data.tenant_user_id);
+
+            if (providedTenantUserId) {
+              try {
+                const tenantUserRec = await this.options.database.tenantUser.findOne({ where: { id: providedTenantUserId, tenantId: currentTenant.id }, transaction });
+                if (tenantUserRec) {
+                  const now = new Date();
+
+                  // Insert post site pivot
+                  const postRow = {
+                    id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
+                    tenantUserId: providedTenantUserId,
+                    businessInfoId: record.id,
+                    createdAt: now,
+                    updatedAt: now,
+                  };
+                  try {
+                    console.debug('Auto-assign post site - inserting pivot row for providedTenantUserId', { postRow });
+                    await this.options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', [postRow], { transaction });
+                    console.debug('Auto-assign post site - pivot insert succeeded for providedTenantUserId', { tenantUserId: providedTenantUserId, postSiteId: record.id });
+                  } catch (err) {
+                    console.error('Auto-assign post site - pivot insert error (providedTenantUserId):', err);
+                  }
+
+                  // If clientAccountId provided, also insert client pivot
+                  if (data && data.clientAccountId) {
+                    const clientRow = {
+                      id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
+                      tenantUserId: providedTenantUserId,
+                      clientAccountId: data.clientAccountId,
+                      createdAt: now,
+                      updatedAt: now,
+                    };
+                    try {
+                      console.debug('Auto-assign client (from post) - inserting pivot row for providedTenantUserId', { clientRow });
+                      await this.options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_client_accounts', [clientRow], { transaction });
+                      console.debug('Auto-assign client (from post) - pivot insert succeeded for providedTenantUserId', { tenantUserId: providedTenantUserId, clientId: data.clientAccountId });
+                    } catch (err) {
+                      console.error('Auto-assign client (from post) - pivot insert error (providedTenantUserId):', err);
+                    }
+                  }
+                } else {
+                  console.debug('Auto-assign post site - provided tenantUserId not found or not in tenant', { providedTenantUserId, tenantId: currentTenant.id });
+                }
+              } catch (err) {
+                console.error('Auto-assign post site - error validating providedTenantUserId:', err);
+              }
+            } else {
+              // Fallback to updateRoles when no tenantUserId provided
+              await TenantUserRepository.updateRoles(
+                currentTenant.id,
+                currentUser.id,
+                rolesToPass,
+                { ...this.options, transaction, addRoles: true },
+                data && data.clientAccountId ? [data.clientAccountId] : undefined,
+                [record.id],
+              );
+            }
+
+          console.debug('Auto-assign post site - updateRoles completed for', { postSiteId: record.id });
+        }
+      } catch (err) {
+        console.error('Auto-assign post site to creator failed:', err);
+      }
 
       await SequelizeRepository.commitTransaction(
         transaction,

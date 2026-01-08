@@ -11,6 +11,11 @@ const ptBR = {
         inUse: 'Não é possível excluir a função porque está em uso por {0} usuário(s).',
       }
     },
+    tax: {
+      errors: {
+        exists: 'Já existe um imposto com este nome para este workspace.'
+      }
+    },
 
   auth: {
     userNotFound: 'O e-mail não está cadastrado.',
@@ -136,6 +141,7 @@ const ptBR = {
         exists: 'Já existe um cliente com este e-mail ou número de telefone.'
       }
     },
+    
     representanteEmpresa: {
       errors: {
         unique: {

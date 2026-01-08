@@ -2,6 +2,9 @@ import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import ClientAccountRepository from '../database/repositories/clientAccountRepository';
+import TenantUserRepository from '../database/repositories/tenantUserRepository';
+import Roles from '../security/roles';
+import crypto from 'crypto';
 
 export default class ClientAccountService {
   options: IServiceOptions;
@@ -21,6 +24,75 @@ export default class ClientAccountService {
         ...this.options,
         transaction,
       });
+
+      // If the creator is not an admin, auto-assign the created client to that tenant user.
+      try {
+        const currentUser = this.options.currentUser;
+        const currentTenant = this.options.currentTenant;
+
+        if (currentUser && currentTenant) {
+          console.debug('Auto-assign client - preparing to assign', {
+            tenantId: currentTenant.id,
+            userId: currentUser.id,
+            clientId: record.id,
+          });
+
+          // Determine tenant roles for the current user to avoid passing undefined
+          const tenantEntry = Array.isArray(currentUser.tenants)
+            ? currentUser.tenants.find(
+                (t) => t && t.tenant && String(t.tenant.id) === String(currentTenant.id),
+              )
+            : null;
+
+          const rolesToPass = tenantEntry && Array.isArray(tenantEntry.roles) ? tenantEntry.roles : [];
+
+          // If front provided a tenantUserId, prefer to insert the pivot row directly for that tenantUser
+          const providedTenantUserId = data && (data.tenantUserId || data.tenantUser || data.tenant_user_id);
+
+          if (providedTenantUserId) {
+            try {
+              // Validate tenantUser exists and belongs to current tenant
+              const tenantUserRec = await this.options.database.tenantUser.findOne({ where: { id: providedTenantUserId, tenantId: currentTenant.id }, transaction });
+              if (tenantUserRec) {
+                const now = new Date();
+                const pivotRow = {
+                  id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
+                  tenantUserId: providedTenantUserId,
+                  clientAccountId: record.id,
+                  createdAt: now,
+                  updatedAt: now,
+                };
+                console.debug('Auto-assign client - inserting pivot row for providedTenantUserId', { pivotRow });
+                try {
+                  await this.options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_client_accounts', [pivotRow], { transaction });
+                  console.debug('Auto-assign client - pivot insert succeeded for providedTenantUserId', { tenantUserId: providedTenantUserId, clientId: record.id });
+                } catch (err) {
+                  // ignore duplicate insert errors
+                  console.error('Auto-assign client - pivot insert error (providedTenantUserId):', err);
+                }
+              } else {
+                console.debug('Auto-assign client - provided tenantUserId not found or not in tenant', { providedTenantUserId, tenantId: currentTenant.id });
+              }
+            } catch (err) {
+              console.error('Auto-assign client - error validating providedTenantUserId:', err);
+            }
+          } else {
+            await TenantUserRepository.updateRoles(
+              currentTenant.id,
+              currentUser.id,
+              rolesToPass,
+              { ...this.options, transaction, addRoles: true },
+              [record.id],
+              undefined,
+            );
+          }
+
+          console.debug('Auto-assign client - updateRoles completed for', { clientId: record.id });
+        }
+      } catch (err) {
+        // Log but don't block client creation if assignment fails
+        console.error('Auto-assign client to creator failed:', err);
+      }
 
       await SequelizeRepository.commitTransaction(
         transaction,

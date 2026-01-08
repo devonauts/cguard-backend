@@ -105,6 +105,11 @@ const es = {
         inUse: 'No se puede eliminar el rol porque está en uso.',
       }
     },
+    tax: {
+      errors: {
+        exists: 'Ya existe un impuesto con este nombre.'
+      }
+    },
   },
   bannerSuperiorApp: {
     errors: {
@@ -152,6 +157,7 @@ const es = {
       exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
     }
   },
+  
   representanteEmpresa: {
     errors: {
       unique: {

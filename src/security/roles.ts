@@ -4,20 +4,21 @@ class Roles {
     return {
       // System Administration
       admin: 'admin',
-      
-      // Management Hierarchy
+      // Management / Operations
       operationsManager: 'operationsManager',
+
+      // Management / Supervisors
       securitySupervisor: 'securitySupervisor',
-      clientAccountManager: 'clientAccountManager',
       hrManager: 'hrManager',
+      clientAccountManager: 'clientAccountManager',
       dispatcher: 'dispatcher',
-      
+
       // Operational Roles
       securityGuard: 'securityGuard',
-      
+
       // External Users
       customer: 'customer',
-      
+
       // Legacy/Custom (kept for backward compatibility)
       custom: 'custom',
     };
@@ -29,8 +30,8 @@ class Roles {
       admin: 100,
       operationsManager: 90,
       securitySupervisor: 80,
+      hrManager: 75,
       clientAccountManager: 70,
-      hrManager: 70,
       dispatcher: 60,
       securityGuard: 50,
       customer: 10,
@@ -41,12 +42,12 @@ class Roles {
   static get descriptions() {
     return {
       admin: 'System Administrator - Full system access',
-      operationsManager: 'Operations Manager - Oversees all security operations',
-      securitySupervisor: 'Security Supervisor - Manages security guards and daily operations',
-      clientAccountManager: 'Client Account Manager - Manages client relationships and accounts',
-      hrManager: 'HR Manager - Manages personnel, training, and certifications',
-      dispatcher: 'Dispatcher - Manages schedules, shifts, and guard assignments',
-      securityGuard: 'Security Guard - Front-line security personnel',
+      operationsManager: 'Operations Manager - Oversees operations and clients',
+      securitySupervisor: 'Security Supervisor - Supervises guards and incidents',
+      hrManager: 'HR Manager - Manages personnel and certifications',
+      clientAccountManager: 'Client Account Manager - Manages client accounts',
+      dispatcher: 'Dispatcher - Manages scheduling and shifts',
+      securityGuard: 'Security Guard - Operational guard role',
       customer: 'Customer - Client access to assigned services',
       custom: 'Custom Role - Configurable permissions',
     };

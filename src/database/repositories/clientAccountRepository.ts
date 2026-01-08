@@ -385,6 +385,7 @@ class ClientAccountRepository {
       {
         attributes: ['id'],
         where,
+        transaction: SequelizeRepository.getTransaction(options),
       },
     );
 

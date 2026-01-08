@@ -11,6 +11,11 @@ const en = {
         inUse: 'Cannot delete role because it is in use by {0} user(s).',
       }
     },
+    tax: {
+      errors: {
+        exists: 'A tax with this name already exists for this workspace.'
+      }
+    },
 
   auth: {
     userNotFound: 'The email is not registered.',
@@ -148,6 +153,7 @@ const en = {
         exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
       }
     },
+    
     representanteEmpresa: {
       errors: {
         unique: {

@@ -105,6 +105,7 @@ require('./patrolLog').default(routes);
 require('./patrol').default(routes);
 require('./station').default(routes);
 require('./billing').default(routes);
+require('./tax').default(routes);
 require('./inquiries').default(routes);
 require('./task').default(routes);
 require('./notification').default(routes);

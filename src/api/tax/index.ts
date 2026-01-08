@@ -1,0 +1,26 @@
+export default (app) => {
+    app.post(
+        `/tenant/:tenantId/tax`,
+        require('./taxCreate').default,
+    );
+    app.put(
+        `/tenant/:tenantId/tax/:id`,
+        require('./taxUpdate').default,
+    );
+    app.delete(
+        `/tenant/:tenantId/tax`,
+        require('./taxDestroy').default,
+    );
+    app.get(
+        `/tenant/:tenantId/tax/autocomplete`,
+        require('./taxAutocomplete').default,
+    );
+    app.get(
+        `/tenant/:tenantId/tax`,
+        require('./taxList').default,
+    );
+    app.get(
+        `/tenant/:tenantId/tax/:id`,
+        require('./taxFind').default,
+    );
+};

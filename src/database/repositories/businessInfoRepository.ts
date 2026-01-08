@@ -72,7 +72,10 @@ class BusinessInfoRepository {
       options,
     );
 
-    return this.findById(record.id, options);
+    // After create, bypass permission validation for the immediate read-back
+    // so creators with create permission can receive the created record
+    // even if they are not assigned to it yet.
+    return this.findById(record.id, { ...options, bypassPermissionValidation: true });
   }
 
   static async update(id, data, options: IRepositoryOptions) {
@@ -204,6 +207,8 @@ class BusinessInfoRepository {
       options,
     );
 
+    const bypass = options && (options as any).bypassPermissionValidation;
+
     // ACL: restrict access to assigned post sites for non-admin users
     const currentUser = SequelizeRepository.getCurrentUser(options);
     let isAdmin = false;
@@ -223,7 +228,9 @@ class BusinessInfoRepository {
       isAdmin = false;
     }
 
-    if (!isAdmin) {
+    // If bypass flag present, skip assigned-posts ACL checks so creators
+    // can immediately receive the created record even if not yet assigned.
+    if (!isAdmin && !bypass) {
       const tenantUser = await options.database.tenantUser.findOne({
         where: { tenantId: currentTenant.id, userId: currentUser.id },
         include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
@@ -306,6 +313,7 @@ class BusinessInfoRepository {
       {
         attributes: ['id'],
         where,
+        transaction: SequelizeRepository.getTransaction(options),
       },
     );
 

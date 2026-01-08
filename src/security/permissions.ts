@@ -212,6 +212,13 @@ class Permissions {
       billingRead: createPermission('billingRead', [...MANAGEMENT_ROLES, roles.clientAccountManager, roles.customer]),
       billingAutocomplete: createPermission('billingAutocomplete', MANAGEMENT_ROLES),
 
+      // === TAXES ===
+      taxCreate: createPermission('taxCreate', MANAGEMENT_ROLES),
+      taxEdit: createPermission('taxEdit', MANAGEMENT_ROLES),
+      taxDestroy: createPermission('taxDestroy', MANAGEMENT_ROLES),
+      taxRead: createPermission('taxRead', ALL_STAFF_ROLES),
+      taxAutocomplete: createPermission('taxAutocomplete', ALL_STAFF_ROLES),
+
       // === NOTIFICATIONS ===
       notificationImport: createPermission('notificationImport', MANAGEMENT_ROLES),
       notificationCreate: createPermission('notificationCreate', SUPERVISOR_ROLES),

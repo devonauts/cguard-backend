@@ -208,6 +208,8 @@ export default class TenantUserRepository {
       return [...new Set(mapped)];
     }
 
+    console.debug('tenantUserRepository.updateRoles called', { tenantId, userId: id, roles, clientIds, postSiteIds });
+
     let user = await options.database.user.findByPk(id, {
       transaction,
     });
@@ -345,7 +347,9 @@ export default class TenantUserRepository {
           }));
 
           try {
+            console.debug('tenantUser assignment - inserting pivot rows (clients)', { rows });
             await options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_client_accounts', rows, { transaction });
+            console.debug('tenantUser assignment - inserted pivot rows (clients)');
           } catch (e) {
             console.error('Failed bulkInsert tenant_user_client_accounts:', e);
             throw e;
@@ -420,7 +424,9 @@ export default class TenantUserRepository {
           }));
 
           try {
+            console.debug('tenantUser assignment - inserting pivot rows (posts)', { rows });
             await options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', rows, { transaction });
+            console.debug('tenantUser assignment - inserted pivot rows (posts)');
           } catch (e) {
             console.error('Failed bulkInsert tenant_user_post_sites:', e);
             throw e;
