@@ -3,6 +3,7 @@ import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
+import Error400 from '../../errors/Error400';
 import Sequelize from 'sequelize';import FileRepository from './fileRepository';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
@@ -23,25 +24,109 @@ class ServiceRepository {
       options,
     );
 
-    const record = await options.database.service.create(
-      {
-        ...lodash.pick(data, [
-          'title',
-          'description',
-          'price',
-          'specifications',
-          'subtitle',          
-          'importHash',
-        ]),
+    // Check if frontend provided a tax id and if that tax exists.
+    const taxIdProvided = data.tax || data.taxId;
+    let taxRecord: any = null;
+    try {
+      if (taxIdProvided && options.database && options.database.tax) {
+        taxRecord = await options.database.tax.findByPk(
+          taxIdProvided,
+          { transaction },
+        );
+      }
+    } catch (err) {
+      console.warn('Tax lookup failed before creating service', err);
+    }
 
-        tenantId: tenant.id,
-        createdById: currentUser.id,
-        updatedById: currentUser.id,
-      },
+    // Build payload for create; only include taxId if the referenced tax exists
+    const createPayload: any = {
+      ...lodash.pick(data, [
+        'title',
+        'description',
+        'price',
+        'taxName',
+        'taxRate',
+        'importHash',
+      ]),
+      tenantId: tenant.id,
+      createdById: currentUser.id,
+      updatedById: currentUser.id,
+    };
+
+    if (taxRecord) {
+      createPayload.taxId = taxRecord.id;
+      createPayload.taxName = taxRecord.name;
+      createPayload.taxRate = taxRecord.rate;
+    }
+
+    // Validate duplicates by title OR description within the same tenant
+    try {
+      const where: any = { tenantId: tenant.id };
+      const orConditions: any[] = [];
+
+      if (createPayload.title) {
+        orConditions.push(
+          SequelizeFilterUtils.ilikeExact(
+            'service',
+            'title',
+            createPayload.title,
+          ),
+        );
+      }
+
+      if (createPayload.description) {
+        orConditions.push(
+          SequelizeFilterUtils.ilikeExact(
+            'service',
+            'description',
+            createPayload.description,
+          ),
+        );
+      }
+
+      if (orConditions.length) {
+        where[Op.or] = orConditions;
+      }
+
+      const existing = await options.database.service.findOne({
+        where,
+        transaction,
+      });
+
+      if (existing) {
+        throw new Error400(
+          options.language,
+          'errors.validation.duplicate',
+        );
+      }
+    } catch (err) {
+      if (err instanceof Error400) {
+        throw err;
+      }
+      console.warn('Duplicate check failed while creating service', err);
+    }
+
+    const record = await options.database.service.create(
+      createPayload,
       {
         transaction,
       },
     );
+
+    // If tax was not found but frontend sent taxName/taxRate, persist those snapshot fields
+    try {
+      if (!taxRecord && (data.taxName || data.taxRate)) {
+        await record.update(
+          {
+            taxName: data.taxName || null,
+            taxRate: data.taxRate || null,
+          },
+          { transaction },
+        );
+      }
+    } catch (err) {
+      console.warn('Persisting tax snapshot failed while creating service', err);
+    }
 
     
   
@@ -88,7 +173,7 @@ class ServiceRepository {
       options,
     );
 
-    let record = await options.database.service.findOne(      
+    let record = await options.database.service.findOne(
       {
         where: {
           id,
@@ -102,23 +187,102 @@ class ServiceRepository {
       throw new Error404();
     }
 
-    record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'title',
-          'description',
-          'price',
-          'specifications',
-          'subtitle',          
-          'importHash',
-        ]),
+    // Check duplicates: if another service in tenant has same title+description, reject
+    try {
+      const where: any = { tenantId: currentTenant.id };
+      const orConditions: any[] = [];
 
-        updatedById: currentUser.id,
-      },
+      if (data.title) {
+        orConditions.push(
+          SequelizeFilterUtils.ilikeExact('service', 'title', data.title),
+        );
+      }
+
+      if (data.description) {
+        orConditions.push(
+          SequelizeFilterUtils.ilikeExact(
+            'service',
+            'description',
+            data.description,
+          ),
+        );
+      }
+
+      if (orConditions.length) {
+        where[Op.or] = orConditions;
+      }
+
+      const existing = await options.database.service.findOne({
+        where: { ...where, id: { [Op.ne]: id } },
+        transaction,
+      });
+
+      if (existing) {
+        throw new Error400(
+          options.language,
+          'errors.validation.duplicate',
+        );
+      }
+    } catch (err) {
+      if (err instanceof Error400) {
+        throw err;
+      }
+      console.warn('Duplicate check failed while updating service', err);
+    }
+
+    // Check if frontend provided a tax id and if that tax exists.
+    const taxIdProvided = data.tax || data.taxId;
+    let taxRecord: any = null;
+    try {
+      if (taxIdProvided && options.database && options.database.tax) {
+        taxRecord = await options.database.tax.findByPk(
+          taxIdProvided,
+          { transaction },
+        );
+      }
+    } catch (err) {
+      console.warn('Tax lookup failed before updating service', err);
+    }
+
+    const updatePayload: any = {
+      ...lodash.pick(data, [
+        'title',
+        'description',
+        'price',
+        'taxName',
+        'taxRate',
+        'importHash',
+      ]),
+      updatedById: currentUser.id,
+    };
+
+    if (taxRecord) {
+      updatePayload.taxId = taxRecord.id;
+      updatePayload.taxName = taxRecord.name;
+      updatePayload.taxRate = taxRecord.rate;
+    }
+
+    record = await record.update(
+      updatePayload,
       {
         transaction,
       },
     );
+
+    // If tax wasn't found but frontend provided taxName/taxRate, persist them
+    try {
+      if (!taxRecord && (data.taxName || data.taxRate)) {
+        await record.update(
+          {
+            taxName: data.taxName || null,
+            taxRate: data.taxRate || null,
+          },
+          { transaction },
+        );
+      }
+    } catch (err) {
+      console.warn('Persisting tax snapshot failed while updating service', err);
+    }
 
 
 
@@ -340,25 +504,7 @@ class ServiceRepository {
         }
       }
 
-      if (filter.specifications) {
-        whereAnd.push(
-          SequelizeFilterUtils.ilikeIncludes(
-            'service',
-            'specifications',
-            filter.specifications,
-          ),
-        );
-      }
-
-      if (filter.subtitle) {
-        whereAnd.push(
-          SequelizeFilterUtils.ilikeIncludes(
-            'service',
-            'subtitle',
-            filter.subtitle,
-          ),
-        );
-      }
+      // specifications and subtitle removed from service model
 
       if (filter.createdAtRange) {
         const [start, end] = filter.createdAtRange;

@@ -50,9 +50,12 @@ export default async (req, res) => {
     const maxSizeInBytes = config.maxSizeInBytes;
     const publicRead = Boolean(config.publicRead);
 
+    const mount = req.baseUrl || '/api';
+    const baseUrl = `${req.protocol}://${req.get('host')}${mount}`;
+
     const downloadUrl = await FileStorage.downloadUrl(
       privateUrl,
-      publicRead,
+      baseUrl,
     );
 
     /**
@@ -63,6 +66,8 @@ export default async (req, res) => {
       privateUrl,
       maxSizeInBytes,
       publicRead,
+      undefined,
+      baseUrl,
     );
 
     await ApiResponseHandler.success(req, res, {

@@ -58,6 +58,80 @@ export default function (sequelize, DataTypes) {
       planUserId: {
         type: DataTypes.UUID,
       },
+      // Contact / Business fields added to support invoices/presupuestos
+      address: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        validate: {
+          notEmpty: true,
+        },
+      },
+      phone: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+        validate: {
+          notEmpty: true,
+        },
+      },
+      email: {
+        type: DataTypes.STRING(255),
+        allowNull: false,
+        validate: {
+          notEmpty: true,
+          isEmail: true,
+        },
+      },
+      logoId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: 'files',
+          key: 'id',
+        },
+      },
+      taxNumber: {
+        type: DataTypes.STRING(255),
+        allowNull: false,
+        validate: {
+          notEmpty: true,
+        },
+      },
+      businessTitle: {
+        type: DataTypes.STRING(255),
+        allowNull: false,
+        validate: {
+          notEmpty: true,
+        },
+      },
+      extraLines: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        defaultValue: '',
+      },
+      website: {
+        type: DataTypes.STRING(255),
+        allowNull: false,
+        validate: {
+          len: [0, 255],
+        },
+        defaultValue: '',
+      },
+      licenseNumber: {
+        type: DataTypes.STRING(255),
+        allowNull: false,
+        validate: {
+          len: [0, 255],
+        },
+        defaultValue: '',
+      },
+      timezone: {
+        type: DataTypes.STRING(100),
+        allowNull: false,
+        validate: {
+          notEmpty: true,
+        },
+        defaultValue: 'UTC',
+      },
     },
     {
       indexes: [
@@ -81,6 +155,11 @@ export default function (sequelize, DataTypes) {
 
     models.tenant.hasMany(models.tenantUser, {
       as: 'users',
+    });
+
+    models.tenant.belongsTo(models.file, {
+      as: 'logo',
+      foreignKey: 'logoId',
     });
 
     models.tenant.belongsTo(models.user, {

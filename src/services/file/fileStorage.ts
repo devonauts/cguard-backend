@@ -2,15 +2,17 @@ import { getConfig } from '../../config';
 
 let FileStorage;
 
-if (getConfig().FILE_STORAGE_PROVIDER === 'gcp') {
+// Default to 'localhost' storage when the env var is missing
+const provider = (getConfig().FILE_STORAGE_PROVIDER || 'localhost').toString();
+
+if (provider === 'gcp') {
   FileStorage = require('./googleCloudFileStorage').default;
-}
-
-if (getConfig().FILE_STORAGE_PROVIDER === 'aws') {
+} else if (provider === 'aws') {
   FileStorage = require('./awsFileStorage').default;
-}
-
-if (getConfig().FILE_STORAGE_PROVIDER === 'localhost') {
+} else if (provider === 'localhost') {
+  FileStorage = require('./localhostFileStorage').default;
+} else {
+  // As a safety fallback, default to localhost implementation
   FileStorage = require('./localhostFileStorage').default;
 }
 

@@ -100,6 +100,14 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     } catch (e) {
       // ignore
     }
+
+    // If the token expired, return a specific message code so the UI can prompt re-login
+    const errMsg = error && (error as any).message ? (error as any).message : '';
+    if (errMsg && errMsg.toLowerCase().includes('jwt expired')) {
+      const lang = (req as any).language || undefined;
+      return ApiResponseHandler.error(req, res, new Error401(lang, 'auth.tokenExpired'))
+    }
+
     return ApiResponseHandler.error(req, res, new Error401())
   }
 }

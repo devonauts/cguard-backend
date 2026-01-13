@@ -26,6 +26,9 @@ app.use(languageMiddleware);
 // to set the currentUser to the requests
 app.use(authMiddleware);
 
+// Middleware: allow selecting tenant by header `X-Tenant-Id` (optional)
+app.use(require('../middlewares/tenantHeaderMiddleware').tenantFromHeaderMiddleware);
+
 // Setup the Documentation
 setupSwaggerUI(app);
 
@@ -106,6 +109,8 @@ require('./patrol').default(routes);
 require('./station').default(routes);
 require('./billing').default(routes);
 require('./tax').default(routes);
+require('./invoice').default(routes);
+require('./estimate').default(routes);
 require('./inquiries').default(routes);
 require('./task').default(routes);
 require('./notification').default(routes);

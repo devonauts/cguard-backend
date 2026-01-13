@@ -1,0 +1,16 @@
+{
+  "data": {
+    "name": "Seguridad BAS",
+    "url": "seguridad-bas",
+    "address": "Antonio Miguel de Solier N29-26 y Bartolome de las Casas",
+    "phone": "+18014004269",
+    "email": "info@seguridadbas.com",
+    "website": "https://seguridadbas.example.com",
+    "licenseNumber": "LIC-2025-0001",
+    "timezone": "UTC-5",
+    "taxNumber": "RUC-123456789",
+    "businessTitle": "Presupuesto",
+    "extraLines": "Lunes a viernes 9:00 - 18:00",
+    "logoId": null
+  }
+}

@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/estimate`,
+    require('./estimateCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/estimate/:id`,
+    require('./estimateUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/estimate/import`,
+    require('./estimateImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/estimate`,
+    require('./estimateDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/estimate/autocomplete`,
+    require('./estimateAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/estimate`,
+    require('./estimateList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/estimate/:id`,
+    require('./estimateFind').default,
+  );
+};

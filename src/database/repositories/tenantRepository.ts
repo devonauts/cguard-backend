@@ -11,7 +11,16 @@ import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
 
-const forbiddenTenantUrls = ['www'];
+const forbiddenTenantUrls = [
+  'www',
+  'admin',
+  'api',
+  'root',
+  'support',
+  'billing',
+  'static',
+  'dashboard',
+];
 
 class TenantRepository {
 
@@ -53,6 +62,16 @@ class TenantRepository {
           'name',
           'url',
           'importHash',
+          'address',
+          'phone',
+          'email',
+          'logoId',
+          'taxNumber',
+          'businessTitle',
+          'extraLines',
+          'website',
+          'licenseNumber',
+          'timezone',
         ]),
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -134,6 +153,16 @@ class TenantRepository {
           'name',
           'url',
           'importHash',
+          'address',
+          'phone',
+          'email',
+          'logoId',
+          'taxNumber',
+          'businessTitle',
+          'extraLines',
+          'website',
+          'licenseNumber',
+          'timezone',
         ]),
         updatedById: currentUser.id,
       },

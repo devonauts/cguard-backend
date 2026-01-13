@@ -23,6 +23,7 @@ export default class LocalFileStorage {
     maxSizeInBytes,
     publicRead,
     tokenExpiresAt,
+    baseUrl?: string,
   ) {
     const expires =
       tokenExpiresAt || Date.now() + 10 * 60 * 1000;
@@ -33,10 +34,10 @@ export default class LocalFileStorage {
       { expiresIn: expires },
     );
 
+    const backendUrl = baseUrl || getConfig().BACKEND_URL;
+
     return {
-      url: `${
-        getConfig().BACKEND_URL
-      }/file/upload?token=${token}`,
+      url: `${backendUrl}/file/upload?token=${token}`,
     };
   }
 
@@ -66,10 +67,9 @@ export default class LocalFileStorage {
   /**
    * Return the download URL of the file from this server.
    */
-  static async downloadUrl(privateUrl) {
-    return `${
-      getConfig().BACKEND_URL
-    }/file/download?privateUrl=${privateUrl}`;
+  static async downloadUrl(privateUrl, baseUrl?: string) {
+    const backendUrl = baseUrl || getConfig().BACKEND_URL;
+    return `${backendUrl}/file/download?privateUrl=${privateUrl}`;
   }
 
   /**

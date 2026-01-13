@@ -60,6 +60,7 @@ const en = {
       'There is already a workspace on this application.',
     url: {
       exists: 'This workspace URL is already in use.',
+      invalid: 'Invalid URL. Use only lowercase letters, numbers and hyphens (e.g. my-company).',
     },
     invitation: {
       notSameEmail: `This invitation was sent to {0} but you're signed in as {1}.`,
@@ -89,6 +90,8 @@ const en = {
     },
     validation: {
       message: 'An error occurred',
+      duplicate: 'This item already exists',
+      tokenExpired: 'Session expired. Please sign in again.',
     },
   },
 

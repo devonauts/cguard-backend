@@ -339,11 +339,7 @@ class AuthService {
         { ...options, currentUser: user, transaction },
       )
 
-      const token = jwt.sign(
-        { id: user.id },
-        getConfig().AUTH_JWT_SECRET,
-        { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
-      )
+      // token creation will occur after loading `fullUser` to determine tenant context
 
       // Mark user last login timestamp
       try {
@@ -421,7 +417,42 @@ class AuthService {
             lastName: user.lastName || null,
           };
 
-      return { token, user: safeUser };
+      // Transform `safeUser.tenants` (array) into single `tenant` object
+      try {
+        const tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
+        if (tenantEntries.length === 0) {
+          throw new Error('auth.noTenantAssigned');
+        }
+        if (tenantEntries.length > 1) {
+          throw new Error('auth.multipleTenantsNotAllowed');
+        }
+
+        const tenantEntry = tenantEntries[0];
+        const tenantIdForToken = tenantEntry.tenantId || (tenantEntry.tenant && tenantEntry.tenant.id) || null;
+
+        // Replace tenants array with single `tenant` key containing the tenant info + roles/permissions
+        (safeUser as any).tenant = {
+          tenantId: tenantEntry.tenantId,
+          tenant: tenantEntry.tenant || null,
+          roles: tenantEntry.roles || [],
+          permissions: tenantEntry.permissions || [],
+          assignedClients: tenantEntry.assignedClients || [],
+          assignedPostSites: tenantEntry.assignedPostSites || [],
+          status: tenantEntry.status || null,
+        };
+        delete (safeUser as any).tenants;
+
+        const finalToken = jwt.sign(
+          { id: user.id, tenantId: tenantIdForToken },
+          getConfig().AUTH_JWT_SECRET,
+          { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
+        );
+
+        return { token: finalToken, user: safeUser };
+      } catch (err) {
+        await SequelizeRepository.rollbackTransaction(transaction);
+        throw new Error400(options.language, (err && (err as any).message) || 'auth.invalidTenantConfiguration');
+      }
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(transaction)
       throw error
@@ -510,12 +541,13 @@ class AuthService {
 
           const id = decoded?.id;
           const jwtTokenIat = decoded.iat;
+          const tokenTenantId = decoded?.tenantId;
 
           UserRepository.findById(id, {
             ...options,
             bypassPermissionValidation: true,
           })
-            .then((user) => {
+            .then(async (user) => {
               const isTokenManuallyExpired =
                 user &&
                 user.jwtTokenInvalidBefore &&
@@ -535,6 +567,37 @@ class AuthService {
               if (user && !EmailSender.isConfigured) {
                 user.emailVerified = true;
               }
+
+              // If the token contains a tenantId, load and attach the tenant
+              // to the request/options so downstream code has a clear tenant context.
+              try {
+                if (tokenTenantId && options) {
+                  try {
+                    const tenant = await TenantRepository.findById(tokenTenantId, { ...options });
+                    if (!tenant) {
+                      reject(new Error401());
+                      return;
+                    }
+                    // Validate that the user belongs to that tenant
+                    const userTenantIds = (user && Array.isArray(user.tenants))
+                      ? user.tenants.map((t) => (t && (t.tenantId || (t.tenant && t.tenant.id))) ? (t.tenantId || t.tenant.id) : null).filter(Boolean)
+                      : [];
+                    if (!userTenantIds.includes(tokenTenantId)) {
+                      reject(new Error401());
+                      return;
+                    }
+                    // Attach to options so middlewares can use it
+                    try {
+                      (options as any).currentTenant = tenant;
+                    } catch (e) {
+                      // ignore attach errors
+                    }
+                  } catch (e) {
+                    // If tenant lookup fails, reject
+                    reject(new Error401());
+                    return;
+                  }
+                }
 
                 // Prime role permissions cache for the user's tenants so
                 // synchronous permission checks can consult the in-memory cache.
@@ -557,6 +620,9 @@ class AuthService {
                 } catch (e) {
                   // non-fatal
                 }
+              } catch (e) {
+                // non-fatal
+              }
 
                 resolve(user);
             })

@@ -64,6 +64,11 @@ export default class PermissionChecker {
    */
   has(permission) {
     assert(permission, 'permission is required');
+    if (!this.currentUser) {
+      console.log('❌ No currentUser present in PermissionChecker.has');
+      return false;
+    }
+
     if (!this.isEmailVerified) {
       console.log('❌ Email not verified');
       return false;
@@ -296,6 +301,9 @@ export default class PermissionChecker {
       return true;
     }
 
+    // If there's no currentUser, consider email not verified so permission checks fail gracefully
+    if (!this.currentUser) return false;
+
     return this.currentUser.emailVerified;
   }
 
@@ -307,25 +315,30 @@ export default class PermissionChecker {
       console.log('❌ No currentUser or no tenants');
       return [];
     }
-    
+    const tenantIdToFind = this.currentTenant && this.currentTenant.id;
 
-    const tenant = this.currentUser.tenants
-      .filter(
-        (tenantUser) => tenantUser.status === 'active',
-      )
-      .find((tenantUser) => {
-        return (
-          tenantUser.tenant.id === this.currentTenant.id
-        );
-      });
+    let tenant;
+    if (tenantIdToFind) {
+      tenant = this.currentUser.tenants
+        .filter((tenantUser) => tenantUser.status === 'active')
+        .find((tenantUser) => (tenantUser.tenant && tenantUser.tenant.id === tenantIdToFind));
 
-    if (!tenant) {
-      console.log('❌ No active tenantUser found for tenant:', this.currentTenant.id);
-      console.log('  Available tenants:', this.currentUser.tenants.map(t => ({ id: t.tenant.id, status: t.status })));
-      return [];
+      if (!tenant) {
+        console.log('❌ No active tenantUser found for tenant:', tenantIdToFind);
+        console.log('  Available tenants:', this.currentUser.tenants.map(t => ({ id: t.tenant && t.tenant.id, status: t.status })));
+        return [];
+      }
+
+      console.log('✅ Found tenantUser for tenant:', tenantIdToFind);
+    } else {
+      // No currentTenant provided; fallback to first active tenantUser if present
+      tenant = this.currentUser.tenants.find((tenantUser) => tenantUser.status === 'active');
+      if (!tenant) {
+        console.log('❌ No active tenantUser found and no currentTenant provided');
+        return [];
+      }
+      console.log('⚠️ currentTenant missing; using first active tenantUser as fallback:', tenant.tenant && tenant.tenant.id);
     }
-
-    console.log('✅ Found tenantUser for tenant:', this.currentTenant.id);
 
     // Handle both array and JSON string formats
     let roles = [];

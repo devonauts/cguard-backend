@@ -5,6 +5,15 @@ import ServiceService from '../../services/serviceService';
 
 export default async (req, res, next) => {
   try {
+    // Ensure a tenant id is present on the request to avoid null tenantId
+    if (!req.currentTenant) {
+      const tenantIdFromParams = req.params && req.params.tenantId;
+      const tenantIdFromHeader = req.headers && (req.headers['x-tenant-id'] || req.headers['X-Tenant-Id']);
+      const tenantId = tenantIdFromParams || tenantIdFromHeader || null;
+      if (tenantId) {
+        req.currentTenant = { id: tenantId };
+      }
+    }
     new PermissionChecker(req).validateHas(
       Permissions.values.serviceCreate,
     );

@@ -5,9 +5,11 @@ export default async (req, res, next) => {
   try {
     let payload;
 
-    if (req.params.id) {
+    const tenantId = req.params.tenantId || req.params.id;
+
+    if (tenantId) {
       payload = await new TenantService(req).findById(
-        req.params.id,
+        tenantId,
       );
     } else {
       payload = await new TenantService(req).findByUrl(

@@ -53,6 +53,7 @@ const es = {
     url: {
       exists:
         'Esta URL del espacio de trabajo ya está en uso.',
+      invalid: 'URL inválida. Use solo letras minúsculas, números y guiones (ej. empresa-slug).',
     },
     invitation: {
       notSameEmail:
@@ -83,6 +84,8 @@ const es = {
     },
     validation: {
       message: 'Ocurrió un error',
+      duplicate: 'Ya existe ese elemento',
+      tokenExpired: 'La sesión expiró. Por favor inicia sesión de nuevo.',
     },
   },
   email: {

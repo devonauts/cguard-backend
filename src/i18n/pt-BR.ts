@@ -59,6 +59,7 @@ const ptBR = {
     url: {
       exists:
         'Esta URL de área de trabalho já está em uso.',
+      invalid: 'URL inválida. Use apenas letras minúsculas, números e hifens (ex.: minha-empresa).',
     },
     invitation: {
       notSameEmail: `Este convite foi enviado para {0} mas você está acessando como {1}.`,
@@ -87,6 +88,8 @@ const ptBR = {
     },
     validation: {
       message: 'Ocorreu um erro',
+      duplicate: 'Este item já existe',
+      tokenExpired: 'Sessão expirada. Por favor, entre novamente.',
     },
   },
 

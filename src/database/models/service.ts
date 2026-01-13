@@ -27,19 +27,21 @@ export default function (sequelize) {
 
         }
       },
-      specifications: {
-        type: DataTypes.TEXT,
-        allowNull: false,
-        validate: {
-          len: [0, 800],
-          notEmpty: true,
-        }
+      taxId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: 'taxes',
+          key: 'id',
+        },
       },
-      subtitle: {
+      taxName: {
         type: DataTypes.STRING(150),
-        validate: {
-          len: [0, 150],
-        }
+        allowNull: true,
+      },
+      taxRate: {
+        type: DataTypes.DECIMAL(10,2),
+        allowNull: true,
       },
       importHash: {
         type: DataTypes.STRING(255),
