@@ -76,6 +76,10 @@ export default function (sequelize, DataTypes) {
         type: DataTypes.STRING(255),
         allowNull: true,
       },
+      invitationTokenExpiresAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       status: {
         type: DataTypes.STRING(255),
         allowNull: false,

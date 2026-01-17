@@ -13,6 +13,7 @@ import setupSwaggerUI from './apiDocumentation';
 
 const app = express();
 
+app.set('trust proxy', 1);
 // Enables CORS
 app.use(cors({ origin: true, credentials: true }));
 
@@ -111,6 +112,7 @@ require('./billing').default(routes);
 require('./tax').default(routes);
 require('./invoice').default(routes);
 require('./estimate').default(routes);
+require('./payment').default(routes);
 require('./inquiries').default(routes);
 require('./task').default(routes);
 require('./notification').default(routes);

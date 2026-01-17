@@ -954,6 +954,7 @@ export default class UserRepository {
 
       for (const invited of invitedTenantUsers) {
         invited.invitationToken = null;
+        invited.invitationTokenExpiresAt = null;
         invited.status = 'active';
         await invited.save({ transaction });
 

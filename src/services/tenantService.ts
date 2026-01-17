@@ -1,5 +1,6 @@
 import TenantRepository from '../database/repositories/tenantRepository';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
+import TenantInvitationRepository from '../database/repositories/tenantInvitationRepository';
 import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import PermissionChecker from './user/permissionChecker';
@@ -487,6 +488,49 @@ export default class TenantService {
     );
 
     try {
+      // First, check standalone tenant invitations table
+      const standaloneInvite = await TenantInvitationRepository.findByToken(token, {
+        ...this.options,
+        transaction,
+      });
+
+      if (standaloneInvite) {
+        // If there's already a tenantUser for this tenant and current user, activate/merge; otherwise create
+        const tenantId = standaloneInvite.tenantId || (standaloneInvite.tenant && standaloneInvite.tenant.id);
+        if (!tenantId) {
+          throw new Error404();
+        }
+
+        const existing = await TenantUserRepository.findByTenantAndUser(
+          tenantId,
+          this.options.currentUser.id,
+          { ...this.options, transaction },
+        );
+
+        if (existing) {
+          existing.invitationToken = null;
+          existing.invitationTokenExpiresAt = null;
+          existing.status = existing.status || 'active';
+          await existing.save({ transaction });
+        } else {
+          // create tenantUser record for current user
+          const tenant = standaloneInvite.tenant || await TenantRepository.findById(tenantId, { ...this.options, transaction });
+          await TenantUserRepository.create(
+            tenant,
+            this.options.currentUser,
+            [],
+            { ...this.options, transaction, currentTenant: { id: tenantId } },
+          );
+        }
+
+        // consume the standalone invitation
+        await TenantInvitationRepository.consume(token, { ...this.options, transaction });
+
+        await SequelizeRepository.commitTransaction(transaction);
+        return standaloneInvite.tenant || (await TenantRepository.findById(tenantId, this.options));
+      }
+
+      // Fallback: legacy flow where invitation token was stored on tenantUser row
       const tenantUser = await TenantUserRepository.findByInvitationToken(
         token,
         {

@@ -2,6 +2,7 @@ import SequelizeRepository from '../../database/repositories/sequelizeRepository
 import AuditLogRepository from './auditLogRepository';
 import Roles from '../../security/roles';
 import crypto from 'crypto';
+import { Op } from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
 import ClientAccountRepository from './clientAccountRepository';
 import BusinessInfoRepository from './businessInfoRepository';
@@ -34,9 +35,15 @@ export default class TenantUserRepository {
       options,
     );
 
+    // Only return the tenantUser if the token exists and is not expired (or has no expiry)
+    const now = new Date();
     return await options.database.tenantUser.findOne({
       where: {
         invitationToken,
+        [Op.or]: [
+          { invitationTokenExpiresAt: null },
+          { invitationTokenExpiresAt: { [Op.gt]: now } },
+        ],
       },
       include: ['tenant', 'user'],
       transaction,
@@ -229,18 +236,21 @@ export default class TenantUserRepository {
         ? selectStatus('active', roles || [])
         : selectStatus('invited', roles || []);
 
-      const invitationToken = user && user.emailVerified ? null : crypto.randomBytes(20).toString('hex');
+      // Only generate an invitation token if the initial status for the tenantUser is 'invited'
+      const invitationToken = initialStatus === 'invited' ? crypto.randomBytes(20).toString('hex') : null;
+      const invitationTokenExpiresAt = invitationToken ? new Date(Date.now() + (60 * 60 * 1000)) : null;
 
-      tenantUser = await options.database.tenantUser.create(
-        {
-          tenantId,
-          userId: id,
-          status: initialStatus,
-          invitationToken,
-          roles: [],
-        },
-        { transaction },
-      );
+        tenantUser = await options.database.tenantUser.create(
+          {
+            tenantId,
+            userId: id,
+            status: initialStatus,
+            invitationToken,
+            invitationTokenExpiresAt,
+            roles: [],
+          },
+          { transaction },
+        );
     }
 
     let { roles: existingRoles } = tenantUser;
@@ -507,6 +517,7 @@ export default class TenantUserRepository {
 
       // Change the status to active (in case the existing one is also invited)
       existingTenantUser.invitationToken = null;
+      existingTenantUser.invitationTokenExpiresAt = null;
       existingTenantUser.status = selectStatus(
         'active',
         existingTenantUser.roles,
@@ -523,6 +534,7 @@ export default class TenantUserRepository {
       // to match the correct user.
       invitationTenantUser.userId = currentUser.id;
       invitationTenantUser.invitationToken = null;
+      invitationTenantUser.invitationTokenExpiresAt = null;
       invitationTenantUser.status = selectStatus(
         'active',
         invitationTenantUser.roles,

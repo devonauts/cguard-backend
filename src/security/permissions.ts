@@ -219,6 +219,9 @@ class Permissions {
       estimateDestroy: createPermission('estimateDestroy', MANAGEMENT_ROLES),
       estimateRead: createPermission('estimateRead', [...MANAGEMENT_ROLES, roles.clientAccountManager, roles.customer]),
       estimateAutocomplete: createPermission('estimateAutocomplete', MANAGEMENT_ROLES),
+      estimateSend: createPermission('estimateSend', MANAGEMENT_ROLES),
+      estimateConvert: createPermission('estimateConvert', MANAGEMENT_ROLES),
+      estimateDownload: createPermission('estimateDownload', [...MANAGEMENT_ROLES, roles.clientAccountManager, roles.customer]),
 
       // === INVOICES / FACTURAS ===
       invoiceImport: createPermission('invoiceImport', MANAGEMENT_ROLES),
@@ -227,6 +230,7 @@ class Permissions {
       invoiceDestroy: createPermission('invoiceDestroy', MANAGEMENT_ROLES),
       invoiceRead: createPermission('invoiceRead', [...MANAGEMENT_ROLES, roles.clientAccountManager, roles.customer]),
       invoiceAutocomplete: createPermission('invoiceAutocomplete', MANAGEMENT_ROLES),
+      invoiceSend: createPermission('invoiceSend', MANAGEMENT_ROLES),
 
       // === TAXES ===
       taxCreate: createPermission('taxCreate', MANAGEMENT_ROLES),

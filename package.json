@@ -12,7 +12,9 @@
     "dev:multi": "cross-env TENANT_MODE=multi nodemon --watch \"src/**/*.ts\" -e ts,json --exec \"ts-node --transpile-only ./src/server.ts\"",
     "start:multi": "cross-env TENANT_MODE=multi node ./dist/server.js",
     "migrate:tenant-fields": "npx ts-node ./src/database/migrations/20260109-add-tenant-contact-fields.ts",
-    "migrate:tenant-extra-fields": "npx ts-node ./src/database/migrations/20260110-add-tenant-extra-fields.ts"
+    "migrate:tenant-extra-fields": "npx ts-node ./src/database/migrations/20260110-add-tenant-extra-fields.ts",
+   "migrate:add-invoice-status": "npx ts-node ./src/database/migrations/20260116-add-status-to-invoices.ts",
+    "migrate:all": "npx ts-node ./src/database/migrations/run-migrations.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.645.0",
@@ -56,7 +58,7 @@
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/lodash": "^4.17.10",
-    "@types/node": "^22.7.4",
+    "@types/node": "^22.19.7",
     "@types/passport": "^1.0.16",
     "@types/passport-facebook": "^3.0.3",
     "@types/passport-google-oauth20": "^2.0.16",

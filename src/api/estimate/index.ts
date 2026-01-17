@@ -7,6 +7,10 @@ export default (app) => {
     `/tenant/:tenantId/estimate/:id`,
     require('./estimateUpdate').default,
   );
+  app.delete(
+    `/tenant/:tenantId/estimate/:id`,
+    require('./estimateDestroyOne').default,
+  );
   app.post(
     `/tenant/:tenantId/estimate/import`,
     require('./estimateImport').default,
@@ -26,5 +30,17 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/estimate/:id`,
     require('./estimateFind').default,
+  );
+  app.post(
+    `/tenant/:tenantId/estimate/:id/send`,
+    require('./estimateSend').default,
+  );
+  app.post(
+    `/tenant/:tenantId/estimate/:id/convert`,
+    require('./estimateConvert').default,
+  );
+  app.get(
+    `/tenant/:tenantId/estimate/:id/download`,
+    require('./estimateDownload').default,
   );
 };

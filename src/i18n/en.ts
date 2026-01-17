@@ -222,6 +222,11 @@ const en = {
         }
       }
     },
+    invoice: {
+      errors: {
+        notFullyPaid: 'Please complete the payment before sending the invoice',
+      }
+    },
     inquiries: {
       errors: {
         unique: {

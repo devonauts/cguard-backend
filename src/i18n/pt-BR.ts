@@ -210,6 +210,11 @@ const ptBR = {
         }
       }
     },
+    invoice: {
+      errors: {
+        notFullyPaid: 'Complete o pagamento antes de enviar a fatura',
+      }
+    },
     inquiries: {
       errors: {
         unique: {

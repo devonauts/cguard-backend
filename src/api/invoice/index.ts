@@ -3,4 +3,24 @@ export default (app) => {
     `/tenant/:tenantId/invoice`,
     require('./invoiceCreate').default,
   );
+  app.put(
+    `/tenant/:tenantId/invoice/:id`,
+    require('./invoiceUpdate').default,
+  );
+  app.get(
+    `/tenant/:tenantId/invoice/:id/download`,
+    require('./invoiceDownload').default,
+  );
+  app.get(
+    `/tenant/:tenantId/invoice`,
+    require('./invoiceList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/invoice/:id`,
+    require('./invoiceFind').default,
+  );
+  app.post(
+    `/tenant/:tenantId/invoice/:id/send`,
+    require('./invoiceSend').default,
+  );
 };

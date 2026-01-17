@@ -226,6 +226,11 @@ const es = {
       }
     }
   },
+  invoice: {
+    errors: {
+      notFullyPaid: 'Complete el pago para enviar la factura',
+    }
+  },
   inquiries: {
     errors: {
       unique: {

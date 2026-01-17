@@ -357,6 +357,7 @@ export default async (req, res, next) => {
                     tenantUser.invitationToken = require('crypto')
                       .randomBytes(20)
                       .toString('hex');
+                    tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
                     tenantUser.status = 'invited';
                     await tenantUser.save();
                   }

@@ -55,6 +55,14 @@ function models() {
     }
   });
 
+  // Backwards-compatible aliases for models referenced by `as` in includes
+  // Some repositories expect `options.database.postSite` to exist (alias
+  // used in includes). Map it to the `businessInfo` model so Sequelize
+  // receives a proper Model in `include` calls.
+  if (database.businessInfo) {
+    database.postSite = database.businessInfo;
+  }
+
   database.sequelize = sequelize;
   database.Sequelize = Sequelize;
 

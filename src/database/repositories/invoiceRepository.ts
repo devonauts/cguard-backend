@@ -19,12 +19,15 @@ class InvoiceRepository {
       {
         ...lodash.pick(data, [
           'invoiceNumber',
+          'status',
+          'sentAt',
           'poSoNumber',
           'title',
           'summary',
           'date',
           'dueDate',
           'items',
+          'payments',
           'notes',
           'subtotal',
           'total',
@@ -58,27 +61,37 @@ class InvoiceRepository {
       throw new Error404();
     }
 
-    record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'invoiceNumber',
-          'poSoNumber',
-          'title',
-          'summary',
-          'date',
-          'dueDate',
-          'items',
-          'notes',
-          'subtotal',
-          'total',
-          'importHash',
-        ]),
-        clientId: data.clientId || null,
-        postSiteId: data.postSiteId || null,
-        updatedById: currentUser.id,
-      },
-      { transaction },
-    );
+    const toUpdate: any = {
+      ...lodash.pick(data, [
+        'invoiceNumber',
+        'status',
+        'sentAt',
+        'poSoNumber',
+        'title',
+        'summary',
+        'date',
+        'dueDate',
+        'items',
+        'payments',
+        'notes',
+        'subtotal',
+        'total',
+        'importHash',
+      ]),
+      updatedById: currentUser.id,
+    };
+
+    // Only set clientId/postSiteId if provided in the payload. This prevents
+    // accidental nulling of these fields when performing partial updates
+    // (e.g. appending payments).
+    if (Object.prototype.hasOwnProperty.call(data, 'clientId')) {
+      toUpdate.clientId = data.clientId;
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'postSiteId')) {
+      toUpdate.postSiteId = data.postSiteId;
+    }
+
+    record = await record.update(toUpdate, { transaction });
 
     await this._createAuditLog(AuditLogRepository.UPDATE, record, data, options);
 
@@ -107,8 +120,8 @@ class InvoiceRepository {
     const transaction = SequelizeRepository.getTransaction(options);
 
     const include = [
-      { model: options.database.clientAccount, as: 'client' },
-      { model: options.database.postSite, as: 'postSite' },
+      { model: options.database.clientAccount, as: 'client', paranoid: false },
+      { model: options.database.postSite, as: 'postSite', paranoid: false },
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(options);
@@ -123,7 +136,44 @@ class InvoiceRepository {
       throw new Error404();
     }
 
-    return record.get({ plain: true });
+    // Ensure client/postSite are available even when Sequelize didn't include them
+    let plain = record.get({ plain: true });
+
+    try {
+      const ClientAccountRepository = require('./clientAccountRepository').default;
+      if (!plain.client && plain.clientId) {
+        try {
+          const clientObj = await ClientAccountRepository.findById(plain.clientId, { ...options, bypassPermissionValidation: true });
+          if (clientObj) {
+            plain.client = clientObj;
+            plain.rawClient = clientObj;
+          }
+        } catch (e) {
+          // ignore failing to load client
+        }
+      }
+    } catch (e) {
+      // ignore requiring repository
+    }
+
+    try {
+      const BusinessInfoRepository = require('./businessInfoRepository').default;
+      if (!plain.postSite && plain.postSiteId) {
+        try {
+          const siteObj = await BusinessInfoRepository.findById(plain.postSiteId, { ...options, bypassPermissionValidation: true });
+          if (siteObj) {
+            plain.postSite = siteObj;
+            plain.rawSite = siteObj;
+          }
+        } catch (e) {
+          // ignore failing to load site
+        }
+      }
+    } catch (e) {
+      // ignore requiring repository
+    }
+
+    return plain;
   }
 
   static async filterIdInTenant(id, options: IRepositoryOptions) {
@@ -148,8 +198,8 @@ class InvoiceRepository {
     const tenant = SequelizeRepository.getCurrentTenant(options);
     let whereAnd: Array<any> = [];
     let include = [
-      { model: options.database.clientAccount, as: 'client' },
-      { model: options.database.postSite, as: 'postSite' },
+      { model: options.database.clientAccount, as: 'client', paranoid: false },
+      { model: options.database.postSite, as: 'postSite', paranoid: false },
     ];
 
     whereAnd.push({ tenantId: tenant.id });

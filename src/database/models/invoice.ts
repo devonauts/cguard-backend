@@ -57,14 +57,34 @@ export default function (sequelize) {
       items: {
         type: DataTypes.JSON,
       },
+      payments: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+      status: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        defaultValue: 'Borrador',
+        validate: {
+          len: [0, 50],
+        },
+      },
+      sentAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        get: function() {
+          // @ts-ignore
+          return this.getDataValue('sentAt') ? moment.utc(this.getDataValue('sentAt')).format() : null;
+        },
+      },
       notes: {
         type: DataTypes.STRING(1000),
       },
       subtotal: {
-        type: DataTypes.DECIMAL,
+        type: DataTypes.DECIMAL(10,2),
       },
       total: {
-        type: DataTypes.DECIMAL,
+        type: DataTypes.DECIMAL(10,2),
       },
       importHash: {
         type: DataTypes.STRING(255),
