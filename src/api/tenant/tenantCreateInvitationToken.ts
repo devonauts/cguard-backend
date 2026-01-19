@@ -6,6 +6,15 @@ const TenantRepository = require('../../database/repositories/tenantRepository')
 const SequelizeRepository = require('../../database/repositories/sequelizeRepository').default;
 
 export default async (req, res) => {
+  function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    try {
+      return JSON.stringify(error);
+    } catch (_) {
+      return String(error);
+    }
+  }
   try {
     const tenantId = req.params.tenantId || (req.body && req.body.tenantId);
     if (!tenantId) return res.status(400).send({ message: 'tenantId required' });
@@ -34,10 +43,10 @@ export default async (req, res) => {
       return res.status(200).send({ token: rec.token, expiresAt: rec.expiresAt });
     } catch (err) {
       console.error(err);
-      return res.status(500).send({ message: err.message });
+      return res.status(500).send({ message: getErrorMessage(err) });
     }
   } catch (error) {
     console.error(error);
-    return res.status(500).send({ message: error.message });
+    return res.status(500).send({ message: getErrorMessage(error) });
   }
 };
