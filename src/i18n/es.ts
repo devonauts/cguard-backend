@@ -45,6 +45,8 @@ const es = {
         'No puede revocar el permiso de administrador del administrador del plan.',
       destroyingPlanUser:
         'No puede eliminar el administrador del plan.',
+      passwordRequired: 'La contraseña es obligatoria.',
+      cannotUseOldPasswordForOtherUser: 'No puedes usar la contraseña anterior para cambiar la contraseña de otro usuario.',
     },
   },
   tenant: {
@@ -229,6 +231,7 @@ const es = {
   invoice: {
     errors: {
       notFullyPaid: 'Complete el pago para enviar la factura',
+      cannotModifySentPaid: 'La factura enviada y pagada no se puede modificar o eliminar',
     }
   },
   inquiries: {

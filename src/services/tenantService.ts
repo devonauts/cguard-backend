@@ -513,14 +513,39 @@ export default class TenantService {
           existing.status = existing.status || 'active';
           await existing.save({ transaction });
         } else {
-          // create tenantUser record for current user
-          const tenant = standaloneInvite.tenant || await TenantRepository.findById(tenantId, { ...this.options, transaction });
-          await TenantUserRepository.create(
-            tenant,
-            this.options.currentUser,
-            [],
-            { ...this.options, transaction, currentTenant: { id: tenantId } },
-          );
+          // Try a fallback lookup: the user may have an existing tenant_user row
+          // created with a NULL tenantId (legacy / malformed). Prefer updating
+          // that row instead of creating a duplicate.
+          let fallbackTenantUser = null;
+          try {
+            const allForUser = await TenantUserRepository.findByUser(this.options.currentUser.id, { ...this.options, transaction });
+            if (Array.isArray(allForUser) && allForUser.length) {
+              // prefer one with null tenantId, otherwise none
+              fallbackTenantUser = allForUser.find((r) => !r.tenantId) || null;
+            }
+          } catch (e) {
+            // non-fatal: proceed to create if lookup fails
+            fallbackTenantUser = null;
+          }
+
+          if (fallbackTenantUser) {
+            // update the legacy row to point to the correct tenant and activate
+            fallbackTenantUser.tenantId = tenantId;
+            fallbackTenantUser.invitationToken = null;
+            fallbackTenantUser.invitationTokenExpiresAt = null;
+            fallbackTenantUser.roles = [ ...(Array.isArray(fallbackTenantUser.roles) ? fallbackTenantUser.roles : [] ) ];
+            fallbackTenantUser.status = fallbackTenantUser.status || 'active';
+            await fallbackTenantUser.save({ transaction });
+          } else {
+            // create tenantUser record for current user
+            const tenant = standaloneInvite.tenant || await TenantRepository.findById(tenantId, { ...this.options, transaction });
+            await TenantUserRepository.create(
+              tenant,
+              this.options.currentUser,
+              [],
+              { ...this.options, transaction, currentTenant: { id: tenantId } },
+            );
+          }
         }
 
         // consume the standalone invitation

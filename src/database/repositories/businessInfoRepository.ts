@@ -387,6 +387,16 @@ class BusinessInfoRepository {
         );
       }
 
+      // Filter by client (clientAccountId). Accept both `clientId` and `clientAccountId` from frontend.
+      const clientIdFilter = filter.clientAccountId || filter.clientId;
+      if (clientIdFilter) {
+        if (Array.isArray(clientIdFilter)) {
+          whereAnd.push({ clientAccountId: { [Op.in]: clientIdFilter.map((id) => SequelizeFilterUtils.uuid(id)) } });
+        } else {
+          whereAnd.push({ clientAccountId: SequelizeFilterUtils.uuid(clientIdFilter) });
+        }
+      }
+
       if (filter.description) {
         whereAnd.push(
           SequelizeFilterUtils.ilikeIncludes(

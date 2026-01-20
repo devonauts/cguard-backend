@@ -301,7 +301,7 @@ class AuthService {
     const transaction = await SequelizeRepository.createTransaction(
       options.database,
     )
-
+    let committed = false;
     try {
       email = email.toLowerCase()
 
@@ -352,6 +352,7 @@ class AuthService {
       }
 
       await SequelizeRepository.commitTransaction(transaction)
+      committed = true;
 
       // Load full user with tenant relations and compute tenant permissions
       // Use a loose type to avoid TS narrowing issues when fullUser is assigned later
@@ -421,8 +422,20 @@ class AuthService {
       try {
         const tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
         if (tenantEntries.length === 0) {
-          throw new Error('auth.noTenantAssigned');
+          // No tenant assigned: allow signin but return a token without tenantId and
+          // keep `tenant` as null so frontend can show a restricted dashboard.
+          (safeUser as any).tenant = null;
+          delete (safeUser as any).tenants;
+
+          const finalToken = jwt.sign(
+            { id: user.id },
+            getConfig().AUTH_JWT_SECRET,
+            { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
+          );
+
+          return { token: finalToken, user: safeUser };
         }
+
         if (tenantEntries.length > 1) {
           throw new Error('auth.multipleTenantsNotAllowed');
         }
@@ -450,11 +463,15 @@ class AuthService {
 
         return { token: finalToken, user: safeUser };
       } catch (err) {
-        await SequelizeRepository.rollbackTransaction(transaction);
+        if (!committed) {
+          await SequelizeRepository.rollbackTransaction(transaction);
+        }
         throw new Error400(options.language, (err && (err as any).message) || 'auth.invalidTenantConfiguration');
       }
     } catch (error) {
-      await SequelizeRepository.rollbackTransaction(transaction)
+      if (!committed) {
+        await SequelizeRepository.rollbackTransaction(transaction)
+      }
       throw error
     }
   }

@@ -16,6 +16,61 @@ export default class InvoiceService {
     this.options = options;
   }
 
+  async _isSentAndFullyPaid(record, id) {
+    try {
+      if (!record) return false;
+      const status = record.status || '';
+      if (String(status).toLowerCase() !== 'enviado') return false;
+
+      // compute effectivePaid similar to send()
+      const paymentsArr = Array.isArray(record.payments) ? record.payments : (Array.isArray(record.rawPayments) ? record.rawPayments : []);
+      const parseNumeric = (v: any) => {
+        if (v == null) return 0;
+        if (typeof v === 'number') return v;
+        if (typeof v === 'string') {
+          const cleaned = String(v).replace(/[^0-9.-]+/g, '');
+          const n = Number(cleaned);
+          return isNaN(n) ? 0 : n;
+        }
+        const n = Number(v);
+        return isNaN(n) ? 0 : n;
+      };
+
+      const totalPaid = (paymentsArr || []).reduce((acc: number, p: any) => {
+        const v = parseNumeric(p?.amount ?? p?.paid ?? p?.total ?? p?.paidAmount ?? 0);
+        return acc + v;
+      }, 0);
+
+      const topPaid = parseNumeric(record.paidAmount ?? record.paid ?? record.paidTotal ?? 0) || 0;
+      let effectivePaid = (totalPaid > 0) ? totalPaid : topPaid;
+
+      if (!effectivePaid || effectivePaid === 0) {
+        try {
+          const tenant = SequelizeRepository.getCurrentTenant(this.options);
+          const paymentModel = this.options && this.options.database && this.options.database.payment ? this.options.database.payment : null;
+          if (paymentModel) {
+            const payRows = await paymentModel.findAll({ where: { invoiceId: id, tenantId: tenant.id } });
+            if (Array.isArray(payRows) && payRows.length) {
+              const sum = payRows.reduce((acc: number, p: any) => {
+                const val = Number(p.amount ?? p.paid ?? p.total ?? 0);
+                return acc + (isNaN(val) ? 0 : val);
+              }, 0);
+              effectivePaid = sum;
+            }
+          }
+        } catch (e) {
+          // ignore fallback errors
+        }
+      }
+
+      const invoiceTotal = Number(record.total || 0) || 0;
+      const EPS = 0.005;
+      return invoiceTotal > 0 && (effectivePaid + EPS) >= invoiceTotal;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async create(data) {
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
 
@@ -24,7 +79,7 @@ export default class InvoiceService {
       data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
 
       // Auto-generate invoiceNumber if not provided by querying existing invoices per tenant
-      if (!data.invoiceNumber) {
+      const generateInvoiceNumber = async () => {
         const tenant = SequelizeRepository.getCurrentTenant(this.options);
         const format = (getConfig() && getConfig().INVOICE_NUMBER_FORMAT) || 'numeric';
 
@@ -33,24 +88,59 @@ export default class InvoiceService {
           // Find the max numeric suffix for invoiceNumber like 'YYYY-XXXX'
           const sql = `SELECT MAX(CAST(SUBSTRING_INDEX(invoiceNumber, '-', -1) AS UNSIGNED)) as max FROM invoices WHERE tenantId = :tenantId AND invoiceNumber LIKE :likePattern`;
           const replacements = { tenantId: tenant.id, likePattern: `${year}-%` };
-          const rows: any[] = await this.options.database.sequelize.query(sql, { replacements, type: this.options.database.sequelize.QueryTypes.SELECT });
-          const result = rows && rows.length ? rows[0] : null;
-          const max = result && result.max ? Number(result.max) : 0;
-          const nextNumber = max + 1;
-          const padded = String(nextNumber).padStart(4, '0');
-          data.invoiceNumber = `${year}-${padded}`;
-        } else {
-          // numeric format: take MAX CAST(invoiceNumber AS UNSIGNED) for tenant
-          const sql = `SELECT MAX(CAST(invoiceNumber AS UNSIGNED)) as max FROM invoices WHERE tenantId = :tenantId`;
-          const replacements = { tenantId: tenant.id };
-          const rows: any[] = await this.options.database.sequelize.query(sql, { replacements, type: this.options.database.sequelize.QueryTypes.SELECT });
-          const result = rows && rows.length ? rows[0] : null;
-          const max = result && result.max ? Number(result.max) : 0;
-          const nextNumber = max + 1;
-          data.invoiceNumber = String(nextNumber);
+          try {
+            const rows: any[] = await this.options.database.sequelize.query(sql, { replacements, type: this.options.database.sequelize.QueryTypes.SELECT });
+            const result = rows && rows.length ? rows[0] : null;
+            const max = result && result.max ? Number(result.max) : 0;
+            const nextNumber = max + 1;
+            const padded = String(nextNumber).padStart(4, '0');
+            return `${year}-${padded}`;
+          } catch (err) {
+            const nextNumber = 1;
+            return `${year}-${String(nextNumber).padStart(4, '0')}`;
+          }
         }
+
+        // numeric format: take MAX CAST(invoiceNumber AS UNSIGNED) for tenant
+        const sql = `SELECT MAX(CAST(invoiceNumber AS UNSIGNED)) as max FROM invoices WHERE tenantId = :tenantId`;
+        const replacements = { tenantId: SequelizeRepository.getCurrentTenant(this.options).id };
+        try {
+          const rows: any[] = await this.options.database.sequelize.query(sql, { replacements, type: this.options.database.sequelize.QueryTypes.SELECT });
+          const result = rows && rows.length ? rows[0] : null;
+          const max = result && result.max ? Number(result.max) : 0;
+          const nextNumber = max + 1;
+          return String(nextNumber);
+        } catch (err) {
+          return '1';
+        }
+      };
+
+      if (!data.invoiceNumber) {
+        // attempt create with retries on unique constraint
+        let attempts = 0;
+        const maxAttempts = 5;
+        let lastError = null;
+        while (attempts < maxAttempts) {
+          attempts += 1;
+          data.invoiceNumber = await generateInvoiceNumber();
+          try {
+            const record = await InvoiceRepository.create(data, { ...this.options, transaction });
+            await SequelizeRepository.commitTransaction(transaction);
+            return record;
+          } catch (err) {
+            lastError = err;
+            const name = err && err.name ? err.name : '';
+            if (name === 'SequelizeUniqueConstraintError' || (err && err.errors && err.errors[0] && err.errors[0].message && String(err.errors[0].message).includes('invoiceNumber'))) {
+              // retry generating a new number
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw lastError || new Error('Failed to create invoice due to unique constraint');
       }
 
+      // client provided invoiceNumber: create normally
       const record = await InvoiceRepository.create(data, { ...this.options, transaction });
 
       await SequelizeRepository.commitTransaction(transaction);
@@ -69,6 +159,12 @@ export default class InvoiceService {
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
 
     try {
+      // Prevent editing if invoice already sent and fully paid
+      const existing = await InvoiceRepository.findById(id, { ...this.options, transaction, bypassPermissionValidation: true });
+      if (await this._isSentAndFullyPaid(existing, id)) {
+        throw new Error400(this.options.language, 'invoice.errors.cannotModifySentPaid');
+      }
+
       data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
       data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
 
@@ -89,6 +185,10 @@ export default class InvoiceService {
 
     try {
       for (const id of ids) {
+        const existing = await InvoiceRepository.findById(id, { ...this.options, transaction, bypassPermissionValidation: true });
+        if (await this._isSentAndFullyPaid(existing, id)) {
+          throw new Error400(this.options.language, 'invoice.errors.cannotModifySentPaid');
+        }
         await InvoiceRepository.destroy(id, { ...this.options, transaction });
       }
 

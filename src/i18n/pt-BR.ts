@@ -51,6 +51,8 @@ const ptBR = {
       revokingOwnPermission: `Você não pode revogar sua própria permissão de proprietário`,
       revokingPlanUser: `Você não pode revogar a permissão do responsável pelo plano ativo`,
       destroyingPlanUser: `Você não pode deletar o responsável pelo plano ativo`,
+      passwordRequired: 'A senha é obrigatória.',
+      cannotUseOldPasswordForOtherUser: 'Você não pode usar a senha antiga para alterar a senha de outro usuário.',
     },
   },
 
@@ -213,6 +215,7 @@ const ptBR = {
     invoice: {
       errors: {
         notFullyPaid: 'Complete o pagamento antes de enviar a fatura',
+        cannotModifySentPaid: 'Uma fatura enviada e paga não pode ser modificada ou excluída',
       }
     },
     inquiries: {

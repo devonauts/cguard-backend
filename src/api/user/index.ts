@@ -56,4 +56,8 @@ export default (app) => {
     `/tenant/:tenantId/user/:id/restore`,
     require('./userRestore').default,
   );
+  app.put(
+    `/tenant/:tenantId/user/:id/change-password`,
+    require('./userChangePassword').default,
+  );
 };

@@ -25,21 +25,16 @@ export default class EstimateService {
       data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
       data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
 
-      // Auto-generate estimateNumber if not provided
-      if (!data.estimateNumber) {
-        const tenant = SequelizeRepository.getCurrentTenant(this.options);
-
-        // Determine formatting option: numeric (default) or year-prefixed 'YYYY-0001'
+      // Auto-generate estimateNumber if not provided. Use retry to avoid race collisions
+      const generateEstimateNumber = async () => {
         const format = (getConfig() && getConfig().ESTIMATE_NUMBER_FORMAT) || 'numeric';
 
         try {
-          // Fetch existing estimates for this tenant and compute max value
           const allResult = await EstimateRepository.findAndCountAll({ filter: null, limit: 0 }, this.options);
           const rows = (allResult && Array.isArray(allResult.rows)) ? allResult.rows : [];
 
           if (format === 'year') {
             const year = (new Date()).getFullYear();
-            // find max suffix for current year
             let maxSuffix = 0;
             for (const r of rows) {
               const raw = r && (r.estimateNumber || r.number || '');
@@ -50,52 +45,53 @@ export default class EstimateService {
                 if (suf > maxSuffix) maxSuffix = suf;
               }
             }
-
-            let nextNumber = maxSuffix + 1;
-            let candidate = `${year}-${String(nextNumber).padStart(4, '0')}`;
-
-            // Ensure uniqueness (safety loop)
-            let attempts = 0;
-            while ((await EstimateRepository.count({ estimateNumber: candidate }, this.options)) > 0) {
-              attempts += 1;
-              if (attempts > 1000) break;
-              nextNumber += 1;
-              candidate = `${year}-${String(nextNumber).padStart(4, '0')}`;
-            }
-            data.estimateNumber = candidate;
-          } else {
-            // numeric: compute max numeric portion across all estimateNumber values
-            let maxVal = 0;
-            for (const r of rows) {
-              const raw = r && (r.estimateNumber || r.number || '');
-              if (!raw) continue;
-              const digits = String(raw).replace(/[^0-9]/g, '');
-              const parsed = parseInt(digits || '0', 10) || 0;
-              if (parsed > maxVal) maxVal = parsed;
-            }
-            let nextNumber = maxVal + 1;
-            let candidate = String(nextNumber);
-
-            let attempts = 0;
-            while ((await EstimateRepository.count({ estimateNumber: candidate }, this.options)) > 0) {
-              attempts += 1;
-              if (attempts > 1000) break;
-              nextNumber += 1;
-              candidate = String(nextNumber);
-            }
-            data.estimateNumber = candidate;
+            const nextNumber = maxSuffix + 1;
+            return `${year}-${String(nextNumber).padStart(4, '0')}`;
           }
+
+          let maxVal = 0;
+          for (const r of rows) {
+            const raw = r && (r.estimateNumber || r.number || '');
+            if (!raw) continue;
+            const digits = String(raw).replace(/[^0-9]/g, '');
+            const parsed = parseInt(digits || '0', 10) || 0;
+            if (parsed > maxVal) maxVal = parsed;
+          }
+          return String(maxVal + 1);
         } catch (err) {
-          // Fallback in case of unexpected DB errors: default to simple numbering
           const year = (new Date()).getFullYear();
-          data.estimateNumber = (getConfig() && getConfig().ESTIMATE_NUMBER_FORMAT) === 'year' ? `${year}-0001` : '1';
+          return (getConfig() && getConfig().ESTIMATE_NUMBER_FORMAT) === 'year' ? `${year}-0001` : '1';
         }
+      };
+
+      if (!data.estimateNumber) {
+        // attempt create with retries on unique constraint
+        let attempts = 0;
+        const maxAttempts = 5;
+        let lastError = null;
+        while (attempts < maxAttempts) {
+          attempts += 1;
+          data.estimateNumber = await generateEstimateNumber();
+          try {
+            const record = await EstimateRepository.create(data, { ...this.options, transaction });
+            await SequelizeRepository.commitTransaction(transaction);
+            return record;
+          } catch (err) {
+            lastError = err;
+            const name = err && err.name ? err.name : '';
+            if (name === 'SequelizeUniqueConstraintError' || (err && err.errors && err.errors[0] && err.errors[0].message && String(err.errors[0].message).includes('estimateNumber'))) {
+              // retry generating a new number
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw lastError || new Error('Failed to create estimate due to unique constraint');
       }
 
+      // client provided estimateNumber: create normally
       const record = await EstimateRepository.create(data, { ...this.options, transaction });
-
       await SequelizeRepository.commitTransaction(transaction);
-
       return record;
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(transaction);

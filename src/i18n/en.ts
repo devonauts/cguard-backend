@@ -52,6 +52,8 @@ const en = {
       revokingOwnPermission: `You can't revoke your own admin permission.`,
       revokingPlanUser: `You can't revoke the admin permission of the plan manager.`,
       destroyingPlanUser: `You can't delete the plan manager.`,
+      passwordRequired: 'Password is required.',
+      cannotUseOldPasswordForOtherUser: "You can't use the old password to change another user's password.",
     },
   },
 
@@ -225,6 +227,7 @@ const en = {
     invoice: {
       errors: {
         notFullyPaid: 'Please complete the payment before sending the invoice',
+        cannotModifySentPaid: 'An invoice that has been sent and fully paid cannot be modified or deleted',
       }
     },
     inquiries: {

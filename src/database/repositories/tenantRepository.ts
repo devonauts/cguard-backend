@@ -33,26 +33,26 @@ class TenantRepository {
       options,
     );
 
-    // URL is required,
-    // in case of multi tenant without subdomain
-    // set a random uuid
-    data.url = data.url || uuid();
-
-    const existsUrl = Boolean(
-      await options.database.tenant.count({
-        where: { url: data.url },
-        transaction,
-      }),
-    );
-
-    if (
-      forbiddenTenantUrls.includes(data.url) ||
-      existsUrl
-    ) {
-      throw new Error400(
-        options.language,
-        'tenant.url.exists',
+    // If client provides an URL, validate uniqueness and reserved names.
+    // We no longer auto-generate a UUID for `url` — this field should
+    // represent a webpage (or subdomain) provided by the caller.
+    if (data.url) {
+      const existsUrl = Boolean(
+        await options.database.tenant.count({
+          where: { url: data.url },
+          transaction,
+        }),
       );
+
+      if (
+        forbiddenTenantUrls.includes(data.url) ||
+        existsUrl
+      ) {
+        throw new Error400(
+          options.language,
+          'tenant.url.exists',
+        );
+      }
     }
 
     const record = await options.database.tenant.create(

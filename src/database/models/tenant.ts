@@ -21,11 +21,12 @@ export default function (sequelize, DataTypes) {
       },
       url: {
         type: DataTypes.STRING(50),
-        allowNull: false,
-        validation: {
-          notEmpty: true,
+        // Allow url to be empty/null until the tenant owner sets a website or subdomain.
+        allowNull: true,
+        validate: {
           len: [0, 50],
         },
+        defaultValue: '',
       },
       plan: {
         type: DataTypes.STRING(255),

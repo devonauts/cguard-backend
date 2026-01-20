@@ -1,5 +1,6 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import AuditLogRepository from './auditLogRepository';
+import Error400 from '../../errors/Error400';
 import Roles from '../../security/roles';
 import crypto from 'crypto';
 import { Op } from 'sequelize';
@@ -61,11 +62,64 @@ export default class TenantUserRepository {
       options,
     );
 
+    // Normalize tenantId: prefer explicit `tenant.id`, fallback to options.currentTenant
+    let tenantId = tenant && tenant.id ? tenant.id : null;
+    if (!tenantId) {
+      const currentTenant = SequelizeRepository.getCurrentTenant(options);
+      if (currentTenant && currentTenant.id) {
+        tenantId = currentTenant.id;
+      }
+    }
+
+    if (!tenantId) {
+      throw new Error400(options.language, 'tenant.id.required');
+    }
+
     const status = selectStatus('active', roles);
+
+    // Defensive check: if a tenant_user already exists for this user with
+    // the same tenantId or with a NULL tenantId (legacy), update that row
+    // instead of creating a duplicate.
+    try {
+      const existing = await options.database.tenantUser.findOne({
+        where: {
+          userId: user.id,
+          [Op.or]: [ { tenantId }, { tenantId: null } ],
+        },
+        transaction,
+      });
+
+      if (existing) {
+        // ensure tenantId is set
+        if (!existing.tenantId && tenantId) {
+          existing.tenantId = tenantId;
+        }
+        existing.status = status;
+        existing.roles = roles || [];
+        await existing.save({ transaction });
+        await AuditLogRepository.log(
+          {
+            entityName: 'user',
+            entityId: user.id,
+            action: AuditLogRepository.UPDATE,
+            values: {
+              email: user.email,
+              status,
+              roles,
+            },
+          },
+          options,
+        );
+        return;
+      }
+    } catch (e) {
+      // non-fatal: continue to create if lookup fails
+      console.warn('tenantUserRepository.create: existing lookup failed', (e && (e as any).message) || e);
+    }
 
     await options.database.tenantUser.create(
       {
-        tenantId: tenant.id,
+        tenantId,
         userId: user.id,
         status,
         roles,
@@ -149,6 +203,19 @@ export default class TenantUserRepository {
       options,
     );
 
+    // Ensure tenantId is provided; fallback to options.currentTenant
+    let resolvedTenantId = tenantId;
+    if (!resolvedTenantId) {
+      const currentTenant = SequelizeRepository.getCurrentTenant(options);
+      if (currentTenant && currentTenant.id) {
+        resolvedTenantId = currentTenant.id;
+      }
+    }
+
+    if (!resolvedTenantId) {
+      throw new Error400(options.language, 'tenant.id.required');
+    }
+
     // Ensure roles is a proper array
     if (!Array.isArray(roles)) {
       if (typeof roles === 'string') {
@@ -186,7 +253,7 @@ export default class TenantUserRepository {
           // Fallback: try name
           if (r.name) {
             // try to find by name
-            const roleByName = await options.database.role.findOne({ where: { name: r.name, tenantId }, transaction });
+            const roleByName = await options.database.role.findOne({ where: { name: r.name, tenantId: resolvedTenantId }, transaction });
             if (roleByName) mapped.push(roleByName.slug);
             continue;
           }
@@ -222,7 +289,7 @@ export default class TenantUserRepository {
     });
 
     let tenantUser = await this.findByTenantAndUser(
-      tenantId,
+      resolvedTenantId,
       id,
       options,
     );
@@ -242,7 +309,7 @@ export default class TenantUserRepository {
 
         tenantUser = await options.database.tenantUser.create(
           {
-            tenantId,
+            tenantId: resolvedTenantId,
             userId: id,
             status: initialStatus,
             invitationToken,
@@ -319,7 +386,7 @@ export default class TenantUserRepository {
         // Ensure we have a Sequelize instance with association helpers
         if (!tenantUser || typeof tenantUser.getAssignedClients !== 'function') {
           tenantUser = await options.database.tenantUser.findOne({
-            where: { id: tenantUser && tenantUser.id ? tenantUser.id : id, tenantId },
+            where: { id: tenantUser && tenantUser.id ? tenantUser.id : id, tenantId: resolvedTenantId },
             include: [{ model: options.database.clientAccount, as: 'assignedClients' }],
             transaction,
           });
@@ -397,7 +464,7 @@ export default class TenantUserRepository {
         // Ensure we have association helpers for post sites as well
         if (!tenantUser || typeof tenantUser.getAssignedPostSites !== 'function') {
           tenantUser = await options.database.tenantUser.findOne({
-            where: { id: tenantUser && tenantUser.id ? tenantUser.id : id, tenantId },
+            where: { id: tenantUser && tenantUser.id ? tenantUser.id : id, tenantId: resolvedTenantId },
             include: [{ model: options.database.businessInfo, as: 'assignedPostSites' }],
             transaction,
           });
@@ -494,28 +561,66 @@ export default class TenantUserRepository {
       options,
     );
 
+    // If no exact tenant-user found, try to find any tenantUser for this user
+    // that may have been created with a NULL tenantId (legacy/malformed data)
+    // or other anomalies. In such cases prefer updating that record instead
+    // of creating a duplicate.
+    if (!existingTenantUser) {
+      try {
+        existingTenantUser = await options.database.tenantUser.findOne({
+          where: {
+            userId: currentUser.id,
+            [Op.or]: [
+              { tenantId: invitationTenantUser.tenantId },
+              { tenantId: null },
+            ],
+          },
+          transaction,
+        });
+      } catch (e) {
+        // non-fatal: proceed with existing logic if this lookup fails
+        const msg = (e as any) && (e as any).message ? (e as any).message : e;
+        console.warn('tenantUserRepository.acceptInvitation: fallback lookup failed', msg);
+      }
+    }
+
     // There might be a case that the invite was sent to another email,
     // and the current user is also invited or is already a member
     if (
       existingTenantUser &&
       existingTenantUser.id !== invitationTenantUser.id
     ) {
-      // destroys the new invite
-      await this.destroy(
-        invitationTenantUser.tenantId,
-        invitationTenantUser.userId,
-        options,
-      );
+      // If the existing tenantUser row corresponds to some legacy record
+      // without tenantId, update it to point to the invited tenant and
+      // merge roles/status. Also remove the original invitation record
+      // that belonged to the invited email (if any).
 
-      // Merges the roles from the invitation and the current tenant user
+      // Destroy the invitation row that is not the user's (if different user)
+      try {
+        await this.destroy(
+          invitationTenantUser.tenantId,
+          invitationTenantUser.userId,
+          options,
+        );
+      } catch (e) {
+        const msg = (e && (e as any).message) ? (e as any).message : e;
+        console.warn('tenantUserRepository.acceptInvitation: failed to destroy invitationTenantUser', msg);
+      }
+
+      // Ensure tenantId is set on the existing row (fix NULL tenantId cases)
+      if (!existingTenantUser.tenantId && invitationTenantUser.tenantId) {
+        existingTenantUser.tenantId = invitationTenantUser.tenantId;
+      }
+
+      // Merge roles
       existingTenantUser.roles = [
         ...new Set([
-          ...existingTenantUser.roles,
-          ...invitationTenantUser.roles,
+          ...(Array.isArray(existingTenantUser.roles) ? existingTenantUser.roles : []),
+          ...(Array.isArray(invitationTenantUser.roles) ? invitationTenantUser.roles : []),
         ]),
       ];
 
-      // Change the status to active (in case the existing one is also invited)
+      // Clear invitation fields and set active status
       existingTenantUser.invitationToken = null;
       existingTenantUser.invitationTokenExpiresAt = null;
       existingTenantUser.status = selectStatus(
