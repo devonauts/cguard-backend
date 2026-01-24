@@ -14,7 +14,7 @@ const PDFDocument = require('pdfkit');
 export default class EstimateService {
   options: IServiceOptions;
 
-  constructor(options) {
+  constructor(options: IServiceOptions) {
     this.options = options;
   }
 
@@ -58,7 +58,7 @@ export default class EstimateService {
             if (parsed > maxVal) maxVal = parsed;
           }
           return String(maxVal + 1);
-        } catch (err) {
+          } catch (err: any) {
           const year = (new Date()).getFullYear();
           return (getConfig() && getConfig().ESTIMATE_NUMBER_FORMAT) === 'year' ? `${year}-0001` : '1';
         }
@@ -68,7 +68,7 @@ export default class EstimateService {
         // attempt create with retries on unique constraint
         let attempts = 0;
         const maxAttempts = 5;
-        let lastError = null;
+        let lastError: any = null;
         while (attempts < maxAttempts) {
           attempts += 1;
           data.estimateNumber = await generateEstimateNumber();
@@ -76,7 +76,7 @@ export default class EstimateService {
             const record = await EstimateRepository.create(data, { ...this.options, transaction });
             await SequelizeRepository.commitTransaction(transaction);
             return record;
-          } catch (err) {
+          } catch (err: any) {
             lastError = err;
             const name = err && err.name ? err.name : '';
             if (name === 'SequelizeUniqueConstraintError' || (err && err.errors && err.errors[0] && err.errors[0].message && String(err.errors[0].message).includes('estimateNumber'))) {
@@ -93,7 +93,7 @@ export default class EstimateService {
       const record = await EstimateRepository.create(data, { ...this.options, transaction });
       await SequelizeRepository.commitTransaction(transaction);
       return record;
-    } catch (error) {
+    } catch (error: any) {
       await SequelizeRepository.rollbackTransaction(transaction);
 
       SequelizeRepository.handleUniqueFieldError(error, this.options.language, 'estimate');

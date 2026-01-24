@@ -516,7 +516,7 @@ export default class TenantService {
           // Try a fallback lookup: the user may have an existing tenant_user row
           // created with a NULL tenantId (legacy / malformed). Prefer updating
           // that row instead of creating a duplicate.
-          let fallbackTenantUser = null;
+          let fallbackTenantUser: any = null;
           try {
             const allForUser = await TenantUserRepository.findByUser(this.options.currentUser.id, { ...this.options, transaction });
             if (Array.isArray(allForUser) && allForUser.length) {

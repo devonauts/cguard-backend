@@ -16,7 +16,9 @@ export default async function publicRequest(req: Request, res: Response) {
     const tenantId = share.tenantId || (share.tenant && share.tenant.id);
     if (!requestId || !tenantId) return res.status(404).json({ message: 'Invalid share' });
 
-    const result = await RequestRepository.findById(requestId, { database: (req as any).database, currentTenant: { id: tenantId } });
+    // reuse options and add currentTenant to satisfy repository call
+    options.currentTenant = { id: tenantId };
+    const result = await RequestRepository.findById(requestId, options);
 
     // Return the request payload
     return res.json(result);

@@ -12,7 +12,7 @@ import sendgridMail from '@sendgrid/mail';
 export default class InvoiceService {
   options: IServiceOptions;
 
-  constructor(options) {
+  constructor(options: IServiceOptions) {
     this.options = options;
   }
 
@@ -119,7 +119,7 @@ export default class InvoiceService {
         // attempt create with retries on unique constraint
         let attempts = 0;
         const maxAttempts = 5;
-        let lastError = null;
+        let lastError: any = null;
         while (attempts < maxAttempts) {
           attempts += 1;
           data.invoiceNumber = await generateInvoiceNumber();
@@ -127,7 +127,7 @@ export default class InvoiceService {
             const record = await InvoiceRepository.create(data, { ...this.options, transaction });
             await SequelizeRepository.commitTransaction(transaction);
             return record;
-          } catch (err) {
+          } catch (err: any) {
             lastError = err;
             const name = err && err.name ? err.name : '';
             if (name === 'SequelizeUniqueConstraintError' || (err && err.errors && err.errors[0] && err.errors[0].message && String(err.errors[0].message).includes('invoiceNumber'))) {
@@ -146,7 +146,7 @@ export default class InvoiceService {
       await SequelizeRepository.commitTransaction(transaction);
 
       return record;
-    } catch (error) {
+    } catch (error: any) {
       await SequelizeRepository.rollbackTransaction(transaction);
 
       SequelizeRepository.handleUniqueFieldError(error, this.options.language, 'invoice');
