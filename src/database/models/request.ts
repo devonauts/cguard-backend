@@ -12,6 +12,57 @@ export default function (sequelize) {
       dateTime: {
         type: DataTypes.DATE,
       },
+      incidentAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      clientId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      siteId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      incidentTypeId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      priority: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      },
+      callerType: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+      },
+      callerName: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      internalNotes: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      actionsTaken: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      location: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      status: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+        defaultValue: 'abierto',
+        validate: {
+          isIn: [[
+            'abierto',
+            'cerrado',
+          ]],
+        },
+      },
       subject: {
         type: DataTypes.STRING(200),
         validate: {
@@ -41,6 +92,11 @@ export default function (sequelize) {
           len: [0, 255],
         },    
       },
+      comments: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
     },
     {
       indexes: [
@@ -61,6 +117,24 @@ export default function (sequelize) {
   request.associate = (models) => {
     models.request.belongsTo(models.securityGuard, {
       as: 'guardName',
+      constraints: false,
+    });
+
+    models.request.belongsTo(models.clientAccount, {
+      as: 'client',
+      foreignKey: 'clientId',
+      constraints: false,
+    });
+
+    models.request.belongsTo(models.businessInfo, {
+      as: 'site',
+      foreignKey: 'siteId',
+      constraints: false,
+    });
+
+    models.request.belongsTo(models.incidentType, {
+      as: 'incidentType',
+      foreignKey: 'incidentTypeId',
       constraints: false,
     });
 

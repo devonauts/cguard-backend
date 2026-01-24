@@ -26,13 +26,26 @@ class RequestRepository {
     const record = await options.database.request.create(
       {
         ...lodash.pick(data, [
+          'incidentAt',
           'dateTime',
           'subject',
           'content',
-          'action',          
+          'action',
+          'actionsTaken',
+          'priority',
+          'callerType',
+          'callerName',
+          'internalNotes',
+          'location',
+          'status',
           'importHash',
         ]),
-        guardNameId: data.guardName || null,
+        // prefer explicit dateTime, fall back to incidentAt when provided
+        dateTime: data.dateTime || data.incidentAt || null,
+        guardNameId: data.guardName || data.guardId || null,
+        clientId: data.clientId || null,
+        siteId: data.siteId || null,
+        incidentTypeId: data.incidentTypeId || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -95,13 +108,26 @@ class RequestRepository {
     record = await record.update(
       {
         ...lodash.pick(data, [
+          'incidentAt',
           'dateTime',
           'subject',
           'content',
-          'action',          
+          'action',
+          'actionsTaken',
+          'priority',
+          'callerType',
+          'callerName',
+          'internalNotes',
+          'location',
+          'status',
           'importHash',
         ]),
-        guardNameId: data.guardName || null,
+        // keep dateTime consistent with incidentAt if dateTime is not provided
+        dateTime: data.dateTime || data.incidentAt || null,
+        guardNameId: data.guardName || data.guardId || null,
+        clientId: data.clientId || null,
+        siteId: data.siteId || null,
+        incidentTypeId: data.incidentTypeId || null,
         updatedById: currentUser.id,
       },
       {
@@ -120,6 +146,114 @@ class RequestRepository {
       data.requestDocumentPDF,
       options,
     );
+
+    await this._createAuditLog(
+      AuditLogRepository.UPDATE,
+      record,
+      data,
+      options,
+    );
+
+    return this.findById(record.id, options);
+  }
+
+  static async patch(id, data, options: IRepositoryOptions) {
+    const currentUser = SequelizeRepository.getCurrentUser(
+      options,
+    );
+
+    const transaction = SequelizeRepository.getTransaction(
+      options,
+    );
+
+    const currentTenant = SequelizeRepository.getCurrentTenant(
+      options,
+    );
+
+    let record = await options.database.request.findOne(
+      {
+        where: {
+          id,
+          tenantId: currentTenant.id,
+        },
+        transaction,
+      },
+    );
+
+    if (!record) {
+      throw new Error404();
+    }
+
+    // Build update object only with provided keys so we don't overwrite unspecified fields
+    const toUpdate: any = {};
+
+    const pickable = [
+      'incidentAt',
+      'dateTime',
+      'subject',
+      'content',
+      'action',
+      'actionsTaken',
+      'priority',
+      'callerType',
+      'callerName',
+      'internalNotes',
+      'location',
+      'status',
+      'importHash',
+    ];
+
+    for (const key of pickable) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        toUpdate[key] = data[key];
+      }
+    }
+
+    // dateTime handling: if provided as dateTime or incidentAt prefer provided value
+    if (Object.prototype.hasOwnProperty.call(data, 'dateTime')) {
+      toUpdate.dateTime = data.dateTime;
+    } else if (Object.prototype.hasOwnProperty.call(data, 'incidentAt')) {
+      toUpdate.dateTime = data.incidentAt;
+    }
+
+    // relation ids: only set when provided
+    if (Object.prototype.hasOwnProperty.call(data, 'guardId') || Object.prototype.hasOwnProperty.call(data, 'guardName')) {
+      toUpdate.guardNameId = data.guardName || data.guardId || null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'clientId')) {
+      toUpdate.clientId = data.clientId;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'siteId')) {
+      toUpdate.siteId = data.siteId;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'incidentTypeId')) {
+      toUpdate.incidentTypeId = data.incidentTypeId;
+    }
+
+    toUpdate.updatedById = currentUser.id;
+
+    record = await record.update(
+      toUpdate,
+      {
+        transaction,
+      },
+    );
+
+    // Only replace relation files if payload contains that property
+    if (Object.prototype.hasOwnProperty.call(data, 'requestDocumentPDF')) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.request.getTableName(),
+          belongsToColumn: 'requestDocumentPDF',
+          belongsToId: record.id,
+        },
+        data.requestDocumentPDF,
+        options,
+      );
+    }
 
     await this._createAuditLog(
       AuditLogRepository.UPDATE,
@@ -171,10 +305,27 @@ class RequestRepository {
       options,
     );
 
+    // Include guard and related display entities so callers get the
+    // same shape as list/detail views (client, site, incidentType).
     const include = [
       {
         model: options.database.securityGuard,
         as: 'guardName',
+      },
+      {
+        model: options.database.clientAccount,
+        as: 'client',
+        required: false,
+      },
+      {
+        model: options.database.businessInfo,
+        as: 'site',
+        required: false,
+      },
+      {
+        model: options.database.incidentType,
+        as: 'incidentType',
+        required: false,
       },
     ];
 
@@ -274,6 +425,21 @@ class RequestRepository {
         as: 'guardName',
       },      
     ];
+    // include related entities for display
+    include.push(
+      {
+        model: options.database.clientAccount,
+        as: 'client',
+      },
+      {
+        model: options.database.businessInfo,
+        as: 'site',
+      },
+      {
+        model: options.database.incidentType,
+        as: 'incidentType',
+      },
+    );
 
     whereAnd.push({
       tenantId: tenant.id,
@@ -334,6 +500,21 @@ class RequestRepository {
         );
       }
 
+      // Filter by status (skip when 'todo' meaning all statuses)
+      if (filter.status && String(filter.status).toLowerCase() !== 'todo') {
+        whereAnd.push({ status: filter.status });
+      }
+
+      // Filter by clientId (exact match)
+      if (filter.clientId) {
+        whereAnd.push({ clientId: SequelizeFilterUtils.uuid(filter.clientId) });
+      }
+
+      // Filter by siteId (exact match)
+      if (filter.siteId) {
+        whereAnd.push({ siteId: SequelizeFilterUtils.uuid(filter.siteId) });
+      }
+
       if (filter.action) {
         whereAnd.push({
           action: filter.action,
@@ -366,6 +547,29 @@ class RequestRepository {
             },
           });
         }
+      }
+      // generic text query: search id, subject, content, or client name
+      if (filter.query) {
+        whereAnd.push({
+          [Op.or]: [
+            { ['id']: SequelizeFilterUtils.uuid(filter.query) },
+            SequelizeFilterUtils.ilikeIncludes(
+              'request',
+              'subject',
+              filter.query,
+            ),
+            SequelizeFilterUtils.ilikeIncludes(
+              'request',
+              'content',
+              filter.query,
+            ),
+            // Search across known client name fields
+            SequelizeFilterUtils.ilikeIncludes('client', 'name', filter.query),
+            SequelizeFilterUtils.ilikeIncludes('client', 'lastName', filter.query),
+            // Also search site companyName
+            SequelizeFilterUtils.ilikeIncludes('site', 'companyName', filter.query),
+          ],
+        });
       }
     }
 
@@ -415,18 +619,42 @@ class RequestRepository {
 
     const where = { [Op.and]: whereAnd };
 
+    // include related client/site so we can build useful labels
+    const include = [
+      {
+        model: options.database.clientAccount,
+        as: 'client',
+        required: false,
+      },
+      {
+        model: options.database.businessInfo,
+        as: 'site',
+        required: false,
+      },
+    ];
+
+    // if query provided, expand OR clauses to search subject, content, client name
+    if (query) {
+      whereAnd[whereAnd.length - 1][Op.or].push(
+        SequelizeFilterUtils.ilikeIncludes('request', 'subject', query),
+        SequelizeFilterUtils.ilikeIncludes('request', 'content', query),
+        SequelizeFilterUtils.ilikeIncludes('client', 'name', query),
+      );
+    }
+
     const records = await options.database.request.findAll(
       {
-        attributes: ['id', 'id'],
+        attributes: ['id', 'subject', 'content'],
         where,
+        include,
         limit: limit ? Number(limit) : undefined,
-        order: [['id', 'ASC']],
+        order: [['createdAt', 'DESC']],
       },
     );
 
     return records.map((record) => ({
       id: record.id,
-      label: record.id,
+      label: record.subject || record.client?.name || record.site?.companyName || record.content || record.id,
     }));
   }
 
@@ -487,6 +715,15 @@ class RequestRepository {
         transaction,
       }),
     );
+
+    // Attach simple display values for related entities
+    output.client = record.client
+      ? (record.client.name || record.client.companyName || record.client.fullName || null)
+      : null;
+
+    output.site = record.site ? (record.site.companyName || record.site.name || null) : null;
+
+    output.incidentType = record.incidentType ? record.incidentType.name : null;
 
     return output;
   }

@@ -55,6 +55,8 @@ const en = {
       passwordRequired: 'Password is required.',
       cannotUseOldPasswordForOtherUser: "You can't use the old password to change another user's password.",
     },
+    passwordChanged: 'Password changed successfully. You can now sign in with your new password. ',
+    passwordSetByAdmin: 'Password updated by administrator.',
   },
 
   tenant: {
@@ -273,6 +275,7 @@ const en = {
       }
     },
     request: {
+      created: 'Request created',
       errors: {
         unique: {
 

@@ -54,6 +54,8 @@ const ptBR = {
       passwordRequired: 'A senha é obrigatória.',
       cannotUseOldPasswordForOtherUser: 'Você não pode usar a senha antiga para alterar a senha de outro usuário.',
     },
+    passwordChanged: 'Senha alterada com sucesso. Você já pode entrar com sua nova senha.',
+    passwordSetByAdmin: 'Senha atualizada pelo administrador.',
   },
 
   tenant: {
@@ -261,6 +263,7 @@ const ptBR = {
       }
     },
     request: {
+      created: 'Despacho criado',
       errors: {
         unique: {
 

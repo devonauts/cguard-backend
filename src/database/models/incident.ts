@@ -64,6 +64,11 @@ export default function (sequelize) {
       constraints: false,
     });
 
+    models.incident.belongsTo(models.incidentType, {
+      as: 'incidentType',
+      constraints: false,
+    });
+
     models.incident.hasMany(models.file, {
       as: 'imageUrl',
       foreignKey: 'belongsToId',

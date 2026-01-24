@@ -33,6 +33,7 @@ class IncidentRepository {
           'importHash',
         ]),
         stationIncidentsId: data.stationIncidents || null,
+        incidentTypeId: data.incidentType || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -102,6 +103,7 @@ class IncidentRepository {
           'importHash',
         ]),
         stationIncidentsId: data.stationIncidents || null,
+        incidentTypeId: data.incidentType || null,
         updatedById: currentUser.id,
       },
       {
@@ -175,6 +177,10 @@ class IncidentRepository {
       {
         model: options.database.station,
         as: 'stationIncidents',
+      },
+      {
+        model: options.database.incidentType,
+        as: 'incidentType',
       },
     ];
 
@@ -347,6 +353,14 @@ class IncidentRepository {
         });
       }
 
+      if (filter.incidentType) {
+        whereAnd.push({
+          ['incidentTypeId']: SequelizeFilterUtils.uuid(
+            filter.incidentType,
+          ),
+        });
+      }
+
       if (filter.createdAtRange) {
         const [start, end] = filter.createdAtRange;
 
@@ -494,6 +508,10 @@ class IncidentRepository {
         transaction,
       }),
     );
+
+    // incidentType relation
+    const incidentType = await record.getIncidentType({ transaction });
+    output.incidentType = incidentType ? incidentType.get({ plain: true }) : null;
 
     return output;
   }

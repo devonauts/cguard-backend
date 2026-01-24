@@ -7,6 +7,10 @@ export default (app) => {
     `/tenant/:tenantId/request/:id`,
     require('./requestUpdate').default,
   );
+  app.patch(
+    `/tenant/:tenantId/request/:id`,
+    require('./requestPatch').default,
+  );
   app.post(
     `/tenant/:tenantId/request/import`,
     require('./requestImport').default,
@@ -26,5 +30,13 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/request/:id`,
     require('./requestFind').default,
+  );
+  app.post(
+    `/tenant/:tenantId/request/:id/share`,
+    require('./requestShare').default,
+  );
+  app.get(
+    `/tenant/:tenantId/request/:id/export/pdf`,
+    require('./requestExportPdf').default,
   );
 };

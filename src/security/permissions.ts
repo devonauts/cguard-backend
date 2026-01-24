@@ -123,6 +123,13 @@ class Permissions {
       incidentDestroy: createPermission('incidentDestroy', SUPERVISOR_ROLES),
       incidentRead: createPermission('incidentRead', [...ALL_STAFF_ROLES, roles.customer]),
       incidentAutocomplete: createPermission('incidentAutocomplete', ALL_STAFF_ROLES),
+      // === INCIDENT TYPES ===
+      incidentTypeImport: createPermission('incidentTypeImport', MANAGEMENT_ROLES),
+      incidentTypeCreate: createPermission('incidentTypeCreate', MANAGEMENT_ROLES),
+      incidentTypeEdit: createPermission('incidentTypeEdit', MANAGEMENT_ROLES),
+      incidentTypeDestroy: createPermission('incidentTypeDestroy', MANAGEMENT_ROLES),
+      incidentTypeRead: createPermission('incidentTypeRead', ALL_STAFF_ROLES),
+      incidentTypeAutocomplete: createPermission('incidentTypeAutocomplete', ALL_STAFF_ROLES),
 
       // === STATIONS ===
       stationImport: createPermission('stationImport', MANAGEMENT_ROLES),

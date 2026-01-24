@@ -23,6 +23,9 @@ app.use(databaseMiddleware);
 // Sets the current language of the request
 app.use(languageMiddleware);
 
+// Public shared request route (no auth)
+app.get('/public/dispatch/:token', require('./publicRequest').default);
+
 // Configures the authentication middleware
 // to set the currentUser to the requests
 app.use(authMiddleware);
@@ -102,6 +105,7 @@ require('./clientAccount').default(routes);
 require('./category').default(routes);
 require('./representanteEmpresa').default(routes);
 require('./incident').default(routes);
+require('./incidentType').default(routes);
 require('./inventory').default(routes);
 require('./additionalService').default(routes);
 require('./patrolCheckpoint').default(routes);
@@ -120,6 +124,9 @@ require('./deviceIdInformation').default(routes);
 require('./guardShift').default(routes);
 require('./memos').default(routes);
 require('./request').default(routes);
+// Comments endpoints (in-memory, replace with DB-backed implementation as needed)
+require('./request/comments').default(routes);
+require('./debug').default(routes);
 require('./videoTutorialCategory').default(routes);
 require('./videoTutorial').default(routes);
 require('./tutorial').default(routes);

@@ -9,9 +9,23 @@ export default async (req, res, next) => {
       Permissions.values.requestRead,
     );
 
+    // Normalize query parameters: support both top-level params (status, query)
+    // and bracketed filter params like `filter[clientId]=...` which clients send.
+    const raw = req.query || {};
+    const args: any = { ...raw };
+    args.filter = args.filter || {};
+
+    for (const key of Object.keys(raw)) {
+      const m = key.match(/^filter\[(.+)\]$/);
+      if (m) {
+        args.filter[m[1]] = raw[key];
+        delete args[key];
+      }
+    }
+
     const payload = await new RequestService(
       req,
-    ).findAndCountAll(req.query);
+    ).findAndCountAll(args);
 
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {

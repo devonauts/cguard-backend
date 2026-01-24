@@ -2,29 +2,19 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import RequestService from '../../services/requestService';
-import { i18n } from '../../i18n';
 
 export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(
-      Permissions.values.requestCreate,
+      Permissions.values.requestEdit,
     );
 
-    const payload = await new RequestService(req).create(
+    const payload = await new RequestService(req).patch(
+      req.params.id,
       req.body.data,
     );
 
-    const lang = req && req.language ? req.language : undefined;
-    const messageCode = 'request.created';
-    const message = i18n(lang, messageCode);
-
-    const responsePayload = {
-      messageCode,
-      message,
-      data: payload,
-    };
-
-    await ApiResponseHandler.success(req, res, responsePayload);
+    await ApiResponseHandler.success(req, res, payload);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }

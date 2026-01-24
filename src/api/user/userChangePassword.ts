@@ -5,6 +5,7 @@ import UserRepository from '../../database/repositories/userRepository';
 import Error400 from '../../errors/Error400';
 import bcrypt from 'bcryptjs';
 import AuthService from '../../services/auth/authService';
+import { i18n } from '../../i18n';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -47,7 +48,14 @@ export default async (req, res) => {
       await UserRepository.updatePassword(id, hashed, true, req);
     }
 
-    const payload = true;
+    const messageCode = oldPassword
+      ? 'user.passwordChanged'
+      : 'user.passwordSetByAdmin';
+
+    const lang = req && req.language ? req.language : undefined;
+    const message = i18n(lang, messageCode);
+
+    const payload = { messageCode, message };
 
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {

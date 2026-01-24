@@ -29,6 +29,8 @@ const es = {
       invalidPassword:
         'La contraseña anterior no es válida.',
     },
+    passwordChanged: 'Contraseña cambiada correctamente. Ahora puedes iniciar sesión con tu nueva contraseña.',
+    passwordSetByAdmin: 'Contraseña actualizada por el administrador.',
   },
   user: {
     errors: {
@@ -277,6 +279,7 @@ const es = {
     }
   },
   request: {
+    created: 'Despacho creado',
     errors: {
       unique: {
 

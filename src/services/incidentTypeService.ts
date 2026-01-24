@@ -1,11 +1,9 @@
 import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
-import IncidentRepository from '../database/repositories/incidentRepository';
-import StationRepository from '../database/repositories/stationRepository';
 import IncidentTypeRepository from '../database/repositories/incidentTypeRepository';
 
-export default class IncidentService {
+export default class IncidentTypeService {
   options: IServiceOptions;
 
   constructor(options) {
@@ -18,30 +16,21 @@ export default class IncidentService {
     );
 
     try {
-      data.stationIncidents = await StationRepository.filterIdInTenant(data.stationIncidents, { ...this.options, transaction });
-      data.incidentType = await IncidentTypeRepository.filterIdInTenant(data.incidentType, { ...this.options, transaction });
-
-      const record = await IncidentRepository.create(data, {
+      const record = await IncidentTypeRepository.create(data, {
         ...this.options,
         transaction,
       });
 
-      await SequelizeRepository.commitTransaction(
-        transaction,
-      );
+      await SequelizeRepository.commitTransaction(transaction);
 
       return record;
     } catch (error) {
-      await SequelizeRepository.rollbackTransaction(
-        transaction,
-      );
-
+      await SequelizeRepository.rollbackTransaction(transaction);
       SequelizeRepository.handleUniqueFieldError(
         error,
         this.options.language,
-        'incident',
+        'incidentType',
       );
-
       throw error;
     }
   }
@@ -52,34 +41,21 @@ export default class IncidentService {
     );
 
     try {
-      data.stationIncidents = await StationRepository.filterIdInTenant(data.stationIncidents, { ...this.options, transaction });
-      data.incidentType = await IncidentTypeRepository.filterIdInTenant(data.incidentType, { ...this.options, transaction });
-
-      const record = await IncidentRepository.update(
-        id,
-        data,
-        {
-          ...this.options,
-          transaction,
-        },
-      );
-
-      await SequelizeRepository.commitTransaction(
+      const record = await IncidentTypeRepository.update(id, data, {
+        ...this.options,
         transaction,
-      );
+      });
+
+      await SequelizeRepository.commitTransaction(transaction);
 
       return record;
     } catch (error) {
-      await SequelizeRepository.rollbackTransaction(
-        transaction,
-      );
-
+      await SequelizeRepository.rollbackTransaction(transaction);
       SequelizeRepository.handleUniqueFieldError(
         error,
         this.options.language,
-        'incident',
+        'incidentType',
       );
-
       throw error;
     }
   }
@@ -91,40 +67,29 @@ export default class IncidentService {
 
     try {
       for (const id of ids) {
-        await IncidentRepository.destroy(id, {
+        await IncidentTypeRepository.destroy(id, {
           ...this.options,
           transaction,
         });
       }
 
-      await SequelizeRepository.commitTransaction(
-        transaction,
-      );
+      await SequelizeRepository.commitTransaction(transaction);
     } catch (error) {
-      await SequelizeRepository.rollbackTransaction(
-        transaction,
-      );
+      await SequelizeRepository.rollbackTransaction(transaction);
       throw error;
     }
   }
 
   async findById(id) {
-    return IncidentRepository.findById(id, this.options);
+    return IncidentTypeRepository.findById(id, this.options);
   }
 
   async findAllAutocomplete(search, limit) {
-    return IncidentRepository.findAllAutocomplete(
-      search,
-      limit,
-      this.options,
-    );
+    return IncidentTypeRepository.findAllAutocomplete(search, limit, this.options);
   }
 
   async findAndCountAll(args) {
-    return IncidentRepository.findAndCountAll(
-      args,
-      this.options,
-    );
+    return IncidentTypeRepository.findAndCountAll(args, this.options);
   }
 
   async import(data, importHash) {
@@ -151,7 +116,7 @@ export default class IncidentService {
   }
 
   async _isImportHashExistent(importHash) {
-    const count = await IncidentRepository.count(
+    const count = await IncidentTypeRepository.count(
       {
         importHash,
       },

@@ -5,14 +5,40 @@ import TenantInvitationRepository from './database/repositories/tenantInvitation
 import { setInterval as nodeSetInterval } from 'timers';
 
 // const PORT = process.env.PORT || 8080
-const PORT = process.env.PORT || 3001
+const PORT = Number(process.env.PORT) || 3001
 
 const tenantMode = process.env.TENANT_MODE || 'multi';
 console.log(`TENANT_MODE: ${tenantMode}`);
 
-api.listen(PORT, () => {
-  console.log(`Listening on port ${PORT}`)
-})
+// Robust start: if port is in use, try the next ports up to a limit
+function startServer(port: number, attemptsLeft = 5) {
+  const server = api.listen(port, () => {
+    console.log(`Listening on port ${port}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use.`);
+      if (attemptsLeft > 0) {
+        const nextPort = port + 1;
+        console.log(`Attempting to listen on port ${nextPort} (attempts left: ${attemptsLeft - 1})`);
+        // small delay before retrying
+        setTimeout(() => startServer(nextPort, attemptsLeft - 1), 250);
+      } else {
+        console.error('All retry attempts failed. Either free the port or set PORT env var to a different value.');
+        console.error('On Windows, run: netstat -ano | findstr :<PORT>  then taskkill /PID <PID> /F');
+        process.exit(1);
+      }
+    } else {
+      console.error('Server error during startup:', err);
+      process.exit(1);
+    }
+  });
+
+  return server;
+}
+
+startServer(PORT, 5);
 
 // Periodic cleanup: remove expired tenant invitations every 3 hours
 async function runExpiredInvitesCleanup() {

@@ -13,8 +13,9 @@
     "start:multi": "cross-env TENANT_MODE=multi node ./dist/server.js",
     "migrate:tenant-fields": "npx ts-node ./src/database/migrations/20260109-add-tenant-contact-fields.ts",
     "migrate:tenant-extra-fields": "npx ts-node ./src/database/migrations/20260110-add-tenant-extra-fields.ts",
-   "migrate:add-invoice-status": "npx ts-node ./src/database/migrations/20260116-add-status-to-invoices.ts",
-    "migrate:all": "npx ts-node ./src/database/migrations/run-migrations.ts"
+    "migrate:add-invoice-status": "npx ts-node ./src/database/migrations/20260116-add-status-to-invoices.ts",
+    "migrate:all": "npx ts-node ./src/database/migrations/run-migrations.ts",
+    "migrate:requests": "npx ts-node ./src/database/migrations/20260121-add-fields-to-requests.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.645.0",
