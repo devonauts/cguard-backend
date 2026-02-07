@@ -437,9 +437,16 @@ class SecurityGuardRepository {
 
     if (filter) {
       if (filter.id) {
-        whereAnd.push({
-          ['id']: SequelizeFilterUtils.uuid(filter.id),
-        });
+        // Support single id or array of ids
+        if (Array.isArray(filter.id)) {
+          whereAnd.push({
+            id: { [Op.in]: filter.id.map((i) => SequelizeFilterUtils.uuid(i)) },
+          });
+        } else {
+          whereAnd.push({
+            ['id']: SequelizeFilterUtils.uuid(filter.id),
+          });
+        }
       }
 
       if (filter.governmentId) {
@@ -463,11 +470,18 @@ class SecurityGuardRepository {
       }
 
       if (filter.guard) {
-        whereAnd.push({
-          ['guardId']: SequelizeFilterUtils.uuid(
-            filter.guard,
-          ),
-        });
+        // Support single id or array of ids
+        if (Array.isArray(filter.guard)) {
+          whereAnd.push({
+            guardId: { [Op.in]: filter.guard.map((g) => SequelizeFilterUtils.uuid(g)) },
+          });
+        } else {
+          whereAnd.push({
+            ['guardId']: SequelizeFilterUtils.uuid(
+              filter.guard,
+            ),
+          });
+        }
       }
 
       // Support explicit request to include archived/deleted records

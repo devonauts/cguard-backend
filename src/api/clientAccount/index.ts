@@ -35,4 +35,50 @@ export default (app) => {
     `/tenant/:tenantId/client-account/:id`,
     require('./clientAccountFind').default,
   );
-};
+  app.get(
+    `/tenant/:tenantId/client-account/:id/post-sites`,
+    require('./clientAccountPostSites').default,
+  );
+  app.get(
+    `/tenant/:tenantId/client-account/:id/guards/count`,
+    require('./clientAccountGuardsCount').default,
+  );
+  app.get(
+    `/tenant/:tenantId/client-account/:id/incidents`,
+    require('./clientAccountIncidents').default,
+  );
+  // Client contacts CRUD
+  app.get(
+    `/tenant/:tenantId/client-account/:id/contacts`,
+    require('./clientAccountContacts').default,
+  );
+  app.post(
+    `/tenant/:tenantId/client-account/:id/contacts`,
+    require('./clientAccountContactCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/client-account/:id/contacts/:contactId`,
+    require('./clientAccountContactUpdate').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/client-account/:id/contacts/:contactId`,
+    require('./clientAccountContactDestroy').default,
+  );
+
+  // Client notes CRUD
+  app.get(
+    `/tenant/:tenantId/client-account/:id/notes`,
+    require('./clientAccountNotes').default,
+  );
+  app.post(
+    `/tenant/:tenantId/client-account/:id/notes`,
+    require('./clientAccountNoteCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/client-account/:id/notes/:noteId`,
+    require('./clientAccountNoteUpdate').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/client-account/:id/notes/:noteId`,
+    require('./clientAccountNoteDestroy').default,
+  );};

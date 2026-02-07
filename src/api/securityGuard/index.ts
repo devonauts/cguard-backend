@@ -55,4 +55,22 @@ export default (app) => {
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardFind').default,
   );
+
+  // Security guard notes CRUD
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/notes`,
+    require('./securityGuardNotes').default,
+  );
+  app.post(
+    `/tenant/:tenantId/security-guard/:id/notes`,
+    require('./securityGuardNoteCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/security-guard/:id/notes/:noteId`,
+    require('./securityGuardNoteUpdate').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/security-guard/:id/notes/:noteId`,
+    require('./securityGuardNoteDestroy').default,
+  );
 };

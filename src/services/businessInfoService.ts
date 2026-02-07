@@ -71,6 +71,7 @@ export default class BusinessInfoService {
                     id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
                     tenantUserId: providedTenantUserId,
                     businessInfoId: record.id,
+                    securityGuardId: data && data.securityGuardId ? data.securityGuardId : null, // Add securityGuardId if provided
                     createdAt: now,
                     updatedAt: now,
                   };
@@ -88,6 +89,7 @@ export default class BusinessInfoService {
                       id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
                       tenantUserId: providedTenantUserId,
                       clientAccountId: data.clientAccountId,
+                      securityGuardId: data && data.securityGuardId ? data.securityGuardId : null, // Add securityGuardId if provided
                       createdAt: now,
                       updatedAt: now,
                     };
@@ -114,6 +116,7 @@ export default class BusinessInfoService {
                 { ...this.options, transaction, addRoles: true },
                 data && data.clientAccountId ? [data.clientAccountId] : undefined,
                 [record.id],
+                data && data.securityGuardId ? data.securityGuardId : undefined, // Pass securityGuardId if provided
               );
             }
 

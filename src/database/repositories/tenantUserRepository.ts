@@ -198,7 +198,7 @@ export default class TenantUserRepository {
     return records;
   }
 
-  static async updateRoles(tenantId, id, roles, options, clientIds?, postSiteIds?) {
+  static async updateRoles(tenantId, id, roles, options, clientIds?, postSiteIds?, securityGuardId?) {
     const transaction = SequelizeRepository.getTransaction(
       options,
     );
@@ -419,6 +419,7 @@ export default class TenantUserRepository {
             id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
             tenantUserId: tenantUser.id,
             clientAccountId: clientId,
+            securityGuardId: securityGuardId || null,
             createdAt: now,
             updatedAt: now,
           }));
@@ -496,6 +497,7 @@ export default class TenantUserRepository {
             id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
             tenantUserId: tenantUser.id,
             businessInfoId: postId,
+            securityGuardId: securityGuardId || null,
             createdAt: now,
             updatedAt: now,
           }));

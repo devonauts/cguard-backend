@@ -224,6 +224,7 @@ export default class UserCreator {
     // Determine optional assigned clients/post sites for this user (either top-level or per-email object)
     let clientIds = this.data.clientIds;
     let postSiteIds = this.data.postSiteIds;
+    let securityGuardId = this.data.securityGuardId;
     if (Array.isArray(this.data.emails)) {
       const matched = this.data.emails.find((e) => {
         if (!e) return false;
@@ -233,6 +234,7 @@ export default class UserCreator {
       if (matched && typeof matched === 'object') {
         if (matched.clientIds) clientIds = matched.clientIds;
         if (matched.postSiteIds) postSiteIds = matched.postSiteIds;
+        if (matched.securityGuardId) securityGuardId = matched.securityGuardId;
       }
     }
 
@@ -247,6 +249,7 @@ export default class UserCreator {
       },
       clientIds,
       postSiteIds,
+      securityGuardId, // Pass securityGuardId if provided
     );
 
     if (!isUserAlreadyInTenant) {

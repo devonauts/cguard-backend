@@ -1,4 +1,15 @@
 require('dotenv').config()
+// Backwards-compatible env var mappings for SendGrid and mail defaults
+// Some deploys set SENDGRID_API_KEY / MAIL_DEFAULT_SENDER; older code expects SENDGRID_KEY and SENDGRID_EMAIL_FROM
+if (process.env.SENDGRID_API_KEY && !process.env.SENDGRID_KEY) {
+  process.env.SENDGRID_KEY = process.env.SENDGRID_API_KEY;
+}
+if (process.env.MAIL_DEFAULT_SENDER && !process.env.SENDGRID_EMAIL_FROM) {
+  process.env.SENDGRID_EMAIL_FROM = process.env.MAIL_DEFAULT_SENDER;
+}
+if (process.env.MAIL_DEFAULT_SENDER_NAME && !process.env.SENDGRID_EMAIL_FROM_NAME) {
+  process.env.SENDGRID_EMAIL_FROM_NAME = process.env.MAIL_DEFAULT_SENDER_NAME;
+}
 import api from './api'
 import { databaseInit } from './database/databaseConnection';
 import TenantInvitationRepository from './database/repositories/tenantInvitationRepository';

@@ -100,6 +100,18 @@ class Permissions {
       clientAccountRead: createPermission('clientAccountRead', [...ALL_STAFF_ROLES, roles.customer]),
       clientAccountAutocomplete: createPermission('clientAccountAutocomplete', ALL_STAFF_ROLES),
 
+      // === CLIENT CONTACTS ===
+      clientContactCreate: createPermission('clientContactCreate', CLIENT_MANAGEMENT_ROLES),
+      clientContactEdit: createPermission('clientContactEdit', CLIENT_MANAGEMENT_ROLES),
+      clientContactDestroy: createPermission('clientContactDestroy', CLIENT_MANAGEMENT_ROLES),
+      clientContactRead: createPermission('clientContactRead', [...ALL_STAFF_ROLES, roles.customer]),
+
+      // === NOTES (polymorphic) ===
+      noteCreate: createPermission('noteCreate', ALL_STAFF_ROLES),
+      noteEdit: createPermission('noteEdit', ALL_STAFF_ROLES),
+      noteDestroy: createPermission('noteDestroy', ALL_STAFF_ROLES),
+      noteRead: createPermission('noteRead', [...ALL_STAFF_ROLES, roles.customer]),
+
       // === BUSINESS INFO ===
       businessInfoImport: createPermission('businessInfoImport', MANAGEMENT_ROLES),
       businessInfoCreate: createPermission('businessInfoCreate', MANAGEMENT_ROLES),
@@ -277,6 +289,14 @@ class Permissions {
       requestDestroy: createPermission('requestDestroy', CLIENT_MANAGEMENT_ROLES),
       requestRead: createPermission('requestRead', [...ALL_STAFF_ROLES, roles.customer]),
       requestAutocomplete: createPermission('requestAutocomplete', ALL_STAFF_ROLES),
+
+      // === DISPATCH / DISPATCH TICKETS ===
+      dispatchImport: createPermission('dispatchImport', DISPATCHER_ROLES),
+      dispatchCreate: createPermission('dispatchCreate', DISPATCHER_ROLES),
+      dispatchEdit: createPermission('dispatchEdit', DISPATCHER_ROLES),
+      dispatchDestroy: createPermission('dispatchDestroy', DISPATCHER_ROLES),
+      dispatchRead: createPermission('dispatchRead', [...ALL_STAFF_ROLES, roles.customer]),
+      dispatchAutocomplete: createPermission('dispatchAutocomplete', ALL_STAFF_ROLES),
 
       // === TASKS ===
       taskImport: createPermission('taskImport', SUPERVISOR_ROLES),

@@ -346,11 +346,18 @@ class IncidentRepository {
       }
 
       if (filter.stationIncidents) {
-        whereAnd.push({
-          ['stationIncidentsId']: SequelizeFilterUtils.uuid(
-            filter.stationIncidents,
-          ),
-        });
+        // Support single station id or an array of station ids
+        if (Array.isArray(filter.stationIncidents)) {
+          whereAnd.push({
+            stationIncidentsId: { [Op.in]: filter.stationIncidents.map((s) => SequelizeFilterUtils.uuid(s)) },
+          });
+        } else {
+          whereAnd.push({
+            ['stationIncidentsId']: SequelizeFilterUtils.uuid(
+              filter.stationIncidents,
+            ),
+          });
+        }
       }
 
       if (filter.incidentType) {

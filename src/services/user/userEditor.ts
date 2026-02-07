@@ -87,6 +87,7 @@ export default class UserEditor {
       this.options,
       this.data.clientIds,
       this.data.postSiteIds,
+      this.data.securityGuardId, // Pass securityGuardId if provided
     );
   }
 

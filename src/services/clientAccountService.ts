@@ -59,6 +59,7 @@ export default class ClientAccountService {
                   id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
                   tenantUserId: providedTenantUserId,
                   clientAccountId: record.id,
+                  securityGuardId: data && data.securityGuardId ? data.securityGuardId : null, // Add securityGuardId if provided
                   createdAt: now,
                   updatedAt: now,
                 };
@@ -84,6 +85,7 @@ export default class ClientAccountService {
               { ...this.options, transaction, addRoles: true },
               [record.id],
               undefined,
+              data && data.securityGuardId ? data.securityGuardId : undefined, // Pass securityGuardId if provided
             );
           }
 

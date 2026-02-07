@@ -39,4 +39,28 @@ export default (app) => {
     `/tenant/:tenantId/post-site/:id`,
     require('../businessInfo/businessInfoFind').default,
   );
+
+  // Post site contacts (list by postSiteId)
+  app.get(
+    `/tenant/:tenantId/post-site/:id/contacts`,
+    require('./postSiteContacts').default,
+  );
+
+  // Post site notes CRUD
+  app.get(
+    `/tenant/:tenantId/post-site/:id/notes`,
+    require('./postSiteNotes').default,
+  );
+  app.post(
+    `/tenant/:tenantId/post-site/:id/notes`,
+    require('./postSiteNoteCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/post-site/:id/notes/:noteId`,
+    require('./postSiteNoteUpdate').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/post-site/:id/notes/:noteId`,
+    require('./postSiteNoteDestroy').default,
+  );
 };

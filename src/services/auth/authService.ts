@@ -370,6 +370,34 @@ class AuthService {
         console.warn('Could not load full user during signin response enrichment:', errMsg);
       }
 
+      // Fallback: if fullUser was not loaded or has no tenants, try loading
+      // tenant-user rows directly so signin can return tenant information.
+      try {
+        if (!fullUser || !Array.isArray(fullUser.tenants) || fullUser.tenants.length === 0) {
+          const tenantUsers = await TenantUserRepository.findByUser(user.id, {
+            ...options,
+            bypassPermissionValidation: true,
+          });
+
+          if (Array.isArray(tenantUsers) && tenantUsers.length) {
+            fullUser = fullUser || {};
+            // Map tenantUser records to the shape expected by the rest of the signin flow
+            fullUser.tenants = tenantUsers.map((tu: any) => ({
+              id: tu.id,
+              tenantId: tu.tenantId,
+              tenant: tu.tenant || null,
+              roles: tu.roles || [],
+              permissions: tu.permissions || [],
+              assignedClients: tu.assignedClients || [],
+              assignedPostSites: tu.assignedPostSites || [],
+              status: tu.status || null,
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn('Could not load tenant-user fallback during signin:', e && (e as any).message ? (e as any).message : e);
+      }
+
       if (fullUser && Array.isArray(fullUser.tenants) && options && options.database) {
         for (const t of fullUser.tenants) {
           try {

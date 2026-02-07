@@ -51,7 +51,17 @@ export default class SecurityGuardService {
             const rolesToAdd = Array.isArray(data.roles)
               ? [...new Set([...data.roles, 'securityGuard'])]
               : ['securityGuard'];
-            await TenantUserRepository.updateRoles(tenantId, data.guard, rolesToAdd, { ...this.options, transaction, addRoles: true });
+            // Pass through client/postSite assignments when ensuring tenantUser roles
+            await TenantUserRepository.updateRoles(
+              tenantId,
+              data.guard,
+              rolesToAdd,
+              { ...this.options, transaction, addRoles: true },
+              // clientIds: prefer explicit array, fallback to single clientId
+              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+              // postSiteIds: prefer explicit array, fallback to single postSiteId
+              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+            );
             console.log('🔔 [SecurityGuardService.create] ensured tenantUser roles include securityGuard for user:', data.guard);
           }
         } catch (e) {
@@ -123,7 +133,15 @@ export default class SecurityGuardService {
             const rolesToAdd = Array.isArray(data.roles)
               ? [...new Set([...data.roles, 'securityGuard'])]
               : ['securityGuard'];
-            await TenantUserRepository.updateRoles(tenantId, user.id, rolesToAdd, { ...this.options, transaction, addRoles: true });
+            // When creating tenantUser for imported guard, also persist client/postSite assignments
+            await TenantUserRepository.updateRoles(
+              tenantId,
+              user.id,
+              rolesToAdd,
+              { ...this.options, transaction, addRoles: true },
+              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+            );
             console.log('🔔 [SecurityGuardService.create] tenantUser ensured/updated for imported user:', user.id, 'tenant:', tenantId);
           }
 
@@ -203,6 +221,29 @@ export default class SecurityGuardService {
         transaction,
       });
 
+      // After creating the securityGuard record, update pivot tables with securityGuardId if clientIds or postSiteIds were provided
+      try {
+        if ((data.clientIds || data.clientId || data.postSiteIds || data.postSiteId) && data.guard && record && record.id) {
+          const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+          const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
+          if (tenantId) {
+            // Update pivot tables with the securityGuardId
+            await TenantUserRepository.updateRoles(
+              tenantId,
+              data.guard,
+              data.roles || [],
+              { ...this.options, transaction, addRoles: true },
+              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+              record.id, // Pass the created securityGuardId
+            );
+            console.log('🔔 [SecurityGuardService.create] updated pivot tables with securityGuardId:', record.id);
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ [SecurityGuardService.create] failed to update pivot tables with securityGuardId:', (e && (e as any).message) ? (e as any).message : e);
+      }
+
       await SequelizeRepository.commitTransaction(
         transaction,
       );
@@ -244,6 +285,27 @@ export default class SecurityGuardService {
           transaction,
         },
       );
+
+      // Persist client/postSite assignments to tenant_user pivots if provided
+      try {
+        const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+        const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
+        if (tenantId && data.guard && id) {
+          await TenantUserRepository.updateRoles(
+            tenantId,
+            data.guard,
+            data.roles || [],
+            { ...this.options, transaction, addRoles: true },
+            data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+            data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+            id, // Pass the securityGuardId (the `id` parameter is the securityGuard record ID)
+          );
+        }
+      } catch (e) {
+        // If pivot assignment fails, roll back the whole update
+        console.error('Failed to persist client/postSite assignments during securityGuard update:', e);
+        throw e;
+      }
 
       await SequelizeRepository.commitTransaction(
         transaction,

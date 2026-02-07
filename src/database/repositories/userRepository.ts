@@ -586,8 +586,8 @@ export default class UserRepository {
           ['tenantId']: currentTenant.id,
         },
         include: [
-          { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
-          { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+          { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
+          { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
         ],
       });
     }
@@ -638,9 +638,9 @@ export default class UserRepository {
           model: options.database.tenantUser,
           as: 'tenants',
           where: { [Op.and]: innerWhereAnd },
-          include: [
-            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
-            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+            include: [
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
           ],
         });
       }
@@ -653,9 +653,9 @@ export default class UserRepository {
             ['tenantId']: currentTenant.id,
             status: filter.status,
           },
-          include: [
-            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
-            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+            include: [
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
           ],
         });
       }
@@ -799,9 +799,9 @@ export default class UserRepository {
         {
           model: options.database.tenantUser,
           as: 'tenants',
-          include: [
-            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
-            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+            include: [
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
             { model: options.database.tenant, as: 'tenant' },
           ],
         },
