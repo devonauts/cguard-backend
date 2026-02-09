@@ -419,7 +419,7 @@ export default class TenantUserRepository {
             id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
             tenantUserId: tenantUser.id,
             clientAccountId: clientId,
-            securityGuardId: securityGuardId || null,
+            security_guard_id: securityGuardId || null,
             createdAt: now,
             updatedAt: now,
           }));
@@ -497,7 +497,7 @@ export default class TenantUserRepository {
             id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
             tenantUserId: tenantUser.id,
             businessInfoId: postId,
-            securityGuardId: securityGuardId || null,
+            security_guard_id: securityGuardId || null,
             createdAt: now,
             updatedAt: now,
           }));

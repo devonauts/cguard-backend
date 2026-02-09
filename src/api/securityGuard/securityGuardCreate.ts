@@ -62,6 +62,20 @@ export default async (req, res, next) => {
       incoming = incoming.entries;
     }
 
+    // If we now have an array of entries, normalize common aliases into `contact`
+    // so downstream logic that expects `contact` (email or phone) works consistently.
+    if (Array.isArray(incoming)) {
+      incoming = incoming.map((item) => {
+        if (item && !item.contact) {
+          if (item.email) item.contact = item.email;
+          else if (item.emailAddress) item.contact = item.emailAddress;
+          else if (item.phoneNumber) item.contact = item.phoneNumber;
+          else if (item.phone) item.contact = item.phone;
+        }
+        return item;
+      });
+    }
+
     // If frontend sent an array of invites, handle multiple entries
     const isArray = Array.isArray(incoming);
     if (isArray && incoming.length === 0) {
@@ -206,6 +220,40 @@ export default async (req, res, next) => {
       const missingRequiredLocal = requiredFieldsLocal.some((f) => !entry[f]);
       if (missingRequiredLocal && !entry.isDraft) {
         entry.isDraft = true;
+      }
+
+      // Normalize client/postSite identifiers to arrays expected by services
+      try {
+        // clientIds: prefer explicit array, otherwise normalize single or array-shaped clientId
+        if (entry.clientIds && !Array.isArray(entry.clientIds)) {
+          entry.clientIds = [entry.clientIds];
+        }
+        if (!entry.clientIds && entry.clientId) {
+          entry.clientIds = Array.isArray(entry.clientId)
+            ? entry.clientId
+            : [entry.clientId];
+        }
+
+        // postSiteIds: prefer explicit array, otherwise normalize single or array-shaped postSiteId
+        if (entry.postSiteIds && !Array.isArray(entry.postSiteIds)) {
+          entry.postSiteIds = [entry.postSiteIds];
+        }
+        if (!entry.postSiteIds && entry.postSiteId) {
+          entry.postSiteIds = Array.isArray(entry.postSiteId)
+            ? entry.postSiteId
+            : [entry.postSiteId];
+        }
+
+        // Ensure single-value fallbacks remain usable by older callers
+        if (!entry.clientId && Array.isArray(entry.clientIds) && entry.clientIds.length) {
+          entry.clientId = entry.clientIds[0];
+        }
+        if (!entry.postSiteId && Array.isArray(entry.postSiteIds) && entry.postSiteIds.length) {
+          entry.postSiteId = entry.postSiteIds[0];
+        }
+      } catch (normalizeErr) {
+        // don't block creation for normalization issues; log and continue
+        console.warn('🔧 [securityGuardCreate] failed to normalize client/postSite ids:', normalizeErr && (normalizeErr as any).message ? (normalizeErr as any).message : normalizeErr);
       }
 
       return entry;

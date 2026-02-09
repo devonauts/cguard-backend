@@ -734,6 +734,25 @@ class AuthService {
     let link;
 
     try {
+      // If this email already has an active 'invited' tenantUser for the same tenant,
+      // prefer to send only the invitation and skip sending a password reset to avoid duplicates.
+      if (tenantId) {
+        try {
+          const UserRepository = require('../../database/repositories/userRepository').default;
+          const TenantUserRepository = require('../../database/repositories/tenantUserRepository').default;
+          const userRec = await UserRepository.findByEmailWithoutAvatar(email, options);
+          if (userRec && userRec.id) {
+            const tenantUserRec = await TenantUserRepository.findByTenantAndUser(tenantId, userRec.id, options);
+            if (tenantUserRec && tenantUserRec.status === 'invited') {
+              console.info('Skipping password reset email because user has an active invitation for tenant', { email, tenantId });
+              return true;
+            }
+          }
+        } catch (e) {
+          // non-fatal: continue to normal flow if lookup fails
+          console.warn('Error checking tenantUser invitation before password reset:', e && e.message ? e.message : e);
+        }
+      }
       let tenant;
 
       if (tenantId) {

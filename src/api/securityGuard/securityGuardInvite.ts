@@ -6,6 +6,9 @@ import UserCreator from '../../services/user/userCreator';
 import UserRepository from '../../database/repositories/userRepository';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
 import Roles from '../../security/roles';
+import EmailSender from '../../services/emailSender';
+import TenantRepository from '../../database/repositories/tenantRepository';
+import { tenantSubdomain } from '../../services/tenantSubdomain';
 
 export default async (req, res, next) => {
   try {
@@ -97,6 +100,56 @@ export default async (req, res, next) => {
     }
 
     const created = await new SecurityGuardService(req).create(incoming);
+
+    // After creating the securityGuard, send invitation email including securityGuardId
+    try {
+      const tenant = await TenantRepository.findById(req.params.tenantId, req);
+
+      // Fetch user to include merged info
+      const guardUser = await UserRepository.findById(incoming.guard, req);
+
+      // Only generate email verification token for real emails (not phone synthetic)
+      let emailVerificationToken: string | null = null;
+      if (
+        guardUser &&
+        guardUser.email &&
+        guardUser.provider !== 'phone' &&
+        !String(guardUser.email).endsWith('@phone.local')
+      ) {
+        try {
+          emailVerificationToken = await UserRepository.generateEmailVerificationToken(
+            guardUser.email,
+            req,
+          );
+        } catch (err) {
+          console.warn('Failed to generate emailVerificationToken:', err && (err as any).message ? (err as any).message : err);
+        }
+      }
+
+      const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${invitationToken || ''}&securityGuardId=${created.id}`;
+      if (guardUser && guardUser.email && guardUser.provider !== 'phone' && !String(guardUser.email).endsWith('@phone.local')) {
+        await new EmailSender(
+          EmailSender.TEMPLATES.INVITATION,
+          {
+            tenant: tenant || null,
+            link,
+            guard: {
+              id: guardUser.id,
+              firstName: guardUser.firstName || null,
+              lastName: guardUser.lastName || null,
+              email: guardUser.email,
+              emailVerificationToken: emailVerificationToken || null,
+            },
+            invitation: true,
+          },
+        ).sendTo(incoming.contact || (incoming.guard && incoming.guard.email) || null);
+      } else {
+        // No email available (phone invite). Frontend should send SMS using the invitation token.
+        console.log('📨 Phone invite created; invitation token:', invitationToken);
+      }
+    } catch (e) {
+      console.warn('Failed to send invitation email with securityGuardId:', e && (e as any).message ? (e as any).message : e);
+    }
 
     // Get invitation token for the invited user (if any)
     let invitationToken = null;

@@ -156,8 +156,10 @@ export default class UserCreator {
       );
 
       // Ensure email verification token is created and emailed for new users
+      // NOTE: If we're sending invitation emails for these users, prefer
+      // sending only the invitation (avoid duplicate email verification messages).
       try {
-        if (!user.emailVerified) {
+        if (!user.emailVerified && !this.sendInvitationEmails) {
           const token = await UserRepository.generateEmailVerificationToken(
             user.email,
             {
@@ -297,6 +299,7 @@ export default class UserCreator {
           {
             tenant: this.options.currentTenant,
             link,
+            invitation: true,
           },
         );
 

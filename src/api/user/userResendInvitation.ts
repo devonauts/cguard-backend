@@ -43,9 +43,15 @@ export default async (req, res) => {
       const sender = new EmailSender(EmailSender.TEMPLATES.INVITATION, {
         tenant: req.currentTenant,
         link,
+        invitation: true,
       });
 
-      await sender.sendTo(req.body.email || req.body.to || req.currentUser.email);
+      const recipient = req.body.email || req.body.to || (tenantUser && tenantUser.user && tenantUser.user.email);
+      if (!recipient) {
+        throw new Error('No recipient email for invitation');
+      }
+
+      await sender.sendTo(recipient);
     } catch (e) {
       console.error('Failed to resend invitation email:', e);
       throw e;
