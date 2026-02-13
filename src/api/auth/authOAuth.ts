@@ -19,9 +19,16 @@ import { get } from 'lodash';
  */
 
 export default (app) => {
-  // Configurar estrategias Passport
-  configureGoogleStrategy();
-  configureMicrosoftStrategy();
+  // Toggle verbose OAuth logs via env var `SHOW_AUTH_OAUTH_LOGS=true`
+  const AUTH_OAUTH_LOGS = process.env.SHOW_AUTH_OAUTH_LOGS === 'true';
+  if (AUTH_OAUTH_LOGS) console.log('[authOAuth] initializing authOAuth routes');
+  try {
+    // Configurar estrategias Passport
+    configureGoogleStrategy(AUTH_OAUTH_LOGS);
+    configureMicrosoftStrategy(AUTH_OAUTH_LOGS);
+  } catch (e) {
+    console.error('[authOAuth] error while configuring strategies', e);
+  }
 
   /**
    * GET /auth/oauth/google
@@ -71,14 +78,24 @@ export default (app) => {
 /**
  * Configura estrategia Google para popup flow
  */
-function configureGoogleStrategy() {
+function configureGoogleStrategy(verbose = false) {
+  if (verbose) {
+    console.log('[authOAuth] configureGoogleStrategy - env check', {
+      hasClientId: !!process.env.AUTH_SOCIAL_GOOGLE_CLIENT_ID,
+      hasClientSecret: !!process.env.AUTH_SOCIAL_GOOGLE_CLIENT_SECRET,
+      callbackUrl: process.env.AUTH_SOCIAL_GOOGLE_CALLBACK_URL,
+    });
+  }
+
   if (
     !process.env.AUTH_SOCIAL_GOOGLE_CLIENT_ID ||
     !process.env.AUTH_SOCIAL_GOOGLE_CLIENT_SECRET
   ) {
-    console.warn(
-      'Google OAuth no configurado. Falta AUTH_SOCIAL_GOOGLE_CLIENT_ID o AUTH_SOCIAL_GOOGLE_CLIENT_SECRET',
-    );
+    if (verbose) {
+      console.warn(
+        'Google OAuth no configurado. Falta AUTH_SOCIAL_GOOGLE_CLIENT_ID o AUTH_SOCIAL_GOOGLE_CLIENT_SECRET',
+      );
+    }
     return;
   }
 
@@ -96,6 +113,7 @@ function configureGoogleStrategy() {
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
+          if (verbose) console.log('[authOAuth] google strategy callback invoked for profile id', profile && profile.id);
           const email = get(profile, 'emails[0].value');
           const emailVerified = get(profile, 'emails[0].verified', false);
           const displayName = get(profile, 'displayName', '');
@@ -137,19 +155,22 @@ function configureGoogleStrategy() {
       },
     ),
   );
+  if (verbose) console.log('[authOAuth] google oauth routes should be available: /auth/oauth/google and /auth/oauth/google/callback');
 }
 
 /**
  * Configura estrategia Microsoft para popup flow
  */
-function configureMicrosoftStrategy() {
+function configureMicrosoftStrategy(verbose = false) {
   if (
     !process.env.AUTH_SOCIAL_MICROSOFT_CLIENT_ID ||
     !process.env.AUTH_SOCIAL_MICROSOFT_CLIENT_SECRET
   ) {
-    console.warn(
-      'Microsoft OAuth no configurado. Falta AUTH_SOCIAL_MICROSOFT_CLIENT_ID o AUTH_SOCIAL_MICROSOFT_CLIENT_SECRET',
-    );
+    if (verbose) {
+      console.warn(
+        'Microsoft OAuth no configurado. Falta AUTH_SOCIAL_MICROSOFT_CLIENT_ID o AUTH_SOCIAL_MICROSOFT_CLIENT_SECRET',
+      );
+    }
     return;
   }
 

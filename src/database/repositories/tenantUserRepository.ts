@@ -8,6 +8,28 @@ import { IRepositoryOptions } from './IRepositoryOptions';
 import ClientAccountRepository from './clientAccountRepository';
 import BusinessInfoRepository from './businessInfoRepository';
 
+// Helper to retry transient lock wait timeout errors
+async function retryOnLock(fn: () => Promise<any>, attempts = 5, baseDelay = 300) {
+  let lastErr: any;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const code = err && (err.code || (err.parent && err.parent.code) || (err.original && err.original.code));
+      if (code === 'ER_LOCK_WAIT_TIMEOUT' && i < attempts - 1) {
+        const delay = baseDelay * Math.pow(2, i);
+        console.warn(`retryOnLock: lock timeout, retrying attempt ${i + 1} after ${delay}ms`);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((res) => setTimeout(res, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 export default class TenantUserRepository {
   
   static async findByTenantAndUser(
@@ -24,6 +46,7 @@ export default class TenantUserRepository {
         tenantId,
         userId,
       },
+      include: ['tenant', 'user'],
       transaction,
     });
   }
@@ -110,14 +133,14 @@ export default class TenantUserRepository {
           },
           options,
         );
-        return;
+        return existing;
       }
     } catch (e) {
       // non-fatal: continue to create if lookup fails
       console.warn('tenantUserRepository.create: existing lookup failed', (e && (e as any).message) || e);
     }
 
-    await options.database.tenantUser.create(
+    const created = await retryOnLock(() => options.database.tenantUser.create(
       {
         tenantId,
         userId: user.id,
@@ -125,7 +148,8 @@ export default class TenantUserRepository {
         roles,
       },
       { transaction },
-    );
+    ));
+    // Note: creation guarded by retry wrapper at call sites if needed
 
     await AuditLogRepository.log(
       {
@@ -140,6 +164,7 @@ export default class TenantUserRepository {
       },
       options,
     );
+    return created;
   }
 
   static async destroy(
@@ -196,6 +221,16 @@ export default class TenantUserRepository {
     });
 
     return records;
+  }
+
+  // Find a tenant_user by tenantId and the user's email address.
+  static async findByTenantAndEmail(tenantId, email, options: IRepositoryOptions) {
+    const transaction = SequelizeRepository.getTransaction(options);
+    return await options.database.tenantUser.findOne({
+      where: { tenantId },
+      include: [{ model: options.database.user, as: 'user', where: { email } }],
+      transaction,
+    });
   }
 
   static async updateRoles(tenantId, id, roles, options, clientIds?, postSiteIds?, securityGuardId?) {
@@ -282,7 +317,107 @@ export default class TenantUserRepository {
       return [...new Set(mapped)];
     }
 
+      // Defensive: require explicit target user id to avoid accidentally
+      // updating the current user when callers omit the `id` argument.
+      if (!id) {
+        throw new Error400(options.language, 'user.id.required');
+      }
+
+      // Map provided roles (ids/objects/slugs) to slugs
+      let incomingSlugs = await mapToSlugs(roles);
+
+      // Defensive validation: ensure incomingSlugs correspond to actual role records
+      // This prevents accidentally passing `clientIds`/`postSiteIds` (arrays) as roles
+      // which could otherwise result in unintended role assignments.
+      try {
+        if (incomingSlugs && incomingSlugs.length) {
+          const validRoles = await options.database.role.findAll({ where: { slug: incomingSlugs }, transaction });
+          const validSlugs = (validRoles || []).map((r) => r.slug);
+          const filtered = (incomingSlugs || []).filter((s) => validSlugs.includes(s));
+          if (filtered.length !== (incomingSlugs || []).length) {
+            console.warn('tenantUserRepository.updateRoles: filtering invalid incoming role identifiers', { tenantId: resolvedTenantId, userId: id, incomingSlugs, filtered });
+          }
+          incomingSlugs = filtered;
+        }
+      } catch (e) {
+        console.warn('tenantUserRepository.updateRoles: failed to validate incoming roles, proceeding with original list', e && (e as any).message ? (e as any).message : e);
+      }
+
+      // Fallback: if validation removed all incoming slugs but the caller
+      // explicitly passed known system role names (e.g. Roles.values.securityGuard),
+      // restore them. This avoids cases where role records are tenant-scoped
+      // or missing and an invite should still grant the expected role.
+      try {
+        if ((!incomingSlugs || incomingSlugs.length === 0) && Array.isArray(roles) && roles.length) {
+          const known = Object.values(Roles.values || {});
+          const restored: string[] = [];
+          for (const r of roles) {
+            if (!r && r !== 0) continue;
+            if (typeof r === 'string') {
+              const cand = r.trim();
+              // Exact match against known roles
+              if (known.includes(cand)) {
+                restored.push(cand);
+                continue;
+              }
+              // Case-insensitive match
+              const found = known.find((k) => String(k).toLowerCase() === cand.toLowerCase());
+              if (found) {
+                restored.push(found);
+                continue;
+              }
+            }
+            if (typeof r === 'object') {
+              if (r.slug) restored.push(r.slug);
+              else if (r.id) {
+                try {
+                  const roleRec = await options.database.role.findByPk(r.id, { transaction });
+                  if (roleRec && roleRec.slug) restored.push(roleRec.slug);
+                } catch (inner) {
+                  // ignore
+                }
+              }
+            }
+          }
+          if (restored.length) {
+            incomingSlugs = [...new Set(restored)];
+            console.warn('tenantUserRepository.updateRoles: restored known roles from input after validation filtered them out', { tenantId: resolvedTenantId, userId: id, restored: incomingSlugs });
+          }
+        }
+      } catch (e) {
+        // ignore fallback errors
+      }
+
     console.debug('tenantUserRepository.updateRoles called', { tenantId, userId: id, roles, clientIds, postSiteIds });
+
+      try {
+        const currentUser = SequelizeRepository.getCurrentUser(options);
+        const currId = currentUser && currentUser.id ? currentUser.id : null;
+        // Extra debug if the update targets the current user
+        if (String(currId) === String(id)) {
+          console.warn('tenantUserRepository.updateRoles: updating roles for currentUser id - potential accidental self-role-change', { tenantId: resolvedTenantId, userId: id, roles, currentUserId: currId });
+        }
+      } catch (e) {
+        // ignore logging errors
+      }
+
+      // Protective guard: do not allow callers to change roles for the current
+      // authenticated user unless they explicitly opted in via
+      // `options.allowSelfRoleUpdate = true`. This prevents accidental role
+      // changes to the inviter when invite flows call updateRoles without
+      // an explicit target id or with an incorrect id.
+      try {
+        const currentUser = SequelizeRepository.getCurrentUser(options);
+        const currId = currentUser && currentUser.id ? currentUser.id : null;
+        if (currId && String(currId) === String(id) && !options.allowSelfRoleUpdate) {
+          console.warn('tenantUserRepository.updateRoles: prevented self role update; use options.allowSelfRoleUpdate to override', { tenantId: resolvedTenantId, userId: id });
+          // Return existing tenantUser if present, otherwise null — do not modify.
+          const existingTenantUser = await options.database.tenantUser.findOne({ where: { tenantId: resolvedTenantId, userId: id }, transaction });
+          return existingTenantUser;
+        }
+      } catch (e) {
+        // ignore lookup/logging errors and continue
+      }
 
     let user = await options.database.user.findByPk(id, {
       transaction,
@@ -298,26 +433,50 @@ export default class TenantUserRepository {
 
     if (!tenantUser) {
       isCreation = true;
+      // Defensive: attempt to detect an existing tenant_user by email to
+      // avoid creating duplicate tenant_user rows when the same email
+      // was previously invited/created under a different userId.
+      try {
+        if (user && user.email) {
+          const normalizedEmail = String(user.email).trim().toLowerCase();
+          const existingByEmail = await this.findByTenantAndEmail(resolvedTenantId, normalizedEmail, options);
+          if (existingByEmail) {
+            // Reuse the found tenantUser and, if different userId, migrate it
+            tenantUser = existingByEmail;
+            // If the tenant_user points to a different user id, update to the current user id
+            if (tenantUser.userId !== id) {
+              tenantUser.userId = id;
+              await retryOnLock(() => tenantUser.save({ transaction }));
+            }
+            isCreation = false;
+          }
+        }
+      } catch (e) {
+        console.warn('tenantUserRepository.updateRoles: email dedupe lookup failed', e && (e as any).message ? (e as any).message : e);
+      }
       // Decide initial status based on whether the user already verified their email.
+      // Use the mapped incoming slugs (if any) so that created tenant_user
+      // gets the intended roles instead of an empty array.
       const initialStatus = user && user.emailVerified
-        ? selectStatus('active', roles || [])
-        : selectStatus('invited', roles || []);
+        ? selectStatus('active', incomingSlugs || [])
+        : selectStatus('invited', incomingSlugs || []);
 
       // Only generate an invitation token if the initial status for the tenantUser is 'invited'
       const invitationToken = initialStatus === 'invited' ? crypto.randomBytes(20).toString('hex') : null;
       const invitationTokenExpiresAt = invitationToken ? new Date(Date.now() + (60 * 60 * 1000)) : null;
 
-        tenantUser = await options.database.tenantUser.create(
-          {
-            tenantId: resolvedTenantId,
-            userId: id,
-            status: initialStatus,
-            invitationToken,
-            invitationTokenExpiresAt,
-            roles: [],
-          },
-          { transaction },
-        );
+      tenantUser = await retryOnLock(() => options.database.tenantUser.create(
+        {
+          tenantId: resolvedTenantId,
+          userId: id,
+          status: initialStatus,
+          invitationToken,
+          invitationTokenExpiresAt,
+          roles: incomingSlugs || [],
+        },
+        { transaction },
+      ));
+    // end creation
     }
 
     let { roles: existingRoles } = tenantUser;
@@ -338,11 +497,42 @@ export default class TenantUserRepository {
 
     let newRoles = [] as Array<string>;
 
-    // Map provided roles (ids/objects/slugs) to slugs before merging
-    const incomingSlugs = await mapToSlugs(roles);
+    // Protective rule: if the existing tenantUser already has the `admin` role,
+    // never allow `securityGuard` to be added by incoming roles (defensive).
+    try {
+      const existingRolesLower = (tenantUser && tenantUser.roles ? (Array.isArray(tenantUser.roles) ? tenantUser.roles : (typeof tenantUser.roles === 'string' ? JSON.parse(tenantUser.roles) : [])) : []).map((r) => String(r).toLowerCase());
+      if (existingRolesLower.includes('admin')) {
+        const filtered = (incomingSlugs || []).filter((r) => String(r).toLowerCase() !== 'securityguard');
+        if (filtered.length !== (incomingSlugs || []).length) {
+          console.warn('tenantUserRepository.updateRoles: stripping securityGuard from incoming roles because existing tenantUser has admin', { tenantId: resolvedTenantId, userId: id });
+          incomingSlugs = filtered;
+        }
+      }
+    } catch (e) {
+      // ignore parsing/logging errors
+    }
+
+    // Safety: prevent accidental downgrade/role-mixing where an existing admin
+    // is granted the `securityGuard` role. If the existing tenantUser already
+    // has `admin`, do not add `securityGuard` to their roles.
 
     if (options.addRoles) {
-      newRoles = [...new Set([...existingRoles, ...incomingSlugs])];
+      try {
+        const existingRolesLower = (existingRoles || []).map((r) => String(r).toLowerCase());
+        const incomingHasSecurityGuard = incomingSlugs.includes('securityGuard') || incomingSlugs.includes('securityguard');
+        const existingHasAdmin = existingRolesLower.includes('admin');
+        if (incomingHasSecurityGuard && existingHasAdmin) {
+          // Remove securityGuard from incomingSlugs to avoid adding it
+          const filtered = incomingSlugs.filter((r) => String(r).toLowerCase() !== 'securityguard');
+          console.warn('tenantUserRepository.updateRoles: prevented adding securityGuard role to existing admin', { tenantId: resolvedTenantId, userId: id });
+          newRoles = [...new Set([...existingRoles, ...filtered])];
+        } else {
+          newRoles = [...new Set([...existingRoles, ...incomingSlugs])];
+        }
+      } catch (e) {
+        // Fallback to default merge if any error occurs
+        newRoles = [...new Set([...existingRoles, ...incomingSlugs])];
+      }
     } else if (options.removeOnlyInformedRoles) {
       newRoles = existingRoles.filter(
         (existingRole) => !incomingSlugs.includes(existingRole),
@@ -357,9 +547,18 @@ export default class TenantUserRepository {
       newRoles,
     );
 
-    await tenantUser.save({
-      transaction,
-    });
+    // If the tenantUser becomes or remains in 'invited' status and has no
+    // invitation token, generate one so that invitation emails/SMS can be sent.
+    if ((tenantUser.status === 'invited' || tenantUser.status === 'pending') && !tenantUser.invitationToken) {
+      try {
+        tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
+        tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+      } catch (e) {
+        console.warn('tenantUserRepository.updateRoles: failed to generate invitation token', e && (e as any).message ? (e as any).message : e);
+      }
+    }
+
+    await retryOnLock(() => tenantUser.save({ transaction }));
 
     // Persist assigned clients (many-to-many pivot)
     try {
@@ -426,7 +625,7 @@ export default class TenantUserRepository {
 
           try {
             console.debug('tenantUser assignment - inserting pivot rows (clients)', { rows });
-            await options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_client_accounts', rows, { transaction });
+            await retryOnLock(() => options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_client_accounts', rows, { transaction }));
             console.debug('tenantUser assignment - inserted pivot rows (clients)');
           } catch (e) {
             console.error('Failed bulkInsert tenant_user_client_accounts:', e);
@@ -504,7 +703,7 @@ export default class TenantUserRepository {
 
           try {
             console.debug('tenantUser assignment - inserting pivot rows (posts)', { rows });
-            await options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', rows, { transaction });
+            await retryOnLock(() => options.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', rows, { transaction }));
             console.debug('tenantUser assignment - inserted pivot rows (posts)');
           } catch (e) {
             console.error('Failed bulkInsert tenant_user_post_sites:', e);
@@ -536,6 +735,15 @@ export default class TenantUserRepository {
 
     return tenantUser;
   }
+
+    /**
+     * Save a tenantUser instance using retry-on-lock to mitigate transient
+     * ER_LOCK_WAIT_TIMEOUT errors from concurrent transactions.
+     */
+    static async saveTenantUser(tenantUser, options: IRepositoryOptions) {
+      const transaction = SequelizeRepository.getTransaction(options);
+      return await retryOnLock(() => tenantUser.save({ transaction }));
+    }
 
   static async acceptInvitation(
     invitationToken,
@@ -614,11 +822,28 @@ export default class TenantUserRepository {
         existingTenantUser.tenantId = invitationTenantUser.tenantId;
       }
 
+      // Merge roles, but never add `securityGuard` to an existing admin
+      const existingRolesArr = Array.isArray(existingTenantUser.roles) ? existingTenantUser.roles : [];
+      const invitationRolesArr = Array.isArray(invitationTenantUser.roles) ? invitationTenantUser.roles : [];
+      let filteredInvitationRoles = invitationRolesArr;
+      try {
+        const existingLower = existingRolesArr.map((r) => String(r).toLowerCase());
+        if (existingLower.includes('admin')) {
+          // Do not grant securityGuard to an existing admin
+          filteredInvitationRoles = invitationRolesArr.filter((r) => String(r).toLowerCase() !== 'securityguard');
+          if (filteredInvitationRoles.length !== invitationRolesArr.length) {
+            console.warn('tenantUserRepository.acceptInvitation: prevented adding securityGuard role to existing admin during invitation acceptance', { tenantId: invitationTenantUser.tenantId, userId: existingTenantUser.userId });
+          }
+        }
+      } catch (e) {
+        // ignore and fallback to merging all roles
+      }
+
       // Merge roles
       existingTenantUser.roles = [
         ...new Set([
-          ...(Array.isArray(existingTenantUser.roles) ? existingTenantUser.roles : []),
-          ...(Array.isArray(invitationTenantUser.roles) ? invitationTenantUser.roles : []),
+          ...(existingRolesArr || []),
+          ...(filteredInvitationRoles || []),
         ]),
       ];
 

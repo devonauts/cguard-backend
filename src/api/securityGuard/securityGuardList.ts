@@ -37,9 +37,29 @@ export default async (req, res, next) => {
     if (raw.offset) args.offset = raw.offset;
     if (raw.orderBy) args.orderBy = raw.orderBy;
 
+    // Default: include archived (soft-deleted) records so frontend can show
+    // all guards with their respective statuses unless caller explicitly
+    // requests otherwise.
+    if (!Object.prototype.hasOwnProperty.call(args, 'filter') || typeof args.filter !== 'object') {
+      args.filter = args.filter || {};
+    }
+    if (!Object.prototype.hasOwnProperty.call(args.filter, 'includeDeleted') && !Object.prototype.hasOwnProperty.call(args.filter, 'archived')) {
+      args.filter.includeDeleted = true;
+    }
+
     const payload = await new SecurityGuardService(
       req,
     ).findAndCountAll(args);
+
+    // Temporary debug logs to help diagnose mismatched counts
+    try {
+      const tenantIdDebug = req.currentTenant && req.currentTenant.id ? req.currentTenant.id : null;
+      const rowsCount = payload && Array.isArray(payload.rows) ? payload.rows.length : (payload && payload.rows ? Object.keys(payload.rows).length : 0);
+      const reportedCount = payload && typeof payload.count === 'number' ? payload.count : null;
+      console.debug('[securityGuardList] debug:', { tenantId: tenantIdDebug, rowsCount, reportedCount, sampleRows: (payload && payload.rows ? (Array.isArray(payload.rows) ? payload.rows.slice(0,5).map(r=>({id:r.id, guardId: r.guardId || r.guard && r.guard.id, fullName: r.fullName})) : payload.rows) : null) });
+    } catch (e) {
+      console.warn('[securityGuardList] debug logging failed', e && e.message ? e.message : e);
+    }
 
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {

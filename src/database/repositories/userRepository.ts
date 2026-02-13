@@ -442,6 +442,59 @@ export default class UserRepository {
     return this.findById(user.id, options);
   }
 
+  // Partial update: only apply provided fields and relations/files
+  static async patchUpdate(
+    id,
+    data,
+    options: IRepositoryOptions,
+  ) {
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    const transaction = SequelizeRepository.getTransaction(options);
+
+    const user = await options.database.user.findByPk(id, { transaction });
+    if (!user) {
+      throw new Error404();
+    }
+
+    const updatePayload: any = {};
+    if (Object.prototype.hasOwnProperty.call(data, 'firstName')) updatePayload.firstName = data.firstName ?? null;
+    if (Object.prototype.hasOwnProperty.call(data, 'lastName')) updatePayload.lastName = data.lastName ?? null;
+    if (Object.prototype.hasOwnProperty.call(data, 'phoneNumber')) updatePayload.phoneNumber = data.phoneNumber ?? null;
+    updatePayload.updatedById = currentUser.id;
+
+    if (Object.keys(updatePayload).length) {
+      await user.update(updatePayload, { transaction });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'avatars')) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.user.getTableName(),
+          belongsToColumn: 'avatars',
+          belongsToId: user.id,
+        },
+        data.avatars,
+        options,
+      );
+    }
+
+    await AuditLogRepository.log(
+      {
+        entityName: 'user',
+        entityId: user.id,
+        action: AuditLogRepository.UPDATE,
+        values: {
+          ...user.get({ plain: true }),
+          avatars: data.avatars,
+          roles: data.roles,
+        },
+      },
+      options,
+    );
+
+    return this.findById(user.id, options);
+  }
+
   static async markLoggedIn(id, options: IRepositoryOptions) {
     const transaction = SequelizeRepository.getTransaction(
       options,

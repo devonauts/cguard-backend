@@ -3,6 +3,10 @@ export default (app) => {
     `/security-guard/public`,
     require('./securityGuardPublicFind').default,
   );
+  app.patch(
+    `/security-guard/public`,
+    require('./securityGuardPublicCreate').default,
+  );
   app.post(
     `/tenant/:tenantId/security-guard`,
     require('./securityGuardCreate').default,
@@ -10,6 +14,10 @@ export default (app) => {
   app.put(
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardUpdate').default,
+  );
+  app.patch(
+    `/tenant/:tenantId/security-guard/:id`,
+    require('./securityGuardPatch').default,
   );
   app.put(
     `/tenant/:tenantId/security-guard/self`,
@@ -54,6 +62,11 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardFind').default,
+  );
+
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/assignments`,
+    require('./securityGuardAssignments').default,
   );
 
   // Security guard notes CRUD

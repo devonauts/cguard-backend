@@ -15,9 +15,10 @@ import Roles from '../../security/roles';
 import bcrypt from 'bcryptjs';
 
 export default async (req, res, next) => {
+  // Preserve the original currentUser (actor) and tenant before any possible impersonation
+  let originalCurrentUser = req.currentUser;
+  let originalCurrentTenant = req.currentTenant;
   try {
-    // Preserve the original currentUser (actor) before any possible impersonation
-    const originalCurrentUser = req.currentUser;
     // Allow invited user flow: if frontend provides an invitation token in the body
     // impersonate the invited tenantUser for this request and bypass the HR permission.
     // This enables the invited guard to complete registration from the frontend.
@@ -35,6 +36,16 @@ export default async (req, res, next) => {
           req.currentUser = tenantUser.user;
           req.currentTenant = tenantUser.tenant;
           impersonatedTenantUser = tenantUser;
+          // Allow repository calls during the invite impersonation to update
+          // tenant_user roles even when the target user id equals the current
+          // impersonated user id. This avoids the "prevented self role update"
+          // protective check that otherwise blocks tenantUser creation/update
+          // in invite flows.
+          try {
+            req.allowSelfRoleUpdate = true;
+          } catch (e) {
+            // ignore if request object is frozen
+          }
           bypassPermission = true;
           console.log('🔐 [securityGuardCreate] invited flow: impersonated user id', req.currentUser && req.currentUser.id);
         }
@@ -108,21 +119,27 @@ export default async (req, res, next) => {
 
         if (isEmail) {
           // Create or invite the user with role securityGuard via email
-          await new UserCreator({
-            currentUser: originalCurrentUser || req.currentUser,
-            currentTenant: req.currentTenant,
-            language: req.language,
-            database: req.database,
-          }).execute(
-            {
-              emails: [contact],
-              roles: [Roles.values.securityGuard],
-              firstName: entry.firstName || null,
-              lastName: entry.lastName || null,
-              fullName: entry.fullName || null,
-            },
-            false,
-          );
+          try {
+            await new UserCreator({
+              currentUser: originalCurrentUser || req.currentUser,
+              currentTenant: req.currentTenant,
+              language: req.language,
+              database: req.database,
+            }).execute(
+              {
+                emails: [contact],
+                roles: [Roles.values.securityGuard],
+                firstName: entry.firstName || null,
+                lastName: entry.lastName || null,
+                fullName: entry.fullName || null,
+              },
+              false,
+            );
+          } catch (ucErr) {
+            console.error('[securityGuardCreate] UserCreator failed (normalizeEntry path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
+            if (ucErr && (ucErr as any).stack) console.error((ucErr as any).stack);
+            throw ucErr;
+          }
 
           // Fetch the user to get its id
           const user = await UserRepository.findByEmailWithoutAvatar(contact, req);
@@ -295,8 +312,15 @@ export default async (req, res, next) => {
                   try {
                     const BCRYPT_SALT_ROUNDS = 12;
                     const hashed = await bcrypt.hash(incoming.password, BCRYPT_SALT_ROUNDS);
-                    await UserRepository.updatePassword(userId, hashed, false, req);
-                    console.log('🔧 [securityGuardCreate] set password for impersonated user id', userId);
+                              console.log('🔍 [securityGuardCreate] setting password for impersonated user id', userId, 'rawLength', String(incoming.password).length);
+                              await UserRepository.updatePassword(userId, hashed, false, req);
+                              try {
+                                const stored = await UserRepository.findPassword(userId, req);
+                                console.log('🔎 [securityGuardCreate] stored password present for user id', userId, !!stored);
+                              } catch (readErr) {
+                                console.warn('⚠️ [securityGuardCreate] failed to read stored password for user id', userId, readErr && (readErr as any).message ? (readErr as any).message : readErr);
+                              }
+                              console.log('🔧 [securityGuardCreate] set password for impersonated user id', userId);
                     // If this request originated from an invitation token, accept the invitation
                     // so the TenantUser.status moves from 'invited'/'pending' to 'active'.
                     try {
@@ -306,6 +330,13 @@ export default async (req, res, next) => {
                           req,
                         );
                         console.log('✅ [securityGuardCreate] accepted invitation and activated tenantUser for user id', userId);
+                                // Mark email as verified since user completed invite by setting password
+                                try {
+                                  await UserRepository.markEmailVerified(userId, req);
+                                  console.log('✅ [securityGuardCreate] marked email verified for impersonated user id', userId);
+                                } catch (markErr) {
+                                  console.warn('⚠️ [securityGuardCreate] failed to mark email verified for impersonated user:', userId, markErr && (markErr as any).message ? (markErr as any).message : markErr);
+                                }
                       }
                     } catch (acceptErr) {
                       console.warn('🔔 [securityGuardCreate] failed to accept invitation for impersonated user:', acceptErr && (acceptErr as any).message ? (acceptErr as any).message : acceptErr);
@@ -325,21 +356,27 @@ export default async (req, res, next) => {
             const isEmail = contact.includes('@');
 
             if (isEmail) {
-              await new UserCreator({
-                currentUser: originalCurrentUser || req.currentUser,
-                currentTenant: req.currentTenant,
-                language: req.language,
-                database: req.database,
-              }).execute(
-                {
-                  emails: [contact],
-                  roles: [Roles.values.securityGuard],
-                  firstName: incoming.firstName || null,
-                  lastName: incoming.lastName || null,
-                  fullName: incoming.fullName || null,
-                },
-                false,
-              );
+              try {
+                await new UserCreator({
+                  currentUser: originalCurrentUser || req.currentUser,
+                  currentTenant: req.currentTenant,
+                  language: req.language,
+                  database: req.database,
+                }).execute(
+                  {
+                    emails: [contact],
+                    roles: [Roles.values.securityGuard],
+                    firstName: incoming.firstName || null,
+                    lastName: incoming.lastName || null,
+                    fullName: incoming.fullName || null,
+                  },
+                  false,
+                );
+              } catch (ucErr) {
+                console.error('[securityGuardCreate] UserCreator failed (incoming path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
+                if (ucErr && (ucErr as any).stack) console.error((ucErr as any).stack);
+                return await ApiResponseHandler.error(req, res, ucErr);
+              }
 
               // Fetch the user to get its id
               const user = await UserRepository.findByEmailWithoutAvatar(contact, req);
@@ -475,56 +512,89 @@ export default async (req, res, next) => {
         }
         const created = await new SecurityGuardService(req).create(entry);
 
-        // After creating the securityGuard, send invitation email including securityGuardId
+          // If frontend supplied a password while completing an invitation/registration,
+          // persist it to the users table, mark email as verified and accept the tenant invitation.
+          try {
+            if (entry.password) {
+              try {
+                const BCRYPT_SALT_ROUNDS = 12;
+                const hashed = await bcrypt.hash(entry.password, BCRYPT_SALT_ROUNDS);
+                await UserRepository.updatePassword(entry.guard, hashed, false, req);
+                console.log('🔧 [securityGuardCreate] persisted password for user', entry.guard);
+              } catch (pwErr) {
+                console.warn('🔔 [securityGuardCreate] failed to persist password for user', entry && entry.guard, pwErr && (pwErr as any).message ? (pwErr as any).message : pwErr);
+              }
+
+              try {
+                await UserRepository.markEmailVerified(entry.guard, req);
+                console.log('🔧 [securityGuardCreate] marked emailVerified for user', entry.guard);
+              } catch (evErr) {
+                console.warn('🔔 [securityGuardCreate] failed to mark emailVerified for user', entry && entry.guard, evErr && (evErr as any).message ? (evErr as any).message : evErr);
+              }
+            }
+
+            const tokenToAccept = entry._invitationToken || (incoming && incoming._invitationToken) || null;
+            if (tokenToAccept) {
+              try {
+                await TenantUserRepository.acceptInvitation(tokenToAccept, req);
+                console.log('✅ [securityGuardCreate] accepted invitation token for user', entry.guard);
+              } catch (accErr) {
+                console.warn('🔔 [securityGuardCreate] failed to accept invitation token', tokenToAccept, accErr && (accErr as any).message ? (accErr as any).message : accErr);
+              }
+            }
+          } catch (e) {
+            console.warn('🔔 [securityGuardCreate] post-create user persistence step failed', e && (e as any).message ? (e as any).message : e);
+          }
+
+        // If frontend supplied a password while completing an invitation/registration,
+        // persist it to the users table, mark email as verified and accept the tenant invitation.
         try {
-          const tenant = await TenantRepository.findById(req.params.tenantId, req);
-
-          // Fetch user to include merged info
-          const guardUser = await UserRepository.findById(entry.guard, req);
-
-          // Only generate email verification token for real emails (not phone synthetic)
-          let emailVerificationToken: string | null = null;
-          if (
-            guardUser &&
-            guardUser.email &&
-            guardUser.provider !== 'phone' &&
-            !String(guardUser.email).endsWith('@phone.local')
-          ) {
+          if (entry.password) {
             try {
-              emailVerificationToken = await UserRepository.generateEmailVerificationToken(
-                guardUser.email,
-                req,
-              );
-            } catch (err) {
-              console.warn('Failed to generate emailVerificationToken:', err && (err as any).message ? (err as any).message : err);
+              const BCRYPT_SALT_ROUNDS = 12;
+              const hashed = await bcrypt.hash(entry.password, BCRYPT_SALT_ROUNDS);
+              await UserRepository.updatePassword(entry.guard, hashed, false, req);
+              console.log('🔧 [securityGuardCreate] persisted password for user', entry.guard);
+            } catch (pwErr) {
+              console.warn('🔔 [securityGuardCreate] failed to persist password for user', entry && entry.guard, pwErr && (pwErr as any).message ? (pwErr as any).message : pwErr);
+            }
+
+            try {
+              await UserRepository.markEmailVerified(entry.guard, req);
+              console.log('🔧 [securityGuardCreate] marked emailVerified for user', entry.guard);
+            } catch (evErr) {
+              console.warn('🔔 [securityGuardCreate] failed to mark emailVerified for user', entry && entry.guard, evErr && (evErr as any).message ? (evErr as any).message : evErr);
             }
           }
 
-          const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${entry._invitationToken || ''}&securityGuardId=${created.id}`;
-          if (guardUser && guardUser.email && guardUser.provider !== 'phone' && !String(guardUser.email).endsWith('@phone.local')) {
-            await new EmailSender(
-              EmailSender.TEMPLATES.INVITATION,
-              {
-                tenant: tenant || null,
-                link,
-                guard: {
-                  id: guardUser.id,
-                  firstName: guardUser.firstName || null,
-                  lastName: guardUser.lastName || null,
-                  email: guardUser.email,
-                  emailVerificationToken: emailVerificationToken || null,
-                },
-              },
-            ).sendTo(item.contact || (item.guard && item.guard.email) || null);
-          } else {
-            // No email available (phone invite). Frontend should send SMS using the invitation token.
-            console.log('📨 Phone invite created; invitation token:', entry._invitationToken);
+          // If there's an invitation token associated with this entry, accept it now so tenant_user
+          // moves to active and invitationToken is cleared.
+          const tokenToAccept = entry._invitationToken || (item && item._invitationToken) || null;
+          if (tokenToAccept) {
+            try {
+              await TenantUserRepository.acceptInvitation(tokenToAccept, req);
+              console.log('✅ [securityGuardCreate] accepted invitation token for user', entry.guard);
+            } catch (accErr) {
+              console.warn('🔔 [securityGuardCreate] failed to accept invitation token', tokenToAccept, accErr && (accErr as any).message ? (accErr as any).message : accErr);
+            }
           }
         } catch (e) {
-          console.warn('Failed to send invitation email with securityGuardId:', e && (e as any).message ? (e as any).message : e);
+          console.warn('🔔 [securityGuardCreate] post-create user persistence step failed', e && (e as any).message ? (e as any).message : e);
         }
 
-        results.push({ record: created, invitationToken: entry._invitationToken || null });
+        // Invitation email is sent by SecurityGuardService.create to keep
+        // notification logic centralized; skip sending here to avoid duplicates.
+
+        // Resolve current tenantUser status to reflect activation if invitation was accepted
+        let tenantUserStatus = null;
+        try {
+          const tUser = await TenantUserRepository.findByTenantAndUser(req.params.tenantId, entry.guard, req);
+          tenantUserStatus = tUser ? tUser.status : null;
+        } catch (e) {
+          // ignore
+        }
+
+        results.push({ record: created, invitationToken: null });
       }
       payload = results;
     } else {
@@ -539,59 +609,36 @@ export default async (req, res, next) => {
       }
       const created = await new SecurityGuardService(req).create(entry);
 
-      // Send invitation email including securityGuardId
+      // Invitation email is sent by SecurityGuardService.create; skip here.
+
+      // Resolve tenantUser status for response
+      let tenantUserStatus = null;
       try {
-        const tenant = await TenantRepository.findById(req.params.tenantId, req);
-
-        // Fetch user to include merged info
-        const guardUser = await UserRepository.findById(entry.guard, req);
-
-        // Only generate email verification token for real emails (not phone synthetic)
-        let emailVerificationToken: string | null = null;
-        if (
-          guardUser &&
-          guardUser.email &&
-          guardUser.provider !== 'phone' &&
-          !String(guardUser.email).endsWith('@phone.local')
-        ) {
-          try {
-            emailVerificationToken = await UserRepository.generateEmailVerificationToken(
-              guardUser.email,
-              req,
-            );
-          } catch (err) {
-            console.warn('Failed to generate emailVerificationToken:', err && (err as any).message ? (err as any).message : err);
-          }
-        }
-
-        const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${entry._invitationToken || ''}&securityGuardId=${created.id}`;
-        if (guardUser && guardUser.email && guardUser.provider !== 'phone' && !String(guardUser.email).endsWith('@phone.local')) {
-          await new EmailSender(
-            EmailSender.TEMPLATES.INVITATION,
-            {
-              tenant: tenant || null,
-              link,
-              guard: {
-                id: guardUser.id,
-                firstName: guardUser.firstName || null,
-                lastName: guardUser.lastName || null,
-                email: guardUser.email,
-                emailVerificationToken: emailVerificationToken || null,
-              },
-            },
-          ).sendTo(incoming.contact || (incoming.guard && incoming.guard.email) || null);
-        } else {
-          console.log('📨 Phone invite created; invitation token:', entry._invitationToken);
-        }
+        const tUser = await TenantUserRepository.findByTenantAndUser(req.params.tenantId, entry.guard, req);
+        tenantUserStatus = tUser ? tUser.status : null;
       } catch (e) {
-        console.warn('Failed to send invitation email with securityGuardId:', e && (e as any).message ? (e as any).message : e);
+        // ignore
       }
 
-      payload = { record: created, invitationToken: entry._invitationToken || null };
+      payload = { record: created, invitationToken: null, tenantUserStatus };
     }
 
+    // Restore original actor/tenant and cleanup impersonation flags
+    try {
+      if (typeof originalCurrentUser !== 'undefined') req.currentUser = originalCurrentUser;
+      if (typeof originalCurrentTenant !== 'undefined') req.currentTenant = originalCurrentTenant;
+      if (req && req.allowSelfRoleUpdate) delete req.allowSelfRoleUpdate;
+    } catch (e) {
+      // ignore restore errors
+    }
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {
+    // Ensure we restore original request state on error as well
+    try {
+      if (typeof originalCurrentUser !== 'undefined') req.currentUser = originalCurrentUser;
+      if (typeof originalCurrentTenant !== 'undefined') req.currentTenant = originalCurrentTenant;
+      if (req && req.allowSelfRoleUpdate) delete req.allowSelfRoleUpdate;
+    } catch (e) {}
     await ApiResponseHandler.error(req, res, error);
   }
 };

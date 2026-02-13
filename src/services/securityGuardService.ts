@@ -10,6 +10,7 @@ import Sequelize from 'sequelize';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
+import Roles from '../security/roles';
 
 export default class SecurityGuardService {
   options: IServiceOptions;
@@ -41,7 +42,60 @@ export default class SecurityGuardService {
     );
 
     try {
-      data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
+      // Keep the original guard id provided by caller so we can fallback
+      const originalGuardProvided = data.guard;
+      const hasGuardField = Object.prototype.hasOwnProperty.call(data, 'guard');
+      const originalGuard = data.guard;
+      if (hasGuardField) {
+        data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
+
+        // If client provided a guard id but it's not yet associated to tenant,
+        // try to create the tenantUser entry within this transaction so update can proceed.
+        if (!data.guard && originalGuard) {
+          try {
+            const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+            const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
+            if (tenantId) {
+              console.log('🔧 [SecurityGuardService.update] ensuring tenantUser for guard in transaction', originalGuard, 'tenant', tenantId);
+              await TenantUserRepository.updateRoles(
+                tenantId,
+                originalGuard,
+                data.roles || [],
+                { ...this.options, transaction, addRoles: true },
+              );
+              data.guard = originalGuard;
+            }
+          } catch (e) {
+            console.warn('⚠️ [SecurityGuardService.update] failed to ensure tenantUser in-transaction for guard', originalGuard, e && (e as any).message ? (e as any).message : e);
+          }
+        }
+      } else {
+        // Remove guard key so downstream repository.update won't treat it as provided
+        delete data.guard;
+      }
+
+      // If a guard id was provided by the caller but the filter returned null
+      // (user not yet associated to tenant), attempt to create the tenantUser
+      // entry within the current transaction so the subsequent steps can use it.
+      if (!data.guard && originalGuardProvided) {
+        try {
+          const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+          const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
+          if (tenantId) {
+            console.log('🔧 [SecurityGuardService.create] ensuring tenantUser for guard in transaction', originalGuardProvided, 'tenant', tenantId);
+            await TenantUserRepository.updateRoles(
+              tenantId,
+              originalGuardProvided,
+              data.roles || [],
+              { ...this.options, transaction, addRoles: true },
+            );
+            // After ensuring tenantUser, set guard back to original id so create proceeds
+            data.guard = originalGuardProvided;
+          }
+        } catch (e) {
+          console.warn('⚠️ [SecurityGuardService.create] failed to ensure tenantUser in-transaction for guard', originalGuardProvided, e && (e as any).message ? (e as any).message : e);
+        }
+      }
       // Ensure tenantUser has `securityGuard` role when guard id is provided
       if (data.guard) {
         try {
@@ -49,8 +103,8 @@ export default class SecurityGuardService {
           const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
           if (tenantId) {
             const rolesToAdd = Array.isArray(data.roles)
-              ? [...new Set([...data.roles, 'securityGuard'])]
-              : ['securityGuard'];
+              ? [...new Set(data.roles)]
+              : (data.roles ? [data.roles] : []);
             // Pass through client/postSite assignments when ensuring tenantUser roles
             await TenantUserRepository.updateRoles(
               tenantId,
@@ -131,8 +185,8 @@ export default class SecurityGuardService {
             console.warn('⚠️ [SecurityGuardService.create] no current tenant found in options; cannot create tenantUser automatically');
           } else {
             const rolesToAdd = Array.isArray(data.roles)
-              ? [...new Set([...data.roles, 'securityGuard'])]
-              : ['securityGuard'];
+              ? [...new Set(data.roles)]
+              : (data.roles ? [data.roles] : []);
             // When creating tenantUser for imported guard, also persist client/postSite assignments
             await TenantUserRepository.updateRoles(
               tenantId,
@@ -167,18 +221,38 @@ export default class SecurityGuardService {
       if (data.password && data.email) {
         console.log('🔔 [SecurityGuardService.create] password+email present for:', { email: data.email, guard: data.guard });
         const BCRYPT_SALT_ROUNDS = 12;
+        console.log('🔍 [SecurityGuardService.create] raw password present length:', String(data.password).length);
         const hashedPassword = await bcrypt.hash(data.password, BCRYPT_SALT_ROUNDS);
+        console.log('🔐 [SecurityGuardService.create] hashed password length:', String(hashedPassword).length > 0 ? String(hashedPassword).length : 0);
         // Buscar usuario por email
         let user = await UserRepository.findByEmail(data.email, { ...this.options, transaction });
         console.log('🔍 [SecurityGuardService.create] findByEmail result:', !!user, user && user.id);
-        if (user) {
+          if (user) {
           // Actualizar password y phoneNumber si existe
           console.log('🔧 [SecurityGuardService.create] updating existing user password for user id', user.id);
           await UserRepository.updateProfile(user.id, {
             phoneNumber: data.phoneNumber || data.phone || null,
           }, { ...this.options, transaction });
           await UserRepository.updatePassword(user.id, hashedPassword, false, { ...this.options, transaction, bypassPermissionValidation: true });
+          // Verify it was persisted
+          try {
+            const stored = await UserRepository.findPassword(user.id, { ...this.options, transaction });
+            console.log('🔎 [SecurityGuardService.create] stored password present?', !!stored);
+          } catch (checkErr) {
+            console.warn('⚠️ [SecurityGuardService.create] failed to read back stored password for user id', user.id, checkErr && (checkErr as any).message ? (checkErr as any).message : checkErr);
+          }
           console.log('✅ [SecurityGuardService.create] updated password for user id', user.id);
+          // If this flow included an invitation token, consider the user verified
+          // (they completed the invite by setting a password). Promote tenantUser
+          // status via markEmailVerified which also logs the change.
+          if (data._invitationToken || data.token || data.invitationToken) {
+            try {
+              await UserRepository.markEmailVerified(user.id, { ...this.options, transaction, bypassPermissionValidation: true });
+              console.log('✅ [SecurityGuardService.create] marked email verified for user id', user.id);
+            } catch (e) {
+              console.warn('⚠️ [SecurityGuardService.create] failed to mark email verified for user id', user.id, e && (e as any).message ? (e as any).message : e);
+            }
+          }
         } else {
           // Crear usuario nuevo
           console.log('➕ [SecurityGuardService.create] creating new user with email', data.email);
@@ -205,6 +279,16 @@ export default class SecurityGuardService {
           } catch (e) {
             console.warn('⚠️ [SecurityGuardService.create] failed to update new user profile names:', (e && (e as any).message) ? (e as any).message : e);
           }
+          // If this flow included an invitation token, mark the newly created user's
+          // email as verified so they don't remain unverified after completing registration.
+          if (data._invitationToken || data.token || data.invitationToken) {
+            try {
+              await UserRepository.markEmailVerified(user.id, { ...this.options, transaction, bypassPermissionValidation: true });
+              console.log('✅ [SecurityGuardService.create] marked email verified for new user id', user.id);
+            } catch (e) {
+              console.warn('⚠️ [SecurityGuardService.create] failed to mark email verified for new user id', user.id, e && (e as any).message ? (e as any).message : e);
+            }
+          }
         }
       }
 
@@ -220,6 +304,53 @@ export default class SecurityGuardService {
         ...this.options,
         transaction,
       });
+
+      // Ensure user's password and verification status are persisted for all flows.
+      try {
+        if (data.guard && data.password) {
+          // data.password at this point should be the hashed password that we stored
+          // earlier for the guard record. Persist it to the users table to ensure
+          // the account can sign in.
+          try {
+            console.log('🔐 [SecurityGuardService.create] persisting hashed password for user id', data.guard, 'hashedLength', data.password ? data.password.length : 0);
+            // Log a small prefix for quick verification (do NOT log full hash in prod)
+            console.log('🔐 [SecurityGuardService.create] hashed prefix:', data.password ? data.password.substring(0, 12) : null);
+            await UserRepository.updatePassword(
+              data.guard,
+              data.password,
+              false,
+              { ...this.options, transaction, bypassPermissionValidation: true },
+            );
+            console.log('✅ [SecurityGuardService.create] updatePassword call succeeded for user id', data.guard);
+            try {
+              const stored = await UserRepository.findPassword(data.guard, { ...this.options, transaction });
+              console.log('🔎 [SecurityGuardService.create] findPassword result present?', !!stored, 'storedPrefix:', stored ? stored.substring(0, 12) : null);
+            } catch (readErr) {
+              console.warn('⚠️ [SecurityGuardService.create] failed to read back stored password for user id', data.guard, readErr && (readErr as any).message ? (readErr as any).message : readErr);
+            }
+            console.log('✅ [SecurityGuardService.create] ensured password persisted for user id', data.guard);
+          } catch (pwErr) {
+            console.warn('⚠️ [SecurityGuardService.create] failed to persist password for user id', data.guard, pwErr && (pwErr as any).message ? (pwErr as any).message : pwErr);
+          }
+        }
+
+        // If this was an invitation completion (and a password was provided),
+        // ensure emailVerified is set and tenantUser promoted. Do NOT mark
+        // verification for mere invite creation without password.
+        if (data.guard && data.password && (data._invitationToken || data.token || data.invitationToken)) {
+          try {
+            await UserRepository.markEmailVerified(
+              data.guard,
+              { ...this.options, transaction, bypassPermissionValidation: true },
+            );
+            console.log('✅ [SecurityGuardService.create] ensured emailVerified for user id', data.guard);
+          } catch (mvErr) {
+            console.warn('⚠️ [SecurityGuardService.create] failed to mark email verified for user id', data.guard, mvErr && (mvErr as any).message ? (mvErr as any).message : mvErr);
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ [SecurityGuardService.create] post-create user sync encountered an error:', e && (e as any).message ? (e as any).message : e);
+      }
 
       // After creating the securityGuard record, update pivot tables with securityGuardId if clientIds or postSiteIds were provided
       try {
@@ -323,6 +454,62 @@ export default class SecurityGuardService {
         'securityGuard',
       );
 
+      throw error;
+    }
+  }
+
+  async patchUpdate(id, data) {
+    // Partial update flow: only apply fields present in `data` and update pivots/files if provided.
+    data = data || {};
+    const transaction = await SequelizeRepository.createTransaction(this.options.database);
+
+    try {
+      if (Object.prototype.hasOwnProperty.call(data, 'guard')) {
+        data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
+      }
+
+      if (Object.prototype.hasOwnProperty.call(data, 'memos')) {
+        data.memos = await MemosRepository.filterIdsInTenant(data.memos, { ...this.options, transaction });
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'requests')) {
+        data.requests = await RequestRepository.filterIdsInTenant(data.requests, { ...this.options, transaction });
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'tutoriales')) {
+        data.tutoriales = await CompletionOfTutorialRepository.filterIdsInTenant(data.tutoriales, { ...this.options, transaction });
+      }
+
+      const record = await SecurityGuardRepository.patchUpdate(id, data, { ...this.options, transaction });
+
+      // Persist client/postSite assignments to tenant_user pivots only if provided
+      try {
+        const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+        const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
+        if (tenantId && Object.prototype.hasOwnProperty.call(data, 'guard') && id) {
+          // Only update pivots when client/postSite ids are explicitly provided
+          if (Object.prototype.hasOwnProperty.call(data, 'clientIds') || Object.prototype.hasOwnProperty.call(data, 'clientId') ||
+              Object.prototype.hasOwnProperty.call(data, 'postSiteIds') || Object.prototype.hasOwnProperty.call(data, 'postSiteId')) {
+            await TenantUserRepository.updateRoles(
+              tenantId,
+              data.guard,
+              data.roles || [],
+              { ...this.options, transaction, addRoles: true },
+              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+              id,
+            );
+          }
+        }
+      } catch (e) {
+        console.error('Failed to persist client/postSite assignments during securityGuard patchUpdate:', e);
+        throw e;
+      }
+
+      await SequelizeRepository.commitTransaction(transaction);
+
+      return record;
+    } catch (error) {
+      await SequelizeRepository.rollbackTransaction(transaction);
+      SequelizeRepository.handleUniqueFieldError(error, this.options.language, 'securityGuard');
       throw error;
     }
   }
@@ -503,11 +690,58 @@ export default class SecurityGuardService {
   }
 
   async findAllAutocomplete(search, limit) {
-    return SecurityGuardRepository.findAllAutocomplete(
+    // First, get existing securityGuard records (these have additional profile data)
+    const sgRecords = await SecurityGuardRepository.findAllAutocomplete(
       search,
       limit,
       this.options,
     );
+
+    // Normalize to map keyed by underlying user id when available so that
+    // securityGuard records and tenant_user entries referring to the same
+    // user are deduplicated.
+    const resultsMap: Map<string, string> = new Map();
+    (sgRecords || []).forEach((r: any) => {
+      if (!r) return;
+      // If the securityGuard row references a user (guardId), prefer that as key
+      const key = r.guardId ? String(r.guardId) : `sg:${String(r.id)}`;
+      resultsMap.set(key, r.label || r.fullName || r.name || '');
+    });
+
+    // Also include tenant users who are active and have the securityGuard role
+    try {
+      const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+      if (currentTenant && currentTenant.id) {
+        const tenantUsers = await this.options.database.tenantUser.findAll({
+          where: { tenantId: currentTenant.id, status: 'active' },
+          include: [{ model: this.options.database.user, as: 'user' }],
+        });
+
+        for (const tu of (tenantUsers || [])) {
+          const roles = tu.roles || [];
+          const hasGuardRole = Array.isArray(roles) ? roles.includes(Roles.values.securityGuard) : false;
+          if (hasGuardRole && tu.user && tu.user.id) {
+            const id = String(tu.user.id);
+            const label = tu.user.fullName || [tu.user.firstName, tu.user.lastName].filter(Boolean).join(' ') || tu.user.email || '';
+            // If a search term exists, apply simple case-insensitive match
+            if (!search || String(label).toLowerCase().includes(String(search || '').toLowerCase())) {
+              // Set or overwrite the entry keyed by user id. This will replace
+              // any securityGuard-derived entry that used the same user id key.
+              resultsMap.set(id, label);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('securityGuardService.findAllAutocomplete: failed to include tenant users', e && (e as any).message ? (e as any).message : e);
+    }
+
+    // Convert map to array and apply limit
+    const final = Array.from(resultsMap.entries()).map(([id, label]) => ({ id, label }));
+    if (limit && final.length > Number(limit)) {
+      return final.slice(0, Number(limit));
+    }
+    return final;
   }
 
   async findAndCountAll(args) {

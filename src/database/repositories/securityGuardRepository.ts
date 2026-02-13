@@ -164,30 +164,38 @@ class SecurityGuardRepository {
       throw new Error404();
     }
 
-    record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'governmentId',
-          'fullName',
-          'hiringContractDate',
-          'gender',
-          'isOnDuty',
-          'bloodType',
-          'guardCredentials',
-          'birthDate',
-          'birthPlace',
-          'maritalStatus',
-          'academicInstruction',
-          'address',          
-          'importHash',
-        ]),
-        guardId: data.guard || null,
-        updatedById: currentUser.id,
-      },
-      {
-        transaction,
-      },
-    );
+    // Build an update payload and only include guardId when explicitly provided
+    const payloadToUpdate: any = {
+      ...lodash.pick(data, [
+        'governmentId',
+        'fullName',
+        'hiringContractDate',
+        'gender',
+        'isOnDuty',
+        'bloodType',
+        'guardCredentials',
+        'birthDate',
+        'birthPlace',
+        'maritalStatus',
+        'academicInstruction',
+        'address',          
+        'importHash',
+      ]),
+      updatedById: currentUser.id,
+    };
+
+    if (Object.prototype.hasOwnProperty.call(data, 'guard')) {
+      // Only set guardId when the caller explicitly provided `guard` in payload
+      // and the provided value is not null/undefined. This avoids overwriting
+      // the existing FK with null when the caller meant to leave it unchanged.
+      if (data.guard !== null && typeof data.guard !== 'undefined') {
+        payloadToUpdate.guardId = data.guard;
+      } else {
+        console.warn('securityGuardRepository.update: received explicit guard=null/undefined; skipping guardId update to avoid NOT NULL violation');
+      }
+    }
+
+    record = await record.update(payloadToUpdate, { transaction });
 
     // If updating a draft, allow keeping placeholders when data.isDraft === true
     if (data && data.isDraft) {
@@ -352,6 +360,106 @@ class SecurityGuardRepository {
     return this._fillWithRelationsAndFiles(record, options);
   }
 
+  // Partial update that only touches fields/relations provided in `data`.
+  static async patchUpdate(id, data, options: IRepositoryOptions) {
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    const transaction = SequelizeRepository.getTransaction(options);
+    const currentTenant = SequelizeRepository.getCurrentTenant(options);
+
+    let record = await options.database.securityGuard.findOne({
+      where: { id, tenantId: currentTenant.id },
+      transaction,
+    });
+
+    if (!record) {
+      throw new Error404();
+    }
+
+    const allowed = [
+      'governmentId',
+      'fullName',
+      'hiringContractDate',
+      'gender',
+      'isOnDuty',
+      'bloodType',
+      'guardCredentials',
+      'birthDate',
+      'birthPlace',
+      'maritalStatus',
+      'academicInstruction',
+      'address',
+      'importHash',
+    ];
+
+    const updatePayload: any = {};
+    allowed.forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(data, k)) {
+        updatePayload[k] = data[k];
+      }
+    });
+
+    if (Object.prototype.hasOwnProperty.call(data, 'guard')) {
+      updatePayload.guardId = data.guard || null;
+    }
+
+    // Always set updatedById
+    updatePayload.updatedById = currentUser.id;
+
+    // Apply only provided scalar fields
+    if (Object.keys(updatePayload).length) {
+      record = await record.update(updatePayload, { transaction });
+    }
+
+    // Only update associations/files if present in the payload
+    if (Object.prototype.hasOwnProperty.call(data, 'memos')) {
+      await record.setMemos(data.memos || [], { transaction });
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'requests')) {
+      await record.setRequests(data.requests || [], { transaction });
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'tutoriales')) {
+      await record.setTutoriales(data.tutoriales || [], { transaction });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'profileImage')) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.securityGuard.getTableName(),
+          belongsToColumn: 'profileImage',
+          belongsToId: record.id,
+        },
+        data.profileImage,
+        options,
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'credentialImage')) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.securityGuard.getTableName(),
+          belongsToColumn: 'credentialImage',
+          belongsToId: record.id,
+        },
+        data.credentialImage,
+        options,
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'recordPolicial')) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.securityGuard.getTableName(),
+          belongsToColumn: 'recordPolicial',
+          belongsToId: record.id,
+        },
+        data.recordPolicial,
+        options,
+      );
+    }
+
+    await this._createAuditLog(AuditLogRepository.UPDATE, record, data, options);
+
+    return this.findById(record.id, options);
+  }
+
   static async filterIdInTenant(
     id,
     options: IRepositoryOptions,
@@ -496,6 +604,45 @@ class SecurityGuardRepository {
         includeDeleted = true;
       }
 
+      // If caller asked for archived records, treat archive as either:
+      // - a soft-deleted `securityGuard` row (deletedAt IS NOT NULL), or
+      // - a `tenantUser` entry with status = 'archived' (archive via tenant-user pivot).
+      if (
+        filter.archived === true ||
+        filter.archived === 'true' ||
+        filter.deleted === true ||
+        filter.deleted === 'true'
+      ) {
+        // Ensure we include soft-deleted rows in the result set
+        includeDeleted = true;
+
+        // Find tenantUser entries with status 'archived' for this tenant
+        const tenantUsersArchived = await options.database.tenantUser.findAll({
+          attributes: ['userId'],
+          where: {
+            tenantId: tenant.id,
+            status: 'archived',
+          },
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        const archivedUserIds = (tenantUsersArchived || []).map((t) => t.userId).filter(Boolean);
+
+        // If we have archived tenant users, include securityGuard records whose guardId
+        // references one of those users. Also include any soft-deleted securityGuard rows.
+        if (archivedUserIds.length) {
+          whereAnd.push({
+            [Op.or]: [
+              { deletedAt: { [Op.not]: null } },
+              { guardId: { [Op.in]: archivedUserIds } },
+            ],
+          });
+        } else {
+          // No tenantUsers marked archived; fall back to returning only soft-deleted rows
+          whereAnd.push({ deletedAt: { [Op.not]: null } });
+        }
+      }
+
       // Server-side filter by guard status (e.g. 'active', 'invited', 'pending', 'archived')
       if (filter.status) {
         // Normalize common frontend aliases
@@ -516,6 +663,17 @@ class SecurityGuardRepository {
           if (lower === 'todos' || lower === 'all' || lower === 'any') return 'ALL';
           return lower;
         });
+
+        // Normalize common synonyms: treat 'pending' and 'invited' as equivalent
+        // so frontend options that map to either will return the same results.
+        if (statuses.includes('pending') && !statuses.includes('invited')) {
+          statuses.push('invited');
+        }
+        if (statuses.includes('invited') && !statuses.includes('pending')) {
+          statuses.push('pending');
+        }
+        // Ensure uniqueness
+        statuses = Array.from(new Set(statuses));
 
         // If any requested 'archived', include deleted rows
         if (statuses.includes('archived')) {
@@ -726,6 +884,28 @@ class SecurityGuardRepository {
       tenantId: tenant.id,
     }];
 
+    // Only return guards whose tenantUser.status is 'active'
+    try {
+      const activeTenantUsers = await options.database.tenantUser.findAll({
+        attributes: ['userId'],
+        where: { tenantId: tenant.id, status: 'active' },
+        transaction: SequelizeRepository.getTransaction(options),
+      });
+
+      const activeUserIds = (activeTenantUsers || []).map((t) => t.userId).filter(Boolean);
+      if (!activeUserIds.length) {
+        return [];
+      }
+
+      // Filter securityGuard.guardId to only those users
+      whereAnd.push({
+        guardId: { [Op.in]: activeUserIds },
+      });
+    } catch (e) {
+      // If tenantUser lookup fails, fall back to no extra filter (safe default)
+      console.warn('securityGuardRepository.findAllAutocomplete: failed to filter by active tenant users', e && (e as any).message ? (e as any).message : e);
+    }
+
     if (query) {
       whereAnd.push({
         [Op.or]: [
@@ -745,7 +925,8 @@ class SecurityGuardRepository {
 
     const records = await options.database.securityGuard.findAll(
       {
-        attributes: ['id', 'fullName'],
+        // Include guardId so callers can dedupe results by the underlying user id
+        attributes: ['id', 'fullName', 'guardId'],
         where,
         limit: limit ? Number(limit) : undefined,
         order: [['fullName', 'ASC']],
@@ -755,6 +936,7 @@ class SecurityGuardRepository {
     return records.map((record) => ({
       id: record.id,
       label: record.fullName,
+      guardId: record.guardId,
     }));
   }
 

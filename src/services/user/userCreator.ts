@@ -12,6 +12,7 @@ export default class UserCreator {
   emailsToInvite: Array<any> = [];
   emails: any = [];
   sendInvitationEmails = true;
+  sendVerificationEmails = true;
 
   constructor(options) {
     this.options = options;
@@ -21,27 +22,42 @@ export default class UserCreator {
    * Creates new user(s) via the User page.
    * Sends Invitation Emails if flagged.
    */
-  async execute(data, sendInvitationEmails = true) {
+  async execute(data, sendInvitationEmails = true, sendVerificationEmails = undefined) {
     this.data = data;
     this.sendInvitationEmails = sendInvitationEmails;
+    // If caller explicitly passed sendVerificationEmails use it.
+    // Otherwise, if invitation emails are suppressed, also suppress verification emails
+    // to avoid duplicate emails when higher-level handlers send invitations.
+    if (typeof sendVerificationEmails === 'boolean') {
+      this.sendVerificationEmails = sendVerificationEmails;
+    } else {
+      this.sendVerificationEmails = sendInvitationEmails ? true : false;
+    }
 
     await this._validate();
 
-    try {
-      this.transaction = await SequelizeRepository.createTransaction(
-        this.options.database,
-      );
-
-      await this._addOrUpdateAll();
-
-      await SequelizeRepository.commitTransaction(
-        this.transaction,
-      );
-    } catch (error) {
-      await SequelizeRepository.rollbackTransaction(
-        this.transaction,
-      );
-      throw error;
+    // Process each email in its own transaction to reduce lock contention
+    // across multiple tenant_user/pivot inserts. This changes behavior
+    // from a single shared transaction for all emails, but avoids long-lived
+    // locks that cause ER_LOCK_WAIT_TIMEOUT in high-concurrency scenarios.
+    for (const email of this._emails) {
+      // create a new transaction per email and call _addOrUpdate with it
+      const tx = await SequelizeRepository.createTransaction(this.options.database);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await this._addOrUpdate(email, tx);
+        // commit per-email
+        // eslint-disable-next-line no-await-in-loop
+        await SequelizeRepository.commitTransaction(tx);
+      } catch (err) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await SequelizeRepository.rollbackTransaction(tx);
+        } catch (rbErr) {
+          console.error('Failed to rollback per-email transaction in UserCreator:', rbErr);
+        }
+        throw err;
+      }
     }
 
     if (this._hasEmailsToInvite) {
@@ -85,21 +101,34 @@ export default class UserCreator {
    * Creates or updates many users at once.
    */
   async _addOrUpdateAll() {
-    return Promise.all(
-      this.emails.map((email) => this._addOrUpdate(email)),
-    );
+    // Process sequentially to avoid concurrent writes within the same DB
+    // transaction which can cause deadlocks / lock wait timeouts.
+    const results: any[] = [];
+    for (const email of this.emails) {
+      // await each operation so the DB sees a deterministic sequence
+      // and avoids competing row/table locks created by parallel inserts.
+      // This is important when creating tenant_user and related pivot rows
+      // that may contend on the same tenant/user keys.
+      // Note: We intentionally do not swallow individual errors here —
+      // let the outer transaction handling manage rollback on failure.
+      // Collect results for potential later use.
+      // eslint-disable-next-line no-await-in-loop
+      const r = await this._addOrUpdate(email);
+      results.push(r);
+    }
+    return results;
   }
 
   /**
    * Creates or updates the user passed.
    * If the user already exists, it only adds the role to the user.
    */
-  async _addOrUpdate(email) {
+  async _addOrUpdate(email, tx?) {
     let user = await UserRepository.findByEmailWithoutAvatar(
       email,
       {
         ...this.options,
-        transaction: this.transaction,
+        transaction: tx,
       },
     );
 
@@ -151,7 +180,7 @@ export default class UserCreator {
         createData,
         {
           ...this.options,
-          transaction: this.transaction,
+          transaction: tx,
         },
       );
 
@@ -159,12 +188,12 @@ export default class UserCreator {
       // NOTE: If we're sending invitation emails for these users, prefer
       // sending only the invitation (avoid duplicate email verification messages).
       try {
-        if (!user.emailVerified && !this.sendInvitationEmails) {
+        if (!user.emailVerified && this.sendVerificationEmails) {
           const token = await UserRepository.generateEmailVerificationToken(
             user.email,
             {
               ...this.options,
-              transaction: this.transaction,
+              transaction: tx,
               bypassPermissionValidation: true,
             },
           );
@@ -205,7 +234,7 @@ export default class UserCreator {
         try {
           await UserRepository.updateProfile(user.id, profileUpdate, {
             ...this.options,
-            transaction: this.transaction,
+            transaction: tx,
             bypassPermissionValidation: true,
           });
         } catch (e) {
@@ -247,7 +276,7 @@ export default class UserCreator {
       {
         ...this.options,
         addRoles: true,
-        transaction: this.transaction,
+        transaction: tx,
       },
       clientIds,
       postSiteIds,

@@ -96,18 +96,19 @@ class AuthService {
           console.warn('Email auto-verify during signup failed:', errMsg);
         }
 
-        // Handles onboarding process like
-        // invitation, creation of default tenant,
-        // or default joining the current tenant
-        await this.handleOnboard(
-          existingUser,
-          invitationToken,
-          tenantId,
-          {
-            ...options,
-            transaction,
-          },
-        );
+        // Only handle onboarding when this signup is accepting an invitation
+        // or when performed by an already-authenticated user (e.g., admin creating users).
+        if (invitationToken || (options && options.currentUser)) {
+          await this.handleOnboard(
+            existingUser,
+            invitationToken,
+            tenantId,
+            {
+              ...options,
+              transaction,
+            },
+          );
+        }
 
         // Email may have been alreadyverified using the invitation token
         const isEmailVerified = Boolean(
@@ -213,18 +214,19 @@ class AuthService {
         console.warn('Email auto-verify during signup failed for new user:', errMsg);
       }
 
-      // Handles onboarding process like
-      // invitation, creation of default tenant,
-      // or default joining the current tenant
-      await this.handleOnboard(
-        newUser,
-        invitationToken,
-        tenantId,
-        {
-          ...options,
-          transaction,
-        },
-      );
+      // Only handle onboarding when this signup is accepting an invitation
+      // or when performed by an already-authenticated user (e.g., admin creating users).
+      if (invitationToken || (options && options.currentUser)) {
+        await this.handleOnboard(
+          newUser,
+          invitationToken,
+          tenantId,
+          {
+            ...options,
+            transaction,
+          },
+        );
+      }
 
       // Email may have been alreadyverified using the invitation token
       const isEmailVerified = Boolean(
@@ -688,9 +690,8 @@ class AuthService {
     }
 
     let link;
+    let tenant: any = null;
     try {
-      let tenant;
-
       if (tenantId) {
         tenant = await TenantRepository.findById(
           tenantId,
@@ -714,9 +715,16 @@ class AuthService {
       );
     }
 
+    const vars: any = { link, emailVerification: true };
+    if (options && options.currentUser) {
+      vars.firstName = options.currentUser.firstName || '';
+      vars.lastName = options.currentUser.lastName || '';
+    }
+    if (tenant) vars.tenant = tenant;
+
     return new EmailSender(
       EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION,
-      { link },
+      vars,
     ).sendTo(email);
   }
 
@@ -726,35 +734,48 @@ class AuthService {
     tenantId,
     options,
   ) {
-    // For development: skip email configuration check
-    // if (!EmailSender.isConfigured) {
-    //   throw new Error400(language, 'email.error');
-    // }
+    console.info('[AuthService] sendPasswordResetEmail called', { email, tenantId });
+    // Include stack trace to help find the caller
+    try {
+      const st = new Error().stack;
+      console.debug('[AuthService] sendPasswordResetEmail stack', st);
+    } catch (e) {
+      // ignore
+    }
 
     let link;
 
     try {
-      // If this email already has an active 'invited' tenantUser for the same tenant,
-      // prefer to send only the invitation and skip sending a password reset to avoid duplicates.
-      if (tenantId) {
-        try {
-          const UserRepository = require('../../database/repositories/userRepository').default;
-          const TenantUserRepository = require('../../database/repositories/tenantUserRepository').default;
-          const userRec = await UserRepository.findByEmailWithoutAvatar(email, options);
-          if (userRec && userRec.id) {
-            const tenantUserRec = await TenantUserRepository.findByTenantAndUser(tenantId, userRec.id, options);
+      // Check if the email belongs to a user that currently has an 'invited'
+      // tenantUser. If so, skip sending a password reset to avoid duplicate
+      // messages when performing invites.
+      try {
+        const TenantUserRepositoryLocal = require('../../database/repositories/tenantUserRepository').default;
+        const userRec = await UserRepository.findByEmailWithoutAvatar(email, options);
+        if (userRec && userRec.id) {
+          if (tenantId) {
+            const tenantUserRec = await TenantUserRepositoryLocal.findByTenantAndUser(tenantId, userRec.id, options);
             if (tenantUserRec && tenantUserRec.status === 'invited') {
               console.info('Skipping password reset email because user has an active invitation for tenant', { email, tenantId });
               return true;
             }
+          } else {
+            try {
+              const allTenantUsers = await TenantUserRepositoryLocal.findByUser(userRec.id, options);
+              if (Array.isArray(allTenantUsers) && allTenantUsers.some((tu) => tu && tu.status === 'invited')) {
+                console.info('Skipping password reset email because user has at least one active invitation', { email });
+                return true;
+              }
+            } catch (e) {
+              // ignore and continue
+            }
           }
-        } catch (e) {
-          // non-fatal: continue to normal flow if lookup fails
-          console.warn('Error checking tenantUser invitation before password reset:', e && e.message ? e.message : e);
         }
+      } catch (e) {
+        console.warn('Error checking tenantUser invitation before password reset:', e && typeof e === 'object' && 'message' in e ? (e as any).message : e);
       }
-      let tenant;
 
+      let tenant;
       if (tenantId) {
         tenant = await TenantRepository.findById(
           tenantId,
@@ -786,7 +807,7 @@ class AuthService {
 
     return new EmailSender(
       EmailSender.TEMPLATES.PASSWORD_RESET,
-      { link },
+      { link, passwordReset: true },
     ).sendTo(email);
   }
 

@@ -40,6 +40,21 @@ export default (app) => {
     require('../businessInfo/businessInfoFind').default,
   );
 
+  app.post(
+    `/tenant/:tenantId/post-site/:id/assign-guard`,
+    require('./postSiteAssignGuard').default,
+  );
+
+  app.delete(
+    `/tenant/:tenantId/post-site/:id/guards/:assignmentId`,
+    require('./postSiteRemoveAssignment').default,
+  );
+
+  app.get(
+    `/tenant/:tenantId/post-site/:id/guards`,
+    require('./postSiteAssignedGuards').default,
+  );
+
   // Post site contacts (list by postSiteId)
   app.get(
     `/tenant/:tenantId/post-site/:id/contacts`,

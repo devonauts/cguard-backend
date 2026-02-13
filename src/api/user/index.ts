@@ -24,6 +24,10 @@ export default (app) => {
     `/tenant/:tenantId/user/:id`,
     require('./userEdit').default,
   );
+  app.patch(
+    `/tenant/:tenantId/user/:id`,
+    require('./userPatch').default,
+  );
   app.post(
     `/tenant/:tenantId/user/import`,
     require('./userImport').default,

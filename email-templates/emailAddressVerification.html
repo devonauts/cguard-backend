@@ -1,11 +1,34 @@
-Verify your email for ScaffoldHub
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; background:#f7f8fb; margin:0; padding:24px }
+      .card { max-width:600px; margin:0 auto; background:#ffffff; border-radius:8px; padding:28px; box-shadow:0 4px 20px rgba(16,24,40,0.06) }
+      .logo { text-align:center; margin-bottom:18px }
+      .logo img { height:120px; max-width:320px }
+      h1 { font-size:20px; color:#111827; margin:0 0 12px }
+      p { color:#6b7280; line-height:1.6 }
+      .btn { display:inline-block; background:#f97316; color:white; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:700; text-transform:uppercase }
+      .footer { margin-top:24px; font-size:13px; color:#9ca3af }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="logo">
+        <img src="{{logoUrl}}" alt="GuardsPro" style="height:120px; display:block; margin:0 auto;" />
+      </div>
 
-<p>Hello,</p>
-<p>Follow this link to verify your email address.</p>
-<p><a href="{{link}}">{{link}}</a></p>
-<p>
-  If you didn’t ask to verify this address, you can ignore
-  this email.
-</p>
-<p>Thanks,</p>
-<p>Your ScaffoldHub team</p>
+      <h1>Hola {{firstName}} {{lastName}},</h1>
+
+      <p>Has solicitado verificar tu correo para acceder a <strong>{{tenant.name}}</strong>. Haz clic en el botón de abajo para completar la verificación de tu dirección de correo.</p>
+
+      <p style="text-align:center; margin:22px 0">
+        <a class="btn" href="{{link}}" style="display:inline-block; background:#f97316; color:#ffffff; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; font-family: Arial, Helvetica, sans-serif;">VERIFICAR CORREO</a>
+      </p>
+
+      <p class="footer">Si no solicitaste verificar esta dirección, puedes ignorar este correo. El enlace puede expirar según la configuración del sistema.</p>
+    </div>
+  </body>
+</html>

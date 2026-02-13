@@ -110,27 +110,35 @@ export default async (req, res, next) => {
       options,
     );
 
-    // Merge user important fields and ensure emailVerificationToken is present
+    // Merge user important fields. Do NOT generate an email verification token
+    // during the public invitation fetch — generating the token here causes it
+    // to be persisted prematurely and may trigger a verification email.
     try {
       const guardUser = await options.database.user.findByPk(record.guardId);
-      if (guardUser) {
-        // Only generate email verification token for real emails (not synthetic phone emails)
-        let emailVerificationToken: string | null = null;
-        if (
-          guardUser &&
-          guardUser.email &&
-          guardUser.provider !== 'phone' &&
-          !String(guardUser.email).endsWith('@phone.local')
-        ) {
-          try {
-            emailVerificationToken = await UserRepository.generateEmailVerificationToken(
-              guardUser.email,
-              req,
-            );
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            console.warn('Failed to generate emailVerificationToken for public fetch:', errMsg);
+        if (guardUser) {
+        // If an invitation token was provided in the query, mark the user's
+        // email as verified now (user clicked the invitation link). Do NOT
+        // accept the tenant invitation here — that will be done when the
+        // guard completes the registration form and submits the password.
+        try {
+          if (token && !guardUser.emailVerified) {
+            try {
+              await (UserRepository as any).markEmailVerified(guardUser.id, {
+                currentTenant: tenant || null,
+                currentUser: null,
+                language: req.language,
+                database: db,
+                bypassPermissionValidation: true,
+              });
+              console.log('🔔 [securityGuardPublicFind] marked email verified for user id', guardUser.id);
+              // reflect in payload
+              guardUser.emailVerified = true;
+            } catch (markErr) {
+              console.warn('⚠️ [securityGuardPublicFind] failed to mark email verified:', markErr && (markErr as any).message ? (markErr as any).message : markErr);
+            }
           }
+        } catch (e) {
+          // non-fatal
         }
 
         payload.guard = {
@@ -139,7 +147,7 @@ export default async (req, res, next) => {
           lastName: guardUser.lastName || null,
           email: guardUser.email,
           phoneNumber: guardUser.phoneNumber || null,
-          emailVerificationToken: emailVerificationToken || null,
+          emailVerificationToken: null,
         };
       }
     } catch (err) {
