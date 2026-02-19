@@ -139,6 +139,8 @@ export default class EmailSender {
           if (t.includes('invite') || t.includes('invitation')) return 'invitation.html';
           if (t.includes('password') || t.includes('reset')) return 'passwordReset.html';
           if (t.includes('verify') || t.includes('verification') || t.includes('email')) return 'emailAddressVerification.html';
+          if (t.includes('invoice')) return 'invoice.html';
+          if (t.includes('estimate') || t.includes('quote') || t.includes('presupuesto')) return 'estimate.html';
         }
 
         if (typeof v.template === 'string') {
@@ -146,6 +148,8 @@ export default class EmailSender {
           if (t.includes('invite')) return 'invitation.html';
           if (t.includes('password')) return 'passwordReset.html';
           if (t.includes('verify') || t.includes('email')) return 'emailAddressVerification.html';
+          if (t.includes('invoice')) return 'invoice.html';
+          if (t.includes('estimate') || t.includes('quote') || t.includes('presupuesto')) return 'estimate.html';
         }
 
         // If caller only provided a `link` and no other indicators, prefer email verification UX

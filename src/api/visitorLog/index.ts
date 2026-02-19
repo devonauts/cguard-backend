@@ -1,0 +1,30 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/visitor-log`,
+    require('./visitorLogCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/visitor-log/:id`,
+    require('./visitorLogUpdate').default,
+  );
+  app.post(
+    `/tenant/:tenantId/visitor-log/import`,
+    require('./visitorLogImport').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/visitor-log`,
+    require('./visitorLogDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/visitor-log/autocomplete`,
+    require('./visitorLogAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/visitor-log`,
+    require('./visitorLogList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/visitor-log/:id`,
+    require('./visitorLogFind').default,
+  );
+};

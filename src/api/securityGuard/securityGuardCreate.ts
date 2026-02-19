@@ -134,6 +134,10 @@ export default async (req, res, next) => {
                 fullName: entry.fullName || null,
               },
               false,
+              // Allow callers (frontend) to request email verification emails when creating users
+              // without sending invitations. If the frontend explicitly sets `sendVerificationEmails`,
+              // forward it; otherwise default behavior (false) remains unchanged.
+              (entry && typeof entry.sendVerificationEmails !== 'undefined') ? entry.sendVerificationEmails : undefined,
             );
           } catch (ucErr) {
             console.error('[securityGuardCreate] UserCreator failed (normalizeEntry path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
@@ -357,6 +361,16 @@ export default async (req, res, next) => {
 
             if (isEmail) {
               try {
+                // Server-side uniqueness check: if a user with this email already exists,
+                // return a structured field error so the frontend can map it to the form.
+                const existing = await UserRepository.findByEmailWithoutAvatar(contact, req);
+                if (existing) {
+                  const dupErr: any = new Error('El correo ya está en uso');
+                  dupErr.code = 400;
+                  dupErr.errors = { email: ['El correo ya está en uso'] };
+                  return await ApiResponseHandler.error(req, res, dupErr);
+                }
+
                 await new UserCreator({
                   currentUser: originalCurrentUser || req.currentUser,
                   currentTenant: req.currentTenant,
@@ -371,6 +385,8 @@ export default async (req, res, next) => {
                     fullName: incoming.fullName || null,
                   },
                   false,
+                  // forward explicit request from frontend to send verification emails
+                  (typeof incoming.sendVerificationEmails !== 'undefined') ? incoming.sendVerificationEmails : undefined,
                 );
               } catch (ucErr) {
                 console.error('[securityGuardCreate] UserCreator failed (incoming path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
@@ -401,6 +417,16 @@ export default async (req, res, next) => {
               }
             } else {
               // Phone invite
+              // Check phone uniqueness for direct create flows (prevent creating a new user
+              // when the phone already exists in users table).
+              const existingPhone = await UserRepository.findByPhone(contact, req);
+              if (existingPhone) {
+                const dupErr: any = new Error('El número de teléfono ya está en uso');
+                dupErr.code = 400;
+                dupErr.errors = { phone: ['El número de teléfono ya está en uso'], phoneNumber: ['El número de teléfono ya está en uso'] };
+                return await ApiResponseHandler.error(req, res, dupErr);
+              }
+
               let user = await UserRepository.findByPhone(contact, req);
               if (!user) {
                 const digits = contact.replace(/\D/g, '');

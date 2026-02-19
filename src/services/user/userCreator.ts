@@ -188,7 +188,7 @@ export default class UserCreator {
       // NOTE: If we're sending invitation emails for these users, prefer
       // sending only the invitation (avoid duplicate email verification messages).
       try {
-        if (!user.emailVerified && this.sendVerificationEmails) {
+          if (!user.emailVerified && this.sendVerificationEmails) {
           const token = await UserRepository.generateEmailVerificationToken(
             user.email,
             {
@@ -204,9 +204,18 @@ export default class UserCreator {
             )}/auth/verify-email?token=${token}`;
 
             try {
+              const vars: any = {
+                link,
+                tenant: this.options.currentTenant,
+                guard: {
+                  firstName: (this.data && this.data.firstName) || (user && user.firstName) || null,
+                  lastName: (this.data && this.data.lastName) || (user && user.lastName) || null,
+                  email: user && user.email,
+                },
+              };
               await new EmailSender(
                 EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION,
-                { link },
+                vars,
               ).sendTo(user.email);
             } catch (err) {
               console.error('Failed to send email verification in UserCreator:', err);

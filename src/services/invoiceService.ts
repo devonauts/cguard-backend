@@ -7,6 +7,7 @@ import ClientAccountRepository from '../database/repositories/clientAccountRepos
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import NotificationService from './notificationService';
 import sendgridMail from '@sendgrid/mail';
+import EmailSender from './emailSender';
 
 
 export default class InvoiceService {
@@ -350,7 +351,15 @@ export default class InvoiceService {
     const billingY = midBoxY + innerPad;
     // client name
     const client = invoice.rawClient || (invoice.client && typeof invoice.client === 'object' ? invoice.client : null);
-    const clientName = client ? (client.name || client.companyName || client.fullName || '') : (typeof invoice.client === 'string' ? invoice.client : '-');
+    const clientName = client
+      ? (
+        (client.fullName && String(client.fullName).trim())
+        || ((String(client.firstName || '').trim() + ' ' + String(client.lastName || '').trim()).trim())
+        || client.name
+        || client.companyName
+        || ''
+      )
+      : (typeof invoice.client === 'string' ? invoice.client : '-');
     doc.font('Helvetica-Bold').fontSize(10).fillColor('#6b7280').text('Facturar a', billingX, billingY);
     doc.font('Helvetica-Bold').fontSize(12).fillColor('#111827').text(clientName || '-', billingX, billingY + 16);
     const billingLines: string[] = [];
@@ -591,6 +600,30 @@ export default class InvoiceService {
 
         await sendgridMail.send(msg);
         emailSent = true;
+      }
+      // Fallback: use local template sender when SendGrid not configured
+      if (to && !emailSent) {
+        try {
+          const tenant = SequelizeRepository.getCurrentTenant(this.options) || null;
+          const vars: any = {
+            tenant: tenant || {},
+            firstName: (client && (client.firstName || client.name || client.fullName)) || '',
+            lastName: (client && (client.lastName || '')) || '',
+            email: (client && (client.email || client.contactEmail || client.contact_email)) || '',
+            id: record.id,
+            invoiceNumber: record.invoiceNumber || record.id,
+            total: Number(record.total || 0).toFixed(2),
+            link: `${(getConfig().APP_URL || '').replace(/\/$/, '')}/tenant/${SequelizeRepository.getCurrentTenant(this.options).id}/invoice/${id}/download?format=pdf`,
+            template: 'invoice',
+          };
+          const sender = new EmailSender(null, vars);
+          const res = await sender.sendTo(to);
+          emailSent = Boolean(res);
+          emailedTo = to;
+        } catch (e) {
+          // ignore fallback errors
+          emailSent = false;
+        }
       }
     } catch (err) {
       // Log and continue — sending should not crash the flow

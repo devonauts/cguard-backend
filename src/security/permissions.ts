@@ -191,6 +191,14 @@ class Permissions {
       patrolLogRead: createPermission('patrolLogRead', [...ALL_STAFF_ROLES, roles.customer]),
       patrolLogAutocomplete: createPermission('patrolLogAutocomplete', ALL_STAFF_ROLES),
 
+      // === VISITOR LOGS / BITÁCORA DE VISITANTES ===
+      visitorLogImport: createPermission('visitorLogImport', SUPERVISOR_ROLES),
+      visitorLogCreate: createPermission('visitorLogCreate', GUARD_ROLES),
+      visitorLogEdit: createPermission('visitorLogEdit', SUPERVISOR_ROLES),
+      visitorLogDestroy: createPermission('visitorLogDestroy', SUPERVISOR_ROLES),
+      visitorLogRead: createPermission('visitorLogRead', [...ALL_STAFF_ROLES, roles.customer]),
+      visitorLogAutocomplete: createPermission('visitorLogAutocomplete', ALL_STAFF_ROLES),
+
       // === REPORTS ===
       reportImport: createPermission('reportImport', SUPERVISOR_ROLES),
       reportCreate: createPermission('reportCreate', GUARD_ROLES),

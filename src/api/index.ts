@@ -111,6 +111,7 @@ require('./additionalService').default(routes);
 require('./patrolCheckpoint').default(routes);
 require('./patrolLog').default(routes);
 require('./patrol').default(routes);
+require('./visitorLog').default(routes);
 require('./station').default(routes);
 require('./billing').default(routes);
 require('./tax').default(routes);

@@ -1,0 +1,182 @@
+{
+  "info": {
+    "name": "Visitor Log - CRUD",
+    "_postman_id": "visitor-log-collection",
+    "description": "Colección para probar CRUD de visitor-log y flujo de subida de cédula.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api" },
+    { "key": "tenantId", "value": "<TENANT_ID>" },
+    { "key": "token", "value": "<BEARER_TOKEN>" },
+    { "key": "uploadUrl", "value": "" },
+    { "key": "privateUrl", "value": "" },
+    { "key": "visitorLogId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 - File: Credentials",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/file/credentials?filename=cedula.jpg&storageId=securityGuardCredentialImage",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","file","credentials"],
+          "query": [
+            { "key": "filename", "value": "cedula.jpg" },
+            { "key": "storageId", "value": "securityGuardCredentialImage" }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json && json.uploadCredentials && json.uploadCredentials.url) {",
+              "  pm.environment.set('uploadUrl', json.uploadCredentials.url);",
+              "}",
+              "if (json && json.privateUrl) {",
+              "  pm.environment.set('privateUrl', json.privateUrl);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - File: Upload (use uploadUrl)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "filename", "value": "cedula.jpg", "type": "text" },
+            { "key": "file", "type": "file", "src": [] }
+          ]
+        },
+        "url": {
+          "raw": "{{uploadUrl}}",
+          "host": ["{{uploadUrl}}"]
+        }
+      }
+    },
+    {
+      "name": "3 - VisitorLog: Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": {\n    \"visitDate\": \"2026-02-18T10:00:00.000Z\",\n    \"lastName\": \"Perez\",\n    \"firstName\": \"Maria\",\n    \"idNumber\": \"12345678\",\n    \"reason\": \"Visita\",\n    \"numPeople\": 2,\n    \"exitTime\": null,\n    \"idPhoto\": [\n      {\n        \"name\": \"cedula.jpg\",\n        \"sizeInBytes\": 12345,\n        \"privateUrl\": \"{{privateUrl}}\",\n        \"publicUrl\": null,\n        \"new\": true\n      }\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/visitor-log",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","visitor-log"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json && json.id) {",
+              "  pm.environment.set('visitorLogId', json.id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - VisitorLog: Get One",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/visitor-log/{{visitorLogId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","visitor-log","{{visitorLogId}}"]
+        }
+      }
+    },
+    {
+      "name": "5 - VisitorLog: Update",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"data\": {\n    \"exitTime\": \"2026-02-18T12:00:00.000Z\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/visitor-log/{{visitorLogId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","visitor-log","{{visitorLogId}}"]
+        }
+      }
+    },
+    {
+      "name": "6 - VisitorLog: List",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/visitor-log?limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","visitor-log"],
+          "query": [ { "key": "limit", "value": "20" } ]
+        }
+      }
+    },
+    {
+      "name": "7 - VisitorLog: Autocomplete",
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/visitor-log/autocomplete?query=",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","visitor-log","autocomplete"],
+          "query": [ { "key": "query", "value": "" } ]
+        }
+      }
+    },
+    {
+      "name": "8 - VisitorLog: Delete",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"ids\": [\"{{visitorLogId}}\"] }"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/tenant/{{tenantId}}/visitor-log",
+          "host": ["{{baseUrl}}"],
+          "path": ["tenant","{{tenantId}}","visitor-log"]
+        }
+      }
+    }
+  ]
+}

@@ -9,6 +9,8 @@ import UserRepository from '../database/repositories/userRepository';
 import Sequelize from 'sequelize';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import EmailSender from './emailSender';
+import { tenantSubdomain } from './tenantSubdomain';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
 import Roles from '../security/roles';
 
@@ -288,6 +290,36 @@ export default class SecurityGuardService {
             } catch (e) {
               console.warn('⚠️ [SecurityGuardService.create] failed to mark email verified for new user id', user.id, e && (e as any).message ? (e as any).message : e);
             }
+          } else if (data.sendVerificationEmails) {
+            // For manual creates (not invitation completion) where frontend explicitly
+            // requested verification emails, generate token and send verification email.
+            try {
+              const token = await UserRepository.generateEmailVerificationToken(
+                user.email,
+                { ...this.options, transaction, bypassPermissionValidation: true },
+              );
+
+              const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+              const link = `${tenantSubdomain.frontendUrl(currentTenant)}/auth/verify-email?token=${token}`;
+              const templateId = EmailSender.TEMPLATES && EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION ? EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION : null;
+              try {
+                const vars: any = {
+                  link,
+                  tenant: currentTenant,
+                  guard: {
+                    firstName: data.firstName || (user && user.firstName) || null,
+                    lastName: data.lastName || (user && user.lastName) || null,
+                    email: user && user.email,
+                  },
+                };
+                await new EmailSender(templateId, vars).sendTo(user.email);
+                console.log('🔔 [SecurityGuardService.create] sent verification email for user', user.email);
+              } catch (sendErr) {
+                console.warn('⚠️ [SecurityGuardService.create] failed to send verification email for user', user.email, sendErr && (sendErr as any).message ? (sendErr as any).message : sendErr);
+              }
+            } catch (tokenErr) {
+              console.warn('⚠️ [SecurityGuardService.create] failed to generate verification token for user', user.email, tokenErr && (tokenErr as any).message ? (tokenErr as any).message : tokenErr);
+            }
           }
         }
       }
@@ -304,6 +336,28 @@ export default class SecurityGuardService {
         ...this.options,
         transaction,
       });
+
+      // Ensure user's profile fields are persisted for manual creates.
+      // Some flows may have updated the user earlier; as a final step, persist
+      // any provided firstName/lastName/fullName to avoid regressions where
+      // these values were not stored due to branching logic.
+      try {
+        if (data.guard && (data.firstName || data.lastName || data.fullName)) {
+          await UserRepository.updateProfile(
+            data.guard,
+            {
+              ...(data.firstName ? { firstName: data.firstName } : {}),
+              ...(data.lastName ? { lastName: data.lastName } : {}),
+              ...(data.fullName ? { fullName: data.fullName } : {}),
+              ...(data.phoneNumber || data.phone ? { phoneNumber: data.phoneNumber || data.phone } : {}),
+            },
+            { ...this.options, transaction, bypassPermissionValidation: true },
+          );
+          console.log('🔧 [SecurityGuardService.create] ensured user profile persisted for user id', data.guard);
+        }
+      } catch (e) {
+        console.warn('⚠️ [SecurityGuardService.create] failed to persist final user profile update:', (e && (e as any).message) ? (e as any).message : e);
+      }
 
       // Ensure user's password and verification status are persisted for all flows.
       try {

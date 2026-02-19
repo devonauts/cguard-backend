@@ -8,6 +8,8 @@ import ClientAccountRepository from '../database/repositories/clientAccountRepos
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import InvoiceService from './invoiceService';
 import NotificationService from './notificationService';
+import sendgridMail from '@sendgrid/mail';
+import EmailSender from './emailSender';
 
 const PDFDocument = require('pdfkit');
 
@@ -168,22 +170,104 @@ export default class EstimateService {
   }
 
   async send(id) {
-    // Minimal send implementation: verify exists and optionally create a notification.
+    // Enhanced send implementation: generate PDF, attempt SendGrid, fallback to local template
     const record = await EstimateRepository.findById(id, this.options);
+
+    if (!record) {
+      throw new Error('Estimate not found');
+    }
+
+    // Try to generate PDF (non-fatal)
+    let pdfBuffer: Buffer | null = null;
+    try {
+      const file = await this.exportToFile(id, 'pdf');
+      pdfBuffer = file.buffer;
+    } catch (err) {
+      pdfBuffer = null;
+    }
+
+    let emailSent = false;
+    let emailedTo: string | null = null;
+
+    try {
+      const client = record.rawClient || (record.client && typeof record.client === 'object' ? record.client : null);
+      const to = client && (client.email || client.contactEmail || client.contact_email);
+      emailedTo = to || null;
+
+      if (to && getConfig().SENDGRID_KEY && getConfig().SENDGRID_EMAIL_FROM) {
+        sendgridMail.setApiKey(getConfig().SENDGRID_KEY);
+
+        const msg: any = {
+          to,
+          from: getConfig().SENDGRID_EMAIL_FROM,
+          subject: `Presupuesto ${record.estimateNumber || record.id}`,
+          text: `Adjunto encontrará el presupuesto ${record.estimateNumber || record.id}`,
+        };
+
+        if (pdfBuffer) {
+          msg.attachments = [
+            {
+              content: pdfBuffer.toString('base64'),
+              filename: `${record.estimateNumber || record.id}.pdf`,
+              type: 'application/pdf',
+              disposition: 'attachment',
+            },
+          ];
+        }
+
+        await sendgridMail.send(msg);
+        emailSent = true;
+      }
+
+      // Fallback with EmailSender local template
+      if (to && !emailSent) {
+        try {
+          const tenant = SequelizeRepository.getCurrentTenant(this.options) || null;
+          const vars: any = {
+            tenant: tenant || {},
+            firstName: (client && (client.firstName || client.name || client.fullName)) || '',
+            lastName: (client && (client.lastName || '')) || '',
+            email: (client && (client.email || client.contactEmail || client.contact_email)) || '',
+            id: record.id,
+            estimateNumber: record.estimateNumber || record.id,
+            total: Number(record.total || 0).toFixed(2),
+            link: `${(getConfig().APP_URL || '').replace(/\/$/, '')}/tenant/${SequelizeRepository.getCurrentTenant(this.options).id}/estimate/${id}/download?format=pdf`,
+            template: 'estimate',
+          };
+          const sender = new EmailSender(null, vars);
+          const res = await sender.sendTo(to);
+          emailSent = Boolean(res);
+          emailedTo = to;
+        } catch (e) {
+          emailSent = false;
+        }
+      }
+    } catch (e) {
+      // log and continue
+      // eslint-disable-next-line no-console
+      console.error('Failed to send estimate email', e);
+    }
+
+    try {
+      // mark as sent
+      await EstimateRepository.update(id, { status: 'Enviado', sentAt: new Date() }, this.options);
+    } catch (e) {
+      // ignore update errors
+    }
 
     try {
       const notificationService = new NotificationService(this.options);
-      // Try to create a lightweight notification for internal tracking. Not all clients have users.
       await notificationService.create({
         title: `Estimación enviada: ${record.estimateNumber || record.id}`,
         body: `La estimación ${record.estimateNumber || record.id} ha sido marcada como enviada.`,
         whoCreatedTheNotification: this.options.currentUser && this.options.currentUser.id ? this.options.currentUser.id : null,
       });
     } catch (e) {
-      // swallow notification errors — sending should not fail because of notification
+      // swallow notification errors
     }
 
-    return record;
+    const updated = await EstimateRepository.findById(id, this.options);
+    return { estimate: updated, emailSent, emailedTo };
   }
 
   async convert(id) {
@@ -311,7 +395,15 @@ export default class EstimateService {
 
     // Left column - Client (compact: only name to avoid duplicating full contact info)
     const client = estimate.rawClient || (estimate.client && typeof estimate.client === 'object' ? estimate.client : null);
-    const clientName = client ? (client.name || client.companyName || client.fullName || '') : (typeof estimate.client === 'string' ? estimate.client : '—');
+    const clientName = client
+      ? (
+        (client.fullName && String(client.fullName).trim())
+        || ((String(client.firstName || '').trim() + ' ' + String(client.lastName || '').trim()).trim())
+        || client.name
+        || client.companyName
+        || ''
+      )
+      : (typeof estimate.client === 'string' ? estimate.client : '—');
     // omit client name in header (show only inside billing box)
     let cursorY = y;
 

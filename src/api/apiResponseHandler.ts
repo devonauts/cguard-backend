@@ -36,11 +36,16 @@ export default class ApiResponseHandler {
       }
 
       // Return structured JSON so frontends can display localized messages reliably.
-      const payload = {
+      const payload: any = {
         message: localizedMessage,
         code: error.code,
         messageCode: error.messageCode || null,
       };
+
+      // If the thrown error carried field-level validation errors, include them
+      if (error && (error as any).errors) {
+        payload.errors = (error as any).errors;
+      }
       res.status(error.code).json(payload);
     } else {
       console.error(error);
