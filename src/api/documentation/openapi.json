@@ -10,6 +10,20 @@
       "url": "http://localhost:8080"
     }
   ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
   "paths": {
     "/tenant/{tenantId}/additional-service": {
       "post": {
@@ -1439,6 +1453,7 @@
           "businessInfo"
         ],
         "summary": "POST /tenant/:tenantId/business-info",
+        "description": "{\r\n \n \"summary\": \"Create business info\",\r\n \n \"description\": \"Create a business (post site) for the tenant. Requires authentication.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -1514,6 +1529,7 @@
           "businessInfo"
         ],
         "summary": "GET /tenant/:tenantId/business-info",
+        "description": "{\r\n \n \"summary\": \"List business info\",\r\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -1599,6 +1615,7 @@
           "businessInfo"
         ],
         "summary": "GET /tenant/:tenantId/business-info/:id",
+        "description": "{\r\n \n \"summary\": \"Find business info\",\r\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -9140,6 +9157,7 @@
           "postSite"
         ],
         "summary": "POST /tenant/:tenantId/post-site",
+        "description": "{\r\n \n \"summary\": \"Create business info\",\r\n \n \"description\": \"Create a business (post site) for the tenant. Requires authentication.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -9215,6 +9233,7 @@
           "postSite"
         ],
         "summary": "GET /tenant/:tenantId/post-site",
+        "description": "{\r\n \n \"summary\": \"List business info\",\r\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -9300,6 +9319,7 @@
           "postSite"
         ],
         "summary": "GET /tenant/:tenantId/post-site/:id",
+        "description": "{\r\n \n \"summary\": \"Find business info\",\r\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -11144,6 +11164,7 @@
           "securityGuard"
         ],
         "summary": "POST /tenant/:tenantId/security-guard",
+        "description": "{\r\n \n \"summary\": \"Create guard\",\r\n \n \"description\": \"Create a security guard for the tenant. Requires authentication.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -11219,6 +11240,7 @@
           "securityGuard"
         ],
         "summary": "GET /tenant/:tenantId/security-guard",
+        "description": "{\r\n \n \"summary\": \"List guards\",\r\n \n \"description\": \"List security guards with pagination and filters. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -11354,6 +11376,7 @@
           "securityGuard"
         ],
         "summary": "GET /tenant/:tenantId/security-guard/:id",
+        "description": "{\r\n \n \"summary\": \"Find guard\",\r\n \n \"description\": \"Retrieve a security guard by id. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Security guard object\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
