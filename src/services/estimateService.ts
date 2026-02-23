@@ -234,7 +234,7 @@ export default class EstimateService {
             link: `${(getConfig().APP_URL || '').replace(/\/$/, '')}/tenant/${SequelizeRepository.getCurrentTenant(this.options).id}/estimate/${id}/download?format=pdf`,
             template: 'estimate',
           };
-          const sender = new EmailSender(null, vars);
+          const sender = new EmailSender('', vars);
           const res = await sender.sendTo(to);
           emailSent = Boolean(res);
           emailedTo = to;

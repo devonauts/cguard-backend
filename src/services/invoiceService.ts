@@ -616,7 +616,7 @@ export default class InvoiceService {
             link: `${(getConfig().APP_URL || '').replace(/\/$/, '')}/tenant/${SequelizeRepository.getCurrentTenant(this.options).id}/invoice/${id}/download?format=pdf`,
             template: 'invoice',
           };
-          const sender = new EmailSender(null, vars);
+          const sender = new EmailSender('', vars);
           const res = await sender.sendTo(to);
           emailSent = Boolean(res);
           emailedTo = to;

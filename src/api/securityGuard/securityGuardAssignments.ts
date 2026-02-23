@@ -28,7 +28,7 @@ export default async (req, res) => {
           guardUserId = incomingId;
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('securityGuardAssignments: failed to resolve security guard', e && e.message ? e.message : e);
       guardUserId = incomingId;
     }

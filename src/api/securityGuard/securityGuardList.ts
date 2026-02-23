@@ -64,7 +64,7 @@ export default async (req, res, next) => {
       const rowsCount = payload && Array.isArray(payload.rows) ? payload.rows.length : (payload && payload.rows ? Object.keys(payload.rows).length : 0);
       const reportedCount = payload && typeof payload.count === 'number' ? payload.count : null;
       console.debug('[securityGuardList] debug:', { tenantId: tenantIdDebug, rowsCount, reportedCount, sampleRows: (payload && payload.rows ? (Array.isArray(payload.rows) ? payload.rows.slice(0,5).map(r=>({id:r.id, guardId: r.guardId || r.guard && r.guard.id, fullName: r.fullName})) : payload.rows) : null) });
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[securityGuardList] debug logging failed', e && e.message ? e.message : e);
     }
 
