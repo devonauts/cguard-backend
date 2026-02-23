@@ -1,6 +1,14 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+/**
+ * @openapi {
+ *  "summary": "Create service",
+ *  "description": "Creates a new service entry.",
+ *  "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+ *  "responses": { "200": { "description": "Created" } }
+ * }
+ */
 import ServiceService from '../../services/serviceService';
 
 export default async (req, res, next) => {

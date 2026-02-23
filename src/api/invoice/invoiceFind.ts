@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "Find invoice",
+ *  "description": "Retrieve an invoice by id.",
+ *  "responses": { "200": { "description": "Invoice object" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

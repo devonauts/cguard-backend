@@ -1,6 +1,14 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+/**
+ * @openapi {
+ *  "summary": "Create client account",
+ *  "description": "Creates a new client account for the tenant.",
+ *  "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+ *  "responses": { "200": { "description": "Created" } }
+ * }
+ */
 import ClientAccountService from '../../services/clientAccountService';
 
 export default async (req, res, next) => {

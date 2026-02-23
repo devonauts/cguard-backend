@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "Find client account",
+ *  "description": "Retrieve a client account by id.",
+ *  "responses": { "200": { "description": "Client account object" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

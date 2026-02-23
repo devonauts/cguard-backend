@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "Find service",
+ *  "description": "Retrieve a service by id.",
+ *  "responses": { "200": { "description": "Service object" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

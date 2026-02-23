@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "List invoices",
+ *  "description": "List invoices with filters and pagination.",
+ *  "responses": { "200": { "description": "Paginated list" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

@@ -2320,6 +2320,7 @@
           "clientAccount"
         ],
         "summary": "POST /tenant/:tenantId/client-account",
+        "description": "{\r\n \n \"summary\": \"Create client account\",\r\n \n \"description\": \"Creates a new client account for the tenant.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -2395,6 +2396,7 @@
           "clientAccount"
         ],
         "summary": "GET /tenant/:tenantId/client-account",
+        "description": "{\r\n \n \"summary\": \"List client accounts\",\r\n \n \"description\": \"List client accounts with pagination and filters.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -2480,6 +2482,7 @@
           "clientAccount"
         ],
         "summary": "GET /tenant/:tenantId/client-account/:id",
+        "description": "{\r\n \n \"summary\": \"Find client account\",\r\n \n \"description\": \"Retrieve a client account by id.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Client account object\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -6440,6 +6443,7 @@
           "invoice"
         ],
         "summary": "POST /tenant/:tenantId/invoice",
+        "description": "{\r\n \n \"summary\": \"Create invoice\",\r\n \n \"description\": \"Creates a new invoice for a client.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -6482,6 +6486,7 @@
           "invoice"
         ],
         "summary": "GET /tenant/:tenantId/invoice",
+        "description": "{\r\n \n \"summary\": \"List invoices\",\r\n \n \"description\": \"List invoices with filters and pagination.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -6567,6 +6572,7 @@
           "invoice"
         ],
         "summary": "GET /tenant/:tenantId/invoice/:id",
+        "description": "{\r\n \n \"summary\": \"Find invoice\",\r\n \n \"description\": \"Retrieve an invoice by id.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Invoice object\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -11961,6 +11967,7 @@
           "service"
         ],
         "summary": "POST /tenant/:tenantId/service",
+        "description": "{\r\n \n \"summary\": \"Create service\",\r\n \n \"description\": \"Creates a new service entry.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -12036,6 +12043,7 @@
           "service"
         ],
         "summary": "GET /tenant/:tenantId/service",
+        "description": "{\r\n \n \"summary\": \"List services\",\r\n \n \"description\": \"List services with pagination and filters.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -12121,6 +12129,7 @@
           "service"
         ],
         "summary": "GET /tenant/:tenantId/service/:id",
+        "description": "{\r\n \n \"summary\": \"Find service\",\r\n \n \"description\": \"Retrieve a service by id.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Service object\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",

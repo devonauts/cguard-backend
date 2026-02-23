@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "List client accounts",
+ *  "description": "List client accounts with pagination and filters.",
+ *  "responses": { "200": { "description": "Paginated list" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
