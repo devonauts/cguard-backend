@@ -119,6 +119,16 @@ function buildSpec(routes) {
       description: 'Auto-generated OpenAPI spec (minimal) — run tools/generate-openapi.js to regenerate with more details.',
     },
     servers: [{ url: process.env.API_BASE_URL || 'http://localhost:8080' }],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT'
+        }
+      }
+    },
+    security: [{ bearerAuth: [] }],
     paths: {},
   };
 

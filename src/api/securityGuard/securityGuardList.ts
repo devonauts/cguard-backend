@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "List guards",
+ *  "description": "List security guards with pagination and filters. Requires authentication.",
+ *  "responses": { "200": { "description": "Paginated list" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

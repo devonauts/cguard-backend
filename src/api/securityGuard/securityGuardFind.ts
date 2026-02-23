@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "Find guard",
+ *  "description": "Retrieve a security guard by id. Requires authentication.",
+ *  "responses": { "200": { "description": "Security guard object" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

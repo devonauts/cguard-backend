@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "Find business info",
+ *  "description": "Retrieve a business info (post site) by id. Requires authentication.",
+ *  "responses": { "200": { "description": "Business info object" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

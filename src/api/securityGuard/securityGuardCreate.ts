@@ -1,6 +1,14 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+/**
+ * @openapi {
+ *  "summary": "Create guard",
+ *  "description": "Create a security guard for the tenant. Requires authentication.",
+ *  "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+ *  "responses": { "200": { "description": "Created" } }
+ * }
+ */
 import SecurityGuardService from '../../services/securityGuardService';
 import Error400 from '../../errors/Error400';
 import moment from 'moment';

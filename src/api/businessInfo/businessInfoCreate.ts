@@ -1,6 +1,14 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+/**
+ * @openapi {
+ *  "summary": "Create business info",
+ *  "description": "Create a business (post site) for the tenant. Requires authentication.",
+ *  "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+ *  "responses": { "200": { "description": "Created" } }
+ * }
+ */
 import BusinessInfoService from '../../services/businessInfoService';
 
 export default async (req, res, next) => {
