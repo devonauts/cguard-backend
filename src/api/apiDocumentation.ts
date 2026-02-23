@@ -32,6 +32,18 @@ export default function setupSwaggerUI(app) {
     res.send(indexContent);
   };
 
+  const patchInitializer = function patchInitializer(req, res) {
+    try {
+      const initContent = fs.readFileSync(`${swaggerUiAssetPath}/swagger-initializer.js`).toString();
+      const patched = initContent.replace(/url:\s*"[^"]*"\s*,/, 'url: "/documentation-config",');
+      res.setHeader('Content-Type', 'application/javascript');
+      res.send(patched);
+    } catch (err) {
+      // fallback to sending original file
+      res.sendFile(`${swaggerUiAssetPath}/swagger-initializer.js`);
+    }
+  };
+
   app.get(
     '/documentation',
     function getSwaggerRoot(req, res) {
@@ -44,6 +56,7 @@ export default function setupSwaggerUI(app) {
     },
   );
   app.get('/documentation/index.html', patchIndex);
+  app.get('/documentation/swagger-initializer.js', patchInitializer);
 
   app.use('/documentation', swaggerFiles);
 }
