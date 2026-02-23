@@ -1,3 +1,24 @@
+/**
+ * @openapi {
+ *  "summary": "Create a user",
+ *  "description": "Creates a new user in the tenant.",
+ *  "requestBody": {
+ *    "content": {
+ *      "application/json": {
+ *        "schema": {
+ *          "type": "object",
+ *          "properties": {
+ *            "emails": { "type": "array", "items": { "type": "string" } },
+ *            "fullName": { "type": "string" },
+ *            "roles": { "type": "array", "items": { "type": "string" } }
+ *          }
+ *        }
+ *      }
+ *    }
+ *  },
+ *  "responses": { "200": { "description": "OK" } }
+ * }
+ */
 import UserCreator from '../../services/user/userCreator';
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';

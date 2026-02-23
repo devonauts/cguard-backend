@@ -82,6 +82,13 @@ class Permissions {
       certificationRead: createPermission('certificationRead', ALL_STAFF_ROLES),
       certificationAutocomplete: createPermission('certificationAutocomplete', ALL_STAFF_ROLES),
 
+      // === LICENSE TYPES ===
+      licenseTypeCreate: createPermission('licenseTypeCreate', MANAGEMENT_ROLES),
+      licenseTypeEdit: createPermission('licenseTypeEdit', MANAGEMENT_ROLES),
+      licenseTypeDestroy: createPermission('licenseTypeDestroy', MANAGEMENT_ROLES),
+      licenseTypeRead: createPermission('licenseTypeRead', ALL_STAFF_ROLES),
+      licenseTypeAutocomplete: createPermission('licenseTypeAutocomplete', ALL_STAFF_ROLES),
+
       // === SECURITY GUARD MANAGEMENT ===
       securityGuardImport: createPermission('securityGuardImport', HR_ROLES),
       securityGuardCreate: createPermission('securityGuardCreate', HR_ROLES),

@@ -1,3 +1,17 @@
+/**
+ * @openapi {
+ *  "summary": "Edit a user",
+ *  "description": "Updates an existing user by id or payload.",
+ *  "requestBody": {
+ *    "content": {
+ *      "application/json": {
+ *        "schema": { "type": "object" }
+ *      }
+ *    }
+ *  },
+ *  "responses": { "200": { "description": "OK" } }
+ * }
+ */
 import UserEditor from '../../services/user/userEditor';
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';

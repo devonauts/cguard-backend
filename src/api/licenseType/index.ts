@@ -1,0 +1,26 @@
+export default (app) => {
+  app.post(
+    `/tenant/:tenantId/license-type`,
+    require('./licenseTypeCreate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/license-type/:id`,
+    require('./licenseTypeUpdate').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/license-type`,
+    require('./licenseTypeDestroy').default,
+  );
+  app.get(
+    `/tenant/:tenantId/license-type/autocomplete`,
+    require('./licenseTypeAutocomplete').default,
+  );
+  app.get(
+    `/tenant/:tenantId/license-type`,
+    require('./licenseTypeList').default,
+  );
+  app.get(
+    `/tenant/:tenantId/license-type/:id`,
+    require('./licenseTypeFind').default,
+  );
+};

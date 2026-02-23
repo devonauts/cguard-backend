@@ -103,6 +103,7 @@ require('./certification').default(routes);
 require('./securityGuard').default(routes);
 require('./clientAccount').default(routes);
 require('./category').default(routes);
+require('./licenseType').default(routes);
 require('./representanteEmpresa').default(routes);
 require('./incident').default(routes);
 require('./incidentType').default(routes);

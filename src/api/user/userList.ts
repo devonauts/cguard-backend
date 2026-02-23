@@ -1,3 +1,10 @@
+/**
+ * @openapi {
+ *  "summary": "List users",
+ *  "description": "List users with pagination and filters.",
+ *  "responses": { "200": { "description": "Paginated list of users" } }
+ * }
+ */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

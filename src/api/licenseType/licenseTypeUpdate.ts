@@ -1,24 +1,17 @@
-/**
- * @openapi {
- *  "summary": "Find a user",
- *  "description": "Retrieve a user by id.",
- *  "responses": { "200": { "description": "User object" } }
- * }
- */
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
-import UserRepository from '../../database/repositories/userRepository';
 import Permissions from '../../security/permissions';
+import LicenseTypeService from '../../services/licenseTypeService';
 
-export default async (req, res) => {
+export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(
-      Permissions.values.userRead,
+      Permissions.values.licenseTypeEdit,
     );
 
-    const payload = await UserRepository.findById(
+    const payload = await new LicenseTypeService(req).update(
       req.params.id,
-      req,
+      req.body,
     );
 
     await ApiResponseHandler.success(req, res, payload);
