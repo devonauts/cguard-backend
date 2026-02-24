@@ -1,13 +1,18 @@
 require('dotenv').config();
 
-import models from '../models';
+// Don't import models at top-level; require after setting any env/config
 import { getConfig } from '../../config';
 
 async function run() {
   try {
+    // Ensure dialect resolution happens before creating Sequelize
+    const dialect = (process.env.DATABASE_DIALECT || getConfig().DATABASE_DIALECT || 'mysql').toLowerCase();
+    process.env.DATABASE_DIALECT = dialect;
+
+    // Require models after env is set
+    const models = require('../models').default;
     const db = models();
     const sequelize = db.sequelize;
-    const dialect = (process.env.DATABASE_DIALECT || getConfig().DATABASE_DIALECT || 'mysql').toLowerCase();
 
     console.log('Running alter for dialect:', dialect);
 

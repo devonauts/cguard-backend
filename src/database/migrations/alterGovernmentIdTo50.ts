@@ -1,6 +1,9 @@
 require('dotenv').config();
 
-import models from '../models';
+// NOTE: don't import `models` at module top-level because that file
+// constructs Sequelize immediately. We need to set `DATABASE_DIALECT`
+// first (below) and then require models() so Sequelize gets a valid
+// dialect value.
 import { getConfig } from '../../config';
 
 async function run() {
@@ -16,6 +19,9 @@ async function run() {
 
     console.log('Running alterGovernmentIdTo50 for dialect:', dialect);
 
+    // Require models after we've set process.env so the Sequelize
+    // constructor receives the dialect. Use require to avoid hoisting.
+    const models = require('../models').default;
     const db = models();
     const sequelize = db.sequelize;
 

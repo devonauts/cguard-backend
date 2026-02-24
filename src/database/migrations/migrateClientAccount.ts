@@ -9,10 +9,13 @@ https://github.com/devonauts/cguard-backend.git
 
 require('dotenv').config();
 
-import models from '../models';
+// Avoid importing `models` at module top-level (it instantiates Sequelize).
 import { QueryInterface } from 'sequelize';
 
 async function migrate() {
+    // Require models here after dotenv/config is applied so that
+    // environment-based config is available when Sequelize is created.
+    const models = require('../models').default;
     const { sequelize } = models();
     const queryInterface: QueryInterface = sequelize.getQueryInterface();
 
