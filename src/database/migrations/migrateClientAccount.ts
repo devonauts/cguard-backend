@@ -4,6 +4,9 @@
  * 
  * IMPORTANT: Make a backup of your database before running this!
  */
+
+https://github.com/devonauts/cguard-backend.git
+
 require('dotenv').config();
 
 import models from '../models';

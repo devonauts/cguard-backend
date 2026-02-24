@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 import models from '../models';
 import { getConfig } from '../../config';
 
