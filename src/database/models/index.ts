@@ -14,9 +14,10 @@ function models() {
   const database = {} as any;
 
   // Resolve dialect with precedence: env var -> config -> default 'mysql'
-  const resolvedDialect = (
-    (process.env.DATABASE_DIALECT as string) || getConfig().DATABASE_DIALECT || 'mysql'
-  ).toLowerCase();
+  // Resolve dialect with precedence: env var -> config -> default 'mysql'
+  const rawDial = (process.env.DATABASE_DIALECT as string) || getConfig().DATABASE_DIALECT || 'mysql';
+  const cleaned = (typeof rawDial === 'string' ? rawDial.trim().toLowerCase() : rawDial) || 'mysql';
+  const resolvedDialect = ['undefined', 'null', ''].includes(cleaned) ? 'mysql' : cleaned;
 
   // Debug: show what dialect we resolved (helps diagnose migrations)
   try {
@@ -27,10 +28,8 @@ function models() {
     // ignore logging errors in environments that restrict console
   }
 
-  if (!process.env.DATABASE_DIALECT) {
-    // Expose the resolved dialect to callers that rely on process.env
-    process.env.DATABASE_DIALECT = resolvedDialect;
-  }
+  // Ensure process.env has a sane value (some .env files set 'undefined' as text)
+  process.env.DATABASE_DIALECT = process.env.DATABASE_DIALECT || resolvedDialect;
 
   let sequelize = new (<any>Sequelize)(
     getConfig().DATABASE_DATABASE,

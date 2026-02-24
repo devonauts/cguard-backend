@@ -7,9 +7,10 @@ async function run() {
   // Ensure a dialect is set before importing any migration files.
   // Some migrations (or modules they import) instantiate Sequelize
   // at module-eval time and require `process.env.DATABASE_DIALECT`.
-  const resolvedDialect = (
-    process.env.DATABASE_DIALECT || getConfig().DATABASE_DIALECT || 'mysql'
-  ).toLowerCase();
+  // Normalize/clean dialect values: ignore literal strings like 'undefined'/'null'.
+  const rawDial = (process.env.DATABASE_DIALECT || getConfig().DATABASE_DIALECT || 'mysql');
+  const cleaned = (typeof rawDial === 'string' ? rawDial.trim().toLowerCase() : rawDial) || 'mysql';
+  const resolvedDialect = ['undefined', 'null', ''].includes(cleaned) ? 'mysql' : cleaned;
   process.env.DATABASE_DIALECT = resolvedDialect;
   console.log('run-migrations: using DATABASE_DIALECT=', process.env.DATABASE_DIALECT);
   const migrationsDir = path.resolve(__dirname);
