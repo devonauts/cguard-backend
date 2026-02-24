@@ -18,6 +18,14 @@ async function migrate() {
       process.exit(1);
     }
 
+    // Ensure parent table `clientAccounts` exists before creating FKs
+    try {
+      await queryInterface.describeTable('clientAccounts');
+    } catch (err) {
+      console.error('Required parent table `clientAccounts` does not exist. Run the migration that creates clientAccounts first (or create the table manually).');
+      process.exit(1);
+    }
+
     await queryInterface.createTable('tenant_user_client_accounts', {
       id: {
         type: DataTypes.UUID,
