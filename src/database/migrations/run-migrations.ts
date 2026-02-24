@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import { getConfig } from '../../config';
+import { spawn } from 'child_process';
 async function run() {
   dotenv.config();
   // Ensure a dialect is set before importing any migration files.
@@ -29,14 +30,30 @@ async function run() {
   for (const file of files) {
     const full = path.join(migrationsDir, file);
     console.log('\n--- Running migration:', file, '---');
+
+    // Run each migration in a separate process to isolate module-level
+    // imports (some migrations import application `models` which may
+    // initialize Sequelize at import time). We use `npx ts-node` so
+    // TypeScript files run directly.
     try {
-      // Use dynamic import so the migration's top-level code executes
-      const imported = await import(full);
-      // If the migration exports a `migrate` function, call it for safety
-      if (imported && typeof imported.migrate === 'function') {
-        await imported.migrate();
-      }
-      console.log(`✅ Migration ${file} executed (imported).`);
+      await new Promise<void>((resolve, reject) => {
+        const childEnv = Object.assign({}, process.env, {
+          DATABASE_DIALECT: process.env.DATABASE_DIALECT,
+        });
+        const child = spawn('npx', ['ts-node', full], {
+          env: childEnv,
+          stdio: 'inherit',
+          shell: false,
+        });
+
+        child.on('error', (err) => reject(err));
+        child.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`migration process exited with code ${code}`));
+        });
+      });
+
+      console.log(`✅ Migration ${file} executed (child process).`);
     } catch (err) {
       console.error(`❌ Migration ${file} failed:`, err);
       process.exit(1);
