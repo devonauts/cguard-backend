@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-
+import dotenv from 'dotenv';
 async function run() {
+  dotenv.config();
   const migrationsDir = path.resolve(__dirname);
   console.log('Migrations dir:', migrationsDir);
 
