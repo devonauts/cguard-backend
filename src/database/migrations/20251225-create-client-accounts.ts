@@ -55,12 +55,31 @@ async function migrate() {
       deletedAt: { type: DataTypes.DATE, allowNull: true },
     });
 
-    // Add indexes similar to the model
-    await queryInterface.addIndex('clientAccounts', ['importHash', 'tenantId'], {
-      unique: true,
-      name: 'clientAccounts_importHash_tenantId_unique',
-      where: { deletedAt: null },
-    });
+    // Add indexes similar to the model (skip if already present)
+    try {
+      const existing = await queryInterface.showIndex('clientAccounts');
+      const hasIndex = Array.isArray(existing) && existing.some((i: any) => i && i.name === 'clientAccounts_importHash_tenantId_unique');
+      if (!hasIndex) {
+        await queryInterface.addIndex('clientAccounts', ['importHash', 'tenantId'], {
+          unique: true,
+          name: 'clientAccounts_importHash_tenantId_unique',
+          where: { deletedAt: null },
+        });
+      } else {
+        console.log('Index clientAccounts_importHash_tenantId_unique already exists, skipping');
+      }
+    } catch (err) {
+      // In case showIndex is not supported or fails, try to add and ignore duplicate-key errors
+      try {
+        await queryInterface.addIndex('clientAccounts', ['importHash', 'tenantId'], {
+          unique: true,
+          name: 'clientAccounts_importHash_tenantId_unique',
+          where: { deletedAt: null },
+        });
+      } catch (e) {
+        console.log('Could not add index (may already exist), continuing');
+      }
+    }
 
     console.log('✅ clientAccounts created');
     process.exit(0);
