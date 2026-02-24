@@ -34,6 +34,10 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: false,
       },
+      incidentTypeId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    
