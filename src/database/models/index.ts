@@ -13,6 +13,16 @@ const basename = path.basename(__filename);
 function models() {
   const database = {} as any;
 
+  // Resolve dialect with precedence: env var -> config -> default 'mysql'
+  const resolvedDialect = (
+    (process.env.DATABASE_DIALECT as string) || getConfig().DATABASE_DIALECT || 'mysql'
+  ).toLowerCase();
+
+  if (!process.env.DATABASE_DIALECT) {
+    // Expose the resolved dialect to callers that rely on process.env
+    process.env.DATABASE_DIALECT = resolvedDialect;
+  }
+
   let sequelize = new (<any>Sequelize)(
     getConfig().DATABASE_DATABASE,
     getConfig().DATABASE_USERNAME,
@@ -20,8 +30,8 @@ function models() {
     {
       host: getConfig().DATABASE_HOST,
       port: getConfig().DATABASE_PORT || 3307,
-      dialect: getConfig().DATABASE_DIALECT,
-        timezone: getConfig().DATABASE_TIMEZONE || '+00:00',
+      dialect: resolvedDialect,
+      timezone: getConfig().DATABASE_TIMEZONE || '+00:00',
       logging:
         getConfig().DATABASE_LOGGING === 'true'
           ? (log) =>
