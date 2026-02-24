@@ -67,12 +67,57 @@ async function migrate() {
     });
 
     console.log('Creating indexes for tenant_user_client_accounts...');
-    await queryInterface.addIndex('tenant_user_client_accounts', ['tenantUserId', 'clientAccountId'], {
-      unique: true,
-      name: 'tenant_user_client_unique',
-    });
-    await queryInterface.addIndex('tenant_user_client_accounts', ['tenantUserId']);
-    await queryInterface.addIndex('tenant_user_client_accounts', ['clientAccountId']);
+    try {
+      const existing = await queryInterface.showIndex('tenant_user_client_accounts');
+      const hasComposite = Array.isArray(existing) && existing.some((i: any) => {
+        if (!i || !i.fields) return false;
+        const fields = i.fields.map((f: any) => (f.attribute || f.name || f.field));
+        return fields.includes('tenantUserId') && fields.includes('clientAccountId') && i.unique === true;
+      });
+
+      if (!hasComposite) {
+        await queryInterface.addIndex('tenant_user_client_accounts', ['tenantUserId', 'clientAccountId'], {
+          unique: true,
+          name: 'tenant_user_client_unique',
+        });
+      } else {
+        console.log('Index tenant_user_client_unique already exists, skipping');
+      }
+
+      const hasTenantIdx = Array.isArray(existing) && existing.some((i: any) => {
+        if (!i || !i.fields) return false;
+        const fields = i.fields.map((f: any) => (f.attribute || f.name || f.field));
+        return fields.length === 1 && fields[0] === 'tenantUserId';
+      });
+      if (!hasTenantIdx) {
+        await queryInterface.addIndex('tenant_user_client_accounts', ['tenantUserId']);
+      } else {
+        console.log('Index on tenantUserId already exists, skipping');
+      }
+
+      const hasClientIdx = Array.isArray(existing) && existing.some((i: any) => {
+        if (!i || !i.fields) return false;
+        const fields = i.fields.map((f: any) => (f.attribute || f.name || f.field));
+        return fields.length === 1 && fields[0] === 'clientAccountId';
+      });
+      if (!hasClientIdx) {
+        await queryInterface.addIndex('tenant_user_client_accounts', ['clientAccountId']);
+      } else {
+        console.log('Index on clientAccountId already exists, skipping');
+      }
+    } catch (err) {
+      // If showIndex isn't supported or fails, fallback to attempting to add and ignore duplicate-key errors
+      try {
+        await queryInterface.addIndex('tenant_user_client_accounts', ['tenantUserId', 'clientAccountId'], {
+          unique: true,
+          name: 'tenant_user_client_unique',
+        });
+      } catch (e) {
+        console.log('Could not add composite index (may already exist), continuing');
+      }
+      try { await queryInterface.addIndex('tenant_user_client_accounts', ['tenantUserId']); } catch (e) { /* ignore */ }
+      try { await queryInterface.addIndex('tenant_user_client_accounts', ['clientAccountId']); } catch (e) { /* ignore */ }
+    }
 
     console.log('✅ tenant_user_client_accounts created');
     process.exit(0);
