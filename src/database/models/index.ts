@@ -18,6 +18,15 @@ function models() {
     (process.env.DATABASE_DIALECT as string) || getConfig().DATABASE_DIALECT || 'mysql'
   ).toLowerCase();
 
+  // Debug: show what dialect we resolved (helps diagnose migrations)
+  try {
+    console.log('models/index.ts: resolvedDialect=', resolvedDialect);
+    console.log('models/index.ts: process.env.DATABASE_DIALECT=', process.env.DATABASE_DIALECT);
+    console.log('models/index.ts: getConfig().DATABASE_DIALECT=', getConfig().DATABASE_DIALECT);
+  } catch (e) {
+    // ignore logging errors in environments that restrict console
+  }
+
   if (!process.env.DATABASE_DIALECT) {
     // Expose the resolved dialect to callers that rely on process.env
     process.env.DATABASE_DIALECT = resolvedDialect;
