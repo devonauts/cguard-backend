@@ -156,6 +156,10 @@ export default function (sequelize, DataTypes) {
 
     models.tenant.hasMany(models.tenantUser, {
       as: 'users',
+      foreignKey: {
+        allowNull: false,
+      },
+      onDelete: 'CASCADE',
     });
 
     models.tenant.belongsTo(models.file, {

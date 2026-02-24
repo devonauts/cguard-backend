@@ -101,6 +101,7 @@ export default function (sequelize, DataTypes) {
       foreignKey: {
         allowNull: false,
       },
+      onDelete: 'CASCADE',
     });
 
     models.tenantUser.belongsTo(models.user, {
