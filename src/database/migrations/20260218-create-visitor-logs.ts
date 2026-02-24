@@ -8,6 +8,19 @@ async function migrate() {
   const queryInterface: QueryInterface = sequelize.getQueryInterface();
 
   try {
+    // Check if table already exists; if so, skip creation (idempotent migration)
+    let tableExists = true;
+    try {
+      await queryInterface.describeTable('visitorLogs');
+    } catch (err) {
+      tableExists = false;
+    }
+
+    if (tableExists) {
+      console.log('Table visitorLogs already exists, skipping creation');
+      process.exit(0);
+    }
+
     console.log('Creating visitorLogs table...');
 
     await queryInterface.createTable('visitorLogs', {
