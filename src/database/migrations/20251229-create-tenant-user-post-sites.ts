@@ -10,6 +10,14 @@ async function migrate() {
   try {
     console.log('Creating tenant_user_post_sites table...');
 
+    // Ensure parent table `tenantUsers` exists before creating FKs
+    try {
+      await queryInterface.describeTable('tenantUsers');
+    } catch (err) {
+      console.error('Required parent table `tenantUsers` does not exist. Run the migration that creates tenant users first.');
+      process.exit(1);
+    }
+
     await queryInterface.createTable('tenant_user_post_sites', {
       id: {
         type: DataTypes.UUID,
