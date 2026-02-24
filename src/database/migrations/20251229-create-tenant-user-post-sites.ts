@@ -18,6 +18,14 @@ async function migrate() {
       process.exit(1);
     }
 
+    // Ensure parent table `businessInfos` exists before creating FKs
+    try {
+      await queryInterface.describeTable('businessInfos');
+    } catch (err) {
+      console.error('Required parent table `businessInfos` does not exist. Create the `businessInfos` table first (run `npm run db:create` or add a migration that creates it).');
+      process.exit(1);
+    }
+
     await queryInterface.createTable('tenant_user_post_sites', {
       id: {
         type: DataTypes.UUID,
