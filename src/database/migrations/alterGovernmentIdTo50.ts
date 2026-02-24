@@ -1,10 +1,11 @@
 require('dotenv').config();
 
-// NOTE: don't import `models` at module top-level because that file
-// constructs Sequelize immediately. We need to set `DATABASE_DIALECT`
-// first (below) and then require models() so Sequelize gets a valid
-// dialect value.
+// Use a local Sequelize instance in this migration to avoid importing
+// the application's `models` module (which constructs Sequelize and
+// may run before we ensure the dialect is set). This keeps the
+// migration self-contained.
 import { getConfig } from '../../config';
+import { Sequelize } from 'sequelize';
 
 async function run() {
   try {
@@ -19,11 +20,20 @@ async function run() {
 
     console.log('Running alterGovernmentIdTo50 for dialect:', dialect);
 
-    // Require models after we've set process.env so the Sequelize
-    // constructor receives the dialect. Use require to avoid hoisting.
-    const models = require('../models').default;
-    const db = models();
-    const sequelize = db.sequelize;
+    // Create a standalone Sequelize instance for this migration.
+    const cfg = getConfig();
+    const sequelize = new Sequelize(
+      cfg.DATABASE_DATABASE,
+      cfg.DATABASE_USERNAME,
+      cfg.DATABASE_PASSWORD,
+      {
+        host: cfg.DATABASE_HOST,
+        port: cfg.DATABASE_PORT || 3307,
+        dialect: dialect as any,
+        timezone: cfg.DATABASE_TIMEZONE || '+00:00',
+        logging: false,
+      },
+    );
 
     if (dialect === 'postgres' || dialect === 'postgresql') {
       console.log('Executing Postgres ALTER...');
@@ -36,6 +46,7 @@ async function run() {
     }
 
     console.log('Done. Verify your schema and restart the server.');
+    await sequelize.close();
     process.exit(0);
   } catch (err) {
     console.error('Migration failed:', err);
