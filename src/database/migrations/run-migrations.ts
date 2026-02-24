@@ -1,8 +1,17 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import { getConfig } from '../../config';
 async function run() {
   dotenv.config();
+  // Ensure a dialect is set before importing any migration files.
+  // Some migrations (or modules they import) instantiate Sequelize
+  // at module-eval time and require `process.env.DATABASE_DIALECT`.
+  const resolvedDialect = (
+    process.env.DATABASE_DIALECT || getConfig().DATABASE_DIALECT || 'mysql'
+  ).toLowerCase();
+  process.env.DATABASE_DIALECT = resolvedDialect;
+  console.log('run-migrations: using DATABASE_DIALECT=', process.env.DATABASE_DIALECT);
   const migrationsDir = path.resolve(__dirname);
   console.log('Migrations dir:', migrationsDir);
 
