@@ -6,8 +6,8 @@ require('dotenv').config();
 
 import models from '../models';
 
-models()
-  .sequelize.sync()
+  models()
+    .sequelize.sync({ alter: false })
   .then(() => {
     console.log('OK');
     process.exit();
