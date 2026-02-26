@@ -27,12 +27,20 @@ async function seedAdmin() {
     // Busca o crea un tenant genérico
     let tenant = await db.tenant.findOne({ where: { name: 'Empresa Admin' } });
     if (!tenant) {
-        tenant = await db.tenant.create({
+        const tenantDefaults = {
             name: 'Empresa Admin',
             url: 'admin',
             plan: 'free',
             planStatus: 'active',
-        });
+            // Campos obligatorios en el modelo Tenant — puede sobreescribir vía ENV
+            address: process.env.SEED_TENANT_ADDRESS || 'Sin dirección',
+            phone: process.env.SEED_TENANT_PHONE || '+0000000000',
+            email: process.env.SEED_TENANT_CONTACT_EMAIL || 'admin-tenant@cguard.com',
+            taxNumber: process.env.SEED_TENANT_TAX_NUMBER || 'N/A',
+            businessTitle: process.env.SEED_TENANT_BUSINESS_TITLE || 'Empresa Admin',
+        };
+
+        tenant = await db.tenant.create(tenantDefaults);
     }
 
     // Crea el usuario admin
