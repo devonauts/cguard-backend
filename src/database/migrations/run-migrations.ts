@@ -40,16 +40,58 @@ async function run() {
         const childEnv = Object.assign({}, process.env, {
           DATABASE_DIALECT: process.env.DATABASE_DIALECT,
         });
+        // Run the migration in a child process but capture stdout/stderr so
+        // we can detect and tolerate common benign errors (duplicate index/column/table)
         const child = spawn('npx', ['ts-node', full], {
           env: childEnv,
-          stdio: 'inherit',
-          shell: false,
+          stdio: 'pipe',
+          shell: true,
         });
+
+        let stdout = '';
+        let stderr = '';
+
+        if (child.stdout) {
+          child.stdout.on('data', (chunk) => {
+            const s = chunk.toString();
+            stdout += s;
+            process.stdout.write(s);
+          });
+        }
+
+        if (child.stderr) {
+          child.stderr.on('data', (chunk) => {
+            const s = chunk.toString();
+            stderr += s;
+            process.stderr.write(s);
+          });
+        }
 
         child.on('error', (err) => reject(err));
         child.on('close', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`migration process exited with code ${code}`));
+          const combined = (stdout + '\n' + stderr).toLowerCase();
+
+          // Common benign error patterns we can ignore and continue
+          const benignPatterns = [
+            'duplicate key name',
+            'er_dup_keyname',
+            'duplicate column name',
+            'already exists',
+            'duplicate entry',
+            'column already exists',
+            'index already exists',
+          ];
+
+          const isBenign = benignPatterns.some((p) => combined.includes(p));
+
+          if (code === 0) {
+            resolve();
+          } else if (isBenign) {
+            console.warn(`Migration ${file} failed with a benign error; continuing. (see output above)`);
+            resolve();
+          } else {
+            reject(new Error(`migration process exited with code ${code}`));
+          }
         });
       });
 

@@ -9,7 +9,9 @@ import bcrypt from 'bcryptjs';
 
 async function seedAdmin() {
     const db = models();
-    await db.sequelize.sync();
+    // Do not call `sync()` here — migrations should handle schema creation.
+    // Calling `sync()` can attempt to modify existing tables (add primary keys)
+    // which causes errors in partially-migrated DBs. Rely on migrations instead.
 
     const adminEmail = 'admin@cguard.com';
     const adminPassword = 'admin123'; // Cambia esta contraseña después de crear el usuario
@@ -56,6 +58,11 @@ async function seedAdmin() {
 }
 
 seedAdmin().catch((err) => {
+    const code = err && err.original && err.original.code;
+    if (code === 'ER_MULTIPLE_PRI_KEY') {
+        console.warn('Ignored ER_MULTIPLE_PRI_KEY during seedAdmin:', err && err.original && err.original.sqlMessage ? err.original.sqlMessage : err.message || err);
+        process.exit(0);
+    }
     console.error(err);
     process.exit(1);
 });

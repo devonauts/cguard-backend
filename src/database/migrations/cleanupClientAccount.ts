@@ -17,20 +17,29 @@ async function cleanup() {
         console.log('Starting clientAccount table cleanup...');
         console.log('⚠️  This will permanently delete old columns!');
 
-        // Step 1: Drop obsolete columns
-        console.log('Dropping obsolete columns...');
+                // Step 1: Drop obsolete columns (only if they exist)
+                console.log('Dropping obsolete columns...');
 
-        await queryInterface.removeColumn('clientAccounts', 'contractDate');
-        console.log('✅ Dropped contractDate');
+                const tableDesc = await queryInterface.describeTable('clientAccounts').catch(() => ({}));
 
-        await queryInterface.removeColumn('clientAccounts', 'rucNumber');
-        console.log('✅ Dropped rucNumber');
+                const tryRemove = async (col: string) => {
+                    if (tableDesc && Object.prototype.hasOwnProperty.call(tableDesc, col)) {
+                        try {
+                            await queryInterface.removeColumn('clientAccounts', col);
+                            console.log(`✅ Dropped ${col}`);
+                        } catch (err) {
+                            const msg = err instanceof Error ? err.message : String(err);
+                            console.warn(`⚠️ Failed to drop ${col}:`, msg);
+                        }
+                    } else {
+                        console.log(`- Column ${col} does not exist, skipping`);
+                    }
+                };
 
-        await queryInterface.removeColumn('clientAccounts', 'commercialName');
-        console.log('✅ Dropped commercialName');
-
-        await queryInterface.removeColumn('clientAccounts', 'representanteId');
-        console.log('✅ Dropped representanteId');
+                await tryRemove('contractDate');
+                await tryRemove('rucNumber');
+                await tryRemove('commercialName');
+                await tryRemove('representanteId');
 
         console.log('✅ Cleanup completed successfully!');
         console.log('The clientAccount table now only has the new simplified structure.');

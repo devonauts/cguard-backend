@@ -15,18 +15,29 @@ class VisitorLogRepository {
     const tenant = SequelizeRepository.getCurrentTenant(options);
     const transaction = SequelizeRepository.getTransaction(options);
 
+    const toCreate = {
+      ...lodash.pick(data, [
+        'visitDate',
+        'lastName',
+        'firstName',
+        'idNumber',
+        'reason',
+        'exitTime',
+        'numPeople',
+        'importHash',
+        'clientId',
+        'postSiteId',
+      ]),
+    };
+
+    // Normalize empty exitTime to null
+    if (!toCreate.exitTime) {
+      toCreate.exitTime = null;
+    }
+
     const record = await options.database.visitorLog.create(
       {
-        ...lodash.pick(data, [
-          'visitDate',
-          'lastName',
-          'firstName',
-          'idNumber',
-          'reason',
-          'exitTime',
-          'numPeople',
-          'importHash',
-        ]),
+        ...toCreate,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -63,18 +74,29 @@ class VisitorLogRepository {
       throw new Error404();
     }
 
+    const toUpdate = {
+      ...lodash.pick(data, [
+        'visitDate',
+        'lastName',
+        'firstName',
+        'idNumber',
+        'reason',
+        'exitTime',
+        'numPeople',
+        'importHash',
+        'clientId',
+        'postSiteId',
+      ]),
+    };
+
+    // Normalize empty exitTime to null
+    if (toUpdate.exitTime === '' || toUpdate.exitTime === undefined) {
+      toUpdate.exitTime = null;
+    }
+
     record = await record.update(
       {
-        ...lodash.pick(data, [
-          'visitDate',
-          'lastName',
-          'firstName',
-          'idNumber',
-          'reason',
-          'exitTime',
-          'numPeople',
-          'importHash',
-        ]),
+        ...toUpdate,
         updatedById: currentUser.id,
       },
       { transaction },
@@ -276,6 +298,30 @@ class VisitorLogRepository {
     });
 
     output.idPhoto = await FileRepository.fillDownloadUrl(files);
+
+    // Attach client information if present
+    if (output.clientId) {
+      try {
+        const client = await options.database.clientAccount.findByPk(
+          output.clientId,
+        );
+        output.client = client ? client.get({ plain: true }) : null;
+      } catch (err) {
+        output.client = null;
+      }
+    }
+
+    // Attach postSite information if present
+    if (output.postSiteId) {
+      try {
+        const postSite = await options.database.businessInfo.findByPk(
+          output.postSiteId,
+        );
+        output.postSite = postSite ? postSite.get({ plain: true }) : null;
+      } catch (err) {
+        output.postSite = null;
+      }
+    }
 
     return output;
   }

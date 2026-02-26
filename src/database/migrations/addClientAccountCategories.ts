@@ -18,7 +18,16 @@ async function migrate() {
 
     // Step 1: Create the junction table
     console.log('Creating clientAccountCategories table...');
-    await queryInterface.createTable('clientAccountCategories', {
+    // Create table only if it does not exist
+    let tableExists = true;
+    try {
+      await queryInterface.describeTable('clientAccountCategories');
+    } catch (err) {
+      tableExists = false;
+    }
+
+    if (!tableExists) {
+      await queryInterface.createTable('clientAccountCategories', {
       id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
@@ -56,30 +65,61 @@ async function migrate() {
         type: DataTypes.DATE,
         allowNull: true,
       },
-    });
+      });
+    }
 
     console.log('✅ Table created successfully');
 
     // Step 2: Create indexes
     console.log('Creating indexes...');
-    await queryInterface.addIndex('clientAccountCategories', ['clientAccountId', 'categoryId'], {
-      unique: true,
-      name: 'client_account_categories_unique',
-    });
-    await queryInterface.addIndex('clientAccountCategories', ['clientAccountId']);
-    await queryInterface.addIndex('clientAccountCategories', ['categoryId']);
+    const existingIndexesRaw = await queryInterface.showIndex('clientAccountCategories').catch(() => []);
+    const existingIndexes = Array.isArray(existingIndexesRaw) ? existingIndexesRaw as any[] : [];
+    const indexNames = existingIndexes.map((i: any) => i.name || i.constraintName).filter(Boolean);
+
+    if (!indexNames.includes('client_account_categories_unique')) {
+      await queryInterface.addIndex('clientAccountCategories', ['clientAccountId', 'categoryId'], {
+        unique: true,
+        name: 'client_account_categories_unique',
+      });
+    } else {
+      console.log('Index client_account_categories_unique already exists, skipping');
+    }
+
+    if (!indexNames.includes('client_account_categories_clientAccountId')) {
+      await queryInterface.addIndex('clientAccountCategories', ['clientAccountId']);
+    } else {
+      console.log('Index client_account_categories_clientAccountId already exists, skipping');
+    }
+
+    if (!indexNames.includes('client_account_categories_categoryId')) {
+      await queryInterface.addIndex('clientAccountCategories', ['categoryId']);
+    } else {
+      console.log('Index client_account_categories_categoryId already exists, skipping');
+    }
     console.log('✅ Indexes created');
 
     // Step 3: Migrate existing data from categoryId to junction table
     console.log('Migrating existing categoryId data...');
-    const [clientsWithCategory] = await sequelize.query(`
-      SELECT id, categoryId 
-      FROM clientAccounts 
-      WHERE categoryId IS NOT NULL 
-      AND deletedAt IS NULL
-    `);
 
-    if (clientsWithCategory && (clientsWithCategory as any[]).length > 0) {
+    // Check if the old column `categoryId` exists before querying
+    let clientAccountsDesc: any = {};
+    try {
+      clientAccountsDesc = await queryInterface.describeTable('clientAccounts');
+    } catch (err) {
+      clientAccountsDesc = {};
+    }
+
+    if (!clientAccountsDesc || !clientAccountsDesc['categoryId']) {
+      console.log('No old column `categoryId` found on clientAccounts; skipping migration of categoryId data');
+    } else {
+      const [clientsWithCategory] = await sequelize.query(`
+        SELECT id, categoryId 
+        FROM clientAccounts 
+        WHERE categoryId IS NOT NULL 
+        AND deletedAt IS NULL
+      `);
+
+      if (clientsWithCategory && (clientsWithCategory as any[]).length > 0) {
       console.log(`Found ${(clientsWithCategory as any[]).length} clients with categories to migrate`);
       
       for (const client of clientsWithCategory as any[]) {
@@ -94,8 +134,7 @@ async function migrate() {
         });
       }
       console.log(`✅ Migrated ${(clientsWithCategory as any[]).length} category associations`);
-    } else {
-      console.log('No existing category associations to migrate');
+    }
     }
 
     // Step 4: Optional - Remove old categoryId column (commented out for safety)
