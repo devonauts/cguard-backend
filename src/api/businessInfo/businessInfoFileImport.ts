@@ -43,7 +43,7 @@ export default [
               const sample = incomingFile.buffer.toString('utf8', 0, Math.min(1024, incomingFile.buffer.length));
               console.log('🔍 businessInfoFileImport: CSV sample (first 1024 chars) ->', sample.replace(/\r\n/g, '\\n').slice(0, 1024));
             } catch (e) {
-              console.warn('🔍 businessInfoFileImport: could not stringify buffer sample', e && e.message ? e.message : e);
+              console.warn('🔍 businessInfoFileImport: could not stringify buffer sample', (e && (e as any).message) ? (e as any).message : String(e));
             }
 
             const { Readable } = require('stream');
@@ -53,7 +53,7 @@ export default [
             try {
               await workbook.csv.read(rs);
             } catch (errCsv) {
-              console.warn('🔍 businessInfoFileImport: workbook.csv.read failed', errCsv && errCsv.message ? errCsv.message : errCsv);
+              console.warn('🔍 businessInfoFileImport: workbook.csv.read failed', (errCsv && (errCsv as any).message) ? (errCsv as any).message : String(errCsv));
               // Fall through to try xlsx.load or manual CSV parse below
               throw errCsv;
             }
@@ -62,7 +62,7 @@ export default [
           }
         } catch (e) {
           // If ExcelJS xlsx.load fails (e.g., CSV sent as XLSX), attempt manual CSV parse fallback
-          console.warn('businessInfoFileImport: ExcelJS read failed, attempting CSV/manual fallback', e && e.message ? e.message : e);
+          console.warn('businessInfoFileImport: ExcelJS read failed, attempting CSV/manual fallback', (e && (e as any).message) ? (e as any).message : String(e));
           try {
             // If the file looks like CSV, try manual parse
             const looksLikeCsv = lowerName.endsWith('.csv') || (incomingFile.mimetype || '').includes('csv') || (incomingFile.buffer && incomingFile.buffer.toString('utf8',0,16).includes(','));
@@ -90,7 +90,7 @@ export default [
               throw e;
             }
           } catch (e2) {
-            console.error('businessInfoFileImport: manual CSV fallback also failed', e2 && e2.message ? e2.message : e2);
+            console.error('businessInfoFileImport: manual CSV fallback also failed', (e2 && (e2 as any).message) ? (e2 as any).message : String(e2));
             throw e2;
           }
         }

@@ -45,7 +45,7 @@ export default [
               const sample = incomingFile.buffer.toString('utf8', 0, Math.min(1024, incomingFile.buffer.length));
               console.log('🔍 clientAccountImport: CSV sample (first 1024 chars) ->', sample.replace(/\r\n/g, '\\n').slice(0, 1024));
             } catch (e) {
-              console.warn('🔍 clientAccountImport: could not stringify buffer sample', e && e.message ? e.message : e);
+              console.warn('🔍 clientAccountImport: could not stringify buffer sample', (e && (e as any).message) ? (e as any).message : String(e));
             }
 
             // Crear stream a partir del buffer para que ExcelJS pueda leer CSV
@@ -58,19 +58,19 @@ export default [
             try {
               await workbook.csv.read(rs);
             } catch (errCsv) {
-              console.warn('🔍 clientAccountImport: workbook.csv.read failed', errCsv && errCsv.message ? errCsv.message : errCsv);
+              console.warn('🔍 clientAccountImport: workbook.csv.read failed', (errCsv && (errCsv as any).message) ? (errCsv as any).message : String(errCsv));
               throw errCsv;
             }
           } else {
             await workbook.xlsx.load(incomingFile.buffer);
           }
         } catch (e) {
-          console.warn('clientAccountImport: ExcelJS read failed, attempting xlsx.load fallback', e && e.message ? e.message : e);
+          console.warn('clientAccountImport: ExcelJS read failed, attempting xlsx.load fallback', (e && (e as any).message) ? (e as any).message : String(e));
           // Fallback intentar como xlsx
           try {
             await workbook.xlsx.load(incomingFile.buffer);
           } catch (e2) {
-            console.error('clientAccountImport: xlsx.load fallback also failed', e2 && e2.message ? e2.message : e2);
+            console.error('clientAccountImport: xlsx.load fallback also failed', (e2 && (e2 as any).message) ? (e2 as any).message : String(e2));
             throw e2;
           }
         }
@@ -223,7 +223,7 @@ export default [
             }
           }
         } catch (e) {
-          console.warn('🔍 clientAccountImport: manual CSV parse fallback failed', e && e.message ? e.message : e);
+          console.warn('🔍 clientAccountImport: manual CSV parse fallback failed', (e && (e as any).message) ? (e as any).message : String(e));
         }
       }
       
