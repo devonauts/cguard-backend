@@ -40,7 +40,9 @@ class ClientAccountRepository {
         });
         if (existing) {
           console.warn('ClientAccount create validation: duplicate email/phone detected', { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber });
-          throw new Error400(options.language, 'entities.clientAccount.errors.exists');
+          const err = new Error400(options.language, 'entities.clientAccount.errors.exists');
+          (err as any).errors = { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber };
+          throw err;
         }
       }
     } catch (err) {
@@ -161,7 +163,9 @@ class ClientAccountRepository {
         });
         if (existing) {
           console.warn('ClientAccount update validation: duplicate email/phone detected', { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber });
-          throw new Error400(options.language, 'entities.clientAccount.errors.exists');
+          const err = new Error400(options.language, 'entities.clientAccount.errors.exists');
+          (err as any).errors = { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber };
+          throw err;
         }
       }
     } catch (err) {

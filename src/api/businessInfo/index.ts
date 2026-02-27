@@ -7,6 +7,11 @@ export default (app) => {
     `/tenant/:tenantId/business-info/:id`,
     require('./businessInfoUpdate').default,
   );
+  // Accept PATCH as alternative to PUT for partial updates
+  app.patch(
+    `/tenant/:tenantId/business-info/:id`,
+    require('./businessInfoUpdate').default,
+  );
   app.delete(
     `/tenant/:tenantId/business-info`,
     require('./businessInfoDestroy').default,

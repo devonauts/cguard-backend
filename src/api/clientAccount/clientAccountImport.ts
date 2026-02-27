@@ -4,29 +4,76 @@ import Permissions from '../../security/permissions';
 import ClientAccountService from '../../services/clientAccountService';
 import multer from 'multer';
 
-// Configurar multer para manejar archivos en memoria
-const upload = multer({ storage: multer.memoryStorage() });
-
+// NOTE: A top-level multipart parser is applied in the API index for
+// endpoints ending with `/import`. To avoid parsing the multipart stream
+// twice (which causes busboy `Unexpected end of form`), we do not attach
+// another multer middleware here. Instead, the handler will normalize the
+// incoming file from either `req.file` or `req.files`.
 export default [
-  upload.single('file'), // Middleware de multer para procesar el archivo
   async (req, res, next) => {
     try {
       new PermissionChecker(req).validateHas(
         Permissions.values.clientAccountImport,
       );
 
-      console.log('🔍 DEBUG: req.file =', req.file);
+      // Normalize file: support either req.file (route-level) or req.files (global parser)
+      let incomingFile: any = (req as any).file;
+      if (!incomingFile && Array.isArray((req as any).files) && (req as any).files.length > 0) {
+        const filesArray = (req as any).files as any[];
+        incomingFile = filesArray.find(f => f.fieldname === 'file') || filesArray[0];
+      }
+
+      console.log('🔍 DEBUG: req.file =', incomingFile);
       console.log('🔍 DEBUG: req.body =', req.body);
 
       let data = req.body.data;
-      
+
       // Si no viene data pero viene un archivo, parsearlo
-      if (!data && req.file) {
+      if (!data && incomingFile) {
         const ExcelJS = require('exceljs');
         const workbook = new ExcelJS.Workbook();
-        
+
         // El archivo viene en req.file.buffer
-        await workbook.xlsx.load(req.file.buffer);
+        // Soportar tanto .xlsx como .csv: si el nombre termina en .csv, leer como CSV
+        try {
+          const name = (incomingFile.originalname || '').toString();
+          const lowerName = name.toLowerCase();
+          console.log('🔍 clientAccountImport: file info ->', { originalname: name, mimetype: incomingFile.mimetype, size: incomingFile.size || (incomingFile.buffer && incomingFile.buffer.length) });
+          if (lowerName.endsWith('.csv') || (incomingFile.mimetype || '').includes('csv')) {
+            // Log a snippet of the buffer as UTF-8 to help debugging encoding issues
+            try {
+              const sample = incomingFile.buffer.toString('utf8', 0, Math.min(1024, incomingFile.buffer.length));
+              console.log('🔍 clientAccountImport: CSV sample (first 1024 chars) ->', sample.replace(/\r\n/g, '\\n').slice(0, 1024));
+            } catch (e) {
+              console.warn('🔍 clientAccountImport: could not stringify buffer sample', e && e.message ? e.message : e);
+            }
+
+            // Crear stream a partir del buffer para que ExcelJS pueda leer CSV
+            const { Readable } = require('stream');
+            const rs = new Readable();
+            rs.push(incomingFile.buffer);
+            rs.push(null);
+            // ExcelJS soporta lectura CSV desde stream
+            // Esto creará una worksheet con los datos del CSV
+            try {
+              await workbook.csv.read(rs);
+            } catch (errCsv) {
+              console.warn('🔍 clientAccountImport: workbook.csv.read failed', errCsv && errCsv.message ? errCsv.message : errCsv);
+              throw errCsv;
+            }
+          } else {
+            await workbook.xlsx.load(incomingFile.buffer);
+          }
+        } catch (e) {
+          console.warn('clientAccountImport: ExcelJS read failed, attempting xlsx.load fallback', e && e.message ? e.message : e);
+          // Fallback intentar como xlsx
+          try {
+            await workbook.xlsx.load(incomingFile.buffer);
+          } catch (e2) {
+            console.error('clientAccountImport: xlsx.load fallback also failed', e2 && e2.message ? e2.message : e2);
+            throw e2;
+          }
+        }
         
         console.log('📚 Worksheets:', workbook.worksheets.map(ws => ws.name));
         console.log('📄 Total worksheets:', workbook.worksheets.length);
@@ -100,6 +147,84 @@ export default [
         
         console.log(`📊 Filas procesadas: ${rowsProcessed}`);
         console.log(`📊 Total de registros extraídos: ${data.length}`);
+      }
+
+      // Fallback: si no se extrajeron filas con ExcelJS pero el archivo parece CSV,
+      // intentamos parsearlo manualmente desde el buffer como texto UTF-8.
+      if ((Array.isArray(data) && data.length === 0) && incomingFile) {
+        try {
+          const name = (incomingFile.originalname || '').toString().toLowerCase();
+          const looksLikeCsv = name.endsWith('.csv') || (incomingFile.mimetype || '').includes('csv') || (incomingFile.buffer && incomingFile.buffer.toString('utf8',0,16).includes(','));
+          if (looksLikeCsv) {
+            console.log('🔁 clientAccountImport: Attempting manual CSV parse fallback');
+            const raw = incomingFile.buffer.toString('utf8');
+            // Remove BOM if present
+            const text = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+
+            // Simple CSV parser that handles quoted fields
+            function parseCSV(text: string) {
+              const rows: string[][] = [];
+              const re = /\s*(?:"([^"]*(?:""[^"]*)*)"|([^,]*))(?:,|\r?\n|$)/g;
+              let row: string[] = [];
+              let match: RegExpExecArray | null;
+              let i = 0;
+              while ((match = re.exec(text)) !== null) {
+                const quoted = match[1];
+                const bare = match[2];
+                const val = quoted !== undefined ? quoted.replace(/""/g, '"') : (bare !== undefined ? bare : '');
+                row.push(val);
+                const sep = text[match.index + match[0].length - 1];
+                if (sep === '\n' || sep === '\r' || re.lastIndex === text.length) {
+                  rows.push(row);
+                  row = [];
+                }
+                i++;
+                // Prevent infinite loop
+                if (i > 1000000) break;
+              }
+              // In case last row not pushed
+              if (row.length) rows.push(row);
+              return rows;
+            }
+
+            const rows = parseCSV(text);
+            console.log('🔍 clientAccountImport: manual CSV parsed rows:', Math.min(rows.length, 5));
+            if (rows.length > 1) {
+              const headers = rows[0].map(h => (h || '').trim());
+              for (let r = 1; r < rows.length; r++) {
+                const vals = rows[r];
+                const obj: any = {};
+                for (let c = 0; c < headers.length; c++) {
+                  const key = headers[c];
+                  if (!key) continue;
+                  obj[key] = vals[c] !== undefined ? vals[c] : '';
+                }
+                // Map known headers to expected fields
+                const name = (obj['name'] || obj['Name'] || '').toString().trim();
+                const address = (obj['address'] || obj['Address'] || '').toString().trim();
+                if (name && address) {
+                  data.push({
+                    name,
+                    lastName: (obj['lastName'] || obj['last_name'] || '').toString().trim(),
+                    email: (obj['email'] || '').toString().trim(),
+                    phoneNumber: (obj['phoneNumber'] || obj['phone'] || '').toString().trim(),
+                    address,
+                    addressComplement: (obj['addressLine2'] || obj['addressComplement'] || '').toString().trim(),
+                    zipCode: (obj['zipCode'] || obj['postalCode'] || '').toString().trim(),
+                    city: (obj['city'] || '').toString().trim(),
+                    country: (obj['country'] || '').toString().trim(),
+                    faxNumber: (obj['faxNumber'] || '').toString().trim(),
+                    website: (obj['website'] || '').toString().trim(),
+                    active: true,
+                  });
+                }
+              }
+              console.log(`🔍 clientAccountImport: manual CSV fallback extracted ${data.length} records`);
+            }
+          }
+        } catch (e) {
+          console.warn('🔍 clientAccountImport: manual CSV parse fallback failed', e && e.message ? e.message : e);
+        }
       }
       
       // Si no hay datos válidos

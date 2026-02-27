@@ -4,28 +4,99 @@ import Permissions from '../../security/permissions';
 import BusinessInfoService from '../../services/businessInfoService';
 import multer from 'multer';
 
-const upload = multer({ storage: multer.memoryStorage() });
-
+// NOTE: The API router applies a global multipart parser for endpoints
+// ending with `/import`. To avoid parsing the multipart stream twice
+// (which causes busboy `Unexpected end of form`), do not attach another
+// multer instance here. Normalize the incoming file from `req.file` or
+// from `req.files` provided by the global parser.
 export default [
-  upload.single('file'),
   async (req, res, next) => {
     try {
       new PermissionChecker(req).validateHas(
         Permissions.values.businessInfoImport,
       );
 
-      console.log('🔍 DEBUG: req.file =', req.file);
+      // Normalize incoming file
+      let incomingFile: any = (req as any).file;
+      if (!incomingFile && Array.isArray((req as any).files) && (req as any).files.length > 0) {
+        const filesArray = (req as any).files as any[];
+        incomingFile = filesArray.find(f => f.fieldname === 'file') || filesArray[0];
+      }
+
+      console.log('🔍 DEBUG: req.file =', incomingFile);
       console.log('🔍 DEBUG: req.body =', req.body);
 
       let data = req.body.data;
 
-      if (!data && req.file) {
+      if (!data && incomingFile) {
         const ExcelJS = require('exceljs');
         const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(req.file.buffer);
+
+        // Detect CSV by filename or mimetype and use CSV reader when appropriate
+        const name = (incomingFile.originalname || '').toString();
+        const lowerName = name.toLowerCase();
+        try {
+          console.log('🔍 businessInfoFileImport: file info ->', { originalname: name, mimetype: incomingFile.mimetype, size: incomingFile.size || (incomingFile.buffer && incomingFile.buffer.length) });
+          if (lowerName.endsWith('.csv') || (incomingFile.mimetype || '').includes('csv')) {
+            // Log a sample for debugging
+            try {
+              const sample = incomingFile.buffer.toString('utf8', 0, Math.min(1024, incomingFile.buffer.length));
+              console.log('🔍 businessInfoFileImport: CSV sample (first 1024 chars) ->', sample.replace(/\r\n/g, '\\n').slice(0, 1024));
+            } catch (e) {
+              console.warn('🔍 businessInfoFileImport: could not stringify buffer sample', e && e.message ? e.message : e);
+            }
+
+            const { Readable } = require('stream');
+            const rs = new Readable();
+            rs.push(incomingFile.buffer);
+            rs.push(null);
+            try {
+              await workbook.csv.read(rs);
+            } catch (errCsv) {
+              console.warn('🔍 businessInfoFileImport: workbook.csv.read failed', errCsv && errCsv.message ? errCsv.message : errCsv);
+              // Fall through to try xlsx.load or manual CSV parse below
+              throw errCsv;
+            }
+          } else {
+            await workbook.xlsx.load(incomingFile.buffer);
+          }
+        } catch (e) {
+          // If ExcelJS xlsx.load fails (e.g., CSV sent as XLSX), attempt manual CSV parse fallback
+          console.warn('businessInfoFileImport: ExcelJS read failed, attempting CSV/manual fallback', e && e.message ? e.message : e);
+          try {
+            // If the file looks like CSV, try manual parse
+            const looksLikeCsv = lowerName.endsWith('.csv') || (incomingFile.mimetype || '').includes('csv') || (incomingFile.buffer && incomingFile.buffer.toString('utf8',0,16).includes(','));
+            if (looksLikeCsv) {
+              const raw = incomingFile.buffer.toString('utf8');
+              const text = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+              // Simple CSV parse into rows array
+              const lines = text.split(/\r?\n/).filter(Boolean);
+              const headers = (lines[0] || '').split(',').map(h => h.trim());
+              data = [];
+              for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',').map(c => c.trim());
+                const rowData: any = { active: true };
+                for (let c = 0; c < headers.length; c++) {
+                  const key = headers[c];
+                  const val = cols[c] ?? '';
+                  // Map header tokens to internal keys using existing mapHeader logic later
+                  rowData[key] = val;
+                }
+                data.push(rowData);
+              }
+              // Leave further header mapping/validation to existing code below
+            } else {
+              // rethrow original error to be handled by outer try/catch
+              throw e;
+            }
+          } catch (e2) {
+            console.error('businessInfoFileImport: manual CSV fallback also failed', e2 && e2.message ? e2.message : e2);
+            throw e2;
+          }
+        }
 
         const worksheet = workbook.getWorksheet(1);
-        data = [];
+        data = data || [];
 
         const extractValue = (val) => {
           if (!val) return '';

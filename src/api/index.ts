@@ -73,10 +73,11 @@ const multipartParser = multer();
 app.use((req, res, next) => {
   if (
     req.originalUrl &&
-    req.originalUrl.endsWith('/import') &&
+    (req.originalUrl.endsWith('/import') || req.originalUrl.endsWith('/import-file')) &&
     req.method === 'POST'
   ) {
-    // Accept both fields and files for import endpoints
+    // Accept both fields and files for import endpoints (supports both
+    // `/import` and `/import-file` route suffixes).
     return multipartParser.any()(req, res, next);
   }
   return next();

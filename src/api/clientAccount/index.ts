@@ -7,6 +7,11 @@ export default (app) => {
     `/tenant/:tenantId/client-account/:id`,
     require('./clientAccountUpdate').default,
   );
+  // Accept PATCH as an alternative to PUT for partial updates
+  app.patch(
+    `/tenant/:tenantId/client-account/:id`,
+    require('./clientAccountUpdate').default,
+  );
   app.post(
     `/tenant/:tenantId/client-account/import`,
     require('./clientAccountImport').default,
