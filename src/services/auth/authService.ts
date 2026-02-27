@@ -174,7 +174,7 @@ class AuthService {
         importHash: body.importHash ?? null,
         email: email,
         password: hashedPassword,
-        emailVerified: typeof body.emailVerified !== 'undefined' ? body.emailVerified : false,
+        emailVerified: false,
         emailVerificationToken: body.emailVerificationToken ?? null,
         emailVerificationTokenExpiresAt: body.emailVerificationTokenExpiresAt ?? null,
         provider: body.provider ?? null,
