@@ -62,6 +62,13 @@ export default function (sequelize) {
           len: [0, 255],
         },
       },
+      placeType: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        validate: {
+          len: [0, 255],
+        },
+      },
     },
     {
       indexes: [

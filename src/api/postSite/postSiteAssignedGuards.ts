@@ -38,6 +38,10 @@ export default async (req, res) => {
       LEFT JOIN securityguards sg ON sg.id = tups.security_guard_id
       WHERE tups.businessInfoId = :postSiteId
         AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)
+        -- Exclude tenant users that are still pending (invitations or not fully registered)
+        AND (tu.status IS NULL OR tu.status <> 'pending')
+        -- Only include rows that have an associated securityGuard record
+        AND sg.id IS NOT NULL
       ORDER BY u.firstName, u.lastName;
     `;
 

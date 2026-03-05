@@ -27,6 +27,7 @@ class VisitorLogRepository {
         'importHash',
         'clientId',
         'postSiteId',
+        'placeType',
       ]),
     };
 
@@ -86,6 +87,7 @@ class VisitorLogRepository {
         'importHash',
         'clientId',
         'postSiteId',
+        'placeType',
       ]),
     };
 
@@ -203,6 +205,10 @@ class VisitorLogRepository {
 
       if (filter.firstName) {
         whereAnd.push(SequelizeFilterUtils.ilikeIncludes('visitorLog', 'firstName', filter.firstName));
+      }
+
+      if (filter.placeType) {
+        whereAnd.push(SequelizeFilterUtils.ilikeIncludes('visitorLog', 'placeType', filter.placeType));
       }
 
       // Support a generic text query that searches multiple fields (firstName, lastName, idNumber)

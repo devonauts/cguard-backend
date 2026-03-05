@@ -127,6 +127,13 @@ class Permissions {
       businessInfoRead: createPermission('businessInfoRead', ALL_STAFF_ROLES),
       businessInfoAutocomplete: createPermission('businessInfoAutocomplete', ALL_STAFF_ROLES),
 
+      // === POST SITES (PostSite / Post-Site) ===
+      postSiteCreate: createPermission('postSiteCreate', MANAGEMENT_ROLES),
+      postSiteEdit: createPermission('postSiteEdit', MANAGEMENT_ROLES),
+      postSiteDestroy: createPermission('postSiteDestroy', MANAGEMENT_ROLES),
+      postSiteRead: createPermission('postSiteRead', ALL_STAFF_ROLES),
+      postSiteAutocomplete: createPermission('postSiteAutocomplete', ALL_STAFF_ROLES),
+
       // === COMPANY REPRESENTATIVES ===
       representanteEmpresaImport: createPermission('representanteEmpresaImport', CLIENT_MANAGEMENT_ROLES),
       representanteEmpresaCreate: createPermission('representanteEmpresaCreate', CLIENT_MANAGEMENT_ROLES),
