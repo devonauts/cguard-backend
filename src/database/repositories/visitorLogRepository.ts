@@ -205,6 +205,18 @@ class VisitorLogRepository {
         whereAnd.push(SequelizeFilterUtils.ilikeIncludes('visitorLog', 'firstName', filter.firstName));
       }
 
+      // Support a generic text query that searches multiple fields (firstName, lastName, idNumber)
+      if ((filter as any).query) {
+        const q = (filter as any).query;
+        whereAnd.push({
+          [Op.or]: [
+            SequelizeFilterUtils.ilikeIncludes('visitorLog', 'firstName', q),
+            SequelizeFilterUtils.ilikeIncludes('visitorLog', 'lastName', q),
+            SequelizeFilterUtils.ilikeIncludes('visitorLog', 'idNumber', q),
+          ],
+        });
+      }
+
       if (filter.visitDateRange) {
         const [start, end] = filter.visitDateRange;
 
