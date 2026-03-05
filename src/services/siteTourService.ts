@@ -8,7 +8,7 @@ export default class SiteTourService {
     this.options = options;
   }
 
-  async findById(id) {
+  async findById(id: string) {
     const transaction = SequelizeRepository.getTransaction(this.options);
     const record = await this.options.database.siteTour.findOne({ where: { id }, include: ['tags'], transaction });
     if (!record) {
@@ -17,15 +17,19 @@ export default class SiteTourService {
     return record;
   }
 
-  async assignGuard(tourId, guardId, payload = {}) {
+  async assignGuard(
+    tourId: string,
+    guardId: string,
+    payload: { startAt?: string | Date | null; endAt?: string | Date | null; status?: string } = {},
+  ) {
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
     try {
       const assignment = await this.options.database.tourAssignment.create({
         siteTourId: tourId,
         securityGuardId: guardId,
-        startAt: payload.startAt || null,
-        endAt: payload.endAt || null,
-        status: payload.status || 'assigned',
+        startAt: payload.startAt ?? null,
+        endAt: payload.endAt ?? null,
+        status: payload.status ?? 'assigned',
       }, { transaction });
 
       await SequelizeRepository.commitTransaction(transaction);
