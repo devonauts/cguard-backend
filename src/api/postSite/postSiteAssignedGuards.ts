@@ -11,7 +11,8 @@ export default async (req, res) => {
 
     const replacements = { tenantId, postSiteId };
 
-    // Join tenant_user_post_sites -> tenantUsers -> users -> securityguards
+    // Join tenant_user_post_sites -> tenantUsers -> users -> securityGuards
+    // Match guards by EITHER security_guard_id FK OR by userId (same logic as securityGuardAssignments)
     const sql = `
       SELECT
         tups.id as id,
@@ -35,13 +36,12 @@ export default async (req, res) => {
       FROM tenant_user_post_sites tups
       LEFT JOIN tenantUsers tu ON tu.id = tups.tenantUserId
       LEFT JOIN users u ON u.id = tu.userId
-      LEFT JOIN securityGuards sg ON sg.id = tups.security_guard_id
+      LEFT JOIN securityGuards sg ON (sg.id = tups.security_guard_id OR sg.guardId = u.id) AND sg.tenantId = :tenantId
       WHERE tups.businessInfoId = :postSiteId
         AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)
-        -- Exclude tenant users that are still pending (invitations or not fully registered)
         AND (tu.status IS NULL OR tu.status <> 'pending')
-        -- Include all users assigned to this post site (with or without securityGuard record)
         AND u.id IS NOT NULL
+        AND sg.id IS NOT NULL
       ORDER BY u.firstName, u.lastName;
     `;
 

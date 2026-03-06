@@ -83,13 +83,38 @@ export default async (req, res) => {
             resolvedSecurityGuardId = byGuard.id;
             console.log('[DEBUG] assign-guard - Found by guardId:', resolvedSecurityGuardId);
           } else {
-            console.log('[DEBUG] assign-guard - No securityGuard found');
+            console.log('[DEBUG] assign-guard - No securityGuard found for securityGuardId:', incoming.securityGuardId);
+          }
+        }
+      }
+      
+      // If no securityGuardId in request but we have tenantUserId, try to resolve from tenantUser.userId
+      if (!resolvedSecurityGuardId && tenantUserId) {
+        console.log('[DEBUG] assign-guard - Attempting to resolve securityGuard from tenantUserId:', tenantUserId);
+        const tenantUser = await req.database.tenantUser.findOne({ 
+          where: { id: tenantUserId },
+          include: [{ model: req.database.user, as: 'user' }]
+        });
+        
+        if (tenantUser && tenantUser.user && tenantUser.user.id) {
+          const userId = tenantUser.user.id;
+          console.log('[DEBUG] assign-guard - TenantUser userId:', userId);
+          
+          const sgByUserId = await req.database.securityGuard.findOne({ 
+            where: { guardId: userId, tenantId } 
+          });
+          
+          if (sgByUserId && sgByUserId.id) {
+            resolvedSecurityGuardId = sgByUserId.id;
+            console.log('[DEBUG] assign-guard - Resolved securityGuard from tenantUser.userId:', resolvedSecurityGuardId);
+          } else {
+            console.log('[DEBUG] assign-guard - No securityGuard found for tenantUser.userId:', userId);
           }
         }
       }
     } catch (err) {
       const errorMsg = (err as any)?.message || String(err);
-      console.warn('postSiteAssignGuard: failed to resolve securityGuard record for incoming.securityGuardId', incoming.securityGuardId, errorMsg);
+      console.warn('postSiteAssignGuard: failed to resolve securityGuard record', errorMsg);
     }
     
     console.log('[DEBUG] assign-guard - Final resolvedSecurityGuardId:', resolvedSecurityGuardId);
