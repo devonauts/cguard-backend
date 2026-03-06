@@ -1,49 +1,69 @@
 require('dotenv').config();
 
-import { getConfig } from '../../config';
-import { Sequelize } from 'sequelize';
+import models from '../models';
+import { QueryInterface, DataTypes } from 'sequelize';
 
-async function run() {
+async function migrate() {
+  const { sequelize } = models();
+  const queryInterface: QueryInterface = sequelize.getQueryInterface();
+
   try {
-    const dialect = (
-      process.env.DATABASE_DIALECT || getConfig().DATABASE_DIALECT || 'mysql'
-    ).toLowerCase();
+    console.log('Starting migration: add tenantId to siteTourTags...');
 
-    process.env.DATABASE_DIALECT = dialect;
-
-    console.log('Running add-tenantid-to-siteTourTags for dialect:', dialect);
-
-    const cfg = getConfig();
-    const sequelize = new Sequelize(
-      cfg.DATABASE_DATABASE,
-      cfg.DATABASE_USERNAME,
-      cfg.DATABASE_PASSWORD,
-      {
-        host: cfg.DATABASE_HOST,
-        port: cfg.DATABASE_PORT || 3307,
-        dialect: dialect as any,
-        timezone: cfg.DATABASE_TIMEZONE || '+00:00',
-        logging: false,
-      },
+    const [[tableExists]] = await sequelize.query(
+      `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'siteTourTags' AND TABLE_SCHEMA = DATABASE()`
     );
 
-    if (dialect === 'postgres' || dialect === 'postgresql') {
-      console.log('Executing Postgres ALTER...');
-      await sequelize.query(`ALTER TABLE "siteTourTags" ADD COLUMN "tenantId" UUID NOT NULL;`);
-      await sequelize.query(`CREATE INDEX IF NOT EXISTS "idx_siteTourTags_tenantId" ON "siteTourTags" ("tenantId");`);
-    } else {
-      console.log('Executing MySQL ALTER...');
-      await sequelize.query('ALTER TABLE `siteTourTags` ADD COLUMN `tenantId` CHAR(36) NOT NULL;');
-      await sequelize.query('ALTER TABLE `siteTourTags` ADD INDEX `idx_siteTourTags_tenantId` (`tenantId`);');
+    if (!tableExists) {
+      console.log('Table siteTourTags does not exist — creating table.');
+
+      await queryInterface.createTable('siteTourTags', {
+        id: {
+          type: DataTypes.UUID,
+          defaultValue: DataTypes.UUIDV4,
+          primaryKey: true,
+        },
+        name: { type: DataTypes.STRING(200), allowNull: false },
+        tagType: { type: DataTypes.STRING(50), allowNull: true },
+        tagIdentifier: { type: DataTypes.STRING(200), allowNull: false },
+        location: { type: DataTypes.STRING(200), allowNull: true },
+        instructions: { type: DataTypes.TEXT, allowNull: true },
+        latitude: { type: DataTypes.DECIMAL(10, 8), allowNull: true },
+        longitude: { type: DataTypes.DECIMAL(11, 8), allowNull: true },
+        showGeoFence: { type: DataTypes.BOOLEAN, defaultValue: false },
+        tenantId: { type: DataTypes.UUID, allowNull: false },
+        importHash: { type: DataTypes.STRING(255), allowNull: true },
+        createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+        updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+        deletedAt: { type: DataTypes.DATE, allowNull: true },
+        siteTourId: { type: DataTypes.UUID, allowNull: true },
+      });
+
+      await queryInterface.addIndex('siteTourTags', ['tenantId'], { name: 'idx_siteTourTags_tenantId' });
+
+      console.log('Created siteTourTags with tenantId and index.');
+      process.exit(0);
     }
 
-    console.log('Done. Verify your schema and restart the server.');
-    await sequelize.close();
+    const [tenantCol] = await sequelize.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'siteTourTags' AND COLUMN_NAME = 'tenantId' AND TABLE_SCHEMA = DATABASE()`
+    );
+
+    if ((tenantCol as any[]).length === 0) {
+      console.log('Adding column tenantId to siteTourTags');
+      await queryInterface.addColumn('siteTourTags', 'tenantId', { type: DataTypes.UUID, allowNull: false });
+      await queryInterface.addIndex('siteTourTags', ['tenantId'], { name: 'idx_siteTourTags_tenantId' });
+      console.log('Added tenantId and index.');
+    } else {
+      console.log('Column tenantId already exists, skipping.');
+    }
+
+    console.log('✅ Migration completed successfully.');
     process.exit(0);
-  } catch (err) {
-    console.error('Migration failed:', err);
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
     process.exit(1);
   }
 }
 
-run();
+migrate();
