@@ -69,7 +69,7 @@ export default async (req, res) => {
       LEFT JOIN clientAccounts ca ON ca.id = bi.clientAccountId
       LEFT JOIN tenantUsers tu ON tu.id = tups.tenantUserId
       LEFT JOIN users u ON u.id = tu.userId
-      LEFT JOIN securityguards sg ON sg.id = tups.security_guard_id
+      LEFT JOIN securityGuards sg ON sg.id = tups.security_guard_id
       LEFT JOIN users gu ON gu.id = sg.guardId
       WHERE (tups.security_guard_id = :resolvedSecurityGuardId OR tu.userId = :guardUserId)
         AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)

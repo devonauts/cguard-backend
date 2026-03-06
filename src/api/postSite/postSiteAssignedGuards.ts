@@ -35,7 +35,7 @@ export default async (req, res) => {
       FROM tenant_user_post_sites tups
       LEFT JOIN tenantUsers tu ON tu.id = tups.tenantUserId
       LEFT JOIN users u ON u.id = tu.userId
-      LEFT JOIN securityguards sg ON sg.id = tups.security_guard_id
+      LEFT JOIN securityGuards sg ON sg.id = tups.security_guard_id
       WHERE tups.businessInfoId = :postSiteId
         AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)
         -- Exclude tenant users that are still pending (invitations or not fully registered)
