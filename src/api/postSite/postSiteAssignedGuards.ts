@@ -40,8 +40,8 @@ export default async (req, res) => {
         AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)
         -- Exclude tenant users that are still pending (invitations or not fully registered)
         AND (tu.status IS NULL OR tu.status <> 'pending')
-        -- Only include rows that have an associated securityGuard record
-        AND sg.id IS NOT NULL
+        -- Include all users assigned to this post site (with or without securityGuard record)
+        AND u.id IS NOT NULL
       ORDER BY u.firstName, u.lastName;
     `;
 

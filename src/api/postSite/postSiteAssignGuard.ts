@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import Permissions from '../../security/permissions';
 import ApiResponseHandler from '../apiResponseHandler';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
+import { randomUUID } from 'crypto';
 
 export default async (req, res) => {
   try {
@@ -93,23 +94,62 @@ export default async (req, res) => {
     
     console.log('[DEBUG] assign-guard - Final resolvedSecurityGuardId:', resolvedSecurityGuardId);
 
-    const row = {
-      id: require('crypto').randomBytes(16).toString('hex'),
-      tenantUserId,
-      businessInfoId: postSiteId,
-      // Use resolvedSecurityGuardId (securityGuard record id) to satisfy FK constraint.
-      security_guard_id: resolvedSecurityGuardId || null,
-      site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
-      tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
-      post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),
-      checklists: normalizeJsonField(incoming.checklists ?? incoming.assignChecklists),
-      // Persist skill set and department (support camelCase or snake_case from frontend)
-      // Ensure values are valid JSON text for JSON columns.
-      skill_set: normalizeJsonField(incoming.skillSet ?? incoming.skill_set),
-      department: normalizeJsonField(incoming.department ?? incoming.department),
-      createdAt: now,
-      updatedAt: now,
-    };
+    // Check if assignment already exists
+    const existingAssignment = await req.database.sequelize.query(
+      `SELECT id FROM tenant_user_post_sites WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId LIMIT 1`,
+      { replacements: { tenantUserId, businessInfoId: postSiteId }, type: req.database.sequelize.QueryTypes.SELECT }
+    );
+
+    console.log('[DEBUG] assign-guard - Existing assignment:', existingAssignment);
+
+    if (existingAssignment && existingAssignment.length > 0) {
+      // UPDATE existing record
+      const updateData = {
+        security_guard_id: resolvedSecurityGuardId || null,
+        site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
+        tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
+        post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),
+        checklists: normalizeJsonField(incoming.checklists ?? incoming.assignChecklists),
+        skill_set: normalizeJsonField(incoming.skillSet ?? incoming.skill_set),
+        department: normalizeJsonField(incoming.department ?? incoming.department),
+        updatedAt: now,
+      };
+
+      console.log('[DEBUG] Updating existing assignment with:', JSON.stringify(updateData, null, 2));
+      
+      await req.database.sequelize.query(
+        `UPDATE tenant_user_post_sites 
+         SET security_guard_id = :security_guard_id,
+             site_tours = :site_tours,
+             tasks = :tasks,
+             post_orders = :post_orders,
+             checklists = :checklists,
+             skill_set = :skill_set,
+             department = :department,
+             updatedAt = :updatedAt
+         WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId`,
+        { replacements: { ...updateData, tenantUserId, businessInfoId: postSiteId } }
+      );
+      console.log('[DEBUG] Update successful');
+    } else {
+      // INSERT new record
+      const row = {
+        id: randomUUID(),
+        tenantUserId,
+        businessInfoId: postSiteId,
+        // Use resolvedSecurityGuardId (securityGuard record id) to satisfy FK constraint.
+        security_guard_id: resolvedSecurityGuardId || null,
+        site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
+        tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
+        post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),
+        checklists: normalizeJsonField(incoming.checklists ?? incoming.assignChecklists),
+        // Persist skill set and department (support camelCase or snake_case from frontend)
+        // Ensure values are valid JSON text for JSON columns.
+        skill_set: normalizeJsonField(incoming.skillSet ?? incoming.skill_set),
+        department: normalizeJsonField(incoming.department ?? incoming.department),
+        createdAt: now,
+        updatedAt: now,
+      };
 
     try {
       console.log('[DEBUG] Attempting to insert tenant_user_post_sites with data:', JSON.stringify(row, null, 2));
@@ -126,13 +166,14 @@ export default async (req, res) => {
       });
       throw err;
     }
+    }
 
     // If frontend provided a clientAccountId, also ensure tenant_user_client_accounts pivot exists
     try {
       const clientAccountId = incoming.clientAccountId || incoming.client_account_id || null;
       if (clientAccountId) {
         const clientRow = {
-          id: require('crypto').randomBytes(16).toString('hex'),
+          id: randomUUID(),
           tenantUserId,
           clientAccountId,
           // include security_guard_id when available to tie pivot to the securityGuard record
