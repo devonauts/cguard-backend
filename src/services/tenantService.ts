@@ -1,6 +1,7 @@
 import TenantRepository from '../database/repositories/tenantRepository';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
 import TenantInvitationRepository from '../database/repositories/tenantInvitationRepository';
+import UserRepository from '../database/repositories/userRepository';
 import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import PermissionChecker from './user/permissionChecker';
@@ -11,6 +12,7 @@ import Roles from '../security/roles';
 import SettingsService from './settingsService';
 import Plans from '../security/plans';
 import { IServiceOptions } from './IServiceOptions';
+import jwt from 'jsonwebtoken';
 
 export default class TenantService {
   options: IServiceOptions;
@@ -511,6 +513,7 @@ export default class TenantService {
           existing.invitationToken = null;
           existing.invitationTokenExpiresAt = null;
           existing.status = existing.status || 'active';
+          // No asignar roles automáticamente - el admin debe hacerlo manualmente
           await existing.save({ transaction });
         } else {
           // Try a fallback lookup: the user may have an existing tenant_user row
@@ -533,17 +536,19 @@ export default class TenantService {
             fallbackTenantUser.tenantId = tenantId;
             fallbackTenantUser.invitationToken = null;
             fallbackTenantUser.invitationTokenExpiresAt = null;
-            fallbackTenantUser.roles = [ ...(Array.isArray(fallbackTenantUser.roles) ? fallbackTenantUser.roles : [] ) ];
+            // Preservar roles existentes, pero NO asignar roles por defecto
             fallbackTenantUser.status = fallbackTenantUser.status || 'active';
             await fallbackTenantUser.save({ transaction });
           } else {
-            // create tenantUser record for current user
+            // create tenantUser record for current user with default 'securityGuard' role
+            // (tenantInvitations table doesn't store roles, so we assign a default)
+            // Crear registro en tenantUser SIN roles - el admin debe asignarlos manualmente
             const tenant = standaloneInvite.tenant || await TenantRepository.findById(tenantId, { ...this.options, transaction });
             await TenantUserRepository.create(
               tenant,
               this.options.currentUser,
-              [],
-              { ...this.options, transaction, currentTenant: { id: tenantId } },
+              [], // Sin roles por defecto - pendiente de asignación manual
+              { ...this.options, transaction },
             );
           }
         }
@@ -552,7 +557,27 @@ export default class TenantService {
         await TenantInvitationRepository.consume(token, { ...this.options, transaction });
 
         await SequelizeRepository.commitTransaction(transaction);
-        return standaloneInvite.tenant || (await TenantRepository.findById(tenantId, this.options));
+        
+        // ✅ CLAVE: Recargar el usuario completo con tenants actualizados y generar nuevo JWT
+        const updatedUser = await UserRepository.findById(this.options.currentUser.id, {
+          ...this.options,
+          bypassPermissionValidation: true,
+        });
+
+        // Generar nuevo JWT con el tenantId actualizado
+        const newToken = jwt.sign(
+          { id: updatedUser.id, tenantId },
+          getConfig().AUTH_JWT_SECRET,
+          { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
+        );
+
+        // Devolver tenant + nuevo token + usuario actualizado
+        const tenant = standaloneInvite.tenant || (await TenantRepository.findById(tenantId, this.options));
+        return {
+          tenant,
+          token: newToken,
+          user: updatedUser,
+        };
       }
 
       // Fallback: legacy flow where invitation token was stored on tenantUser row
@@ -590,7 +615,24 @@ export default class TenantService {
         transaction,
       );
 
-      return tenantUser.tenant;
+      // ✅ CLAVE: Recargar el usuario completo con tenants actualizados y generar nuevo JWT
+      const updatedUser = await UserRepository.findById(this.options.currentUser.id, {
+        ...this.options,
+        bypassPermissionValidation: true,
+      });
+
+      // Generar nuevo JWT con el tenantId actualizado
+      const newToken = jwt.sign(
+        { id: updatedUser.id, tenantId: tenantUser.tenant.id },
+        getConfig().AUTH_JWT_SECRET,
+        { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
+      );
+
+      return {
+        tenant: tenantUser.tenant,
+        token: newToken,
+        user: updatedUser,
+      };
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(
         transaction,
