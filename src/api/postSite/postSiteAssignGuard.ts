@@ -5,11 +5,17 @@ import TenantUserRepository from '../../database/repositories/tenantUserReposito
 
 export default async (req, res) => {
   try {
+    console.log('[DEBUG] assign-guard - Request body:', JSON.stringify(req.body, null, 2));
+    
     new PermissionChecker(req).validateHas(Permissions.values.userEdit);
 
     const tenantId = req.params.tenantId;
     const postSiteId = req.params.id;
     const incoming = req.body.data || req.body || {};
+
+    console.log('[DEBUG] assign-guard - tenantId:', tenantId);
+    console.log('[DEBUG] assign-guard - postSiteId:', postSiteId);
+    console.log('[DEBUG] assign-guard - incoming:', incoming);
 
     // Resolve tenantUser: prefer explicit tenantUserId, else try to find by user id
     let tenantUserId = incoming.tenantUserId || incoming.tenant_user_id || null;
@@ -17,6 +23,8 @@ export default async (req, res) => {
       const tenantUser = await TenantUserRepository.findByTenantAndUser(tenantId, incoming.securityGuardId, req);
       if (tenantUser && tenantUser.id) tenantUserId = tenantUser.id;
     }
+
+    console.log('[DEBUG] assign-guard - Resolved tenantUserId:', tenantUserId);
 
     if (!tenantUserId) {
       throw new Error('tenantUserId or securityGuardId required');
@@ -61,20 +69,29 @@ export default async (req, res) => {
     let resolvedSecurityGuardId = null;
     try {
       if (incoming.securityGuardId) {
+        console.log('[DEBUG] assign-guard - Looking for securityGuard with id:', incoming.securityGuardId);
         // Try interpreting incoming value as a securityGuard.id first
         const byId = await req.database.securityGuard.findOne({ where: { id: incoming.securityGuardId, tenantId } });
         if (byId && byId.id) {
           resolvedSecurityGuardId = byId.id;
+          console.log('[DEBUG] assign-guard - Found by ID:', resolvedSecurityGuardId);
         } else {
           // Otherwise try to find a securityGuard row that references the user id (guardId)
           const byGuard = await req.database.securityGuard.findOne({ where: { guardId: incoming.securityGuardId, tenantId } });
-          if (byGuard && byGuard.id) resolvedSecurityGuardId = byGuard.id;
+          if (byGuard && byGuard.id) {
+            resolvedSecurityGuardId = byGuard.id;
+            console.log('[DEBUG] assign-guard - Found by guardId:', resolvedSecurityGuardId);
+          } else {
+            console.log('[DEBUG] assign-guard - No securityGuard found');
+          }
         }
       }
     } catch (err) {
       const errorMsg = (err as any)?.message || String(err);
       console.warn('postSiteAssignGuard: failed to resolve securityGuard record for incoming.securityGuardId', incoming.securityGuardId, errorMsg);
     }
+    
+    console.log('[DEBUG] assign-guard - Final resolvedSecurityGuardId:', resolvedSecurityGuardId);
 
     const row = {
       id: require('crypto').randomBytes(16).toString('hex'),
@@ -95,9 +112,18 @@ export default async (req, res) => {
     };
 
     try {
+      console.log('[DEBUG] Attempting to insert tenant_user_post_sites with data:', JSON.stringify(row, null, 2));
       await req.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', [row]);
+      console.log('[DEBUG] Insert successful');
     } catch (err) {
-      console.error('Failed to insert tenant_user_post_sites row:', err);
+      console.error('[ERROR] Failed to insert tenant_user_post_sites row:', err);
+      console.error('[ERROR] Row data was:', JSON.stringify(row, null, 2));
+      console.error('[ERROR] Full error details:', {
+        message: (err as any)?.message,
+        code: (err as any)?.code,
+        sql: (err as any)?.sql,
+        parent: (err as any)?.parent,
+      });
       throw err;
     }
 
