@@ -8,15 +8,26 @@ export default function (router) {
   // GET list /api/tenant/:tenantId/site-tour
   router.get('/tenant/:tenantId/site-tour', async (req, res, next) => {
     try {
+      console.log('[DEBUG] GET /site-tour - tenantId:', req.params.tenantId);
+      console.log('[DEBUG] currentTenant:', req.currentTenant ? req.currentTenant.id : 'MISSING');
+      console.log('[DEBUG] Query params:', req.query);
+      
       new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      console.log('[DEBUG] Permission check passed');
+      
       const where: any = { tenantId: req.currentTenant.id };
       // allow optional filtering by postSiteId
       if (req.query && req.query.postSiteId) {
         where.postSiteId = req.query.postSiteId;
       }
+      console.log('[DEBUG] Query WHERE:', where);
+      
       const rows = await req.database.siteTour.findAll({ where });
+      console.log('[DEBUG] Found rows:', rows.length);
+      
       await ApiResponseHandler.success(req, res, { rows, count: rows.length });
     } catch (error) {
+      console.error('[DEBUG] Error in GET /site-tour:', error);
       await ApiResponseHandler.error(req, res, error);
     }
   });
