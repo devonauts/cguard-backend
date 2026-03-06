@@ -5,6 +5,22 @@ import Permissions from '../security/permissions';
 import Error400 from '../errors/Error400';
 
 export default function (router) {
+  // GET list /api/tenant/:tenantId/site-tour
+  router.get('/tenant/:tenantId/site-tour', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      const where: any = { tenantId: req.currentTenant.id };
+      // allow optional filtering by postSiteId
+      if (req.query && req.query.postSiteId) {
+        where.postSiteId = req.query.postSiteId;
+      }
+      const rows = await req.database.siteTour.findAll({ where });
+      await ApiResponseHandler.success(req, res, { rows, count: rows.length });
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
   // GET /api/tenant/:tenantId/site-tour/:id
   router.get('/tenant/:tenantId/site-tour/:id', async (req, res, next) => {
     try {
@@ -115,22 +131,6 @@ export default function (router) {
       if (!record) throw new Error('Not found');
       await record.destroy();
       await ApiResponseHandler.success(req, res, {});
-    } catch (error) {
-      await ApiResponseHandler.error(req, res, error);
-    }
-  });
-
-  // GET list /api/tenant/:tenantId/site-tour
-  router.get('/tenant/:tenantId/site-tour', async (req, res, next) => {
-    try {
-      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
-      const where: any = { tenantId: req.currentTenant.id };
-      // allow optional filtering by postSiteId
-      if (req.query && req.query.postSiteId) {
-        where.postSiteId = req.query.postSiteId;
-      }
-      const rows = await req.database.siteTour.findAll({ where });
-      await ApiResponseHandler.success(req, res, { rows, count: rows.length });
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }
