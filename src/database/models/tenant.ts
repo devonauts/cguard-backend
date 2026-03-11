@@ -67,6 +67,37 @@ export default function (sequelize, DataTypes) {
           notEmpty: true,
         },
       },
+      // Complementary address fields (added 2026)
+      addressLine2: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        defaultValue: null,
+      },
+      postalCode: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        defaultValue: null,
+      },
+      city: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+      country: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+      latitude: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        defaultValue: null,
+      },
+      longitude: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        defaultValue: null,
+      },
       phone: {
         type: DataTypes.STRING(50),
         allowNull: false,

@@ -64,6 +64,9 @@ export default class SecurityGuardService {
                 originalGuard,
                 data.roles || [],
                 { ...this.options, transaction, addRoles: true },
+                data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+                data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+                originalGuard
               );
               data.guard = originalGuard;
             }
@@ -90,6 +93,9 @@ export default class SecurityGuardService {
               originalGuardProvided,
               data.roles || [],
               { ...this.options, transaction, addRoles: true },
+              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+              originalGuardProvided
             );
             // After ensuring tenantUser, set guard back to original id so create proceeds
             data.guard = originalGuardProvided;
@@ -113,10 +119,9 @@ export default class SecurityGuardService {
               data.guard,
               rolesToAdd,
               { ...this.options, transaction, addRoles: true },
-              // clientIds: prefer explicit array, fallback to single clientId
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
-              // postSiteIds: prefer explicit array, fallback to single postSiteId
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+              data.guard
             );
             console.log('🔔 [SecurityGuardService.create] ensured tenantUser roles include securityGuard for user:', data.guard);
           }
@@ -197,6 +202,7 @@ export default class SecurityGuardService {
               { ...this.options, transaction, addRoles: true },
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+              user.id
             );
             console.log('🔔 [SecurityGuardService.create] tenantUser ensured/updated for imported user:', user.id, 'tenant:', tenantId);
           }

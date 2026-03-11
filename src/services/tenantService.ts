@@ -515,6 +515,12 @@ export default class TenantService {
           existing.status = existing.status || 'active';
           // No asignar roles automáticamente - el admin debe hacerlo manualmente
           await existing.save({ transaction });
+          // Actualizar el estado del usuario principal a 'active'
+          await UserRepository.update(
+            this.options.currentUser.id,
+            { status: 'active' },
+            { ...this.options, transaction }
+          );
         } else {
           // Try a fallback lookup: the user may have an existing tenant_user row
           // created with a NULL tenantId (legacy / malformed). Prefer updating
@@ -539,6 +545,12 @@ export default class TenantService {
             // Preservar roles existentes, pero NO asignar roles por defecto
             fallbackTenantUser.status = fallbackTenantUser.status || 'active';
             await fallbackTenantUser.save({ transaction });
+            // Actualizar el estado del usuario principal a 'active'
+            await UserRepository.update(
+              this.options.currentUser.id,
+              { status: 'active' },
+              { ...this.options, transaction }
+            );
           } else {
             // create tenantUser record for current user with default 'securityGuard' role
             // (tenantInvitations table doesn't store roles, so we assign a default)
@@ -549,6 +561,12 @@ export default class TenantService {
               this.options.currentUser,
               [], // Sin roles por defecto - pendiente de asignación manual
               { ...this.options, transaction },
+            );
+            // Actualizar el estado del usuario principal a 'active'
+            await UserRepository.update(
+              this.options.currentUser.id,
+              { status: 'active' },
+              { ...this.options, transaction }
             );
           }
         }

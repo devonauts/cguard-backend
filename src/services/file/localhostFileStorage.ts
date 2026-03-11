@@ -8,9 +8,14 @@ import Error403 from '../../errors/Error403';
 
 /**
  * The directory where the files should be uploaded.
- * Change this to a persisted folder.
+ * Now set to a persistent 'uploads' folder in the project root.
  */
-const UPLOAD_DIR = os.tmpdir();
+const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
+
+// Crea la carpeta uploads si no existe al iniciar el módulo
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 export default class LocalFileStorage {
   /**

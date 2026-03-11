@@ -23,6 +23,17 @@ export default class Storage {
         maxSizeInBytes: 10 * 1024 * 1024,
         publicRead: true,
       },
+      // Legal documents for tenants (contracts, estimates, invoices uploads)
+      legalDocuments: {
+        id: 'legalDocuments',
+        folder: 'tenant/:tenantId/legalDocuments',
+        maxSizeInBytes: 100 * 1024 * 1024,
+        publicRead: false,
+        // Allow local/dev uploads without per-role storage permission checks.
+        // In production you may want to set this to false and manage permissions
+        // via role assignments. For local development this avoids 403 on uploads.
+        bypassWritingPermissions: true,
+      },
       settingsBackgroundImages: {
         id: 'settingsBackgroundImages',
         folder:

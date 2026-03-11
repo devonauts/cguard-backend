@@ -15,4 +15,7 @@ export default (app) => {
   app.get(`/tenant/url`, require('./tenantFind').default);
   app.get(`/tenant/:tenantId`, require('./tenantFind').default);
   app.post(`/tenant/:tenantId/tenant-user/invitation-token`, require('./tenantCreateInvitationToken').default);
+
+  // Endpoint para subir documentos legales
+  app.post(`/tenant/:tenantId/legal-documents/upload`, require('./tenantLegalDocumentUpload').default);
 };

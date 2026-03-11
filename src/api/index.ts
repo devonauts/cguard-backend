@@ -10,6 +10,8 @@ import { createRateLimiter } from './apiRateLimiter';
 import { languageMiddleware } from '../middlewares/languageMiddleware';
 import authSocial from './auth/authSocial';
 import setupSwaggerUI from './apiDocumentation';
+import * as tenantUserClientAccounts from './tenantUserClientAccounts';
+import * as tenantUserPostSite from './tenantUserPostSite';
 
 const app = express();
 
@@ -147,6 +149,16 @@ require('./insurance').default(routes);
 require('./notificationRecipient').default(routes);
 require('./report').default(routes);
 require('./shift').default(routes);
+
+// CRUD endpoints for tenant_user_client_accounts
+app.get('/api/tenant-user-client-accounts', tenantUserClientAccounts.listTenantUserClientAccounts);
+app.post('/api/tenant-user-client-accounts', tenantUserClientAccounts.createTenantUserClientAccount);
+app.delete('/api/tenant-user-client-accounts/:id', tenantUserClientAccounts.deleteTenantUserClientAccount);
+
+// CRUD endpoints for tenant_user_postsite
+app.get('/api/tenant-user-postsite', tenantUserPostSite.listTenantUserPostSite);
+app.post('/api/tenant-user-postsite', tenantUserPostSite.createTenantUserPostSite);
+app.delete('/api/tenant-user-postsite/:id', tenantUserPostSite.deleteTenantUserPostSite);
 
 // Add the routes to the /api endpoint
 app.use('/api', routes);

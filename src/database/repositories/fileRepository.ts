@@ -1,9 +1,33 @@
+
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import assert from 'assert';
 import FileStorage from '../../services/file/fileStorage';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 export default class FileRepository {
+  /**
+   * Crea un documento legal asociado a un tenant
+   */
+  static async createLegalDocument({ file, tenantId, uploadedBy, name, sizeInBytes, mimeType, database }) {
+    // Aquí deberías guardar el archivo en el storage y obtener la URL
+    // Para ejemplo, asumimos que file.path es la ruta temporal
+    const privateUrl = await FileStorage.upload(file);
+    // Usar el modelo sequelize directamente
+    const record = await database.file.create({
+      belongsTo: 'tenant',
+      belongsToId: tenantId,
+      belongsToColumn: 'legalDocuments',
+      name: name,
+      sizeInBytes: sizeInBytes,
+      privateUrl: privateUrl,
+      mimeType: mimeType,
+      tenantId: tenantId,
+      createdById: uploadedBy,
+      updatedById: uploadedBy,
+      isLegalDocument: true,
+    });
+    return record;
+  }
   static async fillDownloadUrl(files) {
     if (!files) {
       return files;

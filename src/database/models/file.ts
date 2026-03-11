@@ -53,6 +53,27 @@ export default function (sequelize, DataTypes) {
         },
       },
       publicUrl: {
+              tenantId: {
+                type: DataTypes.UUID,
+                allowNull: true,
+              },
+              createdById: {
+                type: DataTypes.UUID,
+                allowNull: true,
+              },
+              updatedById: {
+                type: DataTypes.UUID,
+                allowNull: true,
+              },
+              mimeType: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+              },
+              isLegalDocument: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false,
+              },
         type: DataTypes.STRING(2083),
         allowNull: true,
         validate: {
