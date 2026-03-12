@@ -847,13 +847,10 @@ export default class TenantUserRepository {
         ]),
       ];
 
-      // Clear invitation fields and set active status
+      // Clear invitation fields and mark as active (acceptance = active)
       existingTenantUser.invitationToken = null;
       existingTenantUser.invitationTokenExpiresAt = null;
-      existingTenantUser.status = selectStatus(
-        'active',
-        existingTenantUser.roles,
-      );
+      existingTenantUser.status = 'active';
 
       await existingTenantUser.save({
         transaction,
@@ -867,10 +864,8 @@ export default class TenantUserRepository {
       invitationTenantUser.userId = currentUser.id;
       invitationTenantUser.invitationToken = null;
       invitationTenantUser.invitationTokenExpiresAt = null;
-      invitationTenantUser.status = selectStatus(
-        'active',
-        invitationTenantUser.roles,
-      );
+      // Mark as active when the invite is accepted (independent of roles)
+      invitationTenantUser.status = 'active';
 
       await invitationTenantUser.save({
         transaction,

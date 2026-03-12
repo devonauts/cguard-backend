@@ -1,3 +1,12 @@
+// Valida que la contraseña tenga mayúscula, minúscula, número y caracter especial
+function isStrongPassword(password) {
+  if (!password || String(password).length < 8) return false;
+  return /[A-Z]/.test(password) &&
+         /[a-z]/.test(password) &&
+         /[0-9]/.test(password) &&
+         /[^A-Za-z0-9]/.test(password);
+}
+const PASSWORD_POLICY_ERROR = 'mínimo 8 caracteres y contener al menos una letra mayúscula, una letra minúscula, un número y un carácter especial.';
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
@@ -321,18 +330,21 @@ export default async (req, res, next) => {
                 console.log('🔧 [securityGuardCreate] updated impersonated user with incoming data', { userId, updateDataKeys: Object.keys(updateData) });
                 // If frontend provided a password in the invitation completion, persist it now
                 if (incoming.password) {
+                  if (!isStrongPassword(incoming.password)) {
+                    throw new Error400(req.language, 'auth.weakPassword', PASSWORD_POLICY_ERROR);
+                  }
                   try {
                     const BCRYPT_SALT_ROUNDS = 12;
                     const hashed = await bcrypt.hash(incoming.password, BCRYPT_SALT_ROUNDS);
-                              console.log('🔍 [securityGuardCreate] setting password for impersonated user id', userId, 'rawLength', String(incoming.password).length);
-                              await UserRepository.updatePassword(userId, hashed, false, req);
-                              try {
-                                const stored = await UserRepository.findPassword(userId, req);
-                                console.log('🔎 [securityGuardCreate] stored password present for user id', userId, !!stored);
-                              } catch (readErr) {
-                                console.warn('⚠️ [securityGuardCreate] failed to read stored password for user id', userId, readErr && (readErr as any).message ? (readErr as any).message : readErr);
-                              }
-                              console.log('🔧 [securityGuardCreate] set password for impersonated user id', userId);
+                    console.log('🔍 [securityGuardCreate] setting password for impersonated user id', userId, 'rawLength', String(incoming.password).length);
+                    await UserRepository.updatePassword(userId, hashed, false, req);
+                    try {
+                      const stored = await UserRepository.findPassword(userId, req);
+                      console.log('🔎 [securityGuardCreate] stored password present for user id', userId, !!stored);
+                    } catch (readErr) {
+                      console.warn('⚠️ [securityGuardCreate] failed to read stored password for user id', userId, readErr && (readErr as any).message ? (readErr as any).message : readErr);
+                    }
+                    console.log('🔧 [securityGuardCreate] set password for impersonated user id', userId);
                     // If this request originated from an invitation token, accept the invitation
                     // so the TenantUser.status moves from 'invited'/'pending' to 'active'.
                     try {
@@ -550,6 +562,10 @@ export default async (req, res, next) => {
           // persist it to the users table, mark email as verified and accept the tenant invitation.
           try {
             if (entry.password) {
+
+              if (!isStrongPassword(entry.password)) {
+                throw new Error400(req.language, 'auth.weakPassword', PASSWORD_POLICY_ERROR);
+              }
               try {
                 const BCRYPT_SALT_ROUNDS = 12;
                 const hashed = await bcrypt.hash(entry.password, BCRYPT_SALT_ROUNDS);

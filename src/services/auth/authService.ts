@@ -1,3 +1,14 @@
+// Valida que la contraseña tenga mayúscula, minúscula, número y caracter especial
+function isStrongPassword(password: string): boolean {
+  // Mínimo 8 caracteres y al menos una mayúscula, una minúscula, un número y un caracter especial
+  if (!password || String(password).length < 8) return false;
+  return /[A-Z]/.test(password) &&
+         /[a-z]/.test(password) &&
+         /[0-9]/.test(password) &&
+         /[^A-Za-z0-9]/.test(password);
+}
+
+const PASSWORD_POLICY_ERROR = 'mínimo 8 caracteres y contener al menos una letra mayúscula, una letra minúscula, un número y un carácter especial.';
 import UserRepository from '../../database/repositories/userRepository';
 import Error400 from '../../errors/Error400';
 import bcrypt from 'bcryptjs';
@@ -30,8 +41,13 @@ class AuthService {
       options.database,
     );
 
+
     try {
       email = email.toLowerCase();
+
+      if (!isStrongPassword(password)) {
+        throw new Error400(options.language, 'auth.weakPassword', PASSWORD_POLICY_ERROR);
+      }
 
       const existingUser = await UserRepository.findByEmail(
         email,
@@ -896,6 +912,10 @@ class AuthService {
         options.language,
         'auth.passwordChange.invalidPassword',
       );
+    }
+
+    if (!isStrongPassword(newPassword)) {
+      throw new Error400(options.language, 'auth.weakPassword', PASSWORD_POLICY_ERROR);
     }
 
     const newHashedPassword = await bcrypt.hash(

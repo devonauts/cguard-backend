@@ -9,7 +9,7 @@ const es = {
       'La contraseña es incorrecta.',
     emailNotVerified:
       'Correo no verificado. Revisa tu email.',
-    weakPassword: 'Esta contraseña es muy débil.',
+    weakPassword: 'La contraseña es muy débil. Requisitos: mínimo 8 caracteres y contener al menos una letra mayúscula, una letra minúscula, un número y un carácter especial.',
     emailAlreadyInUse: 'Correo electrónico ya está en uso por otro usuario.',
     invalidEmail:
       'Por favor proporcione un correo electrónico válido',

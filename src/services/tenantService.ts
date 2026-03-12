@@ -512,14 +512,14 @@ export default class TenantService {
         if (existing) {
           existing.invitationToken = null;
           existing.invitationTokenExpiresAt = null;
-          existing.status = existing.status || 'active';
+          // Marcar explícitamente como active al aceptar la invitación
+          existing.status = 'active';
           // No asignar roles automáticamente - el admin debe hacerlo manualmente
           await existing.save({ transaction });
-          // Actualizar el estado del usuario principal a 'active'
-          await UserRepository.update(
-            this.options.currentUser.id,
+          // Actualizar sólo el campo status del usuario principal a 'active' (no sobreescribir nombres)
+          await this.options.database.user.update(
             { status: 'active' },
-            { ...this.options, transaction }
+            { where: { id: this.options.currentUser.id }, transaction },
           );
         } else {
           // Try a fallback lookup: the user may have an existing tenant_user row
@@ -542,31 +542,40 @@ export default class TenantService {
             fallbackTenantUser.tenantId = tenantId;
             fallbackTenantUser.invitationToken = null;
             fallbackTenantUser.invitationTokenExpiresAt = null;
-            // Preservar roles existentes, pero NO asignar roles por defecto
-            fallbackTenantUser.status = fallbackTenantUser.status || 'active';
+            // Preservar roles existentes, pero marcar como active al aceptar
+            fallbackTenantUser.status = 'active';
             await fallbackTenantUser.save({ transaction });
-            // Actualizar el estado del usuario principal a 'active'
-            await UserRepository.update(
-              this.options.currentUser.id,
+            // Actualizar sólo el campo status del usuario principal a 'active' (no sobreescribir nombres)
+            await this.options.database.user.update(
               { status: 'active' },
-              { ...this.options, transaction }
+              { where: { id: this.options.currentUser.id }, transaction },
             );
           } else {
             // create tenantUser record for current user with default 'securityGuard' role
             // (tenantInvitations table doesn't store roles, so we assign a default)
             // Crear registro en tenantUser SIN roles - el admin debe asignarlos manualmente
             const tenant = standaloneInvite.tenant || await TenantRepository.findById(tenantId, { ...this.options, transaction });
-            await TenantUserRepository.create(
+            const createdTenantUser = await TenantUserRepository.create(
               tenant,
               this.options.currentUser,
               [], // Sin roles por defecto - pendiente de asignación manual
               { ...this.options, transaction },
             );
-            // Actualizar el estado del usuario principal a 'active'
-            await UserRepository.update(
-              this.options.currentUser.id,
+            // Aceptación de invitación: marcar tenant_user como 'active' incluso sin roles
+            try {
+              await this.options.database.tenantUser.update(
+                { status: 'active' },
+                { where: { id: createdTenantUser.id }, transaction },
+              );
+            } catch (e) {
+              // no fatal: dejar que el flujo continúe
+              const errMsg = (e && (e as any) && (e as any).message) ? (e as any).message : String(e);
+              console.warn('Failed to set tenant_user status active after create', errMsg);
+            }
+            // Actualizar sólo el campo status del usuario principal a 'active' (no sobreescribir nombres)
+            await this.options.database.user.update(
               { status: 'active' },
-              { ...this.options, transaction }
+              { where: { id: this.options.currentUser.id }, transaction },
             );
           }
         }
