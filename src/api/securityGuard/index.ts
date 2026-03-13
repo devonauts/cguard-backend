@@ -86,4 +86,30 @@ export default (app) => {
     `/tenant/:tenantId/security-guard/:id/notes/:noteId`,
     require('./securityGuardNoteDestroy').default,
   );
+
+  // Security guard licenses CRUD
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/licenses`,
+    require('./securityGuardLicenses').default,
+  );
+  app.post(
+    `/tenant/:tenantId/security-guard/:id/licenses`,
+    require('./securityGuardLicenseCreate').default,
+  );
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/licenses/:licenseId`,
+    require('./securityGuardLicenseFind').default,
+  );
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/licenses/:licenseId/download`,
+    require('./securityGuardLicenseDownload').default,
+  );
+  app.put(
+    `/tenant/:tenantId/security-guard/:id/licenses/:licenseId`,
+    require('./securityGuardLicenseUpdate').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/security-guard/:id/licenses`,
+    require('./securityGuardLicenseDestroy').default,
+  );
 };
