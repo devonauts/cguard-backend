@@ -9,7 +9,7 @@ export default async (req, res, next) => {
       Permissions.values.securityGuardEdit,
     );
 
-    const ids = req.query.ids ?? (req.body && req.body.ids);
+    let ids = req.query.ids ?? (req.body && req.body.ids);
 
     if (typeof ids === 'string') {
       // support comma-separated lists like "1,2,3"
