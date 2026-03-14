@@ -130,6 +130,10 @@ export default class SecurityGuardService {
         }
       }
       data.memos = await MemosRepository.filterIdsInTenant(data.memos, { ...this.options, transaction });
+      // Ensure availability is allowed through when provided
+      if (data.availability && typeof data.availability === 'object') {
+        // keep as-is; model will persist JSON
+      }
       data.requests = await RequestRepository.filterIdsInTenant(data.requests, { ...this.options, transaction });
       data.tutoriales = await CompletionOfTutorialRepository.filterIdsInTenant(data.tutoriales, { ...this.options, transaction });
 
@@ -465,6 +469,7 @@ export default class SecurityGuardService {
     try {
       data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
       data.memos = await MemosRepository.filterIdsInTenant(data.memos, { ...this.options, transaction });
+      // Pass-through availability if provided
       data.requests = await RequestRepository.filterIdsInTenant(data.requests, { ...this.options, transaction });
       data.tutoriales = await CompletionOfTutorialRepository.filterIdsInTenant(data.tutoriales, { ...this.options, transaction });
 

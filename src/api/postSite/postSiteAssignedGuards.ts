@@ -48,10 +48,75 @@ export default async (req, res) => {
     // sequelize.query with QueryTypes.SELECT returns an array of rows.
     const results: any[] = await req.database.sequelize.query(sql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
 
-    console.debug(`[postSiteAssignedGuards] found ${Array.isArray(results) ? results.length : 0} rows for postSite ${postSiteId}`);
+    // Also include assignments that come from shifts linked to this post site (station)
+    const sqlShifts = `
+      SELECT
+        s.id as id,
+        s.startTime,
+        s.endTime,
+        s.stationId as businessInfoId,
+        bi.companyName as postSiteName,
+        ca.name as clientName,
+        s.guardId as guardUserId,
+        u.firstName as firstName,
+        u.lastName as lastName,
+        u.email as email,
+        u.phoneNumber as phoneNumber,
+        'shift' as source,
+        s.createdAt,
+        s.updatedAt
+      FROM shifts s
+      LEFT JOIN businessInfos bi ON bi.id = s.stationId
+      LEFT JOIN clientAccounts ca ON ca.id = bi.clientAccountId
+      LEFT JOIN users u ON u.id = s.guardId
+      WHERE s.stationId = :postSiteId
+        AND s.tenantId = :tenantId
+      ORDER BY s.createdAt DESC
+    `;
 
-    // Return a consistent payload shape used by other list endpoints.
-    await ApiResponseHandler.success(req, res, { rows: results || [], count: (results || []).length });
+    const shiftRows: any[] = await req.database.sequelize.query(sqlShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+
+    // Include guardShift records that reference this station
+    const sqlGuardShifts = `
+      SELECT
+        gs.id as id,
+        gs.punchInTime,
+        gs.punchOutTime,
+        gs.shiftSchedule,
+        gs.stationNameId as businessInfoId,
+        bi.companyName as postSiteName,
+        ca.name as clientName,
+        gs.guardNameId as securityGuardRecordId,
+        sg.guardId as guardUserId,
+        gu.firstName as firstName,
+        gu.lastName as lastName,
+        gu.email as email,
+        gu.phoneNumber as phoneNumber,
+        'guardShift' as source,
+        gs.createdAt,
+        gs.updatedAt
+      FROM guardShifts gs
+      LEFT JOIN businessInfos bi ON bi.id = gs.stationNameId
+      LEFT JOIN clientAccounts ca ON ca.id = bi.clientAccountId
+      LEFT JOIN securityGuards sg ON sg.id = gs.guardNameId
+      LEFT JOIN users gu ON gu.id = sg.guardId
+      WHERE gs.stationNameId = :postSiteId
+        AND gs.tenantId = :tenantId
+      ORDER BY gs.createdAt DESC
+    `;
+
+    const guardShiftRows: any[] = await req.database.sequelize.query(sqlGuardShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+
+    const combined = [
+      ...(results || []),
+      ...(shiftRows || []),
+      ...(guardShiftRows || []),
+    ];
+
+    console.debug(`[postSiteAssignedGuards] found ${combined.length} combined rows for postSite ${postSiteId}`);
+
+    // Return merged rows including `source` to let frontend distinguish origin.
+    await ApiResponseHandler.success(req, res, { rows: combined, count: combined.length });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }

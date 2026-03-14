@@ -73,6 +73,79 @@ export default async (req, res, next) => {
       console.error('Error logging businessInfoList payload:', e);
     }
 
+    // Attach related counts (assignments, shifts, guardShifts) without
+    // replacing the primary businessInfo data. This is a "union"-style
+    // augmentation so frontend can show guard-related metrics per post site.
+    try {
+      if (payload && Array.isArray(payload.rows) && payload.rows.length) {
+        const ids = payload.rows.map((r) => r.id).filter(Boolean);
+        const replacements = { ids, tenantId: req.params.tenantId };
+
+        // Count tenant_user_post_sites assignments per businessInfoId
+        // tenant_user_post_sites does not have a tenantId column; join to tenantUsers
+        // to restrict by tenant.
+        const assignSql = `
+          SELECT tups.businessInfoId, COUNT(*) as assignmentsCount
+          FROM tenant_user_post_sites tups
+          LEFT JOIN tenantUsers tu ON tu.id = tups.tenantUserId
+          WHERE tups.businessInfoId IN (:ids)
+            AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)
+          GROUP BY tups.businessInfoId
+        `;
+
+        // Count shifts referencing stationId = businessInfo id
+        const shiftsSql = `
+          SELECT stationId as businessInfoId, COUNT(*) as shiftsCount
+          FROM shifts
+          WHERE stationId IN (:ids)
+            AND tenantId = :tenantId
+          GROUP BY stationId
+        `;
+
+        // Count guardShifts referencing stationNameId = businessInfo id
+        const guardShiftsSql = `
+          SELECT stationNameId as businessInfoId, COUNT(*) as guardShiftsCount
+          FROM guardShifts
+          WHERE stationNameId IN (:ids)
+            AND tenantId = :tenantId
+          GROUP BY stationNameId
+        `;
+
+        const [assignRows] = await req.database.sequelize.query(assignSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+        const [shiftRows] = await req.database.sequelize.query(shiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+        const [gShiftRows] = await req.database.sequelize.query(guardShiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+
+        const assignMap = (assignRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.assignmentsCount); return acc; }, {});
+        const shiftMap = (shiftRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.shiftsCount); return acc; }, {});
+        const gShiftMap = (gShiftRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.guardShiftsCount); return acc; }, {});
+
+        payload.rows = payload.rows.map((r) => ({
+          ...r,
+          assignmentsCount: assignMap[r.id] || 0,
+          shiftsCount: shiftMap[r.id] || 0,
+          guardShiftsCount: gShiftMap[r.id] || 0,
+        }));
+      }
+    } catch (e) {
+      console.error('Error augmenting businessInfoList with station/assignment counts:', e);
+    }
+
+    // Temporary debug: log payload size to help diagnose frontend empty list issue
+    try {
+      const debugCount = payload && payload.count ? payload.count : (payload && Array.isArray(payload.rows) ? payload.rows.length : 0);
+      console.debug(`[businessInfoList] tenant=${req.params.tenantId} rows=${debugCount} sample=${payload && payload.rows && payload.rows[0] ? payload.rows[0].id : 'no-row'}`);
+    } catch (e) {
+      console.debug('[businessInfoList] debug log failed', e);
+    }
+
+    // Prevent browser/proxy caching of this API response which can produce
+    // 304 Not Modified responses and cause the frontend to receive no body.
+    try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    } catch (e) {
+      // ignore header-setting errors
+    }
+
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

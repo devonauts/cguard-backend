@@ -544,6 +544,22 @@ class StationRepository {
       transaction,
     });
 
+    // Expose counts to simplify frontend consumption and avoid recomputing lengths there
+    output.assignedGuardsCount = Array.isArray(output.assignedGuards)
+      ? output.assignedGuards.length
+      : 0;
+
+    output.incidentsCount = Array.isArray(output.incidents)
+      ? output.incidents.length
+      : 0;
+
+    output.tasksCount = Array.isArray(output.tasks)
+      ? output.tasks.length
+      : 0;
+
+    // Backwards-compatible alias used by frontend
+    output.guardsCount = output.assignedGuardsCount;
+
     return output;
   }
 }

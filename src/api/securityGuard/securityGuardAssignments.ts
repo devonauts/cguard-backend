@@ -78,7 +78,70 @@ export default async (req, res) => {
 
     const rows: any[] = await req.database.sequelize.query(sql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
 
-    await ApiResponseHandler.success(req, res, { rows, count: rows.length });
+    // Also include assignments coming from shifts (user-level shifts)
+    const sqlShifts = `
+      SELECT
+        s.id,
+        s.startTime,
+        s.endTime,
+        s.stationId as businessInfoId,
+        st.stationName as postSiteName,
+        ca.name as clientName,
+        s.guardId as guardUserId,
+        u.firstName,
+        u.lastName,
+        'shift' as source,
+        s.createdAt,
+        s.updatedAt
+      FROM shifts s
+      LEFT JOIN stations st ON st.id = s.stationId
+      LEFT JOIN clientAccounts ca ON ca.id = st.stationOriginId
+      LEFT JOIN users u ON u.id = s.guardId
+      WHERE s.guardId = :guardUserId
+        AND s.tenantId = :tenantId
+      ORDER BY s.createdAt DESC
+    `;
+
+    const shiftRows: any[] = guardUserId
+      ? await req.database.sequelize.query(sqlShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT })
+      : [];
+
+    // Include guardShift records (these reference securityGuard entries and may map to user via securityGuards.guardId)
+    const sqlGuardShifts = `
+      SELECT
+        gs.id,
+        gs.punchInTime,
+        gs.punchOutTime,
+        gs.shiftSchedule,
+        gs.stationNameId as businessInfoId,
+        st.stationName as postSiteName,
+        ca.name as clientName,
+        gs.guardNameId as securityGuardId,
+        sg.guardId as guardUserId,
+        gu.firstName as guardFirstName,
+        gu.lastName as guardLastName,
+        'guardShift' as source,
+        gs.createdAt,
+        gs.updatedAt
+      FROM guardShifts gs
+      LEFT JOIN stations st ON st.id = gs.stationNameId
+      LEFT JOIN clientAccounts ca ON ca.id = st.stationOriginId
+      LEFT JOIN securityGuards sg ON sg.id = gs.guardNameId
+      LEFT JOIN users gu ON gu.id = sg.guardId
+      WHERE (gs.guardNameId = :resolvedSecurityGuardId OR sg.guardId = :guardUserId)
+        AND gs.tenantId = :tenantId
+      ORDER BY gs.createdAt DESC
+    `;
+
+    const guardShiftRows: any[] = await req.database.sequelize.query(sqlGuardShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+
+    const combined = [
+      ...rows,
+      ...shiftRows,
+      ...guardShiftRows,
+    ];
+
+    await ApiResponseHandler.success(req, res, { rows: combined, count: combined.length });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }

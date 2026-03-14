@@ -40,6 +40,7 @@ class SecurityGuardRepository {
       'academicInstruction',
       'address',          
       'importHash',
+      'availability',
     ]);
 
     createPayload.guardId = data.guard || null;
@@ -180,6 +181,7 @@ class SecurityGuardRepository {
         'academicInstruction',
         'address',          
         'importHash',
+        'availability',
       ]),
       updatedById: currentUser.id,
     };

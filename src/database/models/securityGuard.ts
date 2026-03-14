@@ -135,6 +135,10 @@ export default function (sequelize) {
           len: [0, 255],
         },    
       },
+      availability: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
     },
     {
       indexes: [
