@@ -210,6 +210,11 @@ class StationRepository {
         model: options.database.clientAccount,
         as: 'stationOrigin',
       },
+      {
+        model: options.database.businessInfo,
+        as: 'postSite',
+        required: false,
+      },      
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
@@ -547,6 +552,21 @@ class StationRepository {
     output.shift = await record.getShift({
       transaction,
     });
+
+    // Attach simplified postSite info if available
+    if (output.postSite) {
+      output.postSite = output.postSite
+        ? { id: output.postSite.id, businessName: output.postSite.businessName || output.postSite.name || null }
+        : null;
+    } else if (output.postSiteId) {
+      // fallback: try to load postSite when only id present
+      try {
+        const post = await options.database.businessInfo.findByPk(output.postSiteId, { transaction });
+        output.postSite = post ? { id: post.id, businessName: post.businessName || post.name || null } : null;
+      } catch (e) {
+        output.postSite = null;
+      }
+    }
 
     // Expose counts to simplify frontend consumption and avoid recomputing lengths there
     output.assignedGuardsCount = Array.isArray(output.assignedGuards)
