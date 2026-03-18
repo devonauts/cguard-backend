@@ -95,6 +95,7 @@ export default function (sequelize) {
       foreignKey: {
         allowNull: false,
       },
+      onDelete: 'CASCADE',
     });
 
     models.service.belongsTo(models.user, {
