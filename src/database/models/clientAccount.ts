@@ -31,6 +31,21 @@ export default function (sequelize) {
           len: [0, 150],
         }
       },
+      personType: {
+        type: DataTypes.STRING(3),
+        allowNull: true,
+        defaultValue: 'PN',
+        validate: {
+          len: [0, 3],
+        }
+      },
+      documentNumber: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        validate: {
+          len: [0, 50],
+        }
+      },
       phoneNumber: {
         type: DataTypes.STRING(20),
         allowNull: true,
@@ -80,6 +95,14 @@ export default function (sequelize) {
         defaultValue: true,
       },
       faxNumber: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+        validate: {
+          len: [0, 20],
+        }
+      },
+      // New preferred field name: landline. Keep faxNumber for backward compatibility.
+      landline: {
         type: DataTypes.STRING(20),
         allowNull: true,
         validate: {

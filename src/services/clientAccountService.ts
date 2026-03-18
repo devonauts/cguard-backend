@@ -410,7 +410,7 @@ export default class ClientAccountService {
             { text: client.zipCode || '', x: marginLeft + colWidth * 8, width: colWidth * 0.8 },
             { text: client.city || '', x: marginLeft + colWidth * 8.8, width: colWidth },
             { text: client.country || '', x: marginLeft + colWidth * 9.8, width: colWidth },
-            { text: client.faxNumber || '', x: marginLeft + colWidth * 10.8, width: colWidth * 0.6 },
+            { text: (client.landline || client.faxNumber || client.fax || ''), x: marginLeft + colWidth * 10.8, width: colWidth * 0.6 },
             { text: client.category?.name || '-', x: marginLeft + colWidth * 11.4, width: colWidth * 0.6 },
             { text: (client.active ? 'true' : 'false'), x: marginLeft + colWidth * 12, width: colWidth * 0.6 },
           ];
@@ -481,7 +481,7 @@ export default class ClientAccountService {
 
     // Add headers en la fila 4
     const headerRow = worksheet.getRow(4);
-    const headers = ['Nombre', 'Apellidos', 'Email', 'Teléfono', 'Dirección', 'Dirección Complementaria', 'Código Postal', 'Ciudad', 'País', 'Fax', 'Sitio Web', 'Categoría', 'Activo'];
+    const headers = ['Nombre', 'Apellidos', 'Email', 'Teléfono', 'Dirección', 'Dirección Complementaria', 'Código Postal', 'Ciudad', 'País', 'Teléfono fijo', 'Sitio Web', 'Categoría', 'Activo'];
     const widths = [25, 25, 30, 20, 35, 30, 15, 20, 20, 20, 30, 25, 12];
     
     headers.forEach((header, index) => {
@@ -519,7 +519,7 @@ export default class ClientAccountService {
         client.zipCode || '',
         client.city || '',
         client.country || '',
-        client.faxNumber || '',
+        (client.landline || client.faxNumber || client.fax || ''),
         client.website || '',
         client.category?.name || '-',
         (client.active ? 'true' : 'false'),

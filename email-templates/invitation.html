@@ -21,15 +21,20 @@
 				<img src="{{logoUrl}}" alt="GuardsPro" style="height:120px; display:block; margin:0 auto;" />
 			</div>
 
-			<h1>Hola {{firstName}} {{lastName}},</h1>
+			<h1>Hola,</h1>
 
-			<p>Has sido invitado a formar parte del equipo de seguridad de <strong>{{tenant.name}}</strong>. Haz clic en el botón de abajo para aceptar la invitación y completar tu registro.</p>
+			<p style="font-weight:700; color:#111827; margin-top:8px">{{firstName}} {{lastName}}</p>
+			<p style="color:#6b7280; margin-top:4px; font-size:14px">{{email}}</p>
+
+			<p style="margin-top:12px">Has sido invitado a formar parte del equipo de seguridad de <strong>{{tenant.name}}</strong>. Haz clic en el botón de abajo para aceptar la invitación y completar tu registro.</p>
 
 			<p style="text-align:center; margin:22px 0">
-				<a class="btn" href="{{link}}" style="display:inline-block; background:#f97316; color:#ffffff; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; font-family: Arial, Helvetica, sans-serif;">ACEPTAR INVITACIÓN</a>
+				<a class="btn" href="{{link}}" style="display:inline-block; background:#f97316; color:#ffffff; padding:14px 24px; border-radius:8px; text-decoration:none; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; font-family: Arial, Helvetica, sans-serif; box-shadow: 0 6px 18px rgba(249,115,22,0.18);">ACEPTAR INVITACIÓN</a>
 			</p>
 
 			<p class="footer">Si no esperabas esta invitación, puedes ignorar este correo. El enlace de invitación puede expirar según la configuración del sistema.</p>
+			<hr style="border:none;border-top:1px solid #eef2f6;margin:20px 0" />
+			<p style="font-size:12px;color:#9ca3af;margin:0">Si necesitas ayuda, contacta al equipo de soporte: <a href="mailto:{{supportEmail}}" style="color:#6b7280">{{supportEmail}}</a></p>
 		</div>
 	</body>
 </html>

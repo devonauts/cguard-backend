@@ -52,6 +52,10 @@ export default function (sequelize) {
           len: [0, 255],
         },    
       },
+      postSiteId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
     },
     {
       indexes: [
@@ -110,6 +114,12 @@ export default function (sequelize) {
       foreignKey: {
         allowNull: false,
       },
+    });
+
+    models.guardShift.belongsTo(models.businessInfo, {
+      as: 'postSite',
+      foreignKey: 'postSiteId',
+      constraints: false,
     });
 
     models.guardShift.belongsTo(models.user, {

@@ -105,6 +105,15 @@ export default function (sequelize, DataTypes) {
           notEmpty: true,
         },
       },
+      // Teléfono fijo opcional
+      landline: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        defaultValue: null,
+        validate: {
+          len: [0, 50],
+        },
+      },
       email: {
         type: DataTypes.STRING(255),
         allowNull: false,

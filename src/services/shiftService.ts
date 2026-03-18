@@ -4,6 +4,7 @@ import { IServiceOptions } from './IServiceOptions';
 import ShiftRepository from '../database/repositories/shiftRepository';
 import StationRepository from '../database/repositories/stationRepository';
 import UserRepository from '../database/repositories/userRepository';
+import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 
 export default class ShiftService {
   options: IServiceOptions;
@@ -20,6 +21,7 @@ export default class ShiftService {
     try {
       data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
       data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
+      data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
 
       const record = await ShiftRepository.create(data, {
         ...this.options,
@@ -54,6 +56,7 @@ export default class ShiftService {
     try {
       data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
       data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
+      data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
 
       const record = await ShiftRepository.update(
         id,

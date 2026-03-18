@@ -7,6 +7,7 @@ import SecurityGuardRepository from '../database/repositories/securityGuardRepos
 import InventoryHistoryRepository from '../database/repositories/inventoryHistoryRepository';
 import PatrolLogRepository from '../database/repositories/patrolLogRepository';
 import IncidentRepository from '../database/repositories/incidentRepository';
+import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 
 export default class GuardShiftService {
   options: IServiceOptions;
@@ -24,6 +25,7 @@ export default class GuardShiftService {
       data.stationName = await StationRepository.filterIdInTenant(data.stationName, { ...this.options, transaction });
       data.guardName = await SecurityGuardRepository.filterIdInTenant(data.guardName, { ...this.options, transaction });
       data.completeInventoryCheck = await InventoryHistoryRepository.filterIdInTenant(data.completeInventoryCheck, { ...this.options, transaction });
+      data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
       data.patrolsDone = await PatrolLogRepository.filterIdsInTenant(data.patrolsDone, { ...this.options, transaction });
       data.dailyIncidents = await IncidentRepository.filterIdsInTenant(data.dailyIncidents, { ...this.options, transaction });
 
@@ -61,6 +63,7 @@ export default class GuardShiftService {
       data.stationName = await StationRepository.filterIdInTenant(data.stationName, { ...this.options, transaction });
       data.guardName = await SecurityGuardRepository.filterIdInTenant(data.guardName, { ...this.options, transaction });
       data.completeInventoryCheck = await InventoryHistoryRepository.filterIdInTenant(data.completeInventoryCheck, { ...this.options, transaction });
+      data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
       data.patrolsDone = await PatrolLogRepository.filterIdsInTenant(data.patrolsDone, { ...this.options, transaction });
       data.dailyIncidents = await IncidentRepository.filterIdsInTenant(data.dailyIncidents, { ...this.options, transaction });
 

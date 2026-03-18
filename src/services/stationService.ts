@@ -10,6 +10,7 @@ import PatrolCheckpointRepository from '../database/repositories/patrolCheckpoin
 import PatrolRepository from '../database/repositories/patrolRepository';
 import ShiftRepository from '../database/repositories/shiftRepository';
 import UserRepository from '../database/repositories/userRepository';
+import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 
 export default class StationService {
   options: IServiceOptions;
@@ -25,6 +26,7 @@ export default class StationService {
 
     try {
       data.stationOrigin = await ClientAccountRepository.filterIdInTenant(data.stationOrigin, { ...this.options, transaction });
+      data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
       data.assignedGuards = await UserRepository.filterIdsInTenant(data.assignedGuards, { ...this.options, transaction });
       data.tasks = await TaskRepository.filterIdsInTenant(data.tasks, { ...this.options, transaction });
       data.reports = await ReportRepository.filterIdsInTenant(data.reports, { ...this.options, transaction });
@@ -65,6 +67,7 @@ export default class StationService {
 
     try {
       data.stationOrigin = await ClientAccountRepository.filterIdInTenant(data.stationOrigin, { ...this.options, transaction });
+      data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
       data.assignedGuards = await UserRepository.filterIdsInTenant(data.assignedGuards, { ...this.options, transaction });
       data.tasks = await TaskRepository.filterIdsInTenant(data.tasks, { ...this.options, transaction });
       data.reports = await ReportRepository.filterIdsInTenant(data.reports, { ...this.options, transaction });

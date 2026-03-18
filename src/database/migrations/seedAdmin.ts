@@ -14,7 +14,7 @@ async function seedAdmin() {
     // which causes errors in partially-migrated DBs. Rely on migrations instead.
 
     const adminEmail = 'admin@cguard.com';
-    const adminPassword = 'admin123'; // Cambia esta contraseña después de crear el usuario
+    const adminPassword = 'Admin1234@'; // Cambia esta contraseña después de crear el usuario
 
 
     // Verifica si ya existe un usuario admin

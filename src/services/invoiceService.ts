@@ -498,66 +498,11 @@ export default class InvoiceService {
       throw new Error('Invoice not found');
     }
 
-    // Ensure invoice is paid in full before allowing send
-    try {
-      // payments can be stored in several shapes: record.payments (JSON), record.rawPayments, or top-level paid/paidAmount
-      const paymentsArr = Array.isArray(record.payments) ? record.payments : (Array.isArray(record.rawPayments) ? record.rawPayments : []);
-      // Sum available payment fields defensively
-      const parseNumeric = (v: any) => {
-        if (v == null) return 0;
-        if (typeof v === 'number') return v;
-        if (typeof v === 'string') {
-          const cleaned = String(v).replace(/[^0-9.-]+/g, '');
-          const n = Number(cleaned);
-          return isNaN(n) ? 0 : n;
-        }
-        const n = Number(v);
-        return isNaN(n) ? 0 : n;
-      };
-
-      const totalPaid = (paymentsArr || []).reduce((acc: number, p: any) => {
-        const v = parseNumeric(p?.amount ?? p?.paid ?? p?.total ?? p?.paidAmount ?? 0);
-        return acc + v;
-      }, 0);
-
-      // Fallback to aggregated fields if present
-      const topPaid = parseNumeric(record.paidAmount ?? record.paid ?? record.paidTotal ?? 0) || 0;
-      let effectivePaid = (totalPaid > 0) ? totalPaid : topPaid;
-
-      // If there are no embedded payments and no top-level paid amount, try to query payments table
-      if (!effectivePaid || effectivePaid === 0) {
-        try {
-          const tenant = SequelizeRepository.getCurrentTenant(this.options);
-          const paymentModel = this.options && this.options.database && this.options.database.payment ? this.options.database.payment : null;
-          if (paymentModel) {
-            const payRows = await paymentModel.findAll({ where: { invoiceId: id, tenantId: tenant.id } });
-            if (Array.isArray(payRows) && payRows.length) {
-              const sum = payRows.reduce((acc: number, p: any) => {
-                const val = Number(p.amount ?? p.paid ?? p.total ?? 0);
-                return acc + (isNaN(val) ? 0 : val);
-              }, 0);
-              effectivePaid = sum;
-            }
-          }
-        } catch (e) {
-          // ignore fallback errors — we'll rely on previous checks
-        }
-      }
-
-      const invoiceTotal = Number(record.total || 0) || 0;
-
-      const EPS = 0.005; // tolerate minor floating point rounding
-      if (invoiceTotal > 0 && (effectivePaid + EPS) < invoiceTotal) {
-        // helpful debug when failing validation
-        // eslint-disable-next-line no-console
-        console.debug('[InvoiceService.send] Validation failed: invoiceTotal=', invoiceTotal, 'effectivePaid=', effectivePaid, 'payments=', paymentsArr);
-        throw new Error400(this.options.language, 'invoice.errors.notFullyPaid');
-      }
-    } catch (err) {
-      if (err instanceof Error400) throw err;
-      // any other error, rethrow as generic validation error
-      throw new Error400(this.options.language, 'invoice.errors.notFullyPaid');
-    }
+    // Validation skipped: allow sending invoice even if not fully paid.
+    // Previously: enforced invoice had to be fully paid before sending. That check was removed to allow
+    // sending invoice emails immediately after creation. Keep a debug log for visibility.
+    // eslint-disable-next-line no-console
+    console.debug('[InvoiceService.send] Skipping full-payment validation; sending regardless of payment status.');
 
     // Generate PDF
     let pdfBuffer: Buffer | null = null;

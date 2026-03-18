@@ -111,9 +111,9 @@ export default async (req, res, next) => {
           GROUP BY stationNameId
         `;
 
-        const [assignRows] = await req.database.sequelize.query(assignSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
-        const [shiftRows] = await req.database.sequelize.query(shiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
-        const [gShiftRows] = await req.database.sequelize.query(guardShiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+        const assignRows = await req.database.sequelize.query(assignSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+        const shiftRows = await req.database.sequelize.query(shiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+        const gShiftRows = await req.database.sequelize.query(guardShiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
 
         const assignMap = (assignRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.assignmentsCount); return acc; }, {});
         const shiftMap = (shiftRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.shiftsCount); return acc; }, {});
