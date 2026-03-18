@@ -49,7 +49,7 @@ async function migrate() {
           console.log('Dropping existing foreign key:', name);
           await sequelize.query(`ALTER TABLE \`services\` DROP FOREIGN KEY \`${name}\``);
         } catch (err) {
-          console.warn('Could not drop foreign key', name, err && err.message ? err.message : err);
+          console.warn('Could not drop foreign key', name, (err as any) && (err as any).message ? (err as any).message : String(err));
         }
       }
     } else {
@@ -64,14 +64,14 @@ async function migrate() {
       );
       console.log('✅ FK added with ON DELETE CASCADE.');
     } catch (err) {
-      console.error('Failed to add FK fk_services_tenant:', err && err.message ? err.message : err);
+      console.error('Failed to add FK fk_services_tenant:', (err as any) && (err as any).message ? (err as any).message : String(err));
       process.exit(1);
     }
 
     console.log('✅ Migration completed successfully.');
     process.exit(0);
   } catch (error) {
-    console.error('❌ Migration failed:', error && error.message ? error.message : error);
+    console.error('❌ Migration failed:', (error as any) && (error as any).message ? (error as any).message : String(error));
     process.exit(1);
   }
 }
