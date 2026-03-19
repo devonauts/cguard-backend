@@ -199,7 +199,7 @@ export default [
             // latitude/longitude intentionally ignored (not stored)
           }
 
-          // Required fields per UI: Cliente, Sitio de publicación (companyName), Dirección,
+          // Required fields per UI: Cliente, Puesto de seguridad (companyName), Dirección,
           // Código postal, Ciudad, País, Número de Teléfono, Correo Electrónico, Descripción
           const missing: string[] = [];
 

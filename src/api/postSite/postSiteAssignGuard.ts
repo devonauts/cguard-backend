@@ -131,6 +131,7 @@ export default async (req, res) => {
       // UPDATE existing record
       const updateData = {
         security_guard_id: resolvedSecurityGuardId || null,
+        station_id: incoming.stationId || incoming.station_id || null,
         site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
         tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
         post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),
@@ -145,6 +146,7 @@ export default async (req, res) => {
       await req.database.sequelize.query(
         `UPDATE tenant_user_post_sites 
          SET security_guard_id = :security_guard_id,
+          station_id = :station_id,
              site_tours = :site_tours,
              tasks = :tasks,
              post_orders = :post_orders,
@@ -164,6 +166,7 @@ export default async (req, res) => {
         businessInfoId: postSiteId,
         // Use resolvedSecurityGuardId (securityGuard record id) to satisfy FK constraint.
         security_guard_id: resolvedSecurityGuardId || null,
+        station_id: incoming.stationId || incoming.station_id || null,
         site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
         tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
         post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),

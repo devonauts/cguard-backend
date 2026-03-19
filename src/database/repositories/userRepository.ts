@@ -1128,6 +1128,8 @@ export default class UserRepository {
           'lastName',
           'email',
           'phoneNumber',
+          'guardNumber',
+          'employeeCode',
         ]),
       );
     }
@@ -1138,6 +1140,8 @@ export default class UserRepository {
       'lastName',
       'email',
       'phoneNumber',
+      'guardNumber',
+      'employeeCode',
     ]);
   }
 

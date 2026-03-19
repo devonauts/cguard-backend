@@ -240,7 +240,7 @@ export default class StationService {
         // Distribuir columnas uniformemente en el ancho disponible
         const colWidth = usableWidth / 4;
         const cols = [
-          { label: 'Sitio de Publicación', x: marginLeft, width: colWidth * 2 },
+          { label: 'Puesto de seguridad', x: marginLeft, width: colWidth * 2 },
           { label: 'Correo Electrónico', x: marginLeft + colWidth * 2, width: colWidth },
           { label: 'Número de Teléfono', x: marginLeft + colWidth * 3, width: colWidth },
         ];
@@ -348,7 +348,7 @@ export default class StationService {
 
     // Add headers en la fila 4
     const headerRow = worksheet.getRow(4);
-    const headers = ['Sitio de Publicación', 'Correo Electrónico', 'Número de Teléfono'];
+    const headers = ['Puesto de seguridad', 'Correo Electrónico', 'Número de Teléfono'];
     const widths = [40, 35, 25];
     
     headers.forEach((header, index) => {
