@@ -31,7 +31,7 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
         references: {
-          model: 'station',
+          model: 'stations',
           key: 'id',
         },
         onUpdate: 'CASCADE',
