@@ -54,7 +54,7 @@ export default async (req, res) => {
       console.debug('[postSiteAssignedGuards] running tenant_user_post_sites query', { tenantId, postSiteId });
       results = await req.database.sequelize.query(sql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
     } catch (err) {
-      console.error('[postSiteAssignedGuards] tenant_user_post_sites query failed', (err && err.message) || err);
+      console.error('[postSiteAssignedGuards] tenant_user_post_sites query failed', (err && (err as any).message) || err);
       // continue with empty results to avoid 500s; response will show combined length accordingly
       results = [];
     }
@@ -100,7 +100,7 @@ export default async (req, res) => {
       console.debug('[postSiteAssignedGuards] running shifts query', { tenantId, postSiteId });
       shiftRows = await req.database.sequelize.query(sqlShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
     } catch (err) {
-      console.error('[postSiteAssignedGuards] shifts query failed', (err && err.message) || err);
+      console.error('[postSiteAssignedGuards] shifts query failed', (err && (err as any).message) || err);
       shiftRows = [];
     }
 
@@ -141,7 +141,7 @@ export default async (req, res) => {
       console.debug('[postSiteAssignedGuards] running guardShifts query', { tenantId, postSiteId });
       guardShiftRows = await req.database.sequelize.query(sqlGuardShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
     } catch (err) {
-      console.error('[postSiteAssignedGuards] guardShifts query failed', (err && err.message) || err);
+      console.error('[postSiteAssignedGuards] guardShifts query failed', (err && (err as any).message) || err);
       guardShiftRows = [];
     }
 
@@ -204,7 +204,7 @@ export default async (req, res) => {
           }
         }
       } catch (e) {
-        console.warn('[postSiteAssignedGuards] failed to normalize row', e && e.message);
+        console.warn('[postSiteAssignedGuards] failed to normalize row', e && (e as any).message);
       }
     }
 

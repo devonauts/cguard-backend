@@ -53,7 +53,7 @@ export default async (req, res) => {
       console.debug('[postSiteStationAssignedGuards] running shifts query', { tenantId, postSiteId, stationId });
       shiftRows = await req.database.sequelize.query(sqlShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
     } catch (err) {
-      console.error('[postSiteStationAssignedGuards] shifts query failed', (err && err.message) || err);
+      console.error('[postSiteStationAssignedGuards] shifts query failed', (err && (err as any).message) || err);
       shiftRows = [];
     }
 
@@ -97,7 +97,7 @@ export default async (req, res) => {
       console.debug('[postSiteStationAssignedGuards] running guardShifts query', { tenantId, postSiteId, stationId });
       guardShiftRows = await req.database.sequelize.query(sqlGuardShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
     } catch (err) {
-      console.error('[postSiteStationAssignedGuards] guardShifts query failed', (err && err.message) || err);
+      console.error('[postSiteStationAssignedGuards] guardShifts query failed', (err && (err as any).message) || err);
       guardShiftRows = [];
     }
 
@@ -150,7 +150,7 @@ export default async (req, res) => {
           }
         }
       } catch (e) {
-        console.warn('[postSiteStationAssignedGuards] failed to normalize row', e && e.message);
+        console.warn('[postSiteStationAssignedGuards] failed to normalize row', e && (e as any).message);
       }
     }
 
