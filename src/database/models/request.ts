@@ -28,6 +28,10 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      stationId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       priority: {
         type: DataTypes.STRING(50),
         allowNull: true,
@@ -123,6 +127,12 @@ export default function (sequelize) {
     models.request.belongsTo(models.clientAccount, {
       as: 'client',
       foreignKey: 'clientId',
+      constraints: false,
+    });
+
+    models.request.belongsTo(models.station, {
+      as: 'station',
+      foreignKey: 'stationId',
       constraints: false,
     });
 

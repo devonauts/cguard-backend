@@ -319,6 +319,10 @@ class StationRepository {
     });
 
     if (filter) {
+      if (filter.postSite) {
+        whereAnd.push({ postSiteId: SequelizeFilterUtils.uuid(filter.postSite) });
+      }
+
       if (filter.id) {
         whereAnd.push({
           ['id']: SequelizeFilterUtils.uuid(filter.id),

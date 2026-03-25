@@ -27,4 +27,8 @@ export default (app) => {
     `/tenant/:tenantId/incident/:id`,
     require('./incidentFind').default,
   );
+  app.post(
+    `/tenant/:tenantId/incident/:id/dispatch`,
+    require('./incidentCreateDispatch').default,
+  );
 };

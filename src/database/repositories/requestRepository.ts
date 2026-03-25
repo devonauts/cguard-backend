@@ -45,6 +45,7 @@ class RequestRepository {
         guardNameId: data.guardName || data.guardId || null,
         clientId: data.clientId || null,
         siteId: data.siteId || null,
+        stationId: data.station || data.stationId || null,
         incidentTypeId: data.incidentTypeId || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
@@ -127,6 +128,7 @@ class RequestRepository {
         guardNameId: data.guardName || data.guardId || null,
         clientId: data.clientId || null,
         siteId: data.siteId || null,
+        stationId: data.station || data.stationId || null,
         incidentTypeId: data.incidentTypeId || null,
         updatedById: currentUser.id,
       },
@@ -201,6 +203,7 @@ class RequestRepository {
       'location',
       'status',
       'importHash',
+      'stationId',
     ];
 
     for (const key of pickable) {
@@ -227,6 +230,10 @@ class RequestRepository {
 
     if (Object.prototype.hasOwnProperty.call(data, 'siteId')) {
       toUpdate.siteId = data.siteId;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'stationId') || Object.prototype.hasOwnProperty.call(data, 'station')) {
+      toUpdate.stationId = data.station || data.stationId || null;
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'incidentTypeId')) {
@@ -311,6 +318,11 @@ class RequestRepository {
       {
         model: options.database.securityGuard,
         as: 'guardName',
+      },
+      {
+        model: options.database.station,
+        as: 'station',
+        required: false,
       },
       {
         model: options.database.clientAccount,

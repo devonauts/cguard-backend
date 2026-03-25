@@ -1,7 +1,8 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-import RequestService from '../../services/requestService';
+import IncidentService from '../../services/incidentService';
+import StationService from '../../services/stationService';
 
 export default async (req, res, next) => {
   try {
@@ -23,7 +24,25 @@ export default async (req, res, next) => {
       }
     }
 
-    const payload = await new RequestService(
+    // If caller provided a siteId filter, map it to station IDs for incidents
+    if (args.filter && args.filter.siteId) {
+      try {
+        const stationService = new StationService(req);
+        const stationsResp = await stationService.findAndCountAll({ filter: { postSite: args.filter.siteId }, limit: 0, offset: 0 });
+        const stationRows = Array.isArray(stationsResp.rows) ? stationsResp.rows : [];
+        const stationIds = stationRows.map((s) => s.id).filter(Boolean);
+        // set filter for incidents repository
+        args.filter.stationIncidents = stationIds.length ? stationIds : null;
+        // remove siteId to avoid confusion downstream
+        delete args.filter.siteId;
+      } catch (err) {
+        // If station lookup fails, log and continue without mapping
+        console.warn('Failed to map siteId to stations', err);
+      }
+    }
+
+    // Use IncidentService to list incidents (possibly filtered by stationIncidents)
+    const payload = await new IncidentService(
       req,
     ).findAndCountAll(args);
 

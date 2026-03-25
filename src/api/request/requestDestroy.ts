@@ -1,7 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-import RequestService from '../../services/requestService';
+import IncidentService from '../../services/incidentService';
 
 export default async (req, res, next) => {
   try {
@@ -9,7 +9,7 @@ export default async (req, res, next) => {
       Permissions.values.requestDestroy,
     );
 
-    await new RequestService(req).destroyAll(
+    await new IncidentService(req).destroyAll(
       req.query.ids,
     );
 

@@ -1,7 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-import RequestService from '../../services/requestService';
+import IncidentService from '../../services/incidentService';
 
 export default async (req, res, next) => {
   try {
@@ -9,7 +9,7 @@ export default async (req, res, next) => {
       Permissions.values.requestEdit,
     );
 
-    const payload = await new RequestService(req).patch(
+    const payload = await new IncidentService(req).update(
       req.params.id,
       req.body.data,
     );

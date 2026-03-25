@@ -12,17 +12,17 @@ const getId = () => {
 };
 
 async function listComments(requestId: string) {
-  const db = models();
-  const req = await db.request.findByPk(requestId);
-  if (!req) return [];
-  return req.comments || [];
+    const db = models();
+    const rec = await db.incident.findByPk(requestId);
+    if (!rec) return [];
+    return rec.comments || [];
 }
 
 async function createComment(requestId: string, text: string, author: any, attachment?: any) {
   const db = models();
-  const req = await db.request.findByPk(requestId);
-  if (!req) {
-    throw new Error('Request not found');
+  const rec = await db.incident.findByPk(requestId);
+  if (!rec) {
+    throw new Error('Incident not found');
   }
 
   const comment = {
@@ -36,9 +36,9 @@ async function createComment(requestId: string, text: string, author: any, attac
     comment['attachment'] = attachment;
   }
 
-  const existing = req.comments || [];
+  const existing = rec.comments || [];
   const updated = [...existing, comment];
-  await req.update({ comments: updated }, { fields: ['comments'] });
+  await rec.update({ comments: updated }, { fields: ['comments'] });
 
   return comment;
 }

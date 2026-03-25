@@ -24,6 +24,39 @@ export default function (sequelize) {
           len: [0, 255],
         },    
       },
+      tenantUserId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      siteTours: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
+      tasks: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
+      postOrders: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
+      checklists: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
+      skillSet: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
+      department: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
       postSiteId: {
         type: DataTypes.UUID,
         allowNull: true,
@@ -60,6 +93,12 @@ export default function (sequelize) {
       foreignKey: {
         allowNull: false,
       },
+    });
+
+    models.shift.belongsTo(models.tenantUser, {
+      as: 'tenantUser',
+      foreignKey: 'tenantUserId',
+      constraints: false,
     });
 
 

@@ -27,13 +27,32 @@ class IncidentRepository {
       {
         ...lodash.pick(data, [
           'date',
+          'dateTime',
+          'incidentAt',
           'title',
+          'subject',
           'description',
+          'content',
+          'action',
+          'postSiteId',
+          'callerName',
+          'callerType',
+          'status',
+          'priority',
+          'internalNotes',
+          'actionsTaken',
+          'location',
+          'comments',
           'wasRead',          
           'importHash',
         ]),
         stationIncidentsId: data.stationIncidents || null,
+        stationId: data.stationId || null,
         incidentTypeId: data.incidentType || null,
+        siteId: data.siteId || null,
+        postSiteId: data.postSiteId || null,
+        clientId: data.clientId || null,
+        guardNameId: data.guardNameId || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -97,13 +116,32 @@ class IncidentRepository {
       {
         ...lodash.pick(data, [
           'date',
+          'dateTime',
+          'incidentAt',
           'title',
+          'subject',
           'description',
+          'content',
+          'action',
+          'postSiteId',
+          'callerName',
+          'callerType',
+          'status',
+          'priority',
+          'internalNotes',
+          'actionsTaken',
+          'location',
+          'comments',
           'wasRead',          
           'importHash',
         ]),
         stationIncidentsId: data.stationIncidents || null,
+        stationId: data.stationId || null,
         incidentTypeId: data.incidentType || null,
+        siteId: data.siteId || null,
+        postSiteId: data.postSiteId || null,
+        clientId: data.clientId || null,
+        guardNameId: data.guardNameId || null,
         updatedById: currentUser.id,
       },
       {
@@ -181,6 +219,22 @@ class IncidentRepository {
       {
         model: options.database.incidentType,
         as: 'incidentType',
+      },
+      {
+        model: options.database.clientAccount,
+        as: 'client',
+      },
+      {
+        model: options.database.station,
+        as: 'station',
+      },
+      {
+        model: options.database.businessInfo,
+        as: 'site',
+      },
+      {
+        model: options.database.securityGuard,
+        as: 'guardName',
       },
     ];
 
@@ -278,7 +332,27 @@ class IncidentRepository {
       {
         model: options.database.station,
         as: 'stationIncidents',
-      },      
+      },
+      {
+        model: options.database.incidentType,
+        as: 'incidentType',
+      },
+      {
+        model: options.database.clientAccount,
+        as: 'client',
+      },
+      {
+        model: options.database.station,
+        as: 'station',
+      },
+      {
+        model: options.database.businessInfo,
+        as: 'site',
+      },
+      {
+        model: options.database.securityGuard,
+        as: 'guardName',
+      },
     ];
 
     whereAnd.push({
@@ -366,6 +440,54 @@ class IncidentRepository {
             filter.incidentType,
           ),
         });
+      }
+
+      if (filter.postSiteId) {
+        whereAnd.push({
+          ['postSiteId']: SequelizeFilterUtils.uuid(
+            filter.postSiteId,
+          ),
+        });
+      }
+
+      if (filter.clientId) {
+        whereAnd.push({
+          ['clientId']: SequelizeFilterUtils.uuid(
+            filter.clientId,
+          ),
+        });
+      }
+
+      if (filter.siteId) {
+        whereAnd.push({
+          ['siteId']: SequelizeFilterUtils.uuid(
+            filter.siteId,
+          ),
+        });
+      }
+
+      if (filter.stationId) {
+        whereAnd.push({
+          ['stationId']: SequelizeFilterUtils.uuid(
+            filter.stationId,
+          ),
+        });
+      }
+
+      if (filter.status) {
+        whereAnd.push(SequelizeFilterUtils.ilikeExact('incident', 'status', filter.status));
+      }
+
+      if (filter.callerName) {
+        whereAnd.push(SequelizeFilterUtils.ilikeIncludes('incident', 'callerName', filter.callerName));
+      }
+
+      if (filter.priority) {
+        whereAnd.push(SequelizeFilterUtils.ilikeExact('incident', 'priority', filter.priority));
+      }
+
+      if (filter.subject) {
+        whereAnd.push(SequelizeFilterUtils.ilikeIncludes('incident', 'subject', filter.subject));
       }
 
       if (filter.createdAtRange) {
@@ -519,6 +641,18 @@ class IncidentRepository {
     // incidentType relation
     const incidentType = await record.getIncidentType({ transaction });
     output.incidentType = incidentType ? incidentType.get({ plain: true }) : null;
+
+    const client = await record.getClient ? await record.getClient({ transaction }) : null;
+    output.client = client ? client.get({ plain: true }) : null;
+
+    const site = await record.getSite ? await record.getSite({ transaction }) : null;
+    output.site = site ? site.get({ plain: true }) : null;
+
+    const station = await record.getStation ? await record.getStation({ transaction }) : null;
+    output.station = station ? station.get({ plain: true }) : null;
+
+    const guardName = await record.getGuardName ? await record.getGuardName({ transaction }) : null;
+    output.guardName = guardName ? guardName.get({ plain: true }) : null;
 
     return output;
   }

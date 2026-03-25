@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import PermissionChecker from '../../services/user/permissionChecker';
+import Permissions from '../../security/permissions';
+import IncidentService from '../../services/incidentService';
 import RequestShareRepository from '../../database/repositories/requestShareRepository';
 
 export default async function requestShare(req: Request, res: Response) {
@@ -8,10 +11,24 @@ export default async function requestShare(req: Request, res: Response) {
     const id = req.params.id;
     if (!tenantId || !id) return res.status(400).json({ message: 'Missing params' });
 
+    const options: any = {
+      language: (req as any).language,
+      currentUser: (req as any).currentUser,
+      currentTenant: (req as any).currentTenant,
+      database: (req as any).database,
+    };
+
+    new PermissionChecker(options).validateHas(
+      Permissions.values.requestRead,
+    );
+
+    // ensure incident exists and accessible
+    await new IncidentService(options).findById(id);
+
     // generate token
     const token = crypto.randomBytes(16).toString('hex');
 
-    const options: any = { database: (req as any).database };
+    // accept optional expiresAt from request body (ISO string or timestamp)
     // accept optional expiresAt from request body (ISO string or timestamp)
     let expiresAt: string | null = null;
     if (req.body && req.body.expiresAt) {

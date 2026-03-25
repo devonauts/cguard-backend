@@ -279,7 +279,7 @@ const es = {
     }
   },
   request: {
-    created: 'Despacho creado',
+    created: 'Incidente creado',
     errors: {
       unique: {
 

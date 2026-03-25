@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import PDFDocument from 'pdfkit';
 import PermissionChecker from '../../services/user/permissionChecker';
 import Permissions from '../../security/permissions';
-import RequestService from '../../services/requestService';
+import IncidentService from '../../services/incidentService';
 import ApiResponseHandler from '../apiResponseHandler';
 import commentsService from '../../services/comments';
 import fs from 'fs';
@@ -134,7 +134,7 @@ export default async function requestExportPdf(req: Request, res: Response): Pro
       // fetch the record within service context
       let requestRecord: any = null;
       try {
-        requestRecord = await new RequestService(serviceOptions).findById(rid);
+        requestRecord = await new IncidentService(serviceOptions).findById(rid);
       } catch (e) {
         console.warn('requestExportPdf — could not load request', rid, e);
         // render a simple error page for this id

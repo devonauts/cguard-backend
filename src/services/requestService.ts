@@ -6,6 +6,7 @@ import SecurityGuardRepository from '../database/repositories/securityGuardRepos
 import ClientAccountRepository from '../database/repositories/clientAccountRepository';
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import IncidentTypeRepository from '../database/repositories/incidentTypeRepository';
+import StationRepository from '../database/repositories/stationRepository';
 
 export default class RequestService {
   options: IServiceOptions;
@@ -24,6 +25,7 @@ export default class RequestService {
       data.guardId = await SecurityGuardRepository.filterIdInTenant(data.guardId || data.guardName, { ...this.options, transaction });
       data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
       data.siteId = await BusinessInfoRepository.filterIdInTenant(data.siteId, { ...this.options, transaction });
+      data.stationId = await StationRepository.filterIdInTenant(data.station || data.stationId, { ...this.options, transaction });
       data.incidentTypeId = await IncidentTypeRepository.filterIdInTenant(data.incidentTypeId, { ...this.options, transaction });
 
       const record = await RequestRepository.create(data, {
@@ -61,6 +63,7 @@ export default class RequestService {
       data.guardId = await SecurityGuardRepository.filterIdInTenant(data.guardId || data.guardName, { ...this.options, transaction });
       data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
       data.siteId = await BusinessInfoRepository.filterIdInTenant(data.siteId, { ...this.options, transaction });
+      data.stationId = await StationRepository.filterIdInTenant(data.station || data.stationId, { ...this.options, transaction });
       data.incidentTypeId = await IncidentTypeRepository.filterIdInTenant(data.incidentTypeId, { ...this.options, transaction });
 
       const record = await RequestRepository.update(
@@ -109,6 +112,10 @@ export default class RequestService {
 
       if (Object.prototype.hasOwnProperty.call(data, 'siteId')) {
         data.siteId = await BusinessInfoRepository.filterIdInTenant(data.siteId, { ...this.options, transaction });
+      }
+
+      if (Object.prototype.hasOwnProperty.call(data, 'stationId') || Object.prototype.hasOwnProperty.call(data, 'station')) {
+        data.stationId = await StationRepository.filterIdInTenant(data.station || data.stationId, { ...this.options, transaction });
       }
 
       if (Object.prototype.hasOwnProperty.call(data, 'incidentTypeId')) {

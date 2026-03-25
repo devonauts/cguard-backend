@@ -1,7 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-import RequestService from '../../services/requestService';
+import IncidentService from '../../services/incidentService';
 import { i18n } from '../../i18n';
 
 export default async (req, res, next) => {
@@ -10,9 +10,18 @@ export default async (req, res, next) => {
       Permissions.values.requestCreate,
     );
 
-    const payload = await new RequestService(req).create(
-      req.body.data,
-    );
+    // Map incoming request payload to incident model shape
+    const data = req.body && req.body.data ? req.body.data : {};
+    const incidentPayload: any = {
+      date: data.incidentAt || data.dateTime || null,
+      title: data.subject || null,
+      description: data.content || data.incidentDetails || null,
+      // stationIncidents expects station id
+      stationIncidents: data.stationId || data.station || null,
+      incidentType: data.incidentTypeId || data.incidentType || null,
+    };
+
+    const payload = await new IncidentService(req).create(incidentPayload);
 
     const lang = req && req.language ? req.language : undefined;
     const messageCode = 'request.created';

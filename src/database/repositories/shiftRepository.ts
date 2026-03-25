@@ -4,6 +4,7 @@ import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import UserRepository from './userRepository';
+import TenantUserRepository from './tenantUserRepository';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -30,10 +31,24 @@ class ShiftRepository {
           'endTime',          
           'importHash',
           'postSiteId',
+          'tenantUserId',
+          'siteTours',
+          'tasks',
+          'postOrders',
+          'checklists',
+          'skillSet',
+          'department',
         ]),
         stationId: data.station || null,
         guardId: data.guard || null,
         postSiteId: data.postSite || data.postSiteId || null,
+        tenantUserId: data.tenantUserId || data.tenant_user_id || null,
+        siteTours: data.siteTours || data.site_tours || null,
+        tasks: data.tasks || null,
+        postOrders: data.postOrders || data.post_orders || null,
+        checklists: data.checklists || null,
+        skillSet: data.skillSet || data.skill_set || null,
+        department: data.department || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -92,10 +107,24 @@ class ShiftRepository {
           'endTime',          
           'importHash',
           'postSiteId',
+          'tenantUserId',
+          'siteTours',
+          'tasks',
+          'postOrders',
+          'checklists',
+          'skillSet',
+          'department',
         ]),
         stationId: data.station || null,
         guardId: data.guard || null,
         postSiteId: data.postSite || data.postSiteId || null,
+        tenantUserId: data.tenantUserId || data.tenant_user_id || null,
+        siteTours: data.siteTours || data.site_tours || null,
+        tasks: data.tasks || null,
+        postOrders: data.postOrders || data.post_orders || null,
+        checklists: data.checklists || null,
+        skillSet: data.skillSet || data.skill_set || null,
+        department: data.department || null,
         updatedById: currentUser.id,
       },
       {
@@ -166,6 +195,14 @@ class ShiftRepository {
         model: options.database.user,
         as: 'guard',
       },
+      {
+        model: options.database.tenantUser,
+        as: 'tenantUser',
+      },
+      {
+        model: options.database.tenantUser,
+        as: 'tenantUser',
+      },      
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
@@ -479,6 +516,13 @@ class ShiftRepository {
     );
 
     output.guard = UserRepository.cleanupForRelationships(output.guard);
+    try {
+      if (TenantUserRepository && typeof (TenantUserRepository as any).cleanupForRelationships === 'function') {
+        output.tenantUser = (TenantUserRepository as any).cleanupForRelationships(output.tenantUser);
+      }
+    } catch (e) {
+      // ignore
+    }
 
     return output;
   }

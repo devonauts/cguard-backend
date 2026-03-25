@@ -1,7 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-import RequestService from '../../services/requestService';
+import IncidentService from '../../services/incidentService';
 
 export default async (req, res, next) => {
   try {
@@ -9,7 +9,7 @@ export default async (req, res, next) => {
       Permissions.values.requestAutocomplete,
     );
 
-    const payload = await new RequestService(
+    const payload = await new IncidentService(
       req,
     ).findAllAutocomplete(req.query.query, req.query.limit);
 

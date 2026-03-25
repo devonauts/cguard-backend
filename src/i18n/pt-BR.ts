@@ -263,7 +263,7 @@ const ptBR = {
       }
     },
     request: {
-      created: 'Despacho criado',
+      created: 'Incidente criado',
       errors: {
         unique: {
 

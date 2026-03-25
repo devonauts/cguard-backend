@@ -55,6 +55,23 @@ export default (app) => {
     require('./postSiteAssignedGuards').default,
   );
 
+  // Backwards-compatible aliases: some frontends call these older paths.
+  app.get(
+    `/tenant/:tenantId/post-site/:id/assigned-guards`,
+    require('./postSiteAssignedGuards').default,
+  );
+
+  app.get(
+    `/tenant/:tenantId/post-site/:id/security-guards`,
+    require('./postSiteAssignedGuards').default,
+  );
+
+  // Precise postSite + station scoped assigned guards
+  app.get(
+    `/tenant/:tenantId/post-site/:id/station/:stationId/assigned-guards`,
+    require('./postSiteStationAssignedGuards').default,
+  );
+
   // Post site contacts (list by postSiteId)
   app.get(
     `/tenant/:tenantId/post-site/:id/contacts`,
