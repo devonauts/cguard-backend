@@ -9,8 +9,24 @@ export default async (req, res, next) => {
       Permissions.values.stationDestroy,
     );
 
+    // Accept either query param `ids` (array or comma-separated string)
+    // or single id in path param `:id` for compatibility with frontend.
+    let ids: any = req.query.ids;
+    if (!ids && req.params && req.params.id) {
+      ids = req.params.id;
+    }
+
+    // Normalize ids to an array
+    if (typeof ids === 'string') {
+      // comma separated
+      ids = ids.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    if (!Array.isArray(ids)) {
+      ids = [ids];
+    }
+
     await new StationService(req).destroyAll(
-      req.query.ids,
+      ids,
     );
 
     const payload = true;

@@ -15,6 +15,11 @@ export default (app) => {
     `/tenant/:tenantId/station`,
     require('./stationDestroy').default,
   );
+  // Support delete by id path for frontend callers that send /station/:id
+  app.delete(
+    `/tenant/:tenantId/station/:id`,
+    require('./stationDestroy').default,
+  );
   app.get(
     `/tenant/:tenantId/station/autocomplete`,
     require('./stationAutocomplete').default,
