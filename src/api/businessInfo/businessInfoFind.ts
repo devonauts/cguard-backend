@@ -41,10 +41,11 @@ export default async (req, res, next) => {
       payload = await new BusinessInfoService(req).findById(req.params.id);
     } catch (err) {
       try {
+        const errAny: any = err;
         // eslint-disable-next-line no-console
-        console.error('[businessInfoFind] findById failed for id=', req.params.id, 'tenant=', (req as any).currentTenant?.id ?? null, 'user=', (req as any).currentUser?.id ?? null, 'error=', err && err.message ? err.message : err);
+        console.error('[businessInfoFind] findById failed for id=', req.params.id, 'tenant=', (req as any).currentTenant?.id ?? null, 'user=', (req as any).currentUser?.id ?? null, 'error=', errAny && errAny.message ? errAny.message : errAny);
         // eslint-disable-next-line no-console
-        console.error('[businessInfoFind] full error stack:', err && err.stack ? err.stack : err);
+        console.error('[businessInfoFind] full error stack:', errAny && errAny.stack ? errAny.stack : errAny);
       } catch (ee) {}
       throw err;
     }
