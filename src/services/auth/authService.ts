@@ -466,7 +466,7 @@ class AuthService {
 
       // Transform `safeUser.tenants` (array) into single `tenant` object
       try {
-        const tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
+        let tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
         if (tenantEntries.length === 0) {
           // No tenant assigned: allow signin but return a token without tenantId and
           // keep `tenant` as null so frontend can show a restricted dashboard.
@@ -483,7 +483,21 @@ class AuthService {
         }
 
         if (tenantEntries.length > 1) {
-          throw new Error('auth.multipleTenantsNotAllowed');
+          // If caller provided a tenantId (frontend may pass it), prefer that one
+          if (tenantId) {
+            const matched = tenantEntries.find((te: any) => (te.tenantId === tenantId) || (te.tenant && te.tenant.id === tenantId));
+            if (matched) {
+              tenantEntries = [matched];
+            } else {
+              // Invalid tenantId requested
+              throw new Error('auth.invalidTenantConfiguration');
+            }
+          } else {
+            // Backwards-compatibility: pick the first tenant instead of failing
+            // and log a warning so administrators can detect users with multiple tenants.
+            console.warn('auth: user has multiple tenants; selecting the first tenant by default');
+            tenantEntries = [tenantEntries[0]];
+          }
         }
 
         const tenantEntry = tenantEntries[0];

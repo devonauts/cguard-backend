@@ -62,11 +62,14 @@ export default async (req, res) => {
         gu.lastName as guardLastName,
         gu.email as guardEmail,
         bi.companyName as postSiteName,
-        ca.name as clientName,
-        CONCAT_WS(' ', ca.name, ca.lastName) as clientFullName
+        st.stationName as stationName,
+        COALESCE(ca_bi.name, ca_st.name) as clientName,
+        CONCAT_WS(' ', COALESCE(ca_bi.name, ca_st.name), COALESCE(ca_bi.lastName, ca_st.lastName)) as clientFullName
       FROM tenant_user_post_sites tups
       LEFT JOIN businessInfos bi ON bi.id = tups.businessInfoId
-      LEFT JOIN clientAccounts ca ON ca.id = bi.clientAccountId
+      LEFT JOIN stations st ON (st.postSiteId = bi.id OR st.id = tups.businessInfoId)
+      LEFT JOIN clientAccounts ca_bi ON ca_bi.id = bi.clientAccountId
+      LEFT JOIN clientAccounts ca_st ON ca_st.id = st.stationOriginId
       LEFT JOIN tenantUsers tu ON tu.id = tups.tenantUserId
       LEFT JOIN users u ON u.id = tu.userId
       LEFT JOIN securityGuards sg ON sg.id = tups.security_guard_id
@@ -84,9 +87,10 @@ export default async (req, res) => {
         s.id,
         s.startTime,
         s.endTime,
-        s.stationId as businessInfoId,
-        st.stationName as postSiteName,
-        ca.name as clientName,
+        COALESCE(st.postSiteId, s.stationId, st.id) as businessInfoId,
+        COALESCE(bi.companyName, st.stationName) as postSiteName,
+        st.stationName as stationName,
+        COALESCE(ca_bi.name, ca_st.name) as clientName,
         s.guardId as guardUserId,
         u.firstName,
         u.lastName,
@@ -95,7 +99,9 @@ export default async (req, res) => {
         s.updatedAt
       FROM shifts s
       LEFT JOIN stations st ON st.id = s.stationId
-      LEFT JOIN clientAccounts ca ON ca.id = st.stationOriginId
+      LEFT JOIN businessInfos bi ON bi.id = st.postSiteId
+      LEFT JOIN clientAccounts ca_bi ON ca_bi.id = bi.clientAccountId
+      LEFT JOIN clientAccounts ca_st ON ca_st.id = st.stationOriginId
       LEFT JOIN users u ON u.id = s.guardId
       WHERE s.guardId = :guardUserId
         AND s.tenantId = :tenantId
@@ -113,9 +119,10 @@ export default async (req, res) => {
         gs.punchInTime,
         gs.punchOutTime,
         gs.shiftSchedule,
-        gs.stationNameId as businessInfoId,
-        st.stationName as postSiteName,
-        ca.name as clientName,
+        COALESCE(st.postSiteId, gs.stationNameId, st.id) as businessInfoId,
+        COALESCE(bi.companyName, st.stationName) as postSiteName,
+        st.stationName as stationName,
+        COALESCE(ca_bi.name, ca_st.name) as clientName,
         gs.guardNameId as securityGuardId,
         sg.guardId as guardUserId,
         gu.firstName as guardFirstName,
@@ -125,7 +132,9 @@ export default async (req, res) => {
         gs.updatedAt
       FROM guardShifts gs
       LEFT JOIN stations st ON st.id = gs.stationNameId
-      LEFT JOIN clientAccounts ca ON ca.id = st.stationOriginId
+      LEFT JOIN businessInfos bi ON bi.id = st.postSiteId
+      LEFT JOIN clientAccounts ca_bi ON ca_bi.id = bi.clientAccountId
+      LEFT JOIN clientAccounts ca_st ON ca_st.id = st.stationOriginId
       LEFT JOIN securityGuards sg ON sg.id = gs.guardNameId
       LEFT JOIN users gu ON gu.id = sg.guardId
       WHERE (gs.guardNameId = :resolvedSecurityGuardId OR sg.guardId = :guardUserId)
