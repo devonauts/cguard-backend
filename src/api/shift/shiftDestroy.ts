@@ -9,8 +9,21 @@ export default async (req, res, next) => {
       Permissions.values.shiftDestroy,
     );
 
+    // Accept either query param `ids` or single id in path param `:id`.
+    let ids: any = req.query.ids;
+    if (!ids && req.params && req.params.id) {
+      ids = req.params.id;
+    }
+
+    if (typeof ids === 'string') {
+      ids = ids.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    if (!Array.isArray(ids)) {
+      ids = [ids];
+    }
+
     await new ShiftService(req).destroyAll(
-      req.query.ids,
+      ids,
     );
 
     const payload = true;

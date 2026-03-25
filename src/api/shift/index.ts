@@ -15,6 +15,11 @@ export default (app) => {
     `/tenant/:tenantId/shift`,
     require('./shiftDestroy').default,
   );
+  // Support delete by id path for frontend callers that send /shift/:id
+  app.delete(
+    `/tenant/:tenantId/shift/:id`,
+    require('./shiftDestroy').default,
+  );
   app.get(
     `/tenant/:tenantId/shift/autocomplete`,
     require('./shiftAutocomplete').default,
