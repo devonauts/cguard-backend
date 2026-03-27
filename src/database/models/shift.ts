@@ -64,12 +64,6 @@ export default function (sequelize) {
       stationId: {
         type: DataTypes.UUID,
         allowNull: true,
-        references: {
-          model: 'stations',
-          key: 'id',
-        },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
       },
     },
     {
@@ -93,7 +87,7 @@ export default function (sequelize) {
       as: 'station',
       constraints: false,
       foreignKey: {
-        allowNull: false,
+        allowNull: true,
       },
     });
 
