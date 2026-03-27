@@ -7,6 +7,7 @@ import { Op } from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
 import ClientAccountRepository from './clientAccountRepository';
 import BusinessInfoRepository from './businessInfoRepository';
+import StationRepository from './stationRepository';
 
 // Helper to retry transient lock wait timeout errors
 async function retryOnLock(fn: () => Promise<any>, attempts = 5, baseDelay = 300) {
@@ -233,7 +234,7 @@ export default class TenantUserRepository {
     });
   }
 
-  static async updateRoles(tenantId, id, roles, options, clientIds?, postSiteIds?, securityGuardId?) {
+  static async updateRoles(tenantId, id, roles, options, clientIds?, postSiteIds?, securityGuardId?, stationIds?) {
     const transaction = SequelizeRepository.getTransaction(
       options,
     );
@@ -660,6 +661,40 @@ export default class TenantUserRepository {
           validPostSiteIds = postsArray;
         }
 
+        // Validate station IDs (if provided) and build mapping postSiteId -> stationId
+        let validStationIds: any[] = [];
+        let stationMap: Record<string, string> = {};
+        if (stationIds !== undefined) {
+          let stationsArray = stationIds || [];
+          if (!Array.isArray(stationsArray)) {
+            try {
+              stationsArray = JSON.parse(stationsArray);
+            } catch (e) {
+              stationsArray = [stationsArray];
+            }
+          }
+          stationsArray = stationsArray.map((s) => (s && s.id ? s.id : s)).filter(Boolean);
+
+          try {
+            validStationIds = await StationRepository.filterIdsInTenant(stationsArray, options);
+          } catch (e) {
+            validStationIds = stationsArray;
+          }
+
+          if (validStationIds && validStationIds.length) {
+            const stationRecords = await options.database.station.findAll({
+              where: { id: validStationIds },
+              attributes: ['id', 'postSiteId'],
+              transaction,
+            });
+            (stationRecords || []).forEach((rec: any) => {
+              if (rec && rec.postSiteId) {
+                stationMap[rec.postSiteId] = stationMap[rec.postSiteId] || rec.id;
+              }
+            });
+          }
+        }
+
         // Merge with existing assigned post sites
         // Ensure we have association helpers for post sites as well
         if (!tenantUser || typeof tenantUser.getAssignedPostSites !== 'function') {
@@ -697,6 +732,7 @@ export default class TenantUserRepository {
             tenantUserId: tenantUser.id,
             businessInfoId: postId,
             security_guard_id: securityGuardId || null,
+            station_id: stationMap[postId] || null,
             createdAt: now,
             updatedAt: now,
           }));

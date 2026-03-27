@@ -24,8 +24,16 @@ export default function (router) {
       
       const rows = await req.database.siteTour.findAll({ where });
       console.log('[DEBUG] Found rows:', rows.length);
-      
-      await ApiResponseHandler.success(req, res, { rows, count: rows.length });
+      const plain = (rows || []).map((r: any) => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
+      // Ensure we surface the core fields expected by the frontend
+      const fields = ['id','name','description','scheduledDays','continuous','timeMode','selectTime','maxDuration','active','importHash','createdAt','updatedAt','deletedAt','postSiteId','stationId','tenantId','createdById','updatedById','securityGuardId'];
+      const filtered = plain.map((p: any) => {
+        const out: any = {};
+        fields.forEach(f => { out[f] = typeof p[f] !== 'undefined' ? p[f] : null; });
+        return out;
+      });
+
+      await ApiResponseHandler.success(req, res, { rows: filtered, count: filtered.length });
     } catch (error) {
       console.error('[DEBUG] Error in GET /site-tour:', error);
       await ApiResponseHandler.error(req, res, error);
@@ -37,7 +45,13 @@ export default function (router) {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
       const payload = await new SiteTourService(req).findById(req.params.id);
-      await ApiResponseHandler.success(req, res, payload);
+      const plain = (payload && typeof payload.get === 'function') ? payload.get({ plain: true }) : payload;
+      const fields = ['id','name','description','scheduledDays','continuous','timeMode','selectTime','maxDuration','active','importHash','createdAt','updatedAt','deletedAt','postSiteId','stationId','tenantId','createdById','updatedById','securityGuardId'];
+      const out: any = {};
+      fields.forEach(f => { out[f] = typeof plain[f] !== 'undefined' ? plain[f] : null; });
+      // also include tags if present
+      if (plain.tags) out.tags = plain.tags;
+      await ApiResponseHandler.success(req, res, out);
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }
@@ -50,11 +64,19 @@ export default function (router) {
       const tenant = req.currentTenant;
       const currentUser = (req as any).currentUser;
 
+      // stationId is required to create a site tour
+      if (!req.body || !req.body.stationId) {
+        const err = new Error400(req.language, 'entities.siteTour.errors.stationRequired');
+        (err as any).errors = { stationId: 'Station id is required' };
+        throw err;
+      }
+
       const payload = {
         name: req.body.name,
         description: req.body.description,
         scheduledDays: req.body.scheduledDays,
         postSiteId: req.body.postSiteId || null,
+        stationId: req.body.stationId || null,
         securityGuardId: req.body.securityGuardId || null,
         continuous: req.body.continuous,
         timeMode: req.body.timeMode,
@@ -75,6 +97,7 @@ export default function (router) {
             siteTourId: record.id,
             securityGuardId: guardId,
             postSiteId: payload.postSiteId || null,
+            stationId: payload.stationId || null,
             tenantId: tenant && tenant.id,
             createdById: currentUser && currentUser.id,
             updatedById: currentUser && currentUser.id,
@@ -105,6 +128,7 @@ export default function (router) {
         name: req.body.name,
         description: req.body.description,
         scheduledDays: req.body.scheduledDays,
+        stationId: req.body.stationId,
         continuous: req.body.continuous,
         timeMode: req.body.timeMode,
         selectTime: req.body.selectTime,
@@ -126,6 +150,7 @@ export default function (router) {
       const record = await req.database.siteTour.findOne({ where: { id: req.params.id, tenantId: req.currentTenant.id } });
       if (!record) throw new Error('Not found');
       const updateData: any = { updatedById: currentUser && currentUser.id };
+      // allow stationId through patch
       Object.assign(updateData, req.body);
       await record.update(updateData);
       await ApiResponseHandler.success(req, res, record);
@@ -344,6 +369,82 @@ export default function (router) {
       const guardId = req.body.securityGuardId;
       const payload = await service.assignGuard(req.params.id, guardId, req.body || {});
       await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // GET assignments for a tour: /tenant/:tenantId/site-tour/:tourId/assignments
+  router.get('/tenant/:tenantId/site-tour/:tourId/assignments', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      // ensure tour exists and belongs to tenant
+      const tourId = req.params.tourId;
+      const tour = await req.database.siteTour.findOne({ where: { id: tourId, tenantId: req.currentTenant.id } });
+      if (!tour) {
+        const err: any = new Error('Tour not found'); err.code = 404; throw err;
+      }
+      const service = new SiteTourService(req);
+      const rows = await service.listAssignments(tourId);
+      await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // GET single assignment: /tenant/:tenantId/site-tour/:tourId/assign/:assignmentId
+  router.get('/tenant/:tenantId/site-tour/:tourId/assign/:assignmentId', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      const tourId = req.params.tourId;
+      const tour = await req.database.siteTour.findOne({ where: { id: tourId, tenantId: req.currentTenant.id } });
+      if (!tour) {
+        const err: any = new Error('Tour not found'); err.code = 404; throw err;
+      }
+      const service = new SiteTourService(req);
+      const assignment = await service.getAssignment(req.params.assignmentId);
+      if (!assignment || String(assignment.siteTourId) !== String(tourId)) {
+        const err: any = new Error('Not found'); err.code = 404; throw err;
+      }
+      await ApiResponseHandler.success(req, res, assignment);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // PATCH update assignment: /tenant/:tenantId/site-tour/:tourId/assign/:assignmentId
+  router.patch('/tenant/:tenantId/site-tour/:tourId/assign/:assignmentId', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
+      const tourId = req.params.tourId;
+      const tour = await req.database.siteTour.findOne({ where: { id: tourId, tenantId: req.currentTenant.id } });
+      if (!tour) {
+        const err: any = new Error('Tour not found'); err.code = 404; throw err;
+      }
+      const service = new SiteTourService(req);
+      const payload = await service.updateAssignment(req.params.assignmentId, req.body || {});
+      if (!payload || String(payload.siteTourId) !== String(tourId)) {
+        const err: any = new Error('Not found'); err.code = 404; throw err;
+      }
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // DELETE (soft) assignment: /tenant/:tenantId/site-tour/:tourId/assign/:assignmentId
+  router.delete('/tenant/:tenantId/site-tour/:tourId/assign/:assignmentId', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteDestroy || Permissions.values.postSiteEdit);
+      const tourId = req.params.tourId;
+      const tour = await req.database.siteTour.findOne({ where: { id: tourId, tenantId: req.currentTenant.id } });
+      if (!tour) {
+        const err: any = new Error('Tour not found'); err.code = 404; throw err;
+      }
+      const service = new SiteTourService(req);
+      // ensure assignment belongs to tour inside service or enforce here
+      const resPayload = await service.deleteAssignment(req.params.assignmentId);
+      await ApiResponseHandler.success(req, res, resPayload || {});
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }

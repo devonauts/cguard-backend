@@ -81,25 +81,14 @@ export default async (req, res, next) => {
         const ids = payload.rows.map((r) => r.id).filter(Boolean);
         const replacements = { ids, tenantId: req.params.tenantId };
 
-        // Count tenant_user_post_sites assignments per businessInfoId
-        // tenant_user_post_sites does not have a tenantId column; join to tenantUsers
-        // to restrict by tenant.
-        const assignSql = `
-          SELECT tups.businessInfoId, COUNT(*) as assignmentsCount
-          FROM tenant_user_post_sites tups
-          LEFT JOIN tenantUsers tu ON tu.id = tups.tenantUserId
-          WHERE tups.businessInfoId IN (:ids)
-            AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)
-          GROUP BY tups.businessInfoId
-        `;
-
-        // Count shifts referencing stationId = businessInfo id
+        // Count assignments using `shifts` as canonical source. Count any shift that
+        // references the businessInfo via postSiteId OR via stationId.
         const shiftsSql = `
-          SELECT stationId as businessInfoId, COUNT(*) as shiftsCount
+          SELECT COALESCE(postSiteId, stationId) as businessInfoId, COUNT(*) as shiftsCount
           FROM shifts
-          WHERE stationId IN (:ids)
+          WHERE (postSiteId IN (:ids) OR stationId IN (:ids))
             AND tenantId = :tenantId
-          GROUP BY stationId
+          GROUP BY COALESCE(postSiteId, stationId)
         `;
 
         // Count guardShifts referencing stationNameId = businessInfo id
@@ -111,17 +100,15 @@ export default async (req, res, next) => {
           GROUP BY stationNameId
         `;
 
-        const assignRows = await req.database.sequelize.query(assignSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
         const shiftRows = await req.database.sequelize.query(shiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
         const gShiftRows = await req.database.sequelize.query(guardShiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
-
-        const assignMap = (assignRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.assignmentsCount); return acc; }, {});
         const shiftMap = (shiftRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.shiftsCount); return acc; }, {});
         const gShiftMap = (gShiftRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.guardShiftsCount); return acc; }, {});
 
         payload.rows = payload.rows.map((r) => ({
           ...r,
-          assignmentsCount: assignMap[r.id] || 0,
+          // `assignmentsCount` now derived from shifts (primary source) plus guardShifts
+          assignmentsCount: (shiftMap[r.id] || 0) + (gShiftMap[r.id] || 0),
           shiftsCount: shiftMap[r.id] || 0,
           guardShiftsCount: gShiftMap[r.id] || 0,
         }));

@@ -22,6 +22,34 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: 'assigned',
       },
+      siteTourId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      securityGuardId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      postSiteId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      stationId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      tenantId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      createdById: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      updatedById: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,

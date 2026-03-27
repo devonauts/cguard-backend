@@ -35,51 +35,8 @@ export default async (req, res) => {
 
     const replacements = { tenantId, resolvedSecurityGuardId, guardUserId };
 
-    const sql = `
-      SELECT
-        tups.id,
-        tups.tenantUserId,
-        tups.businessInfoId,
-        tups.security_guard_id as securityGuardId,
-        tups.site_tours as siteTours,
-        tups.tasks as tasks,
-        tups.post_orders as postOrders,
-        tups.checklists as checklists,
-        tups.skill_set as skillSet,
-        tups.department as department,
-        tups.createdAt,
-        tups.updatedAt,
-        tups.deletedAt,
-        tu.userId as tenantUserUserId,
-        u.id as userId,
-        u.firstName,
-        u.lastName,
-        u.email,
-        u.phoneNumber,
-        sg.guardId as guardUserId,
-        gu.id as guardUserRecordId,
-        gu.firstName as guardFirstName,
-        gu.lastName as guardLastName,
-        gu.email as guardEmail,
-        bi.companyName as postSiteName,
-        st.stationName as stationName,
-        COALESCE(ca_bi.name, ca_st.name) as clientName,
-        CONCAT_WS(' ', COALESCE(ca_bi.name, ca_st.name), COALESCE(ca_bi.lastName, ca_st.lastName)) as clientFullName
-      FROM tenant_user_post_sites tups
-      LEFT JOIN businessInfos bi ON bi.id = tups.businessInfoId
-      LEFT JOIN stations st ON (st.postSiteId = bi.id OR st.id = tups.businessInfoId)
-      LEFT JOIN clientAccounts ca_bi ON ca_bi.id = bi.clientAccountId
-      LEFT JOIN clientAccounts ca_st ON ca_st.id = st.stationOriginId
-      LEFT JOIN tenantUsers tu ON tu.id = tups.tenantUserId
-      LEFT JOIN users u ON u.id = tu.userId
-      LEFT JOIN securityGuards sg ON sg.id = tups.security_guard_id
-      LEFT JOIN users gu ON gu.id = sg.guardId
-      WHERE (tups.security_guard_id = :resolvedSecurityGuardId OR tu.userId = :guardUserId)
-        AND (tu.tenantId = :tenantId OR tu.tenantId IS NULL)
-      ORDER BY tups.createdAt DESC
-    `;
-
-    const rows: any[] = await req.database.sequelize.query(sql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+    // No longer reading assignments from tenant_user_post_sites pivot.
+    // Use `shifts` and `guardShifts` as canonical sources for guard assignments.
 
     // Also include assignments coming from shifts (user-level shifts)
     const sqlShifts = `
@@ -145,7 +102,6 @@ export default async (req, res) => {
     const guardShiftRows: any[] = await req.database.sequelize.query(sqlGuardShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
 
     const combined = [
-      ...rows,
       ...shiftRows,
       ...guardShiftRows,
     ];

@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import Permissions from '../../security/permissions';
 import ApiResponseHandler from '../apiResponseHandler';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
+import ShiftService from '../../services/shiftService';
 import { randomUUID } from 'crypto';
 
 export default async (req, res) => {
@@ -118,82 +119,77 @@ export default async (req, res) => {
     }
     
     console.log('[DEBUG] assign-guard - Final resolvedSecurityGuardId:', resolvedSecurityGuardId);
-
-    // Check if assignment already exists
-    const existingAssignment = await req.database.sequelize.query(
-      `SELECT id FROM tenant_user_post_sites WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId LIMIT 1`,
-      { replacements: { tenantUserId, businessInfoId: postSiteId }, type: req.database.sequelize.QueryTypes.SELECT }
-    );
-
-    console.log('[DEBUG] assign-guard - Existing assignment:', existingAssignment);
-
-    if (existingAssignment && existingAssignment.length > 0) {
-      // UPDATE existing record
-      const updateData = {
-        security_guard_id: resolvedSecurityGuardId || null,
-        station_id: incoming.stationId || incoming.station_id || null,
-        site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
-        tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
-        post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),
-        checklists: normalizeJsonField(incoming.checklists ?? incoming.assignChecklists),
-        skill_set: normalizeJsonField(incoming.skillSet ?? incoming.skill_set),
-        department: normalizeJsonField(incoming.department ?? incoming.department),
-        updatedAt: now,
-      };
-
-      console.log('[DEBUG] Updating existing assignment with:', JSON.stringify(updateData, null, 2));
-      
-      await req.database.sequelize.query(
-        `UPDATE tenant_user_post_sites 
-         SET security_guard_id = :security_guard_id,
-          station_id = :station_id,
-             site_tours = :site_tours,
-             tasks = :tasks,
-             post_orders = :post_orders,
-             checklists = :checklists,
-             skill_set = :skill_set,
-             department = :department,
-             updatedAt = :updatedAt
-         WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId`,
-        { replacements: { ...updateData, tenantUserId, businessInfoId: postSiteId } }
-      );
-      console.log('[DEBUG] Update successful');
-    } else {
-      // INSERT new record
-      const row = {
-        id: randomUUID(),
-        tenantUserId,
-        businessInfoId: postSiteId,
-        // Use resolvedSecurityGuardId (securityGuard record id) to satisfy FK constraint.
-        security_guard_id: resolvedSecurityGuardId || null,
-        station_id: incoming.stationId || incoming.station_id || null,
-        site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
-        tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
-        post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),
-        checklists: normalizeJsonField(incoming.checklists ?? incoming.assignChecklists),
-        // Persist skill set and department (support camelCase or snake_case from frontend)
-        // Ensure values are valid JSON text for JSON columns.
-        skill_set: normalizeJsonField(incoming.skillSet ?? incoming.skill_set),
-        department: normalizeJsonField(incoming.department ?? incoming.department),
-        createdAt: now,
-        updatedAt: now,
-      };
-
+    // Detect DB schema: whether tenant_user_post_sites has station_id column
+    let hasStationColumn = false;
     try {
-      console.log('[DEBUG] Attempting to insert tenant_user_post_sites with data:', JSON.stringify(row, null, 2));
-      await req.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', [row]);
-      console.log('[DEBUG] Insert successful');
-    } catch (err) {
-      console.error('[ERROR] Failed to insert tenant_user_post_sites row:', err);
-      console.error('[ERROR] Row data was:', JSON.stringify(row, null, 2));
-      console.error('[ERROR] Full error details:', {
-        message: (err as any)?.message,
-        code: (err as any)?.code,
-        sql: (err as any)?.sql,
-        parent: (err as any)?.parent,
-      });
-      throw err;
+      const desc = await req.database.sequelize.getQueryInterface().describeTable('tenant_user_post_sites');
+      hasStationColumn = !!desc && Object.prototype.hasOwnProperty.call(desc, 'station_id');
+    } catch (e) {
+      // ignore — we'll assume column missing
+      hasStationColumn = false;
     }
+
+    // Create a Shift record instead of writing directly to tenant_user_post_sites pivot.
+    try {
+      // Load tenantUser to obtain the underlying user id for the guard (if available)
+      let tenantUserRecord = null;
+      try {
+        tenantUserRecord = await req.database.tenantUser.findOne({ where: { id: tenantUserId }, include: [{ model: req.database.user, as: 'user' }] });
+      } catch (e) {
+        tenantUserRecord = null;
+      }
+
+      const shiftPayload: any = {
+        postSite: postSiteId,
+        tenantUserId,
+        station: incoming.stationId || incoming.station_id || null,
+        siteTours: incoming.siteTours ?? incoming.assignSiteTours,
+        tasks: incoming.tasks ?? incoming.assignTasks,
+        postOrders: incoming.postOrders ?? incoming.assignPostOrders,
+        checklists: incoming.checklists ?? incoming.assignChecklists,
+        skillSet: incoming.skillSet ?? incoming.skill_set,
+        department: incoming.department ?? incoming.department,
+      };
+
+      if (tenantUserRecord && tenantUserRecord.user && tenantUserRecord.user.id) {
+        shiftPayload.guard = tenantUserRecord.user.id;
+      }
+
+      console.log('[DEBUG] Creating Shift with payload:', JSON.stringify(shiftPayload, null, 2));
+
+      const shiftService = new ShiftService({ currentTenant: req.currentTenant, language: req.language, database: req.database, currentUser: req.currentUser });
+      await shiftService.create(shiftPayload);
+
+      console.log('[DEBUG] Shift created successfully for tenantUserId:', tenantUserId);
+    } catch (err) {
+      console.error('[ERROR] Failed to create shift for assignment:', (err as any)?.message || String(err));
+      // As a fallback for older deployments, attempt to write the pivot row if possible.
+      try {
+        const row: any = {
+          id: randomUUID(),
+          tenantUserId,
+          businessInfoId: postSiteId,
+          security_guard_id: resolvedSecurityGuardId || null,
+          site_tours: normalizeJsonField(incoming.siteTours ?? incoming.assignSiteTours),
+          tasks: normalizeJsonField(incoming.tasks ?? incoming.assignTasks),
+          post_orders: normalizeJsonField(incoming.postOrders ?? incoming.assignPostOrders),
+          checklists: normalizeJsonField(incoming.checklists ?? incoming.assignChecklists),
+          skill_set: normalizeJsonField(incoming.skillSet ?? incoming.skill_set),
+          department: normalizeJsonField(incoming.department ?? incoming.department),
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        if (hasStationColumn) {
+          row.station_id = incoming.stationId || incoming.station_id || null;
+        }
+
+        console.log('[DEBUG] Fallback: attempting to insert tenant_user_post_sites with data:', JSON.stringify(row, null, 2));
+        await req.database.sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', [row]);
+        console.log('[DEBUG] Fallback insert successful');
+      } catch (innerErr) {
+        console.error('[ERROR] Fallback insert failed:', (innerErr as any)?.message || String(innerErr));
+      }
     }
 
     // If frontend provided a clientAccountId, also ensure tenant_user_client_accounts pivot exists

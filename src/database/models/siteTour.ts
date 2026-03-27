@@ -25,6 +25,10 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      stationId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       securityGuardId: {
         type: DataTypes.UUID,
         allowNull: true,
@@ -55,6 +59,10 @@ export default function (sequelize) {
       },
       importHash: {
         type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      deletedAt: {
+        type: DataTypes.DATE,
         allowNull: true,
       },
       createdById: {

@@ -36,6 +36,15 @@ export default (app) => {
     `/tenant/:tenantId/user`,
     require('./userDestroy').default,
   );
+  // Backwards-compat endpoints used by some frontends: /user/delete and /user/remove
+  app.post(
+    `/tenant/:tenantId/user/delete`,
+    require('./userDestroy').default,
+  );
+  app.post(
+    `/tenant/:tenantId/user/remove`,
+    require('./userDestroy').default,
+  );
   app.get(
     `/tenant/:tenantId/user`,
     require('./userList').default,

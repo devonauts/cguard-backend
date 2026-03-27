@@ -20,7 +20,13 @@ export default class SiteTourService {
   async assignGuard(
     tourId: string,
     guardId: string,
-    payload: { startAt?: string | Date | null; endAt?: string | Date | null; status?: string } = {},
+    payload: {
+      startAt?: string | Date | null;
+      endAt?: string | Date | null;
+      status?: string;
+      stationId?: string | null;
+      postSiteId?: string | null;
+    } = {},
   ) {
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
     try {
@@ -30,6 +36,11 @@ export default class SiteTourService {
         startAt: payload.startAt ?? null,
         endAt: payload.endAt ?? null,
         status: payload.status ?? 'assigned',
+        stationId: payload.stationId ?? null,
+        postSiteId: payload.postSiteId ?? null,
+        tenantId: this.options.currentTenant ? this.options.currentTenant.id : null,
+        createdById: this.options.currentUser ? this.options.currentUser.id : null,
+        updatedById: this.options.currentUser ? this.options.currentUser.id : null,
       }, { transaction });
 
       await SequelizeRepository.commitTransaction(transaction);
@@ -77,6 +88,71 @@ export default class SiteTourService {
 
       await SequelizeRepository.commitTransaction(transaction);
       return { tag, assignment, scan };
+    } catch (err) {
+      await SequelizeRepository.rollbackTransaction(transaction);
+      throw err;
+    }
+  }
+
+  async listAssignments(tourId: string) {
+    const transaction = SequelizeRepository.getTransaction(this.options);
+    const where: any = { siteTourId: tourId };
+    if (this.options.currentTenant && this.options.currentTenant.id) {
+      where.tenantId = this.options.currentTenant.id;
+    }
+    const rows = await this.options.database.tourAssignment.findAll({ where, transaction });
+    return rows;
+  }
+
+  async getAssignment(assignmentId: string) {
+    const transaction = SequelizeRepository.getTransaction(this.options);
+    const where: any = { id: assignmentId };
+    if (this.options.currentTenant && this.options.currentTenant.id) where.tenantId = this.options.currentTenant.id;
+    const record = await this.options.database.tourAssignment.findOne({ where, transaction });
+    if (!record) {
+      const err: any = new Error('Not found'); err.code = 404; throw err;
+    }
+    return record;
+  }
+
+  async updateAssignment(assignmentId: string, data: any) {
+    const transaction = await SequelizeRepository.createTransaction(this.options.database);
+    try {
+      const where: any = { id: assignmentId };
+      if (this.options.currentTenant && this.options.currentTenant.id) where.tenantId = this.options.currentTenant.id;
+      const record = await this.options.database.tourAssignment.findOne({ where, transaction });
+      if (!record) {
+        const err: any = new Error('Not found'); err.code = 404; throw err;
+      }
+
+      const updateData: any = {};
+      // allow updates to these fields
+      const allowed = ['startAt', 'endAt', 'status', 'securityGuardId', 'postSiteId', 'stationId', 'importHash'];
+      allowed.forEach((k) => {
+        if (Object.prototype.hasOwnProperty.call(data, k)) updateData[k] = data[k];
+      });
+      updateData.updatedById = this.options.currentUser ? this.options.currentUser.id : null;
+      await record.update(updateData, { transaction });
+      await SequelizeRepository.commitTransaction(transaction);
+      return record;
+    } catch (err) {
+      await SequelizeRepository.rollbackTransaction(transaction);
+      throw err;
+    }
+  }
+
+  async deleteAssignment(assignmentId: string) {
+    const transaction = await SequelizeRepository.createTransaction(this.options.database);
+    try {
+      const where: any = { id: assignmentId };
+      if (this.options.currentTenant && this.options.currentTenant.id) where.tenantId = this.options.currentTenant.id;
+      const record = await this.options.database.tourAssignment.findOne({ where, transaction });
+      if (!record) {
+        const err: any = new Error('Not found'); err.code = 404; throw err;
+      }
+      await record.destroy({ transaction });
+      await SequelizeRepository.commitTransaction(transaction);
+      return {};
     } catch (err) {
       await SequelizeRepository.rollbackTransaction(transaction);
       throw err;

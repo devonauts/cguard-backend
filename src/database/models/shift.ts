@@ -61,6 +61,16 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      stationId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: 'stations',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+      },
     },
     {
       indexes: [
