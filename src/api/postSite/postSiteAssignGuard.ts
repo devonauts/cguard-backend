@@ -132,7 +132,7 @@ export default async (req, res) => {
     // Create a Shift record instead of writing directly to tenant_user_post_sites pivot.
     try {
       // Load tenantUser to obtain the underlying user id for the guard (if available)
-      let tenantUserRecord = null;
+      let tenantUserRecord: any = null;
       try {
         tenantUserRecord = await req.database.tenantUser.findOne({ where: { id: tenantUserId }, include: [{ model: req.database.user, as: 'user' }] });
       } catch (e) {
@@ -151,8 +151,8 @@ export default async (req, res) => {
         department: incoming.department ?? incoming.department,
       };
 
-      if (tenantUserRecord && tenantUserRecord.user && tenantUserRecord.user.id) {
-        shiftPayload.guard = tenantUserRecord.user.id;
+      if (tenantUserRecord && (tenantUserRecord as any).user && (tenantUserRecord as any).user.id) {
+        shiftPayload.guard = (tenantUserRecord as any).user.id;
       }
 
       console.log('[DEBUG] Creating Shift with payload:', JSON.stringify(shiftPayload, null, 2));
