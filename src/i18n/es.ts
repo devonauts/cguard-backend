@@ -325,7 +325,8 @@ const es = {
     errors: {
       unique: {
 
-      }
+      },
+      cannotArchiveLinkedGuards: 'No se puede archivar este puesto porque tiene guardias asignados. Desvincula los guardias primero.'
     }
   },
   insurance: {

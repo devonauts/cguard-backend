@@ -153,6 +153,18 @@ export default class BusinessInfoService {
 
     try {
 
+      // Prevent archiving a post site (setting active=false) if it has assigned guards
+      if (data && Object.prototype.hasOwnProperty.call(data, 'active') && data.active === false) {
+        const assignedCount = await this.options.database.tenant_user_post_sites.count({
+          where: { businessInfoId: id },
+          transaction,
+        });
+        if (assignedCount > 0) {
+          throw new Error400(this.options.language, 'entities.businessInfo.errors.cannotArchiveLinkedGuards');
+        }
+      }
+
+
       // If a clientAccountId is provided, ensure it belongs to the tenant
       if (data && data.clientAccountId) {
         data.clientAccountId = await ClientAccountRepository.filterIdInTenant(

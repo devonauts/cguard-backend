@@ -321,7 +321,8 @@ const en = {
       errors: {
         unique: {
 
-        }
+        },
+        cannotArchiveLinkedGuards: 'Cannot archive this post site because it has guards assigned. Unassign guards first.'
       }
     },
     insurance: {

@@ -35,13 +35,13 @@ export default async (req, res, next) => {
             if (Array.isArray(parsed)) {
               categories = parsed.map(String);
             } else {
-              return res.status(400).json({ message: 'Formato de categorías inválido.' });
+              return res.status(400).json({ message: 'Formato de Sectores inválido.' });
             }
           } else {
             categories = raw.split(',').map((s) => s.trim()).filter(Boolean);
           }
         } catch (err) {
-          return res.status(400).json({ message: 'Formato de categorías inválido.' });
+          return res.status(400).json({ message: 'Formato de Sectores inválido.' });
         }
       }
     }

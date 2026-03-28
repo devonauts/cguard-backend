@@ -75,8 +75,31 @@ export default class SiteTourService {
         transaction,
       });
 
+      // Ensure assignment has tenantId when request provides currentTenant
+      if (assignment && this.options.currentTenant && this.options.currentTenant.id && !assignment.tenantId) {
+        // update assignment tenantId so table reflects tenant ownership
+        await assignment.update({ tenantId: this.options.currentTenant.id }, { transaction });
+      }
+
+      // If we have an assignment, ensure idempotency: don't double-count same tag for the same assignment
+      let scan = null;
+      if (assignment) {
+        const existing = await this.options.database.tagScan.findOne({
+          where: {
+            tourAssignmentId: assignment.id,
+            siteTourTagId: tag.id,
+          },
+          transaction,
+        });
+        if (existing) {
+          // already scanned this tag for this assignment — return without incrementing
+          await SequelizeRepository.commitTransaction(transaction);
+          return { tag, assignment, scan: existing };
+        }
+      }
+
       // Create tagScan row
-      const scan = await this.options.database.tagScan.create({
+      scan = await this.options.database.tagScan.create({
         siteTourTagId: tag.id,
         tourAssignmentId: assignment ? assignment.id : null,
         securityGuardId,
@@ -84,7 +107,21 @@ export default class SiteTourService {
         scannedData: { latitude, longitude, extra: scannedData },
       }, { transaction });
 
-      // Optionally update assignment progress or status here
+      // If assignment exists, increment scansCompleted and mark completed when reaching total tags
+      if (assignment) {
+        // increment atomically
+        await assignment.increment('scansCompleted', { by: 1, transaction });
+
+        // get current scansCompleted value
+        await assignment.reload({ transaction });
+
+        // count total tags for the tour
+        const totalTags = await this.options.database.siteTourTag.count({ where: { siteTourId: tag.siteTourId }, transaction });
+
+        if ((assignment as any).scansCompleted >= totalTags) {
+          await assignment.update({ status: 'completed', completedAt: new Date() }, { transaction });
+        }
+      }
 
       await SequelizeRepository.commitTransaction(transaction);
       return { tag, assignment, scan };

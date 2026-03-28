@@ -362,7 +362,7 @@ export default class ClientAccountService {
           { label: 'CP', x: marginLeft + colWidth * 8, width: colWidth * 0.8 },
           { label: 'Ciudad', x: marginLeft + colWidth * 8.8, width: colWidth },
           { label: 'País', x: marginLeft + colWidth * 9.8, width: colWidth },
-          { label: 'Fax', x: marginLeft + colWidth * 10.8, width: colWidth * 0.6 },
+          { label: 'Teléfono fijo', x: marginLeft + colWidth * 10.8, width: colWidth * 0.6 },
           { label: 'Categoría', x: marginLeft + colWidth * 11.4, width: colWidth * 0.6 },
           { label: 'Activo', x: marginLeft + colWidth * 12, width: colWidth * 0.6 },
         ];

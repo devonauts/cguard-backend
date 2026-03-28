@@ -132,7 +132,7 @@ export default [
           if (['description','descripcion','descripción','notes','notas'].includes(s)) return 'description';
           if (['latitude','latitud','lat'].includes(s)) return 'latitude';
           if (['longitude','longitud','lng','lon'].includes(s)) return 'longitude';
-          if (['categoryids','categories','categorias','categoriaids','categoría','categorias'].includes(s)) return 'categoryIds';
+          if (['categoryids','categories','Tipos','categoriaids','categoría','Tipos'].includes(s)) return 'categoryIds';
           if (['importhash','import hash','import_hash'].includes(s)) return 'importHash';
 
           return null;
