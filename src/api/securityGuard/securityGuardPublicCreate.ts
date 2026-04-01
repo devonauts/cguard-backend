@@ -81,11 +81,13 @@ export default async (req, res, next) => {
                       console.log('🔐 [securityGuardPublicCreate] fallback: set currentTenant/currentUser from securityGuard record');
                     }
                   } catch (e: any) {
-                    console.warn('🔔 [securityGuardPublicCreate] fallback tenantUser lookup failed', e && (e.message || e));
+                    const msg = e instanceof Error ? e.message : String(e);
+                    console.warn('🔔 [securityGuardPublicCreate] fallback tenantUser lookup failed', msg);
                   }
                 }
               } catch (e: any) {
-                console.warn('🔔 [securityGuardPublicCreate] fallback securityGuard lookup failed', e && (e.message || e));
+                const msg = e instanceof Error ? e.message : String(e);
+                console.warn('🔔 [securityGuardPublicCreate] fallback securityGuard lookup failed', msg);
               }
             }
           }
@@ -100,7 +102,8 @@ export default async (req, res, next) => {
           }
         }
       } catch (e: any) {
-        console.warn('🔔 [securityGuardPublicCreate] findByInvitationToken failed', e && (e.message || e));
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('🔔 [securityGuardPublicCreate] findByInvitationToken failed', msg);
       }
     }
 

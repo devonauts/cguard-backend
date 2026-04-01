@@ -62,6 +62,7 @@ const en = {
   tenant: {
     exists:
       'There is already a workspace on this application.',
+    invalidRuc: 'Invalid RUC (must be 13 digits and end with 001).',
     url: {
       exists: 'This workspace URL is already in use.',
       invalid: 'Invalid URL. Use only lowercase letters, numbers and hyphens (e.g. my-company).',
@@ -158,6 +159,10 @@ const en = {
 
         },
         exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
+      },
+      validation: {
+        invalidRuc: 'Invalid RUC (must be 13 digits and end with 001).',
+        invalidCedula: 'Invalid cedula (must be 10 digits).'
       }
     },
     

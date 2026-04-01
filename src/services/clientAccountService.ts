@@ -14,6 +14,20 @@ export default class ClientAccountService {
   }
 
   async create(data) {
+    // Validate rucNumber if present
+    try {
+      const { validateEcuadorRuc } = require('../lib/validators/id');
+      if (data && data.rucNumber) {
+        const digits = (data.rucNumber || '').toString().replace(/\D/g, '');
+        if (!validateEcuadorRuc(digits)) {
+          throw new Error('INVALID_RUC');
+        }
+      }
+    } catch (err) {
+      if (err && (err as any).message === 'INVALID_RUC') {
+        throw new Error400(this.options.language, 'clientAccount.invalidRuc');
+      }
+    }
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
     );
@@ -122,6 +136,20 @@ export default class ClientAccountService {
     );
 
     try {
+      // Validate rucNumber if present on update
+      try {
+        const { validateEcuadorRuc } = require('../lib/validators/id');
+        if (data && data.rucNumber) {
+          const digits = (data.rucNumber || '').toString().replace(/\D/g, '');
+          if (!validateEcuadorRuc(digits)) {
+            throw new Error('INVALID_RUC');
+          }
+        }
+      } catch (err) {
+        if (err && (err as any).message === 'INVALID_RUC') {
+          throw new Error400(this.options.language, 'clientAccount.invalidRuc');
+        }
+      }
       // No relationship filtering needed for simplified model
       const record = await ClientAccountRepository.update(
         id,

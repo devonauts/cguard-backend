@@ -29,7 +29,8 @@ export default async (req, res) => {
         }
       }
     } catch (e: any) {
-      console.warn('securityGuardAssignments: failed to resolve security guard', e && e.message ? e.message : e);
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('securityGuardAssignments: failed to resolve security guard', msg);
       guardUserId = incomingId;
     }
 

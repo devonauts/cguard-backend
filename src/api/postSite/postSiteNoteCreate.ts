@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import NoteService from '../../services/noteService';
+import AttachmentService from '../../services/attachmentService';
 import { i18n } from '../../i18n';
 
 export default async (req, res, next) => {
@@ -16,6 +17,27 @@ export default async (req, res, next) => {
     data.notableId = postSiteId;
 
     const created = await new NoteService(req).create(data);
+
+    if (Array.isArray(data.attachment) && data.attachment.length > 0) {
+      try {
+        for (const a of data.attachment) {
+          const attachmentPayload = {
+            name: a.name,
+            mimeType: a.mimeType || a.type || 'application/octet-stream',
+            sizeInBytes: a.sizeInBytes || a.size || 0,
+            storageId: a.storageId || null,
+            privateUrl: a.privateUrl || a.private_url || a.privateUrl,
+            publicUrl: a.publicUrl || a.public_url || a.publicUrl || null,
+            notableType: 'note',
+            notableId: created.id,
+          };
+          await new AttachmentService(req).create(attachmentPayload);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('Failed to create attachments for note', msg);
+      }
+    }
     const messageCode = 'notes.noteCreated';
     const lang = req && req.language ? req.language : undefined;
     const message = i18n(lang, messageCode);

@@ -79,4 +79,21 @@ export default class AWSStorage {
       params,
     );
   }
+
+  /**
+   * Delete an object from the bucket
+   */
+  static async delete(privateUrl) {
+    const params = {
+      Key: privateUrl,
+      Bucket: getConfig().FILE_STORAGE_BUCKET,
+    };
+
+    return new Promise((resolve, reject) => {
+      s3.deleteObject(params, (err: any, data: any) => {
+        if (err) return reject(err);
+        resolve(data);
+      });
+    });
+  }
 }

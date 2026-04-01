@@ -65,7 +65,8 @@ export default async (req, res, next) => {
       const reportedCount = payload && typeof payload.count === 'number' ? payload.count : null;
       console.debug('[securityGuardList] debug:', { tenantId: tenantIdDebug, rowsCount, reportedCount, sampleRows: (payload && payload.rows ? (Array.isArray(payload.rows) ? payload.rows.slice(0,5).map(r=>({id:r.id, guardId: r.guardId || r.guard && r.guard.id, fullName: r.fullName})) : payload.rows) : null) });
     } catch (e: any) {
-      console.warn('[securityGuardList] debug logging failed', e && e.message ? e.message : e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn('[securityGuardList] debug logging failed', msg);
     }
 
     await ApiResponseHandler.success(req, res, payload);

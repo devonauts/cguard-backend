@@ -11,4 +11,17 @@ export default (app) => {
     `/tenant/:tenantId/file/credentials`,
     require('./credentials').default,
   );
+  // Attachments endpoints (metadata)
+  app.post(
+    `/tenant/:tenantId/attachments`,
+    require('../attachment/create').default,
+  );
+  app.get(
+    `/tenant/:tenantId/attachments`,
+    require('../attachment/list').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/attachments/:id`,
+    require('../attachment/destroy').default,
+  );
 };

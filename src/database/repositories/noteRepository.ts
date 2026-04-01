@@ -3,6 +3,7 @@ import AuditLogRepository from './auditLogRepository';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';
 import SequelizeFilterUtils from '../utils/sequelizeFilterUtils';
+import AttachmentRepository from './attachmentRepository';
 
 const Op = Sequelize.Op;
 
@@ -83,7 +84,17 @@ class NoteRepository {
       throw new Error404();
     }
 
-    return record.get({ plain: true });
+    const note = record.get({ plain: true });
+
+    // Load attachments related to this note
+    try {
+      const atts = await AttachmentRepository.findAndCountAll({ filter: { notableType: 'note', notableId: id }, limit: 9999, offset: 0 }, options);
+      note.attachments = atts.rows || [];
+    } catch (e) {
+      note.attachments = [];
+    }
+
+    return note;
   }
 
   static async findAndCountAll({ filter, limit = 0, offset = 0, orderBy = '' }, options) {
@@ -129,6 +140,24 @@ class NoteRepository {
     });
 
     rows = rows.map((r) => r.get({ plain: true }));
+
+    // Efficiently load attachments for all notes in a single query
+    try {
+      const noteIds = rows.map((r) => r.id).filter(Boolean);
+      if (noteIds.length) {
+        const atts = await AttachmentRepository.findByNotableIds('note', noteIds, options);
+        const map: Record<string, any[]> = {};
+        atts.forEach((a: any) => {
+          map[a.notableId] = map[a.notableId] || [];
+          map[a.notableId].push(a);
+        });
+        rows = rows.map((r) => ({ ...r, attachments: map[r.id] || [] }));
+      } else {
+        rows = rows.map((r) => ({ ...r, attachments: [] }));
+      }
+    } catch (e) {
+      rows = rows.map((r) => ({ ...r, attachments: [] }));
+    }
 
     return { rows, count };
   }

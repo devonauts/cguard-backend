@@ -54,7 +54,8 @@ const es = {
   tenant: {
     exists:
       'Ya hay un espacio de trabajo en esta aplicación.',
-    url: {
+      invalidRuc: 'RUC inválido (debe ser 13 dígitos y terminar en 001).',
+      url: {
       exists:
         'Esta URL del espacio de trabajo ya está en uso.',
       invalid: 'URL inválida. Use solo letras minúsculas, números y guiones (ej. empresa-slug).',
@@ -162,7 +163,11 @@ const es = {
 
       },
       exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
-    }
+    },
+      validation: {
+        invalidRuc: 'RUC inválido (debe ser 13 dígitos y terminar en 001).',
+        invalidCedula: 'Cédula inválida (debe tener 10 dígitos).'
+      },
   },
   
   representanteEmpresa: {

@@ -3,6 +3,7 @@ import ApiResponseHandler from './apiResponseHandler';
 import SiteTourService from '../services/siteTourService';
 import Permissions from '../security/permissions';
 import Error400 from '../errors/Error400';
+import { Op } from 'sequelize';
 
 export default function (router) {
   // GET list /api/tenant/:tenantId/site-tour
@@ -206,6 +207,7 @@ export default function (router) {
         longitude: req.body.longitude,
         showGeoFence: req.body.showGeoFence,
         siteTourId: tourId,
+        postSiteId: tour.postSiteId || null,
         tenantId: tenant.id,
         createdById: currentUser && currentUser.id,
         updatedById: currentUser && currentUser.id,
@@ -277,10 +279,14 @@ export default function (router) {
         return;
       }
 
-      const where: any = { siteTourId: tourIds };
+      const where: any = { tenantId };
       if (req.query && req.query.tagType) {
         where.tagType = req.query.tagType;
       }
+
+      // Match tags that either belong to the tours under this postSite OR have postSiteId set
+      where[Op.or] = [{ siteTourId: tourIds }];
+      if (postSiteId) where[Op.or].push({ postSiteId });
 
       let rows = await req.database.siteTourTag.findAll({ where });
 

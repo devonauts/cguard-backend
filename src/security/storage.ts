@@ -160,6 +160,20 @@ export default class Storage {
         maxSizeInBytes: 100 * 1024 * 1024,
       },
 
+      // Notes attachments (separate folders per type)
+      notesPdf: {
+        id: 'notesPdf',
+        folder: 'tenant/:tenantId/notes/pdf',
+        maxSizeInBytes: 3 * 1024 * 1024,
+        publicRead: true,
+      },
+      notesImages: {
+        id: 'notesImages',
+        folder: 'tenant/:tenantId/notes/images',
+        maxSizeInBytes: 3 * 1024 * 1024,
+        publicRead: true,
+      },
+
       requestRequestDocumentPDF: {
         id: 'requestRequestDocumentPDF',
         folder: 'tenant/:tenantId/request/requestDocumentPDF',

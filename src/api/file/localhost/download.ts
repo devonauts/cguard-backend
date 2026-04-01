@@ -6,7 +6,20 @@ import ApiResponseHandler from '../../apiResponseHandler';
  */
 export default async (req, res, next) => {
   try {
-    const privateUrl = req.query.privateUrl;
+    // Accept either a raw privateUrl or an encrypted fileToken
+    let privateUrl = req.query.privateUrl;
+    const fileToken = req.query.fileToken;
+
+    if (!privateUrl && fileToken) {
+      try {
+        const { decryptPrivateUrl } = require('../../../utils/privateUrlEncryption');
+        privateUrl = decryptPrivateUrl(String(fileToken));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('Failed to decrypt fileToken', msg);
+        return ApiResponseHandler.error(req, res, { code: '403' });
+      }
+    }
 
     if (!privateUrl) {
       return ApiResponseHandler.error(req, res, {

@@ -389,6 +389,11 @@ class Permissions {
       fileEdit: createPermission('fileEdit', ALL_STAFF_ROLES, [plans.free, plans.growth, plans.enterprise], Object.values(storage)),
       fileDestroy: createPermission('fileDestroy', ALL_STAFF_ROLES, [plans.free, plans.growth, plans.enterprise], Object.values(storage)),
       fileRead: createPermission('fileRead', ALL_STAFF_ROLES, [plans.free, plans.growth, plans.enterprise], Object.values(storage)),
+      // === ATTACHMENTS ===
+      attachmentCreate: createPermission('attachmentCreate', ALL_STAFF_ROLES),
+      attachmentEdit: createPermission('attachmentEdit', ALL_STAFF_ROLES),
+      attachmentDestroy: createPermission('attachmentDestroy', ALL_STAFF_ROLES),
+      attachmentRead: createPermission('attachmentRead', [...ALL_STAFF_ROLES, roles.customer]),
     };
   }
 

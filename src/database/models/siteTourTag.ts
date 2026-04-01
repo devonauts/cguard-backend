@@ -41,6 +41,10 @@ export default function (sequelize) {
         type: DataTypes.BOOLEAN,
         defaultValue: false,
       },
+      postSiteId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       tenantId: {
         type: DataTypes.UUID,
         allowNull: false,

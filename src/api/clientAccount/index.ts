@@ -52,6 +52,10 @@ export default (app) => {
     `/tenant/:tenantId/client-account/:id/incidents`,
     require('./clientAccountIncidents').default,
   );
+  app.get(
+    `/tenant/:tenantId/client-account/:id/overview`,
+    require('./clientAccountOverview').default,
+  );
   // Client contacts CRUD
   app.get(
     `/tenant/:tenantId/client-account/:id/contacts`,

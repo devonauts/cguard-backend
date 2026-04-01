@@ -72,6 +72,22 @@ export default (app) => {
     require('./postSiteStationAssignedGuards').default,
   );
 
+  app.get(
+    `/tenant/:tenantId/post-site/:id/stations`,
+    require('./postSiteStations').default,
+  );
+
+  app.get(
+    `/tenant/:tenantId/post-site/:id/tasks`,
+    require('./postSiteTasks').default,
+  );
+
+  // Overview counters for a post site (assigned guards, onsite, tours/tasks/incidents last 7 days, hours logged)
+  app.get(
+    `/tenant/:tenantId/post-site/:id/overview`,
+    require('./postSiteOverview').default,
+  );
+
   // Post site contacts (list by postSiteId)
   app.get(
     `/tenant/:tenantId/post-site/:id/contacts`,

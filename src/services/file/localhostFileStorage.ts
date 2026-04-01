@@ -87,6 +87,23 @@ export default class LocalFileStorage {
     }
     return finalPath;
   }
+
+  /**
+   * Delete a file from local storage
+   */
+  static async delete(privateUrl) {
+    const finalPath = path.join(UPLOAD_DIR, privateUrl);
+    if (!fs.existsSync(finalPath)) return true;
+    if (!isPathInsideUploadDir(finalPath)) {
+      throw new Error403();
+    }
+    return new Promise((resolve, reject) => {
+      fs.unlink(finalPath, (err) => {
+        if (err) return reject(err);
+        resolve(true);
+      });
+    });
+  }
 }
 
 function ensureDirectoryExistence(filePath: string): boolean {

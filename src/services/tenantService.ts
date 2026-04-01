@@ -238,6 +238,21 @@ export default class TenantService {
   }
 
   async create(data) {
+    // Validate taxNumber / RUC if provided
+    try {
+      const { validateEcuadorRuc } = require('../lib/validators/id');
+      if (data && data.taxNumber) {
+        const digits = (data.taxNumber || '').toString().replace(/\D/g, '');
+        if (!validateEcuadorRuc(digits)) {
+          throw new Error('INVALID_RUC');
+        }
+      }
+    } catch (err) {
+      if (err && (err as any).message === 'INVALID_RUC') {
+        throw new Error400(this.options.language, 'tenant.invalidRuc');
+      }
+      // ignore require errors; validator exists in this repo
+    }
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
     );
@@ -297,6 +312,20 @@ export default class TenantService {
     );
 
     try {
+      // Validate taxNumber / RUC if provided on update
+      try {
+        const { validateEcuadorRuc } = require('../lib/validators/id');
+        if (data && data.taxNumber) {
+          const digits = (data.taxNumber || '').toString().replace(/\D/g, '');
+          if (!validateEcuadorRuc(digits)) {
+            throw new Error('INVALID_RUC');
+          }
+        }
+      } catch (err) {
+        if (err && (err as any).message === 'INVALID_RUC') {
+          throw new Error400(this.options.language, 'tenant.invalidRuc');
+        }
+      }
       let record = await TenantRepository.findById(id, {
         ...this.options,
         transaction,

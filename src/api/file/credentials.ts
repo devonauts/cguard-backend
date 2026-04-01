@@ -70,8 +70,21 @@ export default async (req, res) => {
       baseUrl,
     );
 
+    // Generate an encrypted token representing the privateUrl so clients
+    // don't need to receive the raw path. This token can be provided later
+    // when creating attachment metadata or requesting a download.
+    let fileToken = null;
+    try {
+      const { encryptPrivateUrl } = require('../../utils/privateUrlEncryption');
+      fileToken = encryptPrivateUrl(privateUrl);
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('File URL encryption unavailable', msg);
+    }
+
     await ApiResponseHandler.success(req, res, {
       privateUrl,
+      fileToken,
       downloadUrl,
       uploadCredentials,
     });
