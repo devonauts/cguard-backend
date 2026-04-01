@@ -143,6 +143,7 @@ require('./completionOfTutorial').default(routes);
 require('./inventoryHistory').default(routes);
 require('./businessInfo').default(routes);
 require('./postSite').default(routes);
+require('./geocode').default(routes);
 require('./siteTour').default(routes);
 require('./kpi').default(routes);
 require('./insurance').default(routes);
