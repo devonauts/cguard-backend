@@ -1,3 +1,4 @@
+
 import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
@@ -5,6 +6,7 @@ import ClientAccountRepository from '../database/repositories/clientAccountRepos
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
 import Roles from '../security/roles';
 import crypto from 'crypto';
+import UserCreator from './user/userCreator';
 
 export default class ClientAccountService {
   options: IServiceOptions;
@@ -38,6 +40,42 @@ export default class ClientAccountService {
         ...this.options,
         transaction,
       });
+
+      // --- INICIO integración creación de usuario/tenantUser para clientes ---
+      try {
+        // Solo crear usuario si hay email y no se indicó explícitamente que no se cree
+        if (data && data.email) {
+          const userCreator = new UserCreator({
+            ...this.options,
+            transaction,
+          });
+          // El email puede venir como string o array, normalizamos
+          const emails = Array.isArray(data.email) ? data.email : [data.email];
+          // Se puede pasar nombre, apellido, etc. desde el front
+          const userData = {
+            emails,
+            firstName: data.firstName || data.nombre || undefined,
+            lastName: data.lastName || data.apellido || undefined,
+            // Unir nombre y apellido para fullName si ambos existen
+            fullName: (
+              (data.firstName || data.nombre)
+                ? ((data.firstName || data.nombre) +
+                  ((data.lastName || data.apellido) ? ' ' + (data.lastName || data.apellido) : ''))
+                : (data.fullName || data.nombreCompleto || undefined)
+            ),
+            clientIds: [record.id],
+            roles: [Roles.values.customer],
+          };
+          console.info('[ClientAccountService] Creando usuario/tenantUser para cliente:', userData);
+          await userCreator.execute(userData, true); // true: enviar invitación, verificación por defecto
+          console.info('[ClientAccountService] Usuario/tenantUser creado e invitación enviada para cliente:', emails);
+        } else {
+          console.warn('[ClientAccountService] No se proporcionó email para crear usuario cliente.');
+        }
+      } catch (err) {
+        console.error('[ClientAccountService] Error creando usuario/tenantUser para cliente:', err);
+      }
+      // --- FIN integración usuario cliente ---
 
       // If the creator is not an admin, auto-assign the created client to that tenant user.
       try {

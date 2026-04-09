@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<style>
+			body { font-family: Arial, Helvetica, sans-serif; background:#f7f8fb; margin:0; padding:24px }
+			.card { max-width:600px; margin:0 auto; background:#ffffff; border-radius:8px; padding:28px; box-shadow:0 4px 20px rgba(16,24,40,0.06) }
+			.logo { text-align:center; margin-bottom:18px }
+			.logo img { height:120px; max-width:320px }
+			h1 { font-size:20px; color:#111827; margin:0 0 12px }
+			p { color:#6b7280; line-height:1.6 }
+			.btn { display:inline-block; background:#f97316; color:white; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:700; text-transform:uppercase }
+			.footer { margin-top:24px; font-size:13px; color:#9ca3af }
+		</style>
+	</head>
+	<body>
+		<div class="card">
+			<div class="logo">
+				<img src="{{logoUrl}}" alt="CGuard" style="height:120px; display:block; margin:0 auto;" />
+			</div>
+
+			<h1>¡Bienvenido a la plataforma de clientes de {{tenant.name}}!</h1>
+
+			<p style="font-weight:700; color:#111827; margin-top:8px">{{firstName}} {{lastName}}</p>
+			<p style="color:#6b7280; margin-top:4px; font-size:14px">{{email}}</p>
+
+			<p style="margin-top:12px">Te hemos creado una cuenta exclusiva para que puedas acceder y gestionar toda la información de tus servicios, puestos de vigilancia y estaciones de manera segura y sencilla.</p>
+
+			<p>Para comenzar, haz clic en el siguiente botón para crear tu contraseña y activar tu acceso:</p>
+
+			<p style="text-align:center; margin:22px 0">
+				<a class="btn" href="{{link}}" style="display:inline-block; background:#f97316; color:#ffffff; padding:14px 24px; border-radius:8px; text-decoration:none; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; font-family: Arial, Helvetica, sans-serif; box-shadow: 0 6px 18px rgba(249,115,22,0.18);">ACTIVAR MI CUENTA</a>
+			</p>
+
+			<p style="margin-top:18px; color:#111827; font-weight:500;">¿Ya tienes la app de clientes?</p>
+			<p>Puedes descargarla aquí:
+				<a href="https://play.google.com/store/apps/details?id=com.cguard.cliente" style="color:#f97316; font-weight:700; text-decoration:none;">Google Play</a>
+				|
+				<a href="https://apps.apple.com/app/idXXXXXXXXX" style="color:#f97316; font-weight:700; text-decoration:none;">App Store</a>
+			</p>
+
+			<p class="footer">Si no esperabas esta invitación, puedes ignorar este correo. El enlace de invitación puede expirar por seguridad.</p>
+			<hr style="border:none;border-top:1px solid #eef2f6;margin:20px 0" />
+			<p style="font-size:12px;color:#9ca3af;margin:0">¿Necesitas ayuda? Contáctanos: <a href="mailto:{{supportEmail}}" style="color:#6b7280">{{supportEmail}}</a></p>
+		</div>
+	</body>
+</html>

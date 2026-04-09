@@ -18,7 +18,7 @@ export default function (sequelize) {
         allowNull: true,
       },
       scheduledDays: {
-        type: DataTypes.STRING(100),
+        type: DataTypes.ARRAY(DataTypes.STRING),
         allowNull: true,
       },
       postSiteId: {

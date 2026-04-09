@@ -27,6 +27,8 @@ class VisitorLogRepository {
         'importHash',
         'clientId',
         'postSiteId',
+        'stationId',
+        'stationName',
         'placeType',
       ]),
     };
@@ -36,9 +38,17 @@ class VisitorLogRepository {
       toCreate.exitTime = null;
     }
 
+    // Determine denormalized stationName (if not provided) from the station record
+    let denormStationName = toCreate.stationName;
+    if (!denormStationName && toCreate.stationId) {
+      const st = await options.database.station.findByPk(toCreate.stationId).catch(() => null);
+      if (st) denormStationName = st.stationName || st.name || undefined;
+    }
+
     const record = await options.database.visitorLog.create(
       {
         ...toCreate,
+        stationName: denormStationName,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -87,6 +97,8 @@ class VisitorLogRepository {
         'importHash',
         'clientId',
         'postSiteId',
+        'stationId',
+        'stationName',
         'placeType',
       ]),
     };
@@ -96,9 +108,17 @@ class VisitorLogRepository {
       toUpdate.exitTime = null;
     }
 
+    // Determine denormalized stationName for update
+    let denormUpdateStationName = toUpdate.stationName;
+    if (denormUpdateStationName === undefined && toUpdate.stationId) {
+      const st = await options.database.station.findByPk(toUpdate.stationId).catch(() => null);
+      if (st) denormUpdateStationName = st.stationName || st.name || undefined;
+    }
+
     record = await record.update(
       {
         ...toUpdate,
+        stationName: denormUpdateStationName !== undefined ? denormUpdateStationName : record.stationName,
         updatedById: currentUser.id,
       },
       { transaction },
@@ -209,6 +229,12 @@ class VisitorLogRepository {
 
       if (filter.placeType) {
         whereAnd.push(SequelizeFilterUtils.ilikeIncludes('visitorLog', 'placeType', filter.placeType));
+      }
+
+      if (filter.stationId || (filter as any).station) {
+        // allow filter.station or filter.stationId
+        const stationVal = (filter as any).stationId ?? (filter as any).station;
+        whereAnd.push({ ['stationId']: SequelizeFilterUtils.uuid(stationVal) });
       }
 
       // Support a generic text query that searches multiple fields (firstName, lastName, idNumber)
@@ -338,6 +364,18 @@ class VisitorLogRepository {
         output.postSite = postSite ? postSite.get({ plain: true }) : null;
       } catch (err) {
         output.postSite = null;
+      }
+    }
+
+    // Attach station information if present
+    if (output.stationId) {
+      try {
+        const station = await options.database.station.findByPk(
+          output.stationId,
+        );
+        output.station = station ? station.get({ plain: true }) : null;
+      } catch (err) {
+        output.station = null;
       }
     }
 

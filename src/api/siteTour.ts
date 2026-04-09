@@ -461,10 +461,67 @@ export default function (router) {
     try {
       // Allow guards to report scans (they must be authenticated)
       const service = new SiteTourService(req);
-      const { tagIdentifier, latitude, longitude, scannedData } = req.body;
+      const { tagIdentifier, latitude, longitude, scannedData, stationId } = req.body;
       const securityGuardId = req.body.securityGuardId || (req as any).currentUser && (req as any).currentUser.id;
-      const payload = await service.recordTagScan({ tagIdentifier, securityGuardId, latitude, longitude, scannedData });
+      const payload = await service.recordTagScan({ tagIdentifier, securityGuardId, latitude, longitude, scannedData, stationId });
       await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // GET /api/tenant/:tenantId/site-tour/tag-scans
+  router.get('/tenant/:tenantId/site-tour/tag-scans', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      const service = new SiteTourService(req);
+      const filter: any = {};
+      if (req.query.tourId) filter.tourId = req.query.tourId;
+      if (req.query.postSiteId) filter.postSiteId = req.query.postSiteId;
+      if (req.query.stationId) filter.stationId = req.query.stationId;
+      if (req.query.assignmentId) filter.assignmentId = req.query.assignmentId;
+      if (req.query.limit) filter.limit = req.query.limit;
+      if (req.query.offset) filter.offset = req.query.offset;
+
+      const rows = await service.listTagScans(filter);
+      await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // GET /api/tenant/:tenantId/site-tour/tag-scans/export?format=pdf|excel
+  router.get('/tenant/:tenantId/site-tour/tag-scans/export', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      const format = String(req.query.format || '').toLowerCase();
+      if (!format || !['pdf', 'excel'].includes(format)) {
+        return res.status(400).json({ message: 'Formato no soportado. Use "pdf" o "excel".' });
+      }
+
+      const service = new SiteTourService(req);
+      const filter: any = {};
+      if (req.query.tourId) filter.tourId = req.query.tourId;
+      if (req.query.postSiteId) filter.postSiteId = req.query.postSiteId;
+      if (req.query.stationId) filter.stationId = req.query.stationId;
+      if (req.query.assignmentId) filter.assignmentId = req.query.assignmentId;
+
+      const result = await service.exportScansToFile(format, filter);
+
+      if (format === 'pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=tag-scans.pdf');
+      } else if (format === 'excel') {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=tag-scans.xlsx');
+      }
+
+      // result may be { buffer, mimeType }
+      if (result && result.buffer) {
+        return res.send(result.buffer);
+      }
+
+      return res.status(500).json({ message: 'Failed to generate export' });
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }

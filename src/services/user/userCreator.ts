@@ -5,6 +5,7 @@ import SequelizeRepository from '../../database/repositories/sequelizeRepository
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
 import { tenantSubdomain } from '../tenantSubdomain';
 import { IServiceOptions } from '../IServiceOptions';
+import Roles from '../../security/roles';
 export default class UserCreator {
   options: IServiceOptions;
   transaction;
@@ -23,7 +24,14 @@ export default class UserCreator {
    * Sends Invitation Emails if flagged.
    */
   async execute(data, sendInvitationEmails = true, sendVerificationEmails = undefined) {
-    this.data = data;
+    // Forzar rol 'customer' si es un flujo de cliente y no viene explícito
+    let inputData = { ...data };
+    if (!inputData.roles || (Array.isArray(inputData.roles) && inputData.roles.length === 0)) {
+      inputData.roles = [Roles.values.customer];
+    } else if (typeof inputData.roles === 'string' && inputData.roles.trim() === '') {
+      inputData.roles = [Roles.values.customer];
+    }
+    this.data = inputData;
     this.sendInvitationEmails = sendInvitationEmails;
     // If caller explicitly passed sendVerificationEmails use it.
     // Otherwise, if invitation emails are suppressed, also suppress verification emails
@@ -317,10 +325,14 @@ export default class UserCreator {
       return;
     }
     const results: any[] = [];
+
     for (const emailToInvite of this.emailsToInvite) {
+      // Detect if el usuario es cliente (rol customer)
+      const isCustomer = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.customer)) || this.data.role === Roles.values.customer;
+      const invitationPath = isCustomer ? '/client/registration' : '/auth/invitation';
       const link = `${tenantSubdomain.frontendUrl(
         this.options.currentTenant,
-      )}/auth/invitation?token=${emailToInvite.token}`;
+      )}${invitationPath}?token=${emailToInvite.token}`;
 
       // Log the invitation for debugging (non-production)
       try {
@@ -332,15 +344,19 @@ export default class UserCreator {
       }
 
       try {
+        // Detect if the user a cliente (rol customer)
+        const isCustomer = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.customer)) || this.data.role === Roles.values.customer;
+        const templateVars = {
+          tenant: this.options.currentTenant,
+          link,
+          invitation: true,
+          // Forza el template de cliente si es customer
+          ...(isCustomer ? { type: 'client-invitation' } : {}),
+        };
         const sender = new EmailSender(
           EmailSender.TEMPLATES.INVITATION,
-          {
-            tenant: this.options.currentTenant,
-            link,
-            invitation: true,
-          },
+          templateVars,
         );
-
         const r = await sender.sendTo(emailToInvite.email);
         results.push(r);
       } catch (err) {

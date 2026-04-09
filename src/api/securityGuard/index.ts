@@ -1,4 +1,9 @@
 export default (app) => {
+  // GET específico para isOnDuty
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/on-duty`,
+    require('./securityGuardOnDutyGet').default,
+  );
   app.get(
     `/security-guard/public`,
     require('./securityGuardPublicFind').default,
@@ -18,6 +23,12 @@ export default (app) => {
   app.patch(
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardPatch').default,
+  );
+
+  // PATCH específico para isOnDuty
+  app.patch(
+    `/tenant/:tenantId/security-guard/:id/on-duty`,
+    require('./securityGuardOnDutyPatch').default,
   );
   app.put(
     `/tenant/:tenantId/security-guard/self`,

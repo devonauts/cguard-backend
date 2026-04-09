@@ -55,6 +55,17 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      stationId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      stationName: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        validate: {
+          len: [0, 255],
+        },
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,
@@ -109,6 +120,12 @@ export default function (sequelize) {
     models.visitorLog.belongsTo(models.businessInfo, {
       as: 'postSite',
       foreignKey: 'postSiteId',
+      constraints: false,
+    });
+
+    models.visitorLog.belongsTo(models.station, {
+      as: 'station',
+      foreignKey: 'stationId',
       constraints: false,
     });
   };

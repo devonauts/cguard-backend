@@ -2,6 +2,7 @@ import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import VisitorLogRepository from '../database/repositories/visitorLogRepository';
+import StationRepository from '../database/repositories/stationRepository';
 
 export default class VisitorLogService {
   options: IServiceOptions;
@@ -14,6 +15,10 @@ export default class VisitorLogService {
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
 
     try {
+      // validate stationId if provided
+      if (Object.prototype.hasOwnProperty.call(data, 'stationId') || Object.prototype.hasOwnProperty.call(data, 'station')) {
+        data.stationId = await StationRepository.filterIdInTenant(data.station || data.stationId, { ...this.options, transaction });
+      }
       const record = await VisitorLogRepository.create(data, { ...this.options, transaction });
 
       await SequelizeRepository.commitTransaction(transaction);
@@ -32,6 +37,10 @@ export default class VisitorLogService {
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
 
     try {
+      // validate stationId if provided
+      if (Object.prototype.hasOwnProperty.call(data, 'stationId') || Object.prototype.hasOwnProperty.call(data, 'station')) {
+        data.stationId = await StationRepository.filterIdInTenant(data.station || data.stationId, { ...this.options, transaction });
+      }
       const record = await VisitorLogRepository.update(id, data, { ...this.options, transaction });
 
       await SequelizeRepository.commitTransaction(transaction);

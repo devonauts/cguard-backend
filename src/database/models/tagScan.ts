@@ -18,6 +18,14 @@ export default function (sequelize) {
         type: DataTypes.JSON,
         allowNull: true,
       },
+        stationId: {
+          type: DataTypes.UUID,
+          allowNull: true,
+        },
+        tenantId: {
+          type: DataTypes.UUID,
+          allowNull: true,
+        },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,
@@ -33,6 +41,10 @@ export default function (sequelize) {
     tagScan.belongsTo(models.siteTourTag, { as: 'tag', foreignKey: 'siteTourTagId' });
     tagScan.belongsTo(models.tourAssignment, { as: 'assignment', foreignKey: 'tourAssignmentId' });
     tagScan.belongsTo(models.securityGuard, { as: 'guard', foreignKey: 'securityGuardId' });
+    // optional relation to station for better context of where the scan happened
+    if (models.station) {
+      tagScan.belongsTo(models.station, { as: 'station', foreignKey: 'stationId' });
+    }
   };
 
   return tagScan;

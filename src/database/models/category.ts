@@ -53,7 +53,6 @@ export default function (sequelize) {
             importHash: {
                 type: DataTypes.STRING(255),
                 allowNull: true,
-                unique: true,
             },
         },
         {
