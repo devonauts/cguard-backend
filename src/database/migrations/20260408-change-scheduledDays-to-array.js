@@ -2,16 +2,17 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    // Cambia el tipo de la columna scheduledDays a ARRAY de STRING (solo PostgreSQL)
-    await queryInterface.changeColumn("siteTours", "scheduledDays", {
-      type: Sequelize.ARRAY(Sequelize.STRING),
+    const dialect = queryInterface.sequelize.getDialect();
+    const type = dialect === 'mysql' ? Sequelize.JSON : Sequelize.ARRAY(Sequelize.STRING);
+
+    await queryInterface.changeColumn('siteTours', 'scheduledDays', {
+      type,
       allowNull: true,
     });
   },
 
   down: async (queryInterface, Sequelize) => {
-    // Revertir a string simple (en caso de rollback)
-    await queryInterface.changeColumn("siteTours", "scheduledDays", {
+    await queryInterface.changeColumn('siteTours', 'scheduledDays', {
       type: Sequelize.STRING(100),
       allowNull: true,
     });
