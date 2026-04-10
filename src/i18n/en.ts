@@ -54,6 +54,8 @@ const en = {
       destroyingPlanUser: `You can't delete the plan manager.`,
       passwordRequired: 'Password is required.',
       cannotUseOldPasswordForOtherUser: "You can't use the old password to change another user's password.",
+      cannotAssignAdminRole: 'Only administrators can assign the admin role.',
+      cannotAssignHigherRole: 'You cannot assign a role with higher privileges than your own.',
     },
     passwordChanged: 'Password changed successfully. You can now sign in with your new password. ',
     passwordSetByAdmin: 'Password updated by administrator.',
