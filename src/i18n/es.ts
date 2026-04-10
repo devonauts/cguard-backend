@@ -49,6 +49,8 @@ const es = {
         'No puede eliminar el administrador del plan.',
       passwordRequired: 'La contraseña es obligatoria.',
       cannotUseOldPasswordForOtherUser: 'No puedes usar la contraseña anterior para cambiar la contraseña de otro usuario.',
+      cannotAssignAdminRole: 'Solo los administradores pueden asignar el rol de administrador.',
+      cannotAssignHigherRole: 'No puede asignar un rol con más privilegios que el suyo.',
     },
   },
   tenant: {

@@ -389,6 +389,61 @@ export default class TenantUserRepository {
         // ignore fallback errors
       }
 
+    // === PRIVILEGE ESCALATION PROTECTION ===
+    // Prevent non-admin users from assigning admin role or roles higher than their own
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      if (currentUser && !options.bypassPrivilegeCheck) {
+        // Find current user's tenant entry and roles
+        const currentUserTenantEntry = Array.isArray(currentUser.tenants)
+          ? currentUser.tenants.find((t) => t && t.tenant && String(t.tenant.id) === String(resolvedTenantId))
+          : null;
+        
+        let currentUserRoles: string[] = [];
+        if (currentUserTenantEntry) {
+          const rawRoles = currentUserTenantEntry.roles;
+          if (Array.isArray(rawRoles)) {
+            currentUserRoles = rawRoles;
+          } else if (typeof rawRoles === 'string') {
+            try { currentUserRoles = JSON.parse(rawRoles); } catch (e) { currentUserRoles = []; }
+          }
+        }
+
+        const isCurrentUserAdmin = currentUserRoles.includes('admin');
+        
+        // Get the highest authority level of current user
+        const currentUserMaxAuthority = Math.max(
+          ...currentUserRoles.map((r) => Roles.hierarchy[r] || 0),
+          0
+        );
+
+        // Check each incoming role
+        for (const incomingRole of incomingSlugs) {
+          const incomingAuthority = Roles.hierarchy[incomingRole] || 0;
+          
+          // Only admins can assign admin role
+          if (incomingRole === 'admin' && !isCurrentUserAdmin) {
+            console.warn('tenantUserRepository.updateRoles: BLOCKED privilege escalation - non-admin tried to assign admin role', {
+              tenantId: resolvedTenantId, userId: id, currentUserRoles, attemptedRole: incomingRole
+            });
+            throw new Error400(options.language, 'user.errors.cannotAssignAdminRole');
+          }
+          
+          // Users cannot assign roles with higher authority than their own (except admins)
+          if (!isCurrentUserAdmin && incomingAuthority > currentUserMaxAuthority) {
+            console.warn('tenantUserRepository.updateRoles: BLOCKED privilege escalation - user tried to assign higher role', {
+              tenantId: resolvedTenantId, userId: id, currentUserRoles, currentUserMaxAuthority, attemptedRole: incomingRole, attemptedAuthority: incomingAuthority
+            });
+            throw new Error400(options.language, 'user.errors.cannotAssignHigherRole');
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof Error400) throw e;
+      console.warn('tenantUserRepository.updateRoles: privilege check error (non-fatal):', e && (e as any).message ? (e as any).message : e);
+    }
+    // === END PRIVILEGE ESCALATION PROTECTION ===
+
     console.debug('tenantUserRepository.updateRoles called', { tenantId, userId: id, roles, clientIds, postSiteIds });
 
       try {
