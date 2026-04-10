@@ -14,15 +14,17 @@ export default function (sequelize) {
       },
       description: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: true,
+        
         validate: {
           len: [0, 800],
-          notEmpty: true,
+          notEmpty: false,
         }
       },
       price: {
         type: DataTypes.DECIMAL,
-        allowNull: false,
+        allowNull: true,
+        
         validate: {
 
         }
@@ -93,7 +95,8 @@ export default function (sequelize) {
     models.service.belongsTo(models.tenant, {
       as: 'tenant',
       foreignKey: {
-        allowNull: false,
+        allowNull: true,
+        
       },
       onDelete: 'CASCADE',
     });

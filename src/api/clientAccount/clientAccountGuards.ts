@@ -18,9 +18,9 @@ export default async (req, res, next) => {
       throw new Error('Database connection unavailable');
     }
 
-    // Try to gather pivot rows which may store either securityGuardId or reference tenantUsers
+    // Try to gather pivot rows which may store either.security_guard_id or reference tenantUsers
     const [rows] = await sequelize.query(
-      `SELECT tuc.securityGuardId, tu.userId
+      `SELECT tuc.security_guard_id, tu.userId
        FROM tenant_user_client_accounts tuc
        LEFT JOIN tenantUsers tu ON tu.id = tuc.tenantUserId
        WHERE tuc.clientAccountId = :clientId
@@ -32,7 +32,7 @@ export default async (req, res, next) => {
 
     console.debug('[clientAccountGuards] pivot rows for client', clientId, rows);
 
-    const securityGuardIds = (rows || []).map((r: any) => r.securityGuardId).filter(Boolean);
+    const securityGuardIds = (rows || []).map((r: any) => r.security_guard_id).filter(Boolean);
     const userIds = (rows || []).map((r: any) => r.userId).filter(Boolean);
 
     if (!securityGuardIds.length && !userIds.length) {

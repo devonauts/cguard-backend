@@ -24,13 +24,20 @@ export default class UserCreator {
    * Sends Invitation Emails if flagged.
    */
   async execute(data, sendInvitationEmails = true, sendVerificationEmails = undefined) {
-    // Forzar rol 'customer' si es un flujo de cliente y no viene explícito
+    // Assign 'customer' role when creating users associated with client accounts
+    // and no explicit roles are provided
     let inputData = { ...data };
-    if (!inputData.roles || (Array.isArray(inputData.roles) && inputData.roles.length === 0)) {
-      inputData.roles = [Roles.values.customer];
-    } else if (typeof inputData.roles === 'string' && inputData.roles.trim() === '') {
+    const hasClientIds = inputData.clientIds && Array.isArray(inputData.clientIds) && inputData.clientIds.length > 0;
+    const hasNoRoles = !inputData.roles || 
+                       (Array.isArray(inputData.roles) && inputData.roles.length === 0) ||
+                       (typeof inputData.roles === 'string' && inputData.roles.trim() === '');
+    
+    // If clientIds are provided (user is associated with client accounts),
+    // ensure the 'customer' role is assigned so they can log in to the mobile app
+    if (hasClientIds && hasNoRoles) {
       inputData.roles = [Roles.values.customer];
     }
+    
     this.data = inputData;
     this.sendInvitationEmails = sendInvitationEmails;
     // If caller explicitly passed sendVerificationEmails use it.

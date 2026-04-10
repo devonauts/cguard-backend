@@ -22,7 +22,7 @@ export default async (req, res, next) => {
 
     try {
       const [rows] = await sequelize.query(
-        `SELECT COUNT(DISTINCT COALESCE(tuc.securityGuardId, tu.userId)) AS count
+        `SELECT COUNT(DISTINCT COALESCE(tuc.security_guard_id, tu.userId)) AS count
          FROM tenant_user_client_accounts tuc
          LEFT JOIN tenantUsers tu ON tu.id = tuc.tenantUserId
          WHERE tuc.clientAccountId = :clientId
