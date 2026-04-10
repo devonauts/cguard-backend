@@ -13,6 +13,10 @@ module.exports = {
         `UPDATE siteTours SET scheduledDays_tmp = CASE WHEN scheduledDays IS NULL OR scheduledDays = '' OR JSON_VALID(scheduledDays) = 0 THEN '[]' ELSE scheduledDays END`,
       );
 
+      await queryInterface.sequelize.query(
+        `UPDATE siteTours SET scheduledDays_tmp = '[]' WHERE JSON_VALID(scheduledDays_tmp) = 0`,
+      );
+
       await queryInterface.removeColumn('siteTours', 'scheduledDays');
       await queryInterface.renameColumn('siteTours', 'scheduledDays_tmp', 'scheduledDays');
     } else {
