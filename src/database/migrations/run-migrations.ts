@@ -19,7 +19,7 @@ async function run() {
 
   const files = fs.readdirSync(migrationsDir)
     .filter(f => f.endsWith('.ts') || f.endsWith('.js'))
-    .filter(f => !f.includes('run-migrations'))
+    .filter(f => !f.includes('run-migrations') && f !== 'create.ts')
     .sort();
 
   if (!files.length) {
