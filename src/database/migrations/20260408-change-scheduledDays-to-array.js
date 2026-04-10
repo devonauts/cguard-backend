@@ -3,19 +3,24 @@
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     const dialect = queryInterface.sequelize.getDialect();
-    const type = dialect === 'mysql' ? Sequelize.JSON : Sequelize.ARRAY(Sequelize.STRING);
-
     if (dialect === 'mysql') {
-      // Normalize invalid JSON values before changing the column type.
-      await queryInterface.sequelize.query(
-        `UPDATE siteTours SET scheduledDays = '[]' WHERE scheduledDays IS NULL OR scheduledDays = '' OR JSON_VALID(scheduledDays) = 0`,
-      );
-    }
+      await queryInterface.addColumn('siteTours', 'scheduledDays_tmp', {
+        type: Sequelize.JSON,
+        allowNull: true,
+      });
 
-    await queryInterface.changeColumn('siteTours', 'scheduledDays', {
-      type,
-      allowNull: true,
-    });
+      await queryInterface.sequelize.query(
+        `UPDATE siteTours SET scheduledDays_tmp = CASE WHEN scheduledDays IS NULL OR scheduledDays = '' OR JSON_VALID(scheduledDays) = 0 THEN '[]' ELSE scheduledDays END`,
+      );
+
+      await queryInterface.removeColumn('siteTours', 'scheduledDays');
+      await queryInterface.renameColumn('siteTours', 'scheduledDays_tmp', 'scheduledDays');
+    } else {
+      await queryInterface.changeColumn('siteTours', 'scheduledDays', {
+        type: Sequelize.ARRAY(Sequelize.STRING),
+        allowNull: true,
+      });
+    }
   },
 
   down: async (queryInterface, Sequelize) => {
