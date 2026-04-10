@@ -342,7 +342,7 @@ class SecurityGuardRepository {
       options,
     );
 
-    const record = await options.database.securityGuard.findOne(
+    let record = await options.database.securityGuard.findOne(
       {
         where: {
           id,
@@ -352,6 +352,21 @@ class SecurityGuardRepository {
         transaction,
       },
     );
+
+    if (!record) {
+      // Fallback: if the passed id refers to the underlying user id (guardId),
+      // resolve the securityGuard record by guardId instead.
+      record = await options.database.securityGuard.findOne(
+        {
+          where: {
+            guardId: id,
+            tenantId: currentTenant.id,
+          },
+          include,
+          transaction,
+        },
+      );
+    }
 
     if (!record) {
       // Use custom error message for not found guard

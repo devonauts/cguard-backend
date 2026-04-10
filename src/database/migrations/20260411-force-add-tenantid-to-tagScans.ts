@@ -14,7 +14,7 @@ module.exports = {
       try {
         console.log('Adding tenantId (CHAR(36) BINARY) to tagScans via raw ALTER TABLE');
         await queryInterface.sequelize.query(`ALTER TABLE tagScans ADD COLUMN tenantId CHAR(36) BINARY NULL`);
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Raw ALTER TABLE failed (may already exist or insufficient privileges):', err && err.message ? err.message : err);
       }
     } else {
@@ -29,13 +29,13 @@ module.exports = {
         try {
           await queryInterface.sequelize.query(`CREATE INDEX idx_tagScans_tenantId ON tagScans (tenantId)`);
           console.log('Created index idx_tagScans_tenantId');
-        } catch (err) {
+        } catch (err: any) {
           console.warn('Create index failed or already exists:', err && err.message ? err.message : err);
         }
       } else {
         console.log('Index idx_tagScans_tenantId already present');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Index check failed:', e && e.message ? e.message : e);
     }
 
@@ -48,7 +48,7 @@ module.exports = {
         WHERE (ts.tenantId IS NULL OR ts.tenantId = '') AND t.tenantId IS NOT NULL
       `);
       console.log('Backfilled tagScans.tenantId from siteTourTags (if any)');
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Backfill from siteTourTags failed:', err && err.message ? err.message : err);
     }
 
@@ -61,7 +61,7 @@ module.exports = {
         WHERE (ts.tenantId IS NULL OR ts.tenantId = '') AND b.tenantId IS NOT NULL
       `);
       console.log('Backfilled tagScans.tenantId from businessInfos (postSite)');
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Backfill from businessInfos failed:', err && err.message ? err.message : err);
     }
   },

@@ -13,6 +13,14 @@ export default function (sequelize) {
         type: DataTypes.DATE,
         allowNull: false,
       },
+      punchInLatitude: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+      },
+      punchInLongitude: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+      },
       shiftSchedule: {
         type: DataTypes.TEXT,
         allowNull: false,
@@ -44,6 +52,14 @@ export default function (sequelize) {
       },
       punchOutTime: {
         type: DataTypes.DATE,
+      },
+      punchOutLatitude: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+      },
+      punchOutLongitude: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
       },
       importHash: {
         type: DataTypes.STRING(255),

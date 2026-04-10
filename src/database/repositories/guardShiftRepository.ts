@@ -23,26 +23,34 @@ class GuardShiftRepository {
       options,
     );
 
+    const payload = {
+      ...lodash.pick(data, [
+        'punchInTime',
+        'punchInLatitude',
+        'punchInLongitude',
+        'shiftSchedule',
+        'numberOfPatrolsDuringShift',
+        'numberOfIncidentsDurindShift',
+        'observations',
+        'punchOutTime',          
+        'punchOutLatitude',
+        'punchOutLongitude',
+        'importHash',
+        'postSiteId',
+      ]),
+      stationNameId: data.stationName || null,
+      guardNameId: data.guardName || null,
+      completeInventoryCheckId: data.completeInventoryCheck || null,
+      postSiteId: data.postSite || data.postSiteId || null,
+      tenantId: tenant.id,
+      createdById: currentUser.id,
+      updatedById: currentUser.id,
+    };
+
+    console.log('[DEBUG][GuardShiftRepository.create] payload=', payload);
+
     const record = await options.database.guardShift.create(
-      {
-        ...lodash.pick(data, [
-          'punchInTime',
-          'shiftSchedule',
-          'numberOfPatrolsDuringShift',
-          'numberOfIncidentsDurindShift',
-          'observations',
-          'punchOutTime',          
-          'importHash',
-          'postSiteId',
-        ]),
-        stationNameId: data.stationName || null,
-        guardNameId: data.guardName || null,
-        completeInventoryCheckId: data.completeInventoryCheck || null,
-        postSiteId: data.postSite || data.postSiteId || null,
-        tenantId: tenant.id,
-        createdById: currentUser.id,
-        updatedById: currentUser.id,
-      },
+      payload,
       {
         transaction,
       },
@@ -95,24 +103,32 @@ class GuardShiftRepository {
       throw new Error404();
     }
 
+    const updatePayload = {
+      ...lodash.pick(data, [
+        'punchInTime',
+        'punchInLatitude',
+        'punchInLongitude',
+        'shiftSchedule',
+        'numberOfPatrolsDuringShift',
+        'numberOfIncidentsDurindShift',
+        'observations',
+        'punchOutTime',          
+        'punchOutLatitude',
+        'punchOutLongitude',
+        'importHash',
+        'postSiteId',
+      ]),
+      stationNameId: data.stationName || null,
+      guardNameId: data.guardName || null,
+      completeInventoryCheckId: data.completeInventoryCheck || null,
+      postSiteId: data.postSite || data.postSiteId || null,
+      updatedById: currentUser.id,
+    };
+
+    console.log('[DEBUG][GuardShiftRepository.update] id=', id, 'updatePayload=', updatePayload);
+
     record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'punchInTime',
-          'shiftSchedule',
-          'numberOfPatrolsDuringShift',
-          'numberOfIncidentsDurindShift',
-          'observations',
-          'punchOutTime',          
-          'importHash',
-          'postSiteId',
-        ]),
-        stationNameId: data.stationName || null,
-        guardNameId: data.guardName || null,
-        completeInventoryCheckId: data.completeInventoryCheck || null,
-        postSiteId: data.postSite || data.postSiteId || null,
-        updatedById: currentUser.id,
-      },
+      updatePayload,
       {
         transaction,
       },

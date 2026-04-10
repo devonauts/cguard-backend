@@ -12,7 +12,9 @@ export default class SiteTourService {
     const transaction = SequelizeRepository.getTransaction(this.options);
     const record = await this.options.database.siteTour.findOne({ where: { id }, include: ['tags'], transaction });
     if (!record) {
-      throw new Error('Not found');
+      const err: any = new Error('Not found');
+      err.code = 404;
+      throw err;
     }
     return record;
   }
@@ -200,7 +202,23 @@ export default class SiteTourService {
     const transaction = SequelizeRepository.getTransaction(this.options);
     const where: any = {};
 
-    if (this.options.currentTenant && this.options.currentTenant.id) {
+    // Only restrict by tenant if the siteTours table actually has a tenantId column.
+    // Some deployments may be missing the column and that would cause SQL errors (unknown column).
+    let siteTourHasTenantColumn = false;
+    try {
+      const qi = this.options.database && this.options.database.sequelize && this.options.database.sequelize.getQueryInterface && this.options.database.sequelize.getQueryInterface();
+      if (qi && typeof qi.describeTable === 'function') {
+        const desc = await qi.describeTable('siteTours').catch(() => null);
+        if (desc) {
+          siteTourHasTenantColumn = Object.keys(desc || {}).map((k) => String(k).toLowerCase()).includes('tenantid');
+        }
+      }
+    } catch (e) {
+      // ignore and treat as missing
+      siteTourHasTenantColumn = false;
+    }
+
+    if (siteTourHasTenantColumn && this.options.currentTenant && this.options.currentTenant.id) {
       where['$tag.siteTour.tenantId$'] = this.options.currentTenant.id;
     }
 
@@ -208,18 +226,25 @@ export default class SiteTourService {
     if (filter.postSiteId) where['$tag.siteTour.postSiteId$'] = filter.postSiteId;
     if (filter.stationId) where.stationId = filter.stationId;
     if (filter.assignmentId) where.tourAssignmentId = filter.assignmentId;
+    if (filter.ids && Array.isArray(filter.ids) && filter.ids.length) where.id = filter.ids;
 
     const limit = filter.limit ? parseInt(filter.limit, 10) : 0;
     const offset = filter.offset ? parseInt(filter.offset, 10) : 0;
 
+    const include: any[] = [
+      { model: this.options.database.siteTourTag, as: 'tag', include: [{ model: this.options.database.siteTour, as: 'siteTour' }] },
+      { model: this.options.database.tourAssignment, as: 'assignment' },
+      { model: this.options.database.securityGuard, as: 'guard' },
+    ];
+
+    // Only include station relation if the model is present (some deployments may not have stations)
+    if (this.options.database && this.options.database.station) {
+      include.push({ model: this.options.database.station, as: 'station' });
+    }
+
     const rows = await this.options.database.tagScan.findAll({
       where,
-      include: [
-        { model: this.options.database.siteTourTag, as: 'tag', include: [{ model: this.options.database.siteTour, as: 'siteTour' }] },
-        { model: this.options.database.tourAssignment, as: 'assignment' },
-        { model: this.options.database.securityGuard, as: 'guard' },
-        { model: this.options.database.station, as: 'station' },
-      ],
+      include,
       order: [['scannedAt', 'DESC']],
       limit: limit || undefined,
       offset: offset || undefined,

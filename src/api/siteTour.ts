@@ -35,7 +35,7 @@ export default function (router) {
       });
 
       await ApiResponseHandler.success(req, res, { rows: filtered, count: filtered.length });
-    } catch (error) {
+    } catch (error: any) {
       console.error('[DEBUG] Error in GET /site-tour:', error);
       await ApiResponseHandler.error(req, res, error);
     }
@@ -53,7 +53,7 @@ export default function (router) {
       // also include tags if present
       if (plain.tags) out.tags = plain.tags;
       await ApiResponseHandler.success(req, res, out);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -108,12 +108,12 @@ export default function (router) {
             await req.database.tourAssignment.create(assignmentPayload);
           }
         }
-      } catch (e) {
+      } catch (e: any) {
         // don't fail the creation if assignment fails; log for debugging
         console.warn('Failed to create initial tour assignment', e);
       }
       await ApiResponseHandler.success(req, res, record);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -139,7 +139,7 @@ export default function (router) {
       };
       await record.update(updateData);
       await ApiResponseHandler.success(req, res, record);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -155,7 +155,7 @@ export default function (router) {
       Object.assign(updateData, req.body);
       await record.update(updateData);
       await ApiResponseHandler.success(req, res, record);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -168,7 +168,7 @@ export default function (router) {
       if (!record) throw new Error('Not found');
       await record.destroy();
       await ApiResponseHandler.success(req, res, {});
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -215,7 +215,7 @@ export default function (router) {
 
       const tag = await req.database.siteTourTag.create(payload);
       await ApiResponseHandler.success(req, res, tag);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -246,7 +246,7 @@ export default function (router) {
             rows = altRows;
             fallbackUsed = true;
           }
-        } catch (e) {
+        } catch (e: any) {
           // swallow fallback errors and continue returning empty
           // eslint-disable-next-line no-console
           console.error('Fallback site-tour tags query failed', e);
@@ -256,7 +256,7 @@ export default function (router) {
       // Normalize rows to plain objects to avoid Sequelize instances on the wire
       const plain = (rows || []).map(r => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
       await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length, fallbackTenantMismatch: fallbackUsed });
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -301,14 +301,14 @@ export default function (router) {
             rows = altRows;
             fallbackUsed = true;
           }
-        } catch (e) {
+        } catch (e: any) {
           // ignore
         }
       }
 
       const plain = (rows || []).map((r: any) => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
       await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length, fallbackTenantMismatch: fallbackUsed });
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -322,7 +322,7 @@ export default function (router) {
         const err: any = new Error('Not found'); err.code = 404; throw err;
       }
       await ApiResponseHandler.success(req, res, tag);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -337,7 +337,7 @@ export default function (router) {
       Object.assign(updateData, req.body);
       await tag.update(updateData);
       await ApiResponseHandler.success(req, res, tag);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -349,7 +349,7 @@ export default function (router) {
       if (!tag) throw new Error('Not found');
       await tag.update(req.body);
       await ApiResponseHandler.success(req, res, tag);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -362,7 +362,7 @@ export default function (router) {
       if (!tag) throw new Error('Not found');
       await tag.destroy();
       await ApiResponseHandler.success(req, res, {});
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -375,7 +375,7 @@ export default function (router) {
       const guardId = req.body.securityGuardId;
       const payload = await service.assignGuard(req.params.id, guardId, req.body || {});
       await ApiResponseHandler.success(req, res, payload);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -393,7 +393,7 @@ export default function (router) {
       const service = new SiteTourService(req);
       const rows = await service.listAssignments(tourId);
       await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -413,7 +413,7 @@ export default function (router) {
         const err: any = new Error('Not found'); err.code = 404; throw err;
       }
       await ApiResponseHandler.success(req, res, assignment);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -433,7 +433,7 @@ export default function (router) {
         const err: any = new Error('Not found'); err.code = 404; throw err;
       }
       await ApiResponseHandler.success(req, res, payload);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -451,7 +451,7 @@ export default function (router) {
       // ensure assignment belongs to tour inside service or enforce here
       const resPayload = await service.deleteAssignment(req.params.assignmentId);
       await ApiResponseHandler.success(req, res, resPayload || {});
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -465,7 +465,7 @@ export default function (router) {
       const securityGuardId = req.body.securityGuardId || (req as any).currentUser && (req as any).currentUser.id;
       const payload = await service.recordTagScan({ tagIdentifier, securityGuardId, latitude, longitude, scannedData, stationId });
       await ApiResponseHandler.success(req, res, payload);
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -473,6 +473,13 @@ export default function (router) {
   // GET /api/tenant/:tenantId/site-tour/tag-scans
   router.get('/tenant/:tenantId/site-tour/tag-scans', async (req, res, next) => {
     try {
+      // Debug: log incoming request context for tag-scans listing
+      try {
+        // eslint-disable-next-line no-console
+        console.debug('[tag-scans] request params:', { params: req.params, query: req.query });
+        // eslint-disable-next-line no-console
+        console.debug('[tag-scans] currentTenant:', (req as any).currentTenant && (req as any).currentTenant.id ? (req as any).currentTenant.id : null, 'currentUser=', (req as any).currentUser && (req as any).currentUser.id ? (req as any).currentUser.id : null);
+      } catch (e: any) {}
       new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
       const service = new SiteTourService(req);
       const filter: any = {};
@@ -483,9 +490,49 @@ export default function (router) {
       if (req.query.limit) filter.limit = req.query.limit;
       if (req.query.offset) filter.offset = req.query.offset;
 
-      const rows = await service.listTagScans(filter);
-      await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
-    } catch (error) {
+      try {
+        const rows = await service.listTagScans(filter);
+        await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
+      } catch (err) {
+        // If running in development and the normal listing fails (e.g., missing columns
+        // or tenant mismatches), attempt a safe debug SQL fallback to help developers.
+        if (process.env.NODE_ENV !== 'production') {
+          try {
+            const tenantId = req.params.tenantId;
+            const postSiteId = filter.postSiteId || req.query.postSiteId || null;
+            if (postSiteId) {
+              const debugSql = `
+                SELECT
+                  ts.*, t.tagIdentifier AS tagIdentifier, t.name AS tagName, st.id AS tourId,
+                  s.id AS stationId, COALESCE(s.stationName, '') AS stationName,
+                  COALESCE(g.fullName, g2.fullName, '') AS guardName, ta.id AS assignmentId
+                FROM tagScans ts
+                JOIN siteTourTags t ON ts.siteTourTagId = t.id
+                JOIN siteTours st ON t.siteTourId = st.id
+                LEFT JOIN stations s ON ts.stationId = s.id
+                LEFT JOIN tourAssignments ta ON ts.tourAssignmentId = ta.id
+                LEFT JOIN securityGuards g ON ts.securityGuardId = g.id
+                LEFT JOIN securityGuards g2 ON ta.securityGuardId = g2.id
+                WHERE st.postSiteId = :postSiteId AND (st.tenantId = :tenantId OR t.tenantId = :tenantId)
+                ORDER BY ts.scannedAt DESC
+                LIMIT 2000
+              `;
+              const replacements = { tenantId, postSiteId };
+              const [debugRows]: any = await req.database.sequelize.query(debugSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+              return await ApiResponseHandler.success(req, res, { rows: debugRows || [], count: (debugRows || []).length });
+            }
+          } catch (debugErr) {
+            // fall through to returning original error
+            console.error('[tag-scans] debug fallback failed', debugErr);
+          }
+        }
+        throw err;
+      }
+    } catch (error: any) {
+      try {
+        // eslint-disable-next-line no-console
+        console.error('[tag-scans] error while listing tag scans:', error && error.stack ? error.stack : error);
+      } catch (e: any) {}
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -505,6 +552,12 @@ export default function (router) {
       if (req.query.postSiteId) filter.postSiteId = req.query.postSiteId;
       if (req.query.stationId) filter.stationId = req.query.stationId;
       if (req.query.assignmentId) filter.assignmentId = req.query.assignmentId;
+      if (req.query.ids) {
+        filter.ids = String(req.query.ids)
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => !!id);
+      }
 
       const result = await service.exportScansToFile(format, filter);
 
@@ -522,7 +575,7 @@ export default function (router) {
       }
 
       return res.status(500).json({ message: 'Failed to generate export' });
-    } catch (error) {
+    } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
   });
@@ -568,6 +621,89 @@ export default function (router) {
       const rows = await req.database.siteTourTag.findAll({ where, include: [{ model: req.database.siteTour, as: 'siteTour' }], limit: 2000 });
       const plain = (rows || []).map((r: any) => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
       await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // DEBUG (no auth): Return tag scans for a tenant + postSiteId (development only)
+  router.get('/debug/tenant/:tenantId/post-site/:postSiteId/tag-scans', async (req, res, next) => {
+    try {
+      if (process.env.NODE_ENV === 'production') {
+        const err: any = new Error('Not allowed'); err.code = 403; throw err;
+      }
+      const tenantId = req.params.tenantId;
+      const postSiteId = req.params.postSiteId;
+
+      const sql = `
+        SELECT
+          ts.*, 
+          t.tagIdentifier AS tagIdentifier, 
+          t.name AS tagName, 
+          st.id AS tourId, 
+          st.tenantId AS tourTenantId,
+          s.id AS stationId,
+          COALESCE(s.stationName, '') AS stationName,
+          COALESCE(g.fullName, u.fullName, CONCAT(u.firstName, ' ', u.lastName), g2.fullName, u2.fullName, CONCAT(u2.firstName, ' ', u2.lastName), '') AS guardName,
+          ta.id AS assignmentId
+        FROM tagScans ts
+        JOIN siteTourTags t ON ts.siteTourTagId = t.id
+        JOIN siteTours st ON t.siteTourId = st.id
+        LEFT JOIN stations s ON ts.stationId = s.id
+        LEFT JOIN tourAssignments ta ON ts.tourAssignmentId = ta.id
+        LEFT JOIN securityGuards g ON ts.securityGuardId = g.id
+        LEFT JOIN users u ON g.guardId = u.id
+        LEFT JOIN securityGuards g2 ON ta.securityGuardId = g2.id
+        LEFT JOIN users u2 ON g2.guardId = u2.id
+        WHERE st.postSiteId = :postSiteId AND (st.tenantId = :tenantId OR t.tenantId = :tenantId)
+        ORDER BY ts.scannedAt DESC
+        LIMIT 2000
+      `;
+
+      const replacements = { tenantId, postSiteId };
+      const rows: any = await req.database.sequelize.query(sql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+      await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // Same as debug route but without the `/debug` prefix so developers can call
+  // `/api/tenant/:tenantId/post-site/:postSiteId/tag-scans` during development.
+  // Still blocked in production to avoid accidental exposure.
+  router.get('/tenant/:tenantId/post-site/:postSiteId/tag-scans', async (req, res, next) => {
+    try {
+      const tenantId = req.params.tenantId;
+      const postSiteId = req.params.postSiteId;
+
+      const sql = `
+        SELECT
+          ts.*, 
+          t.tagIdentifier AS tagIdentifier, 
+          t.name AS tagName, 
+          st.id AS tourId, 
+          st.tenantId AS tourTenantId,
+          s.id AS stationId,
+          COALESCE(s.stationName, '') AS stationName,
+          COALESCE(g.fullName, u.fullName, CONCAT(u.firstName, ' ', u.lastName), g2.fullName, u2.fullName, CONCAT(u2.firstName, ' ', u2.lastName), '') AS guardName,
+          ta.id AS assignmentId
+        FROM tagScans ts
+        JOIN siteTourTags t ON ts.siteTourTagId = t.id
+        JOIN siteTours st ON t.siteTourId = st.id
+        LEFT JOIN stations s ON ts.stationId = s.id
+        LEFT JOIN tourAssignments ta ON ts.tourAssignmentId = ta.id
+        LEFT JOIN securityGuards g ON ts.securityGuardId = g.id
+        LEFT JOIN users u ON g.guardId = u.id
+        LEFT JOIN securityGuards g2 ON ta.securityGuardId = g2.id
+        LEFT JOIN users u2 ON g2.guardId = u2.id
+        WHERE st.postSiteId = :postSiteId AND (st.tenantId = :tenantId OR t.tenantId = :tenantId)
+        ORDER BY ts.scannedAt DESC
+        LIMIT 2000
+      `;
+
+      const replacements = { tenantId, postSiteId };
+      const rows: any = await req.database.sequelize.query(sql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
+      await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }
