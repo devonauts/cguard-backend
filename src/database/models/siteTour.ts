@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import SequelizeArrayUtils from '../utils/sequelizeArrayUtils';
 
 export default function (sequelize) {
   const siteTour = sequelize.define(
@@ -18,7 +19,7 @@ export default function (sequelize) {
         allowNull: true,
       },
       scheduledDays: {
-        type: DataTypes.ARRAY(DataTypes.STRING),
+        type: SequelizeArrayUtils.DataType,
         allowNull: true,
       },
       postSiteId: {
