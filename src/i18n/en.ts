@@ -9,6 +9,7 @@ const en = {
     role: {
       errors: {
         inUse: 'Cannot delete role because it is in use by {0} user(s).',
+        lockedDefaultRole: 'Default system roles cannot be modified or deleted.',
       }
     },
     tax: {
@@ -115,6 +116,11 @@ const en = {
     category: {
       errors: {
         inUse: 'Cannot delete category because it is in use by {0} client(s).',
+      }
+    },
+    role: {
+      errors: {
+        lockedSupervisor: 'Supervisor role permissions cannot be modified.',
       }
     },
     bannerSuperiorApp: {

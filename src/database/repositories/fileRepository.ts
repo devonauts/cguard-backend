@@ -173,6 +173,14 @@ export default class FileRepository {
     );
 
     for (let file of filesToDelete) {
+      try {
+        if (file.privateUrl) {
+          await FileStorage.delete(file.privateUrl);
+        }
+      } catch (error) {
+        console.warn('Failed to delete orphaned file from storage:', error && error.message ? error.message : error);
+      }
+
       await file.destroy({
         transaction,
       });

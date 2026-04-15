@@ -3,12 +3,30 @@ import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
-import Sequelize from 'sequelize';import FileRepository from './fileRepository';
+import Sequelize from 'sequelize';
+import FileRepository from './fileRepository';
+import FileStorage from '../../services/file/fileStorage';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
 
 class CertificationRepository {
+
+  static async _resolveFileUrl(file) {
+    if (!file) {
+      return null;
+    }
+
+    if (file.publicUrl) {
+      return file.publicUrl;
+    }
+
+    if (file.privateUrl) {
+      return await FileStorage.downloadUrl(file.privateUrl);
+    }
+
+    return null;
+  }
 
   static async create(data, options: IRepositoryOptions) {
     const currentUser = SequelizeRepository.getCurrentUser(
@@ -23,6 +41,9 @@ class CertificationRepository {
       options,
     );
 
+    const imageUrl = await this._resolveFileUrl(data.image?.[0]);
+    const iconUrl = await this._resolveFileUrl(data.icon?.[0]);
+
     const record = await options.database.certification.create(
       {
         ...lodash.pick(data, [
@@ -33,7 +54,8 @@ class CertificationRepository {
           'expirationDate',          
           'importHash',
         ]),
-
+        imageUrl,
+        iconUrl,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -102,6 +124,9 @@ class CertificationRepository {
       throw new Error404();
     }
 
+    const imageUrl = await this._resolveFileUrl(data.image?.[0]);
+    const iconUrl = await this._resolveFileUrl(data.icon?.[0]);
+
     record = await record.update(
       {
         ...lodash.pick(data, [
@@ -112,7 +137,8 @@ class CertificationRepository {
           'expirationDate',          
           'importHash',
         ]),
-
+        imageUrl,
+        iconUrl,
         updatedById: currentUser.id,
       },
       {

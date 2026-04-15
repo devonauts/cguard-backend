@@ -176,6 +176,10 @@ class MemosRepository {
         model: options.database.securityGuard,
         as: 'guardName',
       },
+      {
+        model: options.database.user,
+        as: 'createdBy',
+      },
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
@@ -272,7 +276,11 @@ class MemosRepository {
       {
         model: options.database.securityGuard,
         as: 'guardName',
-      },      
+      },
+      {
+        model: options.database.user,
+        as: 'createdBy',
+      },
     ];
 
     whereAnd.push({
@@ -332,6 +340,14 @@ class MemosRepository {
             filter.content,
           ),
         );
+      }
+
+      if (filter.ids && Array.isArray(filter.ids) && filter.ids.length) {
+        whereAnd.push({
+          ['id']: {
+            [Op.in]: filter.ids.map((id) => SequelizeFilterUtils.uuid(id)),
+          },
+        });
       }
 
       if (

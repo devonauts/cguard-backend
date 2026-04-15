@@ -139,7 +139,7 @@ export default async (req, res, next) => {
           // ignore
         }
 
-        const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${(tenantUser as any).invitationToken}&securityGuardId=${securityGuardId || ''}`;
+        const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${encodeURIComponent((tenantUser as any).invitationToken)}&securityGuardId=${encodeURIComponent(String(securityGuardId || ''))}&inviteType=guard`;
 
         if (recipientEmail) {
           // Do NOT generate an email verification token for invite/resend flows.
@@ -161,6 +161,9 @@ export default async (req, res, next) => {
               {
                 tenant: tenant || null,
                 link,
+                invitationLink: link,
+                inviteLink: link,
+                registrationLink: link,
                 guard: guardObj,
                 invitation: true,
               },
@@ -333,7 +336,7 @@ export default async (req, res, next) => {
       // an extra verification email or persisting unnecessary tokens.
       let emailVerificationToken: string | null = null;
 
-      const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${invitationToken || ''}&securityGuardId=${created.id}`;
+      const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${encodeURIComponent(invitationToken || '')}&securityGuardId=${encodeURIComponent(String(created.id))}&inviteType=guard`;
       if (guardUser && guardUser.email && guardUser.provider !== 'phone' && !String(guardUser.email).endsWith('@phone.local')) {
         const recipientEmail = guardUser.email || incoming.contact;
         if (recipientEmail) {

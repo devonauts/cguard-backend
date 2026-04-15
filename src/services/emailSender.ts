@@ -215,8 +215,14 @@ export default class EmailSender {
           }
 
           // Replace common placeholders
-          if (this.variables && this.variables.link) {
-            rendered = rendered.replace(/{{link}}/g, this.variables.link);
+          if (this.variables) {
+            const renderedLink = this.variables.link || this.variables.invitationLink || this.variables.inviteLink || this.variables.registrationLink || this.variables.verifyLink || this.variables.verificationLink || '';
+            rendered = rendered.replace(/{{link}}/g, renderedLink);
+            rendered = rendered.replace(/{{invitationLink}}/g, renderedLink);
+            rendered = rendered.replace(/{{inviteLink}}/g, renderedLink);
+            rendered = rendered.replace(/{{registrationLink}}/g, renderedLink);
+            rendered = rendered.replace(/{{verifyLink}}/g, renderedLink);
+            rendered = rendered.replace(/{{verificationLink}}/g, renderedLink);
           }
 
           // Support guard object or top-level firstName/lastName

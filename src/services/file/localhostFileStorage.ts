@@ -73,8 +73,11 @@ export default class LocalFileStorage {
    * Return the download URL of the file from this server.
    */
   static async downloadUrl(privateUrl, baseUrl?: string) {
-    const backendUrl = baseUrl || getConfig().BACKEND_URL;
-    return `${backendUrl}/file/download?privateUrl=${privateUrl}`;
+    const backendUrl = (baseUrl || getConfig().BACKEND_URL).replace(/\/+$|^\s+|\s+$/g, '');
+    const downloadPath = backendUrl.endsWith('/api')
+      ? '/file/download'
+      : '/api/file/download';
+    return `${backendUrl}${downloadPath}?privateUrl=${encodeURIComponent(privateUrl)}`;
   }
 
   /**

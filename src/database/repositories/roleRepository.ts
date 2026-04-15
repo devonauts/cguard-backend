@@ -4,6 +4,7 @@ import SequelizeFilterUtils from '../utils/sequelizeFilterUtils';
 import SequelizeArrayUtils from '../utils/sequelizeArrayUtils';
 import Error400 from '../../errors/Error400';
 import Error404 from '../../errors/Error404';
+import Roles from '../../security/roles';
 import Sequelize from 'sequelize';
 import lodash from 'lodash';
 const cache = new Map();
@@ -111,6 +112,20 @@ export default class RoleRepository {
     return this.findById(record.id, options);
   }
 
+  static getProtectedDefaultRoleSlugs() {
+    const {
+      custom,
+      ...defaultRoles
+    } = Roles.values;
+    return Object.values(defaultRoles).map((slug) => String(slug).toLowerCase());
+  }
+
+  static isProtectedDefaultRole(slug) {
+    if (typeof slug !== 'string') return false;
+    const protectedSlugs = this.getProtectedDefaultRoleSlugs();
+    return protectedSlugs.includes(slug.toLowerCase());
+  }
+
   static async update(id, data, options) {
     const transaction = SequelizeRepository.getTransaction(options);
     const currentUser = SequelizeRepository.getCurrentUser(options);
@@ -119,6 +134,10 @@ export default class RoleRepository {
     let record = await options.database.role.findByPk(id, { transaction });
     if (!record) {
       throw new Error404();
+    }
+
+    if (this.isProtectedDefaultRole(record.slug)) {
+      throw new Error400(options.language, 'entities.role.errors.lockedDefaultRole');
     }
 
     await record.update({
@@ -150,6 +169,10 @@ export default class RoleRepository {
     let record = await options.database.role.findByPk(id, { transaction });
     if (!record) {
       throw new Error404();
+    }
+
+    if (this.isProtectedDefaultRole(record.slug)) {
+      throw new Error400(options.language, 'entities.role.errors.lockedDefaultRole');
     }
 
     // Prevent deleting a role that is currently assigned to any tenantUser in the same tenant

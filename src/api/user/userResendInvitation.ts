@@ -6,6 +6,7 @@ import SequelizeRepository from '../../database/repositories/sequelizeRepository
 import { tenantSubdomain } from '../../services/tenantSubdomain';
 import EmailSender from '../../services/emailSender';
 import crypto from 'crypto';
+import Roles from '../../security/roles';
 
 export default async (req, res) => {
   try {
@@ -37,12 +38,24 @@ export default async (req, res) => {
       await tenantUser.save({ transaction });
     }
 
-    const link = `${tenantSubdomain.frontendUrl(req.currentTenant)}/auth/invitation?token=${tenantUser.invitationToken}`;
+    const roles = Array.isArray((tenantUser as any).roles) ? (tenantUser as any).roles : [];
+    const isGuardInvite = roles.includes(Roles.values.securityGuard);
+    const invitationPath = isGuardInvite ? '/auth/invitation' : '/client/registration';
+    const inviteType = isGuardInvite ? 'guard' : 'client';
+    if (!tenantUser.invitationToken) {
+      tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
+      tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+      await tenantUser.save({ transaction });
+    }
+    const link = `${tenantSubdomain.frontendUrl(req.currentTenant)}${invitationPath}?token=${encodeURIComponent(tenantUser.invitationToken)}&inviteType=${inviteType}`;
 
     try {
       const sender = new EmailSender(EmailSender.TEMPLATES.INVITATION, {
         tenant: req.currentTenant,
         link,
+        invitationLink: link,
+        inviteLink: link,
+        registrationLink: link,
         invitation: true,
       });
 

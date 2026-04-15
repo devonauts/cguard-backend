@@ -5,7 +5,8 @@ export default class ApiResponseHandler {
     // Set additional headers for file downloads to prevent CORS issues
     res.header('Cross-Origin-Resource-Policy', 'cross-origin');
     res.header('Cross-Origin-Embedder-Policy', 'unsafe-none');
-    res.download(path);
+    res.header('Content-Disposition', 'inline');
+    res.sendFile(path);
   }
 
   static async success(req, res, payload) {

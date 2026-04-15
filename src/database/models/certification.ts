@@ -59,6 +59,20 @@ export default function (sequelize) {
         },
         allowNull: false,
       },
+      imageUrl: {
+        type: DataTypes.STRING(2083),
+        allowNull: true,
+        validate: {
+          len: [0, 2083],
+        },
+      },
+      iconUrl: {
+        type: DataTypes.STRING(2083),
+        allowNull: true,
+        validate: {
+          len: [0, 2083],
+        },
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    

@@ -27,12 +27,43 @@ export function validateEcuadorCedula(cedula: string) {
   return check === verifier;
 }
 
+export function validateEcuadorRucJuridica(ruc: string) {
+  const r = digitsOnly(ruc);
+  if (!/^[0-9]{13}$/.test(r)) return false;
+  if (r[2] !== '9') return false;
+  if (!r.endsWith('001')) return false;
+
+  const digits = r.split('').map((d) => Number(d));
+  const coefficients = [4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += digits[i] * coefficients[i];
+  }
+
+  const mod = sum % 11;
+  let verifier = 11 - mod;
+  if (verifier === 11) verifier = 0;
+  if (verifier === 10) return false;
+
+  return verifier === digits[9];
+}
+
 export function validateEcuadorRuc(ruc: string) {
   const r = digitsOnly(ruc);
   if (!/^[0-9]{13}$/.test(r)) return false;
   if (!r.endsWith('001')) return false;
-  const base = r.substring(0, 10);
-  return validateEcuadorCedula(base);
+
+  const thirdDigit = Number(r[2]);
+  if (thirdDigit >= 0 && thirdDigit <= 5) {
+    const base = r.substring(0, 10);
+    return validateEcuadorCedula(base);
+  }
+
+  if (thirdDigit === 9) {
+    return validateEcuadorRucJuridica(r);
+  }
+
+  return false;
 }
 
 export function validateCedulaOrRuc(value: string) {

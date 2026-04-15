@@ -113,6 +113,7 @@ const es = {
     role: {
       errors: {
         inUse: 'No se puede eliminar el rol porque está en uso.',
+        lockedDefaultRole: 'No se pueden modificar ni eliminar los roles predeterminados del sistema.',
       }
     },
     tax: {

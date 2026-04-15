@@ -24,6 +24,10 @@ export default (app) => {
     require('./memosList').default,
   );
   app.get(
+    `/tenant/:tenantId/memos/export`,
+    require('./memosExport').default,
+  );
+  app.get(
     `/tenant/:tenantId/memos/:id`,
     require('./memosFind').default,
   );

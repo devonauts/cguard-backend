@@ -3,8 +3,7 @@ import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
-import Sequelize from 'sequelize';
-import FileRepository from './fileRepository';
+import Sequelize from 'sequelize';import Roles from '../../security/roles';import FileRepository from './fileRepository';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -163,9 +162,21 @@ class VisitorLogRepository {
     const include = [];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(options);
+    const assignedAcl = await this._buildAssignedVisitorLogAcl(options);
+
+    const where: any = { id, tenantId: currentTenant.id };
+    if (assignedAcl) {
+      if (!assignedAcl.hasAssigned) {
+        throw new Error404();
+      }
+      where[Op.and] = [
+        { id, tenantId: currentTenant.id },
+        assignedAcl.where,
+      ];
+    }
 
     const record = await options.database.visitorLog.findOne({
-      where: { id, tenantId: currentTenant.id },
+      where,
       include,
       transaction,
     });
@@ -195,6 +206,111 @@ class VisitorLogRepository {
     return records.map((record) => record.id);
   }
 
+  static async _buildAssignedVisitorLogAcl(options: IRepositoryOptions) {
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    const currentTenant = SequelizeRepository.getCurrentTenant(options);
+    const transaction = SequelizeRepository.getTransaction(options);
+    const bypass = options && (options as any).bypassPermissionValidation;
+
+    if (!currentUser || !currentTenant || bypass) {
+      return null;
+    }
+
+    const tenantUserRec = (Array.isArray(currentUser.tenants) ? currentUser.tenants : [])
+      .find(
+        (t) =>
+          t &&
+          t.tenant &&
+          String(t.tenant.id) === String(currentTenant.id) &&
+          t.status === 'active',
+      );
+
+    if (!tenantUserRec) {
+      return null;
+    }
+
+    let roles: any = [];
+    if (Array.isArray(tenantUserRec.roles)) {
+      roles = tenantUserRec.roles;
+    } else if (typeof tenantUserRec.roles === 'string') {
+      try {
+        roles = JSON.parse(tenantUserRec.roles);
+      } catch (error) {
+        roles = [tenantUserRec.roles];
+      }
+    }
+
+    if (Array.isArray(roles) ? roles.includes(Roles.values.admin) : String(roles) === Roles.values.admin) {
+      return null;
+    }
+
+    let assignedPostSiteIds = Array.isArray(tenantUserRec.assignedPostSites)
+      ? tenantUserRec.assignedPostSites.map((p) => p && p.id).filter(Boolean)
+      : [];
+
+    let tenantUserId = tenantUserRec.id;
+    if (!tenantUserId) {
+      const tenantUser = await options.database.tenantUser.findOne({
+        where: {
+          userId: currentUser.id,
+          tenantId: currentTenant.id,
+        },
+        attributes: ['id'],
+        transaction,
+      });
+      tenantUserId = tenantUser && tenantUser.id;
+    }
+
+    if (!assignedPostSiteIds.length && tenantUserId) {
+      const tenantUserWithPosts = await options.database.tenantUser.findOne({
+        where: { id: tenantUserId },
+        include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+        transaction,
+      });
+
+      assignedPostSiteIds = (tenantUserWithPosts && tenantUserWithPosts.assignedPostSites || [])
+        .map((p) => p && p.id)
+        .filter(Boolean);
+    }
+
+    let assignedStationIds: any[] = [];
+    if (
+      tenantUserId &&
+      options.database.tenant_user_post_sites &&
+      options.database.tenant_user_post_sites.rawAttributes &&
+      Object.prototype.hasOwnProperty.call(options.database.tenant_user_post_sites.rawAttributes, 'station_id')
+    ) {
+      const stationRows = await options.database.tenant_user_post_sites.findAll({
+        where: {
+          tenantUserId,
+          station_id: { [Op.ne]: null },
+        },
+        attributes: ['station_id'],
+        group: ['station_id'],
+        transaction,
+      });
+
+      assignedStationIds = (stationRows || []).map((row) => row && row.station_id).filter(Boolean);
+    }
+
+    if (!assignedPostSiteIds.length && !assignedStationIds.length) {
+      return { hasAssigned: false };
+    }
+
+    const allowedClauses = [];
+    if (assignedPostSiteIds.length) {
+      allowedClauses.push({ postSiteId: { [Op.in]: assignedPostSiteIds } });
+    }
+    if (assignedStationIds.length) {
+      allowedClauses.push({ stationId: { [Op.in]: assignedStationIds } });
+    }
+
+    return {
+      hasAssigned: true,
+      where: allowedClauses.length === 1 ? allowedClauses[0] : { [Op.or]: allowedClauses },
+    };
+  }
+
   static async count(filter, options: IRepositoryOptions) {
     const transaction = SequelizeRepository.getTransaction(options);
     const tenant = SequelizeRepository.getCurrentTenant(options);
@@ -209,6 +325,13 @@ class VisitorLogRepository {
     let include = [];
 
     whereAnd.push({ tenantId: tenant.id });
+    const assignedAcl = await this._buildAssignedVisitorLogAcl(options);
+    if (assignedAcl) {
+      if (!assignedAcl.hasAssigned) {
+        return { rows: [], count: 0 };
+      }
+      whereAnd.push(assignedAcl.where);
+    }
 
     if (filter) {
       if (filter.id) {
@@ -297,6 +420,15 @@ class VisitorLogRepository {
 
     if (query) {
       whereAnd.push({ [Op.or]: [{ ['id']: SequelizeFilterUtils.uuid(query) }] });
+    }
+
+    const assignedAcl = await this._buildAssignedVisitorLogAcl(options);
+    if (assignedAcl && !assignedAcl.hasAssigned) {
+      return [];
+    }
+
+    if (assignedAcl && assignedAcl.where) {
+      whereAnd.push(assignedAcl.where);
     }
 
     const where = { [Op.and]: whereAnd };

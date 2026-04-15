@@ -1,4 +1,5 @@
 import assert from 'assert';
+import crypto from 'crypto';
 import EmailSender from '../../services/emailSender';
 import UserRepository from '../../database/repositories/userRepository';
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
@@ -46,7 +47,10 @@ export default class UserCreator {
     if (typeof sendVerificationEmails === 'boolean') {
       this.sendVerificationEmails = sendVerificationEmails;
     } else {
-      this.sendVerificationEmails = sendInvitationEmails ? true : false;
+      // If invitation emails are being sent, prefer sending only the invitation
+      // and skip duplicate email verification messages. If invitation emails are
+      // suppressed, send verification emails by default.
+      this.sendVerificationEmails = sendInvitationEmails ? false : true;
     }
 
     await this._validate();
@@ -293,7 +297,7 @@ export default class UserCreator {
       }
     }
 
-    const tenantUser = await TenantUserRepository.updateRoles(
+    let tenantUser = await TenantUserRepository.updateRoles(
       this.options.currentTenant.id,
       user.id,
       this._roles,
@@ -306,6 +310,19 @@ export default class UserCreator {
       postSiteIds,
       securityGuardId, // Pass securityGuardId if provided
     );
+
+    // Ensure invited users always have an invitation token when an invitation email
+    // will be sent. This is important for customer invites, where `status` may be
+    // active and the token is not generated automatically in updateRoles.
+    if (!tenantUser.invitationToken) {
+      try {
+        tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
+        tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+        await tenantUser.save({ transaction: tx });
+      } catch (err) {
+        console.warn('userCreator: failed to generate invitation token for tenantUser', err && (err as any).message ? (err as any).message : err);
+      }
+    }
 
     if (!isUserAlreadyInTenant) {
       this.emailsToInvite.push({
@@ -337,9 +354,15 @@ export default class UserCreator {
       // Detect if el usuario es cliente (rol customer)
       const isCustomer = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.customer)) || this.data.role === Roles.values.customer;
       const invitationPath = isCustomer ? '/client/registration' : '/auth/invitation';
+      const inviteType = isCustomer ? 'client' : 'guard';
+      if (!emailToInvite.token) {
+        console.warn('userCreator: skipping invitation email because no token was generated', { email: emailToInvite.email, inviteType });
+        results.push({ error: 'Missing invitation token' });
+        continue;
+      }
       const link = `${tenantSubdomain.frontendUrl(
         this.options.currentTenant,
-      )}${invitationPath}?token=${emailToInvite.token}`;
+      )}${invitationPath}?token=${encodeURIComponent(emailToInvite.token)}&inviteType=${inviteType}`;
 
       // Log the invitation for debugging (non-production)
       try {
@@ -356,7 +379,13 @@ export default class UserCreator {
         const templateVars = {
           tenant: this.options.currentTenant,
           link,
+          invitationLink: link,
+          inviteLink: link,
+          registrationLink: link,
           invitation: true,
+          firstName: this.data.firstName || this.data.nombre || undefined,
+          lastName: this.data.lastName || this.data.apellido || undefined,
+          email: emailToInvite.email,
           // Forza el template de cliente si es customer
           ...(isCustomer ? { type: 'client-invitation' } : {}),
         };

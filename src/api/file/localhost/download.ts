@@ -21,6 +21,14 @@ export default async (req, res, next) => {
       }
     }
 
+    if (typeof privateUrl === 'string' && privateUrl.includes('%2F')) {
+      try {
+        privateUrl = decodeURIComponent(privateUrl);
+      } catch (e) {
+        // ignore invalid encoding and keep original value
+      }
+    }
+
     if (!privateUrl) {
       return ApiResponseHandler.error(req, res, {
         code: '404',

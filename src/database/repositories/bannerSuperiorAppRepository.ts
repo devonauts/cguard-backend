@@ -27,6 +27,7 @@ class BannerSuperiorAppRepository {
       {
         ...lodash.pick(data, [
           'title',
+          'description',
           'link',          
           'importHash',
         ]),
@@ -94,6 +95,7 @@ class BannerSuperiorAppRepository {
       {
         ...lodash.pick(data, [
           'title',
+          'description',
           'link',          
           'importHash',
         ]),

@@ -3,6 +3,7 @@ import SequelizeRepository from '../../../database/repositories/sequelizeReposit
 import bcrypt from 'bcryptjs';
 import Error403 from '../../../errors/Error403';
 import Error400 from '../../../errors/Error400';
+import AuthService from '../../../services/auth/authService';
 
 export class ChangeEmailUseCase {
     private userRepository: IUserRepository;
@@ -38,6 +39,14 @@ export class ChangeEmailUseCase {
 
             // 2. Update Email
             await this.userRepository.changeEmail(currentUser.id, payload.newEmail, { ...options, transaction });
+
+            // 3. Send verification email to the new address
+            await AuthService.sendEmailAddressVerificationEmail(
+                options.language,
+                payload.newEmail,
+                options.currentTenant ? options.currentTenant.id : undefined,
+                { ...options, transaction },
+            );
 
             await SequelizeRepository.commitTransaction(transaction);
         } catch (error) {

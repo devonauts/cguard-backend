@@ -73,4 +73,9 @@ export default (app) => {
     `/tenant/:tenantId/user/:id/change-password`,
     require('./userChangePassword').default,
   );
+
+  app.get(
+    `/user/public`,
+    require('./userPublicFind').default,
+  );
 };

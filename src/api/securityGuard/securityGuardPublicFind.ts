@@ -5,7 +5,7 @@ import UserRepository from '../../database/repositories/userRepository';
 
 export default async (req, res, next) => {
   try {
-    const token = req.query && (req.query.token || req.query.invitationToken);
+    const token = req.query && (req.query.token || req.query.invitationToken || req.query.invite);
     const securityGuardId = req.query && req.query.securityGuardId;
 
     let tenant: any = null;

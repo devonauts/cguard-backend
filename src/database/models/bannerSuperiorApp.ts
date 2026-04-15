@@ -17,6 +17,9 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
+      description: {
+        type: DataTypes.TEXT,
+      },
       link: {
         type: DataTypes.TEXT,
       },

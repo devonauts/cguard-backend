@@ -44,7 +44,7 @@ export default class Storage {
       bannerSuperiorAppImageUrl: {
         id: 'bannerSuperiorAppImageUrl',
         folder: 'tenant/:tenantId/bannerSuperiorApp/imageUrl',
-        maxSizeInBytes: 100 * 1024 * 1024,
+        maxSizeInBytes: 10 * 1024 * 1024,
       },
 
       serviceIconImage: {
@@ -61,12 +61,12 @@ export default class Storage {
       certificationImage: {
         id: 'certificationImage',
         folder: 'tenant/:tenantId/certification/image',
-        maxSizeInBytes: 100 * 1024 * 1024,
+        maxSizeInBytes: 10 * 1024 * 1024,
       },
       certificationIcon: {
         id: 'certificationIcon',
         folder: 'tenant/:tenantId/certification/icon',
-        maxSizeInBytes: 100 * 1024 * 1024,
+        maxSizeInBytes: 3 * 1024 * 1024,
       },
 
       securityGuardProfileImage: {

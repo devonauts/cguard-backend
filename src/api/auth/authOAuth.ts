@@ -22,10 +22,13 @@ export default (app) => {
   // Toggle verbose OAuth logs via env var `SHOW_AUTH_OAUTH_LOGS=true`
   const AUTH_OAUTH_LOGS = process.env.SHOW_AUTH_OAUTH_LOGS === 'true';
   if (AUTH_OAUTH_LOGS) console.log('[authOAuth] initializing authOAuth routes');
+  let googleConfigured = false;
+  let microsoftConfigured = false;
+
   try {
     // Configurar estrategias Passport
-    configureGoogleStrategy(AUTH_OAUTH_LOGS);
-    configureMicrosoftStrategy(AUTH_OAUTH_LOGS);
+    googleConfigured = configureGoogleStrategy(AUTH_OAUTH_LOGS);
+    microsoftConfigured = configureMicrosoftStrategy(AUTH_OAUTH_LOGS);
   } catch (e) {
     console.error('[authOAuth] error while configuring strategies', e);
   }
@@ -34,19 +37,24 @@ export default (app) => {
    * GET /auth/oauth/google
    * Inicia flujo OAuth con Google
    */
-  app.get(
-    '/auth/oauth/google',
+  app.get('/auth/oauth/google', (req, res, next) => {
+    if (!googleConfigured) {
+      return res.status(501).json({ error: 'Google OAuth no configurado' });
+    }
     passport.authenticate('google-oauth-popup', {
       scope: ['email', 'profile'],
       session: false,
-    }),
-  );
+    })(req, res, next);
+  });
 
   /**
    * GET /auth/oauth/google/callback
    * Callback de Google OAuth
    */
   app.get('/auth/oauth/google/callback', (req, res, next) => {
+    if (!googleConfigured) {
+      return res.status(501).json({ error: 'Google OAuth no configurado' });
+    }
     passport.authenticate('google-oauth-popup', (err, user) => {
       handleOAuthCallback(res, err, user);
     })(req, res, next);
@@ -56,19 +64,24 @@ export default (app) => {
    * GET /auth/oauth/microsoft
    * Inicia flujo OAuth con Microsoft
    */
-  app.get(
-    '/auth/oauth/microsoft',
+  app.get('/auth/oauth/microsoft', (req, res, next) => {
+    if (!microsoftConfigured) {
+      return res.status(501).json({ error: 'Microsoft OAuth no configurado' });
+    }
     passport.authenticate('microsoft-oauth-popup', {
       scope: ['email', 'profile'],
       session: false,
-    }),
-  );
+    })(req, res, next);
+  });
 
   /**
    * GET /auth/oauth/microsoft/callback
    * Callback de Microsoft OAuth
    */
   app.get('/auth/oauth/microsoft/callback', (req, res, next) => {
+    if (!microsoftConfigured) {
+      return res.status(501).json({ error: 'Microsoft OAuth no configurado' });
+    }
     passport.authenticate('microsoft-oauth-popup', (err, user) => {
       handleOAuthCallback(res, err, user);
     })(req, res, next);
@@ -96,7 +109,7 @@ function configureGoogleStrategy(verbose = false) {
         'Google OAuth no configurado. Falta AUTH_SOCIAL_GOOGLE_CLIENT_ID o AUTH_SOCIAL_GOOGLE_CLIENT_SECRET',
       );
     }
-    return;
+    return false;
   }
 
   const googleCallbackUrl =
@@ -156,6 +169,7 @@ function configureGoogleStrategy(verbose = false) {
     ),
   );
   if (verbose) console.log('[authOAuth] google oauth routes should be available: /auth/oauth/google and /auth/oauth/google/callback');
+  return true;
 }
 
 /**
@@ -171,7 +185,7 @@ function configureMicrosoftStrategy(verbose = false) {
         'Microsoft OAuth no configurado. Falta AUTH_SOCIAL_MICROSOFT_CLIENT_ID o AUTH_SOCIAL_MICROSOFT_CLIENT_SECRET',
       );
     }
-    return;
+    return false;
   }
 
   const microsoftCallbackUrl =
@@ -233,6 +247,7 @@ function configureMicrosoftStrategy(verbose = false) {
       },
     ),
   );
+  return true;
 }
 
 /**
