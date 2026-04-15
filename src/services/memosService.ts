@@ -183,7 +183,7 @@ export default class MemosService {
         const startX = margin;
         let currentY = doc.y;
 
-        const drawRow = (cells, options = {}) => {
+        const drawRow = (cells: any[], options: { header?: boolean } = {}) => {
           const heights = cells.map((text, index) =>
             doc.heightOfString(String(text || '-'), { width: columnWidths[index], align: 'left' }),
           );

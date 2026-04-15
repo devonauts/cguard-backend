@@ -178,7 +178,12 @@ export default class FileRepository {
           await FileStorage.delete(file.privateUrl);
         }
       } catch (error) {
-        console.warn('Failed to delete orphaned file from storage:', error && error.message ? error.message : error);
+        let errorMessage = String(error);
+        if (error && typeof error === 'object' && 'message' in error) {
+          errorMessage = (error as any).message;
+        }
+
+        console.warn('Failed to delete orphaned file from storage:', errorMessage);
       }
 
       await file.destroy({

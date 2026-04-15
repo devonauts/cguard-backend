@@ -297,7 +297,7 @@ class VisitorLogRepository {
       return { hasAssigned: false };
     }
 
-    const allowedClauses = [];
+    const allowedClauses: any[] = [];
     if (assignedPostSiteIds.length) {
       allowedClauses.push({ postSiteId: { [Op.in]: assignedPostSiteIds } });
     }
