@@ -6,6 +6,8 @@ import lodash from 'lodash';
 
 export default async (req, res) => {
   try {
+    /** @openapi { "summary": "Stripe webhook receiver", "description": "Receives raw Stripe webhook payloads. Expects raw body and `stripe-signature` header.", "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }, "responses": { "200": { "description": "Received" }, "400": { "description": "Error" } } } */
+
     const stripe = require('stripe')(
       getConfig().PLAN_STRIPE_SECRET_KEY,
     );

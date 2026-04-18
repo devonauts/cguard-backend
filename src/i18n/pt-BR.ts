@@ -51,6 +51,8 @@ const ptBR = {
       revokingOwnPermission: `Você não pode revogar sua própria permissão de proprietário`,
       revokingPlanUser: `Você não pode revogar a permissão do responsável pelo plano ativo`,
       destroyingPlanUser: `Você não pode deletar o responsável pelo plano ativo`,
+      unauthorized: 'Não autorizado. Por favor faça login.',
+      onlyCustomersCanSelfDelete: 'Apenas clientes podem excluir sua conta pelo app.',
       passwordRequired: 'A senha é obrigatória.',
       cannotUseOldPasswordForOtherUser: 'Você não pode usar a senha antiga para alterar a senha de outro usuário.',
     },

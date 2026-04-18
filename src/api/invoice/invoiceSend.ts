@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Send invoice via email", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "force": { "type": "boolean" } } } } } , "responses": { "200": { "description": "Send result with email status" }, "400": { "description": "Send error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

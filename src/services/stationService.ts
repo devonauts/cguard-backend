@@ -223,7 +223,7 @@ export default class StationService {
         const usableWidth = pageWidth - marginLeft - marginRight;
 
         // Header
-        doc.fontSize(24).font('Helvetica-Bold').text('Lista de Sitios de Publicación', marginLeft, 30, { 
+        doc.fontSize(24).font('Helvetica-Bold').text('Lista de Puestos de Vigilancia', marginLeft, 30, { 
           width: usableWidth,
           align: 'center' 
         });
@@ -327,7 +327,7 @@ export default class StationService {
     // Agregar título
     worksheet.mergeCells('A1:C1');
     const titleCell = worksheet.getCell('A1');
-    titleCell.value = 'Lista de Sitios de Publicación';
+    titleCell.value = 'Lista de Puestos de Vigilancia';
     titleCell.font = { bold: true, size: 16, color: { argb: 'FF000000' } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
     titleCell.fill = {

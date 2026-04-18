@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Create a patrol log entry", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "patrol": { "type": "string" }, "scanTime": { "type": "string", "format": "date-time" }, "latitude": { "type": "string" }, "longitude": { "type": "string" }, "validLocation": { "type": "boolean" }, "scannedBy": { "type": "string" }, "status": { "type": "string" }, "importHash": { "type": "string" } }, "required": ["patrol","scanTime"] } } } }, "responses": { "200": { "description": "Created patrol log" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

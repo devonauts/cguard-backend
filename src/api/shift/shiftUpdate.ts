@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Update shift", "description": "Update a shift record.", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "postSite": { "type": "string" }, "tenantUserId": { "type": "string" }, "station": { "type": "string" }, "siteTours": { "type": "array", "items": { "type": "object" } }, "tasks": { "type": "array", "items": { "type": "object" } }, "postOrders": { "type": "array", "items": { "type": "object" } }, "checklists": { "type": "array", "items": { "type": "object" } }, "skillSet": { "type": "array", "items": { "type": "string" } }, "startAt": { "type": "string", "format": "date-time" }, "endAt": { "type": "string", "format": "date-time" } } } } } }, "responses": { "200": { "description": "Updated" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

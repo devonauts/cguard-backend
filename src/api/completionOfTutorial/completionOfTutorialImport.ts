@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Import completion of tutorials", "description": "Import multiple completion records.", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "data": { "type": "array", "items": { "type": "object", "properties": { "userId": { "type": "string" }, "tutorialId": { "type": "string" }, "completedAt": { "type": "string", "format": "date-time" }, "notes": { "type": "string" } } } }, "importHash": { "type": "string" } } } } }, "responses": { "200": { "description": "Import result" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

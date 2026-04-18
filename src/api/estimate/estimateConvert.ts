@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Convert an estimate into an invoice", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": {} } } } }, "responses": { "200": { "description": "Invoice created from estimate" }, "400": { "description": "Conversion error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

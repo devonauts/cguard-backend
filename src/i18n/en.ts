@@ -36,6 +36,7 @@ const en = {
       error: `Email not recognized.`,
       signedInAsWrongUser: `This email confirmation was sent to {0} but you're signed in as {1}.`,
     },
+    roleNotCustomer: 'User does not have the customer role for this endpoint.',
     passwordChange: {
       invalidPassword: 'The old password is invalid',
     },
@@ -53,6 +54,8 @@ const en = {
       revokingOwnPermission: `You can't revoke your own admin permission.`,
       revokingPlanUser: `You can't revoke the admin permission of the plan manager.`,
       destroyingPlanUser: `You can't delete the plan manager.`,
+      unauthorized: 'Unauthorized. Please sign in.',
+      onlyCustomersCanSelfDelete: 'Only customers can delete their account from the app.',
       passwordRequired: 'Password is required.',
       cannotUseOldPasswordForOtherUser: "You can't use the old password to change another user's password.",
       cannotAssignAdminRole: 'Only administrators can assign the admin role.',

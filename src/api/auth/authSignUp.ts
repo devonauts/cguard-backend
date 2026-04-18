@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Sign up", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "email": { "type": "string" }, "password": { "type": "string" }, "invitationToken": { "type": "string" }, "tenantId": { "type": "string" } }, "required": ["email","password"] } } } }, "responses": { "200": { "description": "User created" }, "400": { "description": "Validation error" } } } */
+
 import ApiResponseHandler from '../apiResponseHandler';
 import AuthService from '../../services/auth/authService';
 

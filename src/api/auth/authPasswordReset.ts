@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Reset password using token", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "token": { "type": "string" }, "password": { "type": "string" } }, "required": ["token","password"] } } } }, "responses": { "200": { "description": "Password reset" }, "400": { "description": "Invalid token" } } } */
+
 import ApiResponseHandler from '../apiResponseHandler';
 import AuthService from '../../services/auth/authService';
 

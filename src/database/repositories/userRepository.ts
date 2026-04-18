@@ -26,6 +26,9 @@ export default class UserRepository {
     const createData: any = {
       id: data.id || undefined,
       email: data.email,
+      // Persist any provided fullName directly so callers that only
+      // send fullName (instead of firstName/lastName) are handled.
+      fullName: data.fullName ?? null,
       firstName: data.firstName ?? null,
       lastName: data.lastName ?? null,
       phoneNumber: data.phoneNumber ?? null,
@@ -55,6 +58,7 @@ export default class UserRepository {
       if (process.env.NODE_ENV !== 'production') {
         console.debug('UserRepository.create payload:', {
           email: createData.email,
+          fullName: createData.fullName,
           firstName: createData.firstName,
           lastName: createData.lastName,
         });

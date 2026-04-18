@@ -515,6 +515,8 @@ class AuthService {
         };
         delete (safeUser as any).tenants;
 
+        
+
         const finalToken = jwt.sign(
           { id: user.id, tenantId: tenantIdForToken },
           getConfig().AUTH_JWT_SECRET,

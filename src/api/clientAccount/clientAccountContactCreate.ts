@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Create client contact", "description": "Create a contact for a client account.", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "lastName": { "type": "string" }, "email": { "type": "string", "format": "email" }, "phoneNumber": { "type": "string" }, "address": { "type": "string" }, "addressComplement": { "type": "string" }, "zipCode": { "type": "string" }, "city": { "type": "string" }, "country": { "type": "string" }, "faxNumber": { "type": "string" }, "website": { "type": "string" }, "active": { "type": "boolean" }, "position": { "type": "string" }, "importHash": { "type": "string" } }, "required": ["name","address"] } } } }, "responses": { "200": { "description": "Contact created" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

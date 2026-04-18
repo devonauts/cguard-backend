@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Verify email with token", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "token": { "type": "string" } }, "required": ["token"] } } } }, "responses": { "200": { "description": "Email verified" }, "400": { "description": "Invalid token" } } } */
+
 import ApiResponseHandler from '../apiResponseHandler';
 import AuthService from '../../services/auth/authService';
 

@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Update a note for a client account", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "title": { "type": "string" }, "description": { "type": "string" }, "noteDate": { "type": "string", "format": "date-time" }, "attachment": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "mimeType": { "type": "string" }, "sizeInBytes": { "type": "integer" }, "storageId": { "type": "string" }, "privateUrl": { "type": "string" }, "publicUrl": { "type": "string" } } } } }, "required": [] } } } }, "responses": { "200": { "description": "Note updated with payload" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

@@ -155,18 +155,26 @@ export default function (sequelize, DataTypes) {
 
   user.beforeCreate((user, options) => {
     user = trimStringFields(user);
-    user.fullName = buildFullName(
-      user.firstName,
-      user.lastName,
-    );
+    if (user.fullName && typeof user.fullName === 'string' && user.fullName.trim() !== '') {
+      user.fullName = user.fullName.trim();
+    } else {
+      user.fullName = buildFullName(
+        user.firstName,
+        user.lastName,
+      );
+    }
   });
 
   user.beforeUpdate((user, options) => {
     user = trimStringFields(user);
-    user.fullName = buildFullName(
-      user.firstName,
-      user.lastName,
-    );
+    if (user.fullName && typeof user.fullName === 'string' && user.fullName.trim() !== '') {
+      user.fullName = user.fullName.trim();
+    } else {
+      user.fullName = buildFullName(
+        user.firstName,
+        user.lastName,
+      );
+    }
   });
 
   return user;
@@ -185,12 +193,16 @@ function buildFullName(firstName, lastName) {
 function trimStringFields(user) {
   user.email = user.email.trim();
 
+  user.fullName = user.fullName
+    ? String(user.fullName).trim()
+    : null;
+
   user.firstName = user.firstName
-    ? user.firstName.trim()
+    ? String(user.firstName).trim()
     : null;
 
   user.lastName = user.lastName
-    ? user.lastName.trim()
+    ? String(user.lastName).trim()
     : null;
 
   return user;

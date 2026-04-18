@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Update current user profile", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "data": { "type": "object" } }, "required": ["data"] } } } }, "responses": { "200": { "description": "Profile updated" }, "403": { "description": "Forbidden" } } } */
+
 import ApiResponseHandler from '../apiResponseHandler';
 import AuthProfileEditor from '../../services/auth/authProfileEditor';
 import Error403 from '../../errors/Error403';

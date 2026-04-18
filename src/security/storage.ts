@@ -52,6 +52,12 @@ export default class Storage {
         folder: 'tenant/:tenantId/service/iconImage',
         maxSizeInBytes: 100 * 1024 * 1024,
       },
+      vehicleImage: {
+        id: 'vehicleImage',
+        folder: 'tenant/:tenantId/vehicle/image',
+        maxSizeInBytes: 10 * 1024 * 1024,
+        publicRead: true,
+      },
       serviceServiceImages: {
         id: 'serviceServiceImages',
         folder: 'tenant/:tenantId/service/serviceImages',

@@ -135,6 +135,7 @@ require('./memos').default(routes);
 require('./request').default(routes);
 // Comments endpoints (in-memory, replace with DB-backed implementation as needed)
 require('./request/comments').default(routes);
+require('./clientLog').default(app);
 require('./debug').default(routes);
 require('./videoTutorialCategory').default(routes);
 require('./videoTutorial').default(routes);
@@ -143,6 +144,8 @@ require('./completionOfTutorial').default(routes);
 require('./inventoryHistory').default(routes);
 require('./businessInfo').default(routes);
 require('./postSite').default(routes);
+require('./vehicle').default(routes);
+require('./route').default(routes);
 require('./geocode').default(routes);
 require('./siteTour').default(routes);
 require('./kpi').default(routes);

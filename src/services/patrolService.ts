@@ -20,6 +20,10 @@ export default class PatrolService {
     );
 
     try {
+      // Accept either `assignedGuard` or `supervisorId` for compatibility.
+      if (data.supervisorId && !data.assignedGuard) {
+        data.assignedGuard = data.supervisorId;
+      }
       data.assignedGuard = await UserRepository.filterIdInTenant(data.assignedGuard, { ...this.options, transaction });
       data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
       data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });
@@ -56,6 +60,10 @@ export default class PatrolService {
     );
 
     try {
+      // Accept supervisorId on update as well
+      if (data.supervisorId && !data.assignedGuard) {
+        data.assignedGuard = data.supervisorId;
+      }
       data.assignedGuard = await UserRepository.filterIdInTenant(data.assignedGuard, { ...this.options, transaction });
       data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
       data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });

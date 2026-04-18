@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Dispatch an incident (create a Request from incident)", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "clientId": { "type": "string" }, "siteId": { "type": "string" }, "stationId": { "type": "string" }, "guardId": { "type": "string" }, "incidentAt": { "type": "string", "format": "date-time" }, "incidentTypeId": { "type": "string" }, "content": { "type": "string" }, "location": { "type": "string" }, "priority": { "type": "string" }, "callerType": { "type": "string" }, "callerName": { "type": "string" }, "internalNotes": { "type": "string" }, "status": { "type": "string" }, "subject": { "type": "string" } }, "required": [] } } } }, "responses": { "200": { "description": "Created request (dispatch)" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

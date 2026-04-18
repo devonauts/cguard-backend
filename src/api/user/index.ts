@@ -36,6 +36,11 @@ export default (app) => {
     `/tenant/:tenantId/user`,
     require('./userDestroy').default,
   );
+  // Allow a user to delete their own tenant membership (self-delete)
+  app.delete(
+    `/tenant/:tenantId/user/me`,
+    require('./userSelfDestroy').default,
+  );
   // Backwards-compat endpoints used by some frontends: /user/delete and /user/remove
   app.post(
     `/tenant/:tenantId/user/delete`,

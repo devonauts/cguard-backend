@@ -4,6 +4,8 @@ import { IServiceOptions } from './IServiceOptions';
 import InventoryHistoryRepository from '../database/repositories/inventoryHistoryRepository';
 import GuardShiftRepository from '../database/repositories/guardShiftRepository';
 import InventoryRepository from '../database/repositories/inventoryRepository';
+import PatrolRepository from '../database/repositories/patrolRepository';
+import PatrolCheckpointRepository from '../database/repositories/patrolCheckpointRepository';
 
 export default class InventoryHistoryService {
   options: IServiceOptions;
@@ -20,6 +22,8 @@ export default class InventoryHistoryService {
     try {
       data.shiftOrigin = await GuardShiftRepository.filterIdInTenant(data.shiftOrigin, { ...this.options, transaction });
       data.inventoryOrigin = await InventoryRepository.filterIdInTenant(data.inventoryOrigin, { ...this.options, transaction });
+      data.patrol = await PatrolRepository.filterIdInTenant(data.patrol, { ...this.options, transaction });
+      data.patrolCheckpoint = await PatrolCheckpointRepository.filterIdInTenant(data.patrolCheckpoint, { ...this.options, transaction });
 
       const record = await InventoryHistoryRepository.create(data, {
         ...this.options,
@@ -54,6 +58,8 @@ export default class InventoryHistoryService {
     try {
       data.shiftOrigin = await GuardShiftRepository.filterIdInTenant(data.shiftOrigin, { ...this.options, transaction });
       data.inventoryOrigin = await InventoryRepository.filterIdInTenant(data.inventoryOrigin, { ...this.options, transaction });
+      data.patrol = await PatrolRepository.filterIdInTenant(data.patrol, { ...this.options, transaction });
+      data.patrolCheckpoint = await PatrolCheckpointRepository.filterIdInTenant(data.patrolCheckpoint, { ...this.options, transaction });
 
       const record = await InventoryHistoryRepository.update(
         id,

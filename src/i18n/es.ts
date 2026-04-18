@@ -29,6 +29,7 @@ const es = {
       invalidPassword:
         'La contraseña anterior no es válida.',
     },
+    roleNotCustomer: 'Rol no permitido',
     passwordChanged: 'Contraseña cambiada correctamente. Ahora puedes iniciar sesión con tu nueva contraseña.',
     passwordSetByAdmin: 'Contraseña actualizada por el administrador.',
   },
@@ -47,6 +48,8 @@ const es = {
         'No puede revocar el permiso de administrador del administrador del plan.',
       destroyingPlanUser:
         'No puede eliminar el administrador del plan.',
+      unauthorized: 'No autorizado. Por favor inicie sesión.',
+      onlyCustomersCanSelfDelete: 'Sólo los clientes pueden eliminar su cuenta desde la app.',
       passwordRequired: 'La contraseña es obligatoria.',
       cannotUseOldPasswordForOtherUser: 'No puedes usar la contraseña anterior para cambiar la contraseña de otro usuario.',
       cannotAssignAdminRole: 'Solo los administradores pueden asignar el rol de administrador.',

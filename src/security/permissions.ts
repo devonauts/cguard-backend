@@ -165,6 +165,13 @@ class Permissions {
       stationRead: createPermission('stationRead', [...ALL_STAFF_ROLES, roles.customer]),
       stationAutocomplete: createPermission('stationAutocomplete', ALL_STAFF_ROLES),
 
+      // === VEHICLES ===
+      vehicleCreate: createPermission('vehicleCreate', MANAGEMENT_ROLES),
+      vehicleEdit: createPermission('vehicleEdit', MANAGEMENT_ROLES),
+      vehicleDestroy: createPermission('vehicleDestroy', MANAGEMENT_ROLES),
+      vehicleRead: createPermission('vehicleRead', ALL_STAFF_ROLES),
+      vehicleAutocomplete: createPermission('vehicleAutocomplete', ALL_STAFF_ROLES),
+
       // === SHIFTS & SCHEDULING ===
       shiftImport: createPermission('shiftImport', DISPATCHER_ROLES),
       shiftCreate: createPermission('shiftCreate', DISPATCHER_ROLES),
@@ -188,6 +195,14 @@ class Permissions {
       patrolDestroy: createPermission('patrolDestroy', SUPERVISOR_ROLES),
       patrolRead: createPermission('patrolRead', [...ALL_STAFF_ROLES, roles.customer]),
       patrolAutocomplete: createPermission('patrolAutocomplete', ALL_STAFF_ROLES),
+
+      // === ROUTES ===
+      routeImport: createPermission('routeImport', DISPATCHER_ROLES),
+      routeCreate: createPermission('routeCreate', DISPATCHER_ROLES),
+      routeEdit: createPermission('routeEdit', DISPATCHER_ROLES),
+      routeDestroy: createPermission('routeDestroy', DISPATCHER_ROLES),
+      routeRead: createPermission('routeRead', [...ALL_STAFF_ROLES, roles.customer]),
+      routeAutocomplete: createPermission('routeAutocomplete', ALL_STAFF_ROLES),
 
       // === PATROL CHECKPOINTS ===
       patrolCheckpointImport: createPermission('patrolCheckpointImport', SUPERVISOR_ROLES),

@@ -57,6 +57,8 @@ export default async (req, res) => {
       currentUser.id,
     );
 
+    /** @openapi { "summary": "Create Stripe billing portal session", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": {} } } } }, "responses": { "200": { "description": "Billing portal session" }, "400": { "description": "Error" } } } */
+
     const session = await stripe.billingPortal.sessions.create(
       {
         customer: planStripeCustomerId,

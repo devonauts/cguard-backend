@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Change current user's email", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "newEmail": { "type": "string" }, "password": { "type": "string" } }, "required": ["newEmail","password"] } } } }, "responses": { "200": { "description": "Email change requested" }, "400": { "description": "Validation error" }, "403": { "description": "Forbidden" } } } */
+
 import ApiResponseHandler from '../apiResponseHandler';
 import { ChangeEmailUseCase } from '../../modules/auth/application/ChangeEmailUseCase';
 import { SequelizeUserRepositoryAdapter } from '../../modules/auth/infrastructure/SequelizeUserRepositoryAdapter';

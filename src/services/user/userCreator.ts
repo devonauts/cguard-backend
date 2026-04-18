@@ -155,14 +155,25 @@ export default class UserCreator {
       const createData: any = { email };
 
       // If names are provided at top-level, prefer them
+      // Accept both English and Spanish field names from clients
       if (this.data.firstName) {
         createData.firstName = this.data.firstName;
+      } else if (this.data.nombre) {
+        createData.firstName = this.data.nombre;
       }
+
       if (this.data.lastName) {
         createData.lastName = this.data.lastName;
+      } else if (this.data.apellido) {
+        createData.lastName = this.data.apellido;
       }
+
+      // fullName may be provided directly; if not, derive from nombre/apellido
       if (this.data.fullName) {
         createData.fullName = this.data.fullName;
+      } else if (!createData.fullName && (createData.firstName || createData.lastName)) {
+        // Build fullName from available parts
+        createData.fullName = [createData.firstName, createData.lastName].filter(Boolean).join(' ').trim() || undefined;
       }
 
       // Support emails passed as objects: [{ email, firstName, lastName, fullName }, ...]
@@ -253,8 +264,15 @@ export default class UserCreator {
       // If user already exists, ensure profile fields are updated when provided
       const profileUpdate: any = {};
       if (this.data.firstName) profileUpdate.firstName = this.data.firstName;
+      else if (this.data.nombre) profileUpdate.firstName = this.data.nombre;
+
       if (this.data.lastName) profileUpdate.lastName = this.data.lastName;
+      else if (this.data.apellido) profileUpdate.lastName = this.data.apellido;
+
       if (this.data.fullName) profileUpdate.fullName = this.data.fullName;
+      else if (!profileUpdate.fullName && (profileUpdate.firstName || profileUpdate.lastName)) {
+        profileUpdate.fullName = [profileUpdate.firstName, profileUpdate.lastName].filter(Boolean).join(' ').trim();
+      }
       if (this.data.phoneNumber) profileUpdate.phoneNumber = this.data.phoneNumber;
 
       const hasProfileUpdates = Object.keys(profileUpdate).length > 0;

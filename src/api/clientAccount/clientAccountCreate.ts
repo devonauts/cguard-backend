@@ -1,14 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-/**
- * @openapi {
- *  "summary": "Create client account",
- *  "description": "Creates a new client account for the tenant.",
- *  "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
- *  "responses": { "200": { "description": "Created" } }
- * }
- */
+/** @openapi { "summary": "Create client account", "description": "Creates a new client account for the tenant.", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "lastName": { "type": "string" }, "email": { "type": "string", "format": "email" }, "phoneNumber": { "type": "string" }, "address": { "type": "string" }, "addressComplement": { "type": "string" }, "zipCode": { "type": "string" }, "city": { "type": "string" }, "country": { "type": "string" }, "faxNumber": { "type": "string" }, "website": { "type": "string" }, "categoryIds": { "type": "array", "items": { "type": "string" } }, "active": { "type": "boolean" }, "importHash": { "type": "string" }, "latitude": { "type": "number" }, "longitude": { "type": "number" } }, "required": [ "name", "address" ] } } } }, "responses": { "200": { "description": "Created" }, "400": { "description": "Validation error" } } } */
 import ClientAccountService from '../../services/clientAccountService';
 
 export default async (req, res, next) => {

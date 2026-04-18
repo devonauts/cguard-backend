@@ -15,7 +15,9 @@ export default async (req, res) => {
       return String(error);
     }
   }
-  try {
+    /** @openapi { "summary": "Create tenant invitation token", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "tenantId": { "type": "string" } }, "required": ["tenantId"] } } } }, "responses": { "200": { "description": "Token and expiry" }, "400": { "description": "Bad request" } } } */
+
+    try {
     const tenantId = req.params.tenantId || (req.body && req.body.tenantId);
     if (!tenantId) return res.status(400).send({ message: 'tenantId required' });
 

@@ -10,7 +10,10 @@ const PUBLIC_PREFIXES = [
   '/api/auth/sign-up',
   '/api/auth/send-password-reset-email',
   '/api/plan/stripe/webhook',
-  '/api/docs'
+  '/api/docs',
+  // Public documentation UI and config
+  '/documentation',
+  '/documentation-config'
 ]
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {

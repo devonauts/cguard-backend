@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Send email address verification email (for current user)", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "tenantId": { "type": "string" } } } } } }, "responses": { "200": { "description": "Email sent" }, "403": { "description": "Forbidden" } } } */
+
 import ApiResponseHandler from '../apiResponseHandler';
 import Error403 from '../../errors/Error403';
 

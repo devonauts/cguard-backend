@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Create category", "description": "Create a category for a specific module (e.g., clientAccount, products)", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "description": { "type": "string" }, "module": { "type": "string" }, "importHash": { "type": "string" } }, "required": ["name","module"] } } } }, "responses": { "200": { "description": "Created" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

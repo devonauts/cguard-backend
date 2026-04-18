@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Send an estimate via email (generates PDF and sends)", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": {} } } } }, "responses": { "200": { "description": "Sent result with email status" }, "400": { "description": "Send error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

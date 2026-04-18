@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Update completion of tutorial", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "completedAt": { "type": "string", "format": "date-time" }, "notes": { "type": "string" } } } } }, "responses": { "200": { "description": "Updated" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

@@ -84,9 +84,24 @@ async function migrate() {
     const existingIndexesRaw = await queryInterface.showIndex('tenant_user_post_sites').catch(() => []);
     const existingIndexes = Array.isArray(existingIndexesRaw) ? existingIndexesRaw as any[] : [];
 
-    const indexNames = existingIndexes.map((i: any) => i.name || i.constraintName).filter(Boolean);
+    // Normalize existing indexes and detect indexes by their columns (more robust
+    // than relying on auto-generated index names which vary across dialects)
+    const existingIndexesByColumns = (existingIndexes || []).map((idx: any) => {
+      const cols = (idx.fields || idx.columnNames || idx.columns || [])
+        .map((f: any) => (f && (f.attribute || f.columnName || f.name || f))?.toString().toLowerCase())
+        .filter(Boolean);
+      return { name: idx.name || idx.constraintName, cols };
+    });
 
-    if (!indexNames.includes('tenant_user_post_sites_unique')) {
+    const hasIndexWithColumns = (cols: string[]) => {
+      const needle = cols.map(c => c.toString().toLowerCase());
+      return existingIndexesByColumns.some((idx: any) => {
+        const set = new Set(idx.cols.map((c: string) => c.replace(/_/g, '')));
+        return needle.every(n => set.has(n.replace(/_/g, '')));
+      });
+    };
+
+    if (!hasIndexWithColumns(['tenantUserId', 'businessInfoId'])) {
       await queryInterface.addIndex('tenant_user_post_sites', ['tenantUserId', 'businessInfoId'], {
         unique: true,
         name: 'tenant_user_post_sites_unique',
@@ -95,16 +110,16 @@ async function migrate() {
       console.log('Index tenant_user_post_sites_unique already exists, skipping');
     }
 
-    if (!indexNames.includes('tenant_user_post_sites_tenantUserId')) {
+    if (!hasIndexWithColumns(['tenantUserId'])) {
       await queryInterface.addIndex('tenant_user_post_sites', ['tenantUserId']);
     } else {
-      console.log('Index tenant_user_post_sites_tenantUserId already exists, skipping');
+      console.log('Index on tenantUserId already exists, skipping');
     }
 
-    if (!indexNames.includes('tenant_user_post_sites_businessInfoId')) {
+    if (!hasIndexWithColumns(['businessInfoId'])) {
       await queryInterface.addIndex('tenant_user_post_sites', ['businessInfoId']);
     } else {
-      console.log('Index tenant_user_post_sites_businessInfoId already exists, skipping');
+      console.log('Index on businessInfoId already exists, skipping');
     }
 
     console.log('✅ tenant_user_post_sites created');

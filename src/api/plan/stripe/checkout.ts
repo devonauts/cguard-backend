@@ -57,6 +57,8 @@ export default async (req, res) => {
       currentUser.id,
     );
 
+    /** @openapi { "summary": "Create Stripe checkout session for plan subscription", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "plan": { "type": "string" } }, "required": ["plan"] } } } }, "responses": { "200": { "description": "Stripe checkout session object" }, "400": { "description": "Error" } } } */
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [

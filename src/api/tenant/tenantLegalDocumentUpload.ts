@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Upload tenant legal document", "description": "Upload a legal document file for a tenant. Uses multipart/form-data with a single `file` field.", "requestBody": { "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "file": { "type": "string", "format": "binary" }, "name": { "type": "string" } }, "required": ["file"] } } } }, "responses": { "200": { "description": "Uploaded file metadata" }, "400": { "description": "Validation error" }, "403": { "description": "Forbidden" } } } */
+
 import formidable from 'formidable-serverless';
 import ApiResponseHandler from '../apiResponseHandler';
 import Error403 from '../../errors/Error403';

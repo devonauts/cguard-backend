@@ -67,6 +67,16 @@ export default function (sequelize) {
       constraints: false,
     });
 
+    models.inventoryHistory.belongsTo(models.patrol, {
+      as: 'patrol',
+      constraints: false,
+    });
+
+    models.inventoryHistory.belongsTo(models.patrolCheckpoint, {
+      as: 'patrolCheckpoint',
+      constraints: false,
+    });
+
 
     
     models.inventoryHistory.belongsTo(models.tenant, {

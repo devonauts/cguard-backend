@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Sign in", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "email": { "type": "string" }, "password": { "type": "string" }, "invitationToken": { "type": "string" }, "tenantId": { "type": "string" } }, "required": ["email","password"] } } } }, "responses": { "200": { "description": "Auth payload" }, "401": { "description": "Invalid credentials" } } } */
+
 import ApiResponseHandler from '../apiResponseHandler'
 import AuthService from '../../services/auth/authService'
 

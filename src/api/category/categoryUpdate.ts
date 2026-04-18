@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Update category", "description": "Update a category's fields.", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "description": { "type": "string" }, "module": { "type": "string" }, "importHash": { "type": "string" } } } } }, "responses": { "200": { "description": "Updated" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

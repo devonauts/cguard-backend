@@ -37,6 +37,12 @@ export default (app) => {
     require('./authSignIn').default,
   );
 
+  app.post(
+    `/auth/sign-in-customer`,
+    signInRateLimiter,
+    require('./authSignInCustomer').default,
+  );
+
   const signUpRateLimiter = createRateLimiter({
     max: 20,
     windowMs: 60 * 60 * 1000,

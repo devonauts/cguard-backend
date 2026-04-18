@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Create a payment for an invoice", "description": "Creates a payment entry linked to an invoice (appended to invoice.payments)", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "invoiceId": { "type": "string" }, "amount": { "type": "number" }, "date": { "type": "string", "format": "date-time" }, "method": { "type": "string" }, "note": { "type": "string" }, "reference": { "type": "string" } }, "required": ["invoiceId","amount"] } } } }, "responses": { "200": { "description": "Created payment object" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

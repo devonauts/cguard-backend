@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Create a patrol", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "scheduledTime": { "type": "string", "format": "date-time" }, "completed": { "type": "boolean" }, "completionTime": { "type": "string", "format": "date-time" }, "status": { "type": "string" }, "assignedGuard": { "type": "string" }, "supervisorId": { "type": "string" }, "station": { "type": "string" }, "checkpoints": { "type": "array", "items": { "type": "string" } }, "logs": { "type": "array", "items": { "type": "string" } } }, "required": [] } } } }, "responses": { "200": { "description": "Created patrol object" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

@@ -45,6 +45,11 @@ export default function (sequelize) {
         type: DataTypes.DECIMAL(10,2),
         allowNull: true,
       },
+      publishedOnMobile: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    

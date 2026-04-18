@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Import notification recipients (bulk)", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "data": { "type": "array", "items": { "type": "object", "properties": { "notificationId": { "type": "string" }, "recipientId": { "type": "string" }, "readStatus": { "type": "boolean" }, "deliveryStatus": { "type": "string" }, "dateDelivered": { "type": "string", "format": "date-time" } } } }, "importHash": { "type": "string" } }, "required": ["importHash"] } } } }, "responses": { "200": { "description": "Import accepted" }, "400": { "description": "Import error or duplicate" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';

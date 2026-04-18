@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Local file upload (signed token)", "description": "Upload a file to local storage using a signed `token` query param. Expects multipart/form-data with `file` and optional `filename` fields.", "requestBody": { "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "file": { "type": "string", "format": "binary" }, "filename": { "type": "string" } }, "required": ["file"] } } } }, "responses": { "200": { "description": "Upload result (downloadUrl)" }, "400": { "description": "Upload error" }, "403": { "description": "Forbidden" } } } */
+
 import formidable from 'formidable-serverless';
 import fs from 'fs';
 import ApiResponseHandler from '../../apiResponseHandler';

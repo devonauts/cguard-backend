@@ -32,6 +32,8 @@ class InventoryHistoryRepository {
           'importHash',
         ]),
         shiftOriginId: data.shiftOrigin || null,
+        patrolId: data.patrol || null,
+        patrolCheckpointId: data.patrolCheckpoint || null,
         inventoryOriginId: data.inventoryOrigin || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
@@ -164,6 +166,14 @@ class InventoryHistoryRepository {
         model: options.database.inventory,
         as: 'inventoryOrigin',
       },
+      {
+        model: options.database.patrol,
+        as: 'patrol',
+      },
+      {
+        model: options.database.patrolCheckpoint,
+        as: 'patrolCheckpoint',
+      },
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
@@ -266,6 +276,16 @@ class InventoryHistoryRepository {
         as: 'inventoryOrigin',
       },      
     ];
+
+    include.push({
+      model: options.database.patrol,
+      as: 'patrol',
+    });
+
+    include.push({
+      model: options.database.patrolCheckpoint,
+      as: 'patrolCheckpoint',
+    });
 
     whereAnd.push({
       tenantId: tenant.id,
@@ -479,7 +499,22 @@ class InventoryHistoryRepository {
       options,
     );
 
+    // Attach related entities if present
+    if (record.shiftOrigin) {
+      output.shiftOrigin = record.shiftOrigin.get({ plain: true });
+    }
 
+    if (record.inventoryOrigin) {
+      output.inventoryOrigin = record.inventoryOrigin.get({ plain: true });
+    }
+
+    if (record.patrol) {
+      output.patrol = record.patrol.get({ plain: true });
+    }
+
+    if (record.patrolCheckpoint) {
+      output.patrolCheckpoint = record.patrolCheckpoint.get({ plain: true });
+    }
 
     return output;
   }

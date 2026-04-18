@@ -1,3 +1,5 @@
+/** @openapi { "summary": "Update insurance record", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "insurer": { "type": "string" }, "policyNumber": { "type": "string" }, "coverage": { "type": "string" }, "premium": { "type": "number" }, "startDate": { "type": "string", "format": "date-time" }, "endDate": { "type": "string", "format": "date-time" }, "contactName": { "type": "string" }, "contactPhone": { "type": "string" }, "contactEmail": { "type": "string", "format": "email" }, "attachment": { "type": "array", "items": { "type": "object" } } } } } } }, "responses": { "200": { "description": "Updated" }, "400": { "description": "Validation error" } } } */
+
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
