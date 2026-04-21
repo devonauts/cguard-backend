@@ -246,7 +246,7 @@ class Permissions {
 
       // === INVENTORY HISTORY ===
       inventoryHistoryImport: createPermission('inventoryHistoryImport', SUPERVISOR_ROLES),
-      inventoryHistoryCreate: createPermission('inventoryHistoryCreate', GUARD_ROLES),
+      inventoryHistoryCreate: createPermission('inventoryHistoryCreate', SUPERVISOR_ROLES),
       inventoryHistoryEdit: createPermission('inventoryHistoryEdit', SUPERVISOR_ROLES),
       inventoryHistoryDestroy: createPermission('inventoryHistoryDestroy', SUPERVISOR_ROLES),
       inventoryHistoryRead: createPermission('inventoryHistoryRead', ALL_STAFF_ROLES),

@@ -3475,8 +3475,8 @@
                 "title": "string",
                 "code": "string",
                 "description": "string",
-                "acquisitionDate": "2026-04-18T04:08:49.843Z",
-                "expirationDate": "2026-04-18T04:08:49.844Z",
+                "acquisitionDate": "2026-04-21T20:36:44.720Z",
+                "expirationDate": "2026-04-21T20:36:44.720Z",
                 "image": [
                   {}
                 ],
@@ -3671,8 +3671,8 @@
                 "title": "string",
                 "code": "string",
                 "description": "string",
-                "acquisitionDate": "2026-04-18T04:08:49.845Z",
-                "expirationDate": "2026-04-18T04:08:49.845Z",
+                "acquisitionDate": "2026-04-21T20:36:44.721Z",
+                "expirationDate": "2026-04-21T20:36:44.721Z",
                 "image": [
                   {}
                 ],
@@ -5505,7 +5505,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-18T04:08:49.859Z",
+                "noteDate": "2026-04-21T20:36:44.731Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -5624,7 +5624,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-18T04:08:49.860Z",
+                "noteDate": "2026-04-21T20:36:44.731Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -5774,7 +5774,7 @@
               "example": {
                 "userId": "string",
                 "tutorialId": "string",
-                "completedAt": "2026-04-18T04:08:49.860Z",
+                "completedAt": "2026-04-21T20:36:44.731Z",
                 "notes": "string",
                 "importHash": "string"
               }
@@ -8281,9 +8281,9 @@
                 ]
               },
               "example": {
-                "date": "2026-04-18T04:08:49.883Z",
-                "dateTime": "2026-04-18T04:08:49.883Z",
-                "incidentAt": "2026-04-18T04:08:49.883Z",
+                "date": "2026-04-21T20:36:44.750Z",
+                "dateTime": "2026-04-21T20:36:44.750Z",
+                "incidentAt": "2026-04-21T20:36:44.750Z",
                 "title": "string",
                 "subject": "string",
                 "description": "string",
@@ -8580,9 +8580,9 @@
                 "required": []
               },
               "example": {
-                "date": "2026-04-18T04:08:49.883Z",
-                "dateTime": "2026-04-18T04:08:49.883Z",
-                "incidentAt": "2026-04-18T04:08:49.883Z",
+                "date": "2026-04-21T20:36:44.750Z",
+                "dateTime": "2026-04-21T20:36:44.750Z",
+                "incidentAt": "2026-04-21T20:36:44.750Z",
                 "title": "string",
                 "subject": "string",
                 "description": "string",
@@ -8893,7 +8893,7 @@
                 "siteId": "string",
                 "stationId": "string",
                 "guardId": "string",
-                "incidentAt": "2026-04-18T04:08:49.888Z",
+                "incidentAt": "2026-04-21T20:36:44.751Z",
                 "incidentTypeId": "string",
                 "content": "string",
                 "location": "string",
@@ -10426,8 +10426,8 @@
                 "policyNumber": "string",
                 "coverage": "string",
                 "premium": 0,
-                "startDate": "2026-04-18T04:08:49.909Z",
-                "endDate": "2026-04-18T04:08:49.909Z",
+                "startDate": "2026-04-21T20:36:44.765Z",
+                "endDate": "2026-04-21T20:36:44.765Z",
                 "contactName": "string",
                 "contactPhone": "string",
                 "contactEmail": "string",
@@ -10580,8 +10580,8 @@
                     "policyNumber": "string",
                     "coverage": "string",
                     "premium": 0,
-                    "startDate": "2026-04-18T04:08:49.909Z",
-                    "endDate": "2026-04-18T04:08:49.909Z"
+                    "startDate": "2026-04-21T20:36:44.766Z",
+                    "endDate": "2026-04-21T20:36:44.766Z"
                   }
                 ],
                 "importHash": "string"
@@ -11440,7 +11440,7 @@
                 "productId": "string",
                 "type": "string",
                 "quantity": 0,
-                "date": "2026-04-18T04:08:49.913Z",
+                "date": "2026-04-21T20:36:44.770Z",
                 "note": "string",
                 "metadata": {}
               }
@@ -11585,7 +11585,7 @@
                     "productId": "string",
                     "type": "string",
                     "quantity": 0,
-                    "date": "2026-04-18T04:08:49.913Z"
+                    "date": "2026-04-21T20:36:44.770Z"
                   }
                 ],
                 "importHash": "string"
@@ -11642,6 +11642,303 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/tenant/{tenantId}/patrols/{patrolId}/inventory-history": {
+      "post": {
+        "tags": [
+          "inventoryHistory"
+        ],
+        "summary": "Create inventory history snapshots for a patrol",
+        "description": "Create one or more inventory history snapshots scoped to a patrol. Accepts an array `inventories` to create multiple rows in one call. Each inventory item may include `photos` referencing files (new or existing) using the same shape used elsewhere in the API.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "patrolId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created inventory histories (array)"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "data"
+                ],
+                "properties": {
+                  "data": {
+                    "type": "object",
+                    "required": [
+                      "inventories"
+                    ],
+                    "properties": {
+                      "inventories": {
+                        "type": "array",
+                        "description": "Array of inventory snapshot objects to create in the context of the patrol.",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "inventoryId"
+                          ],
+                          "properties": {
+                            "inventoryId": {
+                              "type": "string",
+                              "description": "Identifier of the inventory item to which this snapshot belongs (required)."
+                            },
+                            "inventoryOrigin": {
+                              "type": "string",
+                              "description": "Optional origin or source identifier for the inventory (e.g., manual/import)."
+                            },
+                            "snapshot": {
+                              "type": "object",
+                              "description": "Optional arbitrary JSON snapshot of the inventory state (items, counts, metadata)."
+                            },
+                            "isComplete": {
+                              "type": "boolean",
+                              "description": "Flag indicating supervisor verified this inventory as complete. Used by auto-close logic when true."
+                            },
+                            "observation": {
+                              "type": "string",
+                              "description": "Optional free-text observation or note provided by the supervisor."
+                            },
+                            "inventoryCheckedDate": {
+                              "type": "string",
+                              "format": "date",
+                              "description": "Date when the inventory was checked/verified (ISO date)."
+                            },
+                            "photos": {
+                              "type": "array",
+                              "description": "Array of file descriptors. Each item can reference an existing file by `id` or provide a `privateUrl` for a freshly uploaded file.",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "new": {
+                                    "type": "boolean",
+                                    "description": "True when this file descriptor represents a newly uploaded file (client-side)."
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "description": "Existing file id (use to reference previously uploaded files)."
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "description": "Original filename or label for the file."
+                                  },
+                                  "sizeInBytes": {
+                                    "type": "integer",
+                                    "description": "Size of the file in bytes."
+                                  },
+                                  "mimeType": {
+                                    "type": "string",
+                                    "description": "MIME type of the file (e.g., image/jpeg)."
+                                  },
+                                  "privateUrl": {
+                                    "type": "string",
+                                    "description": "Private storage URL returned by the upload flow; server will persist this into the file table."
+                                  },
+                                  "publicUrl": {
+                                    "type": "string",
+                                    "description": "Optional public URL for previewing the file."
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "data": {
+                  "inventories": [
+                    {
+                      "inventoryId": "abc123",
+                      "inventoryOrigin": "manual",
+                      "snapshot": {
+                        "items": []
+                      },
+                      "isComplete": true,
+                      "observation": "Checked by supervisor",
+                      "inventoryCheckedDate": "2026-04-21",
+                      "photos": [
+                        {
+                          "new": false,
+                          "id": "file-uuid",
+                          "name": "photo.jpg",
+                          "sizeInBytes": 12345,
+                          "mimeType": "image/jpeg",
+                          "privateUrl": "https://storage.internal/..",
+                          "publicUrl": "https://cdn.example/.."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "inventoryHistory"
+        ],
+        "summary": "GET /tenant/:tenantId/patrols/:patrolId/inventory-history",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "patrolId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/patrols/{patrolId}/confirm-inventories": {
+      "post": {
+        "tags": [
+          "inventoryHistory"
+        ],
+        "summary": "Confirm inventories for a patrol and attempt auto-complete",
+        "description": "Supervisor confirms that inventory snapshots for the patrol are ready. This endpoint evaluates applicable inventories and, if all are verified (`isComplete === true`), marks the patrol completed.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "patrolId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patrol auto-complete evaluated; returns status message."
+          },
+          "400": {
+            "description": "Not all inventories verified or validation error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "importHash": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "data": "string",
+                "importHash": "string"
+              }
+            }
+          }
+        }
       }
     },
     "/tenant/{tenantId}/invoice": {
@@ -13024,7 +13321,7 @@
                 ]
               },
               "example": {
-                "dateTime": "2026-04-18T04:08:49.926Z",
+                "dateTime": "2026-04-21T20:36:44.785Z",
                 "subject": "string",
                 "content": "string",
                 "wasAccepted": false,
@@ -13241,7 +13538,7 @@
                 "required": []
               },
               "example": {
-                "dateTime": "2026-04-18T04:08:49.926Z",
+                "dateTime": "2026-04-21T20:36:44.785Z",
                 "subject": "string",
                 "content": "string",
                 "wasAccepted": false,
@@ -14147,7 +14444,7 @@
                 "recipientId": "string",
                 "readStatus": false,
                 "deliveryStatus": "string",
-                "dateDelivered": "2026-04-18T04:08:49.930Z",
+                "dateDelivered": "2026-04-21T20:36:44.788Z",
                 "importHash": "string"
               }
             }
@@ -14329,7 +14626,7 @@
                 "recipientId": "string",
                 "readStatus": false,
                 "deliveryStatus": "string",
-                "dateDelivered": "2026-04-18T04:08:49.931Z",
+                "dateDelivered": "2026-04-21T20:36:44.788Z",
                 "importHash": "string"
               }
             }
@@ -14475,7 +14772,7 @@
                     "recipientId": "string",
                     "readStatus": false,
                     "deliveryStatus": "string",
-                    "dateDelivered": "2026-04-18T04:08:49.931Z"
+                    "dateDelivered": "2026-04-21T20:36:44.788Z"
                   }
                 ],
                 "importHash": "string"
@@ -14617,9 +14914,9 @@
                 "required": []
               },
               "example": {
-                "scheduledTime": "2026-04-18T04:08:49.932Z",
+                "scheduledTime": "2026-04-21T20:36:44.789Z",
                 "completed": false,
-                "completionTime": "2026-04-18T04:08:49.932Z",
+                "completionTime": "2026-04-21T20:36:44.789Z",
                 "status": "string",
                 "assignedGuard": "string",
                 "supervisorId": "string",
@@ -14821,9 +15118,9 @@
                 "required": []
               },
               "example": {
-                "scheduledTime": "2026-04-18T04:08:49.933Z",
+                "scheduledTime": "2026-04-21T20:36:44.790Z",
                 "completed": false,
-                "completionTime": "2026-04-18T04:08:49.933Z",
+                "completionTime": "2026-04-21T20:36:44.790Z",
                 "status": "string",
                 "assignedGuard": "string",
                 "supervisorId": "string",
@@ -15595,7 +15892,7 @@
               },
               "example": {
                 "patrol": "string",
-                "scanTime": "2026-04-18T04:08:49.947Z",
+                "scanTime": "2026-04-21T20:36:44.793Z",
                 "latitude": "string",
                 "longitude": "string",
                 "validLocation": false,
@@ -15784,7 +16081,7 @@
               },
               "example": {
                 "patrol": "string",
-                "scanTime": "2026-04-18T04:08:49.947Z",
+                "scanTime": "2026-04-21T20:36:44.793Z",
                 "latitude": "string",
                 "longitude": "string",
                 "validLocation": false,
@@ -16038,7 +16335,7 @@
               "example": {
                 "invoiceId": "string",
                 "amount": 0,
-                "date": "2026-04-18T04:08:49.948Z",
+                "date": "2026-04-21T20:36:44.794Z",
                 "method": "string",
                 "note": "string",
                 "reference": "string"
@@ -17522,6 +17819,63 @@
         ]
       }
     },
+    "/tenant/{tenantId}/post-site/{id}/merged-inventory": {
+      "get": {
+        "tags": [
+          "postSite"
+        ],
+        "summary": "GET /tenant/:tenantId/post-site/:id/merged-inventory",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/tenant/{tenantId}/post-site/{id}/notes": {
       "get": {
         "tags": [
@@ -17673,7 +18027,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-18T04:08:49.975Z",
+                "noteDate": "2026-04-21T20:36:44.802Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -17792,7 +18146,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-18T04:08:49.975Z",
+                "noteDate": "2026-04-21T20:36:44.802Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -25259,8 +25613,8 @@
                 "skillSet": [
                   "string"
                 ],
-                "startAt": "2026-04-18T04:08:50.160Z",
-                "endAt": "2026-04-18T04:08:50.160Z"
+                "startAt": "2026-04-21T20:36:44.914Z",
+                "endAt": "2026-04-21T20:36:44.914Z"
               }
             }
           }
@@ -25458,8 +25812,8 @@
                     "postSite": "string",
                     "tenantUserId": "string",
                     "station": "string",
-                    "startAt": "2026-04-18T04:08:50.160Z",
-                    "endAt": "2026-04-18T04:08:50.160Z"
+                    "startAt": "2026-04-21T20:36:44.914Z",
+                    "endAt": "2026-04-21T20:36:44.914Z"
                   }
                 ],
                 "importHash": "string"

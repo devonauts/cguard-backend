@@ -94,6 +94,12 @@ export default (app) => {
     require('./postSiteContacts').default,
   );
 
+  // Merged inventory for postSite (stations + postSite-level inventory)
+  app.get(
+    `/tenant/:tenantId/post-site/:id/merged-inventory`,
+    require('./mergedInventoryGet').default,
+  );
+
   // Post site notes CRUD
   app.get(
     `/tenant/:tenantId/post-site/:id/notes`,

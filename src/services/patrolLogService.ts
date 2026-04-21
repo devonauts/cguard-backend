@@ -4,6 +4,12 @@ import { IServiceOptions } from './IServiceOptions';
 import PatrolLogRepository from '../database/repositories/patrolLogRepository';
 import PatrolRepository from '../database/repositories/patrolRepository';
 import UserRepository from '../database/repositories/userRepository';
+import PermissionChecker from './user/permissionChecker';
+import Permissions from '../security/permissions';
+import InventoryHistoryService from './inventoryHistoryService';
+import InventoryRepository from '../database/repositories/inventoryRepository';
+import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
+import GuardShiftRepository from '../database/repositories/guardShiftRepository';
 
 export default class PatrolLogService {
   options: IServiceOptions;
@@ -19,6 +25,17 @@ export default class PatrolLogService {
 
     try {
       data.patrol = await PatrolRepository.filterIdInTenant(data.patrol, { ...this.options, transaction });
+
+      // If scannedBy is not provided, default to current user (supervisor)
+      try {
+        const currentUser = SequelizeRepository.getCurrentUser(this.options);
+        if (!data.scannedBy && currentUser && currentUser.id) {
+          data.scannedBy = currentUser.id;
+        }
+      } catch (e) {
+        // ignore; filterIdInTenant below will handle invalid/missing ids
+      }
+
       data.scannedBy = await UserRepository.filterIdInTenant(data.scannedBy, { ...this.options, transaction });
 
       // If latitude/longitude provided, attempt to validate proximity to patrol checkpoints
@@ -94,6 +111,104 @@ export default class PatrolLogService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Post-create side-effects: only performed when current user is supervisor
+      (async () => {
+        try {
+          const checker = new PermissionChecker(this.options);
+          const isSupervisor = checker.has(Permissions.values.patrolEdit);
+          if (!isSupervisor) return;
+
+          // Reload patrol to inspect checkpoints
+          let patrol: any = null;
+          try {
+            patrol = await PatrolRepository.findById(data.patrol, this.options);
+          } catch (e) {
+            // unable to load patrol; skip completion logic
+            return;
+          }
+
+          const checkpoints = Array.isArray(patrol.checkpoints) ? patrol.checkpoints : [];
+          const checkpointCount = checkpoints.length;
+
+          if (checkpointCount === 0) return;
+
+          // Count scanned logs for this patrol
+          const tenant = SequelizeRepository.getCurrentTenant(this.options);
+          const scannedCount = await this.options.database.patrolLog.count({
+            where: {
+              patrolId: patrol.id,
+              tenantId: tenant.id,
+              status: 'Scanned',
+            },
+          });
+
+          if (!patrol.completed && scannedCount >= checkpointCount) {
+            // Mark patrol as completed
+            try {
+              await PatrolRepository.update(patrol.id, { completed: true, completionTime: new Date() }, this.options);
+            } catch (e) {
+              // ignore patrol update failures
+            }
+
+            // Create an inventoryHistory entry linked to the existing inventory for the station
+            try {
+              const stationId = patrol.station && (patrol.station.id || patrol.station);
+              let inventoryId = null;
+              if (stationId) {
+                const invRes = await InventoryRepository.findAndCountAll({ filter: { belongsTo: stationId }, limit: 1 }, this.options);
+                if (invRes && invRes.rows && invRes.rows.length) {
+                  inventoryId = invRes.rows[0].id;
+                }
+              }
+
+              if (inventoryId) {
+                await new InventoryHistoryService(this.options).create({
+                  patrol: patrol.id,
+                  inventoryOrigin: inventoryId,
+                  inventoryCheckedDate: new Date(),
+                  isComplete: true,
+                  observation: 'Auto: patrulla completada - validación de inventario existente',
+                });
+              } else {
+                // No inventory found for station -> skip creating new inventory, only log
+                console.warn('[patrolLogService] No inventory found for station; skipping inventoryHistory creation for patrol', patrol.id);
+              }
+            } catch (e) {
+              // ignore inventory history failures
+            }
+
+            // Update guardShift: find securityGuard by underlying user id
+            try {
+              const guardUserId = patrol.assignedGuard && patrol.assignedGuard.id ? patrol.assignedGuard.id : patrol.assignedGuard;
+              const sgResult = await SecurityGuardRepository.findAndCountAll({ filter: { guard: guardUserId }, limit: 1 }, this.options);
+              const sg = sgResult && sgResult.rows && sgResult.rows[0];
+              if (sg && sg.id) {
+                const shifts = await GuardShiftRepository.findAndCountAll({ filter: { guardName: sg.id, punchOutTimeRange: [null, null] }, orderBy: 'punchInTime_DESC' }, this.options);
+                const open = shifts && shifts.rows && shifts.rows[0];
+                if (open && open.id) {
+                  const existingPatrols = Array.isArray(open.patrolsDone) ? open.patrolsDone.map((p) => (p && p.id ? p.id : p)) : [];
+                  const newPatrols = Array.from(new Set([...existingPatrols, patrol.id]));
+                  const payload: any = {
+                    patrolsDone: newPatrols,
+                    numberOfPatrolsDuringShift: newPatrols.length,
+                  };
+                  try {
+                    await GuardShiftRepository.update(open.id, payload, this.options);
+                  } catch (e) {
+                    // ignore guardShift update errors
+                  }
+                }
+              }
+            } catch (e) {
+              // ignore guard shift update errors
+            }
+          }
+        } catch (e) {
+          // swallow side-effect errors to avoid breaking patrolLog creation
+          console.warn('patrolLogService post-create side-effects failed', e);
+        }
+      })();
 
       return record;
     } catch (error) {

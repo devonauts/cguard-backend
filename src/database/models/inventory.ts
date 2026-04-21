@@ -109,6 +109,13 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: false,
       },
+      name: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        validate: {
+          len: [0, 255],
+        },
+      },
       observations: {
         type: DataTypes.TEXT,
         allowNull: false,

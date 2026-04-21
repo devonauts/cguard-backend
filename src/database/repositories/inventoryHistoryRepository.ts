@@ -5,6 +5,7 @@ import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
+import FileRepository from './fileRepository';
 
 const Op = Sequelize.Op;
 
@@ -43,11 +44,16 @@ class InventoryHistoryRepository {
         transaction,
       },
     );
+    await FileRepository.replaceRelationFiles(
+      {
+        belongsTo: options.database.inventoryHistory.getTableName(),
+        belongsToColumn: 'photos',
+        belongsToId: record.id,
+      },
+      data.photos,
+      options,
+    );
 
-    
-  
-
-  
     await this._createAuditLog(
       AuditLogRepository.CREATE,
       record,
@@ -101,6 +107,16 @@ class InventoryHistoryRepository {
       {
         transaction,
       },
+    );
+
+    await FileRepository.replaceRelationFiles(
+      {
+        belongsTo: options.database.inventoryHistory.getTableName(),
+        belongsToColumn: 'photos',
+        belongsToId: record.id,
+      },
+      data.photos,
+      options,
     );
 
 

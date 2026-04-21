@@ -26,6 +26,7 @@ class InventoryRepository {
     const record = await options.database.inventory.create(
       {
         ...lodash.pick(data, [
+          'name',
           'belongsToStation',
           'radio',
           'radioType',
@@ -103,6 +104,7 @@ class InventoryRepository {
     record = await record.update(
       {
         ...lodash.pick(data, [
+          'name',
           'belongsToStation',
           'radio',
           'radioType',

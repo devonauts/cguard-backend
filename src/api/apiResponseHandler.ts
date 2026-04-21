@@ -49,6 +49,39 @@ export default class ApiResponseHandler {
       }
       res.status(error.code).json(payload);
     } else {
+      // Handle Sequelize validation errors (e.g., notNull Violation) and return a friendly message
+      try {
+        if (error && Array.isArray((error as any).errors) && (error.name === 'SequelizeValidationError' || (error as any).errors.some((e) => String(e.message || '').includes('notNull Violation')))) {
+          const fields = (error as any).errors.map((e) => e.path).filter(Boolean);
+          const uniqueFields = Array.from(new Set(fields));
+          let friendly = 'Please complete required fields: ' + uniqueFields.join(', ');
+          try {
+            const translated = i18n(req && req.language ? req.language : undefined, 'errors.validation.missingFields');
+            if (translated && translated !== 'errors.validation.missingFields') {
+              // if i18n supports placeholders, replace {0} with joined fields
+              friendly = translated.replace('{0}', uniqueFields.join(', '));
+            } else {
+              // Fallback Spanish/English auto message
+              if ((req && req.language && String(req.language).startsWith('es')) || (!req || !req.language)) {
+                friendly = 'Por favor complete los campos requeridos: ' + uniqueFields.join(', ');
+              }
+            }
+          } catch (e) {
+            // ignore i18n failures
+          }
+
+          const payload: any = {
+            message: friendly,
+            code: 400,
+          };
+          // include original validation details for debugging if present
+          payload.errors = (error as any).errors.map((e) => ({ message: e.message, path: e.path }));
+          return res.status(400).json(payload);
+        }
+      } catch (e) {
+        // ignore and fallthrough to generic handler
+      }
+
       console.error(error);
       res.status(500).json({ message, code: 500 });
     }

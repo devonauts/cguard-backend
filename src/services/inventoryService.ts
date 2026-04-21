@@ -3,6 +3,7 @@ import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import InventoryRepository from '../database/repositories/inventoryRepository';
 import StationRepository from '../database/repositories/stationRepository';
+import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 
 export default class InventoryService {
   options: IServiceOptions;
@@ -17,7 +18,15 @@ export default class InventoryService {
     );
 
     try {
-      data.belongsTo = await StationRepository.filterIdInTenant(data.belongsTo, { ...this.options, transaction });
+      // `belongsTo` may be either a station id or a postSite id. Try station first, then postSite.
+      const stationMatch = await StationRepository.filterIdInTenant(data.belongsTo, { ...this.options, transaction });
+      if (stationMatch) {
+        data.belongsTo = stationMatch;
+      } else {
+        data.belongsTo = await BusinessInfoRepository.filterIdInTenant(data.belongsTo, { ...this.options, transaction });
+      }
+      // Validate belongsToStation separately if provided.
+      data.belongsToStation = await StationRepository.filterIdInTenant(data.belongsToStation, { ...this.options, transaction });
 
       const record = await InventoryRepository.create(data, {
         ...this.options,
@@ -50,7 +59,15 @@ export default class InventoryService {
     );
 
     try {
-      data.belongsTo = await StationRepository.filterIdInTenant(data.belongsTo, { ...this.options, transaction });
+      // `belongsTo` may be either a station id or a postSite id. Try station first, then postSite.
+      const stationMatch2 = await StationRepository.filterIdInTenant(data.belongsTo, { ...this.options, transaction });
+      if (stationMatch2) {
+        data.belongsTo = stationMatch2;
+      } else {
+        data.belongsTo = await BusinessInfoRepository.filterIdInTenant(data.belongsTo, { ...this.options, transaction });
+      }
+      // Validate belongsToStation separately if provided.
+      data.belongsToStation = await StationRepository.filterIdInTenant(data.belongsToStation, { ...this.options, transaction });
 
       const record = await InventoryRepository.update(
         id,
@@ -87,7 +104,45 @@ export default class InventoryService {
     );
 
     try {
-      for (const id of ids) {
+      // Normalize incoming ids to an array so we accept:
+      // - Array of ids
+      // - JSON string like '["id1","id2"]'
+      // - Comma-separated string 'id1,id2'
+      // - Object with numeric keys
+      let idsArray: any[] = [];
+      if (!ids) {
+        idsArray = [];
+      } else if (Array.isArray(ids)) {
+        idsArray = ids;
+      } else if (typeof ids === 'string') {
+        const raw = ids.trim();
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            idsArray = parsed;
+          } else if (typeof parsed === 'string') {
+            idsArray = parsed.split(',').map((s) => s.trim()).filter(Boolean);
+          } else {
+            idsArray = [parsed];
+          }
+        } catch (err) {
+          idsArray = raw.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      } else if (typeof ids === 'object') {
+        try {
+          if (typeof (ids as any).length === 'number') {
+            idsArray = Array.from(ids as any);
+          } else {
+            idsArray = Object.values(ids as any).map(String);
+          }
+        } catch (err) {
+          idsArray = [];
+        }
+      } else {
+        idsArray = [ids];
+      }
+
+      for (const id of idsArray) {
         await InventoryRepository.destroy(id, {
           ...this.options,
           transaction,
