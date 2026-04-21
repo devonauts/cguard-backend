@@ -51,11 +51,13 @@ module.exports = {
       // ============================================================
       env: {
         NODE_ENV: 'development',
+        API_DOCUMENTATION_ENABLED: 'true',
         PORT: 8080,
         TENANT_MODE: 'multi',
       },
       env_production: {
         NODE_ENV: 'production',
+        API_DOCUMENTATION_ENABLED: 'true',
         PORT: 8080,
         TENANT_MODE: 'multi',
         
@@ -67,6 +69,7 @@ module.exports = {
       },
       env_staging: {
         NODE_ENV: 'staging',
+        API_DOCUMENTATION_ENABLED: 'true',
         PORT: 8080,
         TENANT_MODE: 'multi',
         DATABASE_POOL_MAX: '25',
