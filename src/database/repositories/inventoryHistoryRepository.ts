@@ -213,7 +213,7 @@ class InventoryHistoryRepository {
       // (missing columns on inventoryHistory). If a SQL error about unknown
       // columns occurs, retry without the 'patrolCheckpoint' relation so
       // supervisors/requests that can't access that relation still succeed.
-      const msg = (err && err.message) ? String(err.message) : '';
+      const msg = (err && (err as any).message) ? String((err as any).message) : '';
       if (msg.includes('Unknown column') || msg.includes('unknown column')) {
         try {
           const includeFallback = include.filter((inc: any) => !(inc && inc.as === 'patrolCheckpoint'));
