@@ -58,11 +58,12 @@ app.use(helmet({
 app.use(
   bodyParser.json({
     verify: function (req, res, buf) {
-      const url = (<any>req).originalUrl;
-      if (url.startsWith('/api/plan/stripe/webhook')) {
-        // Stripe Webhook needs the body raw in order
-        // to validate the request
-        (<any>req).rawBody = buf.toString();
+      // Always capture raw body for debugging purposes. This helps
+      // diagnose JSON parse errors originating from malformed client payloads.
+      try {
+        (<any>req).rawBody = buf && buf.toString ? buf.toString() : '';
+      } catch (e) {
+        (<any>req).rawBody = '';
       }
     },
   }),
@@ -166,5 +167,16 @@ app.delete('/api/tenant-user-postsite/:id', tenantUserPostSite.deleteTenantUserP
 
 // Add the routes to the /api endpoint
 app.use('/api', routes);
+
+// JSON parse error handler: log raw body and return a helpful 400
+app.use((err: any, req: any, res: any, next: any) => {
+  if (err && (err instanceof SyntaxError || err.type === 'entity.parse.failed' || /Unexpected token|Expected double-quoted property name/.test(String(err.message || '')))) {
+    try {
+      console.error('[ERROR] JSON parse failed for', req.method, req.originalUrl, 'rawBody=', req.rawBody);
+    } catch (e) {}
+    return res.status(400).json({ message: 'Invalid JSON body', details: err.message });
+  }
+  return next(err);
+});
 
 export default app;

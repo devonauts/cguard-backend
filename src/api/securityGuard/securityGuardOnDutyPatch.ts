@@ -1,7 +1,5 @@
-import PermissionChecker from '../../services/user/permissionChecker';
 import Error403 from '../../errors/Error403';
 import ApiResponseHandler from '../apiResponseHandler';
-import Permissions from '../../security/permissions';
 import SecurityGuardRepository from '../../database/repositories/securityGuardRepository';
 import GuardShiftRepository from '../../database/repositories/guardShiftRepository';
 import PatrolLogRepository from '../../database/repositories/patrolLogRepository';
@@ -16,29 +14,7 @@ export default async (req: any, res: any) => {
   try {
     // Allow supervisors/HR with `securityGuardEdit`, or allow the security guard
     // user themself to toggle their on-duty status.
-    const checker = new PermissionChecker(req);
-    const permission = Permissions.values.securityGuardEdit;
-    if (!checker.has(permission)) {
-      // If user lacks the edit permission, allow only if the currentUser is the
-      // linked `guard` (user) for this securityGuard record.
-      const targetId = req.params.id;
-      console.log('[DEBUG][onDutyPatch] targetId=', targetId);
-      console.log('[DEBUG][onDutyPatch] currentUser=', (req as any).currentUser && { id: (req as any).currentUser.id });
-      let guardRecord: any = null;
-      try {
-        guardRecord = await SecurityGuardRepository.findById(targetId, req);
-        console.log('[DEBUG][onDutyPatch] guardRecord found=', guardRecord && { id: (guardRecord as any).id, guardId: (guardRecord as any).guardId });
-      } catch (err) {
-        // propagate not-found error (will be handled below)
-        throw err;
-      }
-
-      const guardUserId = guardRecord && ((guardRecord as any).guardId || ((guardRecord as any).guard && ((guardRecord as any).guard as any).id));
-      const currentUserId = (req as any).currentUser && (req as any).currentUser.id;
-      if (!currentUserId || !guardUserId || String(currentUserId) !== String(guardUserId)) {
-        throw new Error403((req as any).language);
-      }
-    }
+    // Only the guard user themselves may toggle their on-duty status.
 
     const targetId = req.params.id;
     const {
@@ -74,6 +50,13 @@ export default async (req: any, res: any) => {
     } catch (errResolve) {
       console.error('[ERROR][onDutyPatch] findById failed for targetId=', targetId, (errResolve as any) && (errResolve as any).stack ? (errResolve as any).stack : errResolve);
       throw errResolve;
+    }
+
+    // Enforce that only the linked guard user may change on-duty status.
+    const guardUserId = targetRecord && ((targetRecord as any).guardId || ((targetRecord as any).guard && ((targetRecord as any).guard as any).id));
+    const currentUserId = (req as any).currentUser && (req as any).currentUser.id;
+    if (!currentUserId || !guardUserId || String(currentUserId) !== String(guardUserId)) {
+      throw new Error403((req as any).language);
     }
 
     try {

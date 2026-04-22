@@ -23,4 +23,12 @@ export default (app) => {
     `/tenant/:tenantId/invoice/:id/send`,
     require('./invoiceSend').default,
   );
+  app.get(
+    `/tenant/:tenantId/invoice/client/:clientId`,
+    require('./invoiceByClient').default,
+  );
+  app.get(
+    `/tenant/:tenantId/invoice/:id/pending-payments`,
+    require('./invoicePendingPayments').default,
+  );
 };

@@ -196,16 +196,39 @@ class InventoryHistoryRepository {
       options,
     );
 
-    const record = await options.database.inventoryHistory.findOne(
-      {
-        where: {
-          id,
-          tenantId: currentTenant.id,
+    let record: any = null;
+    try {
+      record = await options.database.inventoryHistory.findOne(
+        {
+          where: {
+            id,
+            tenantId: currentTenant.id,
+          },
+          include,
+          transaction,
         },
-        include,
-        transaction,
-      },
-    );
+      );
+    } catch (err) {
+      // Defensive fallback: some installations may have different schema
+      // (missing columns on inventoryHistory). If a SQL error about unknown
+      // columns occurs, retry without the 'patrolCheckpoint' relation so
+      // supervisors/requests that can't access that relation still succeed.
+      const msg = (err && err.message) ? String(err.message) : '';
+      if (msg.includes('Unknown column') || msg.includes('unknown column')) {
+        try {
+          const includeFallback = include.filter((inc: any) => !(inc && inc.as === 'patrolCheckpoint'));
+          record = await options.database.inventoryHistory.findOne({
+            where: { id, tenantId: currentTenant.id },
+            include: includeFallback,
+            transaction,
+          });
+        } catch (err2) {
+          throw err2;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     if (!record) {
       throw new Error404();

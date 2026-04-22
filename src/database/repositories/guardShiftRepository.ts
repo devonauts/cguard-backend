@@ -193,7 +193,16 @@ class GuardShiftRepository {
       options,
     );
 
-    const include = [
+    // Include relations conditionally: only include `completeInventoryCheck`
+    // for supervisor/management roles because that relation contains
+    // patrol/checkpoint fields that are not available for plain guards.
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    const currentUserRoles = (currentUser && currentUser.roles) || [];
+    const isSupervisor = Array.isArray(currentUserRoles)
+      ? (currentUserRoles.includes('admin') || currentUserRoles.includes('operationsManager') || currentUserRoles.includes('securitySupervisor'))
+      : false;
+
+    const include: any[] = [
       {
         model: options.database.station,
         as: 'stationName',
@@ -202,11 +211,14 @@ class GuardShiftRepository {
         model: options.database.securityGuard,
         as: 'guardName',
       },
-      {
+    ];
+
+    if (isSupervisor) {
+      include.push({
         model: options.database.inventoryHistory,
         as: 'completeInventoryCheck',
-      },
-    ];
+      });
+    }
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
       options,
@@ -307,11 +319,21 @@ class GuardShiftRepository {
         model: options.database.securityGuard,
         as: 'guardName',
       },
-      {
+    ];
+
+    // Only include completeInventoryCheck for supervisors
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    const currentUserRoles = (currentUser && currentUser.roles) || [];
+    const isSupervisor = Array.isArray(currentUserRoles)
+      ? (currentUserRoles.includes('admin') || currentUserRoles.includes('operationsManager') || currentUserRoles.includes('securitySupervisor'))
+      : false;
+
+    if (isSupervisor) {
+      include.push({
         model: options.database.inventoryHistory,
         as: 'completeInventoryCheck',
-      },      
-    ];
+      });
+    }
 
     whereAnd.push({
       tenantId: tenant.id,
