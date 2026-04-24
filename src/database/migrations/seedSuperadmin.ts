@@ -53,13 +53,35 @@ async function seedSuperadmin() {
         });
     } catch (err) {
         const e: any = err;
-        console.warn('Warning: could not set isSuperadmin during create, retrying without that field:', e && e.message ? e.message : String(e));
-        superUser = await db.user.create({
-            email,
-            password: bcrypt.hashSync(password, 8),
-            fullName: 'Super Administrator',
-            emailVerified: true,
-        });
+        const msg = e && (e.original && e.original.sqlMessage ? e.original.sqlMessage : e.message) ? (e.original && e.original.sqlMessage ? e.original.sqlMessage : e.message) : String(e);
+        console.warn('Warning: could not set isSuperadmin during create, attempting raw INSERT fallback:', msg);
+
+        // If the error is a MySQL unknown column (ER_BAD_FIELD_ERROR), fall back
+        // to a raw INSERT that omits `isSuperadmin`. This avoids relying on
+        // model attributes when the DB schema is not yet migrated.
+        const isBadField = msg && msg.toString().includes('Unknown column');
+        if (isBadField && db && db.sequelize) {
+            try {
+                const hashed = bcrypt.hashSync(password, 8);
+                await db.sequelize.query(
+                    'INSERT INTO users (id, fullName, password, emailVerified, lastName, email, createdAt, updatedAt) VALUES (UUID(), ?, ?, ?, ?, ?, NOW(), NOW())',
+                    { replacements: [ 'Super Administrator', hashed, 1, null, email ] }
+                );
+                // Retrieve the created user with limited attributes to avoid selecting missing columns
+                superUser = await db.user.findOne({ where: { email }, attributes: ['id', 'email'] });
+            } catch (err2) {
+                console.error('Raw INSERT fallback failed:', err2 && err2.message ? err2.message : String(err2));
+                throw err2;
+            }
+        } else {
+            // Generic fallback: retry create without isSuperadmin field
+            superUser = await db.user.create({
+                email,
+                password: bcrypt.hashSync(password, 8),
+                fullName: 'Super Administrator',
+                emailVerified: true,
+            });
+        }
     }
 
     // Nota: no asociamos este usuario a ningún tenant — será una cuenta

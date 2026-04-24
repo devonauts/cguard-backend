@@ -732,9 +732,10 @@ class AuthService {
                   if (tenantIds.length && options && options.database) {
                     tenantIds.forEach((tid) => {
                       RoleRepository.getPermissionsMapForTenant(tid, { database: options.database })
-                        .catch((err) => {
+                        .catch((err: any) => {
                           try {
-                            console.warn('RoleRepository cache priming failed for tenant', tid, err && err.message ? err.message : err);
+                            const ex: any = err;
+                            console.warn('RoleRepository cache priming failed for tenant', tid, ex && ex.message ? ex.message : ex);
                           } catch (e) {
                             // ignore
                           }

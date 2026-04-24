@@ -65,12 +65,13 @@ async function seedAdmin() {
     process.exit(0);
 }
 
-seedAdmin().catch((err) => {
-    const code = err && err.original && err.original.code;
+seedAdmin().catch((err: any) => {
+    const e: any = err;
+    const code = e && e.original && e.original.code;
     if (code === 'ER_MULTIPLE_PRI_KEY') {
-        console.warn('Ignored ER_MULTIPLE_PRI_KEY during seedAdmin:', err && err.original && err.original.sqlMessage ? err.original.sqlMessage : err.message || err);
+        console.warn('Ignored ER_MULTIPLE_PRI_KEY during seedAdmin:', e && e.original && e.original.sqlMessage ? e.original.sqlMessage : e.message || e);
         process.exit(0);
     }
-    console.error(err);
+    console.error(e);
     process.exit(1);
 });

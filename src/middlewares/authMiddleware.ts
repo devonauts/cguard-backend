@@ -85,7 +85,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
               // do not block if the DB call fails
               // eslint-disable-next-line no-await-in-loop
               await RoleRepository.getPermissionsMapForTenant(tid, { database: (req as any).database })
-                .catch((err) => console.warn('RoleRepository priming failed for tenant', tid, err && err.message ? err.message : err));
+                .catch((err: any) => console.warn('RoleRepository priming failed for tenant', tid, (err && (err as any).message) ? (err as any).message : err));
             }
           } catch (e) {
             // ignore per-tenant errors
