@@ -7,6 +7,7 @@ import BannerSuperiorAppService from '../../services/bannerSuperiorAppService'
 import CertificationService from '../../services/certificationService'
 import ServiceService from '../../services/serviceService'
 import Roles from '../../security/roles'
+import SequelizeRepository from '../../database/repositories/sequelizeRepository'
 
 export default async (req: any, res: any) => {
   try {
@@ -75,6 +76,46 @@ export default async (req: any, res: any) => {
         assignedPostSites: tenantEntry.assignedPostSites || [],
         status: tenantEntry.status || null,
       };
+
+      // clientAccount lookup moved below so it's executed even if tenant is null
+    }
+
+    // Attach clientAccount id if this user is linked to a clientAccount (always attempt)
+    try {
+      if (payload && payload.user && payload.user.id) {
+        // Determine tenant context candidate from payload or request
+        const tenantIdCandidate = (payload.user.tenant && (payload.user.tenant.tenantId || (payload.user.tenant.tenant && payload.user.tenant.tenant.id))) || req.body?.tenantId || (req.currentTenant && req.currentTenant.id) || null;
+
+        // Do not overwrite existing currentTenant if present; only set when we have a candidate and no currentTenant
+        if (tenantIdCandidate && !(req && (req as any).currentTenant)) {
+          req.currentTenant = { id: tenantIdCandidate };
+        }
+
+        const db = (req && (req as any).database) ? (req as any).database : (req && req.app && req.app.locals && (req.app.locals as any).database) ? (req.app.locals as any).database : undefined;
+        if (db) {
+          // First try direct userId on clientAccount
+          const where: any = { userId: payload.user.id };
+          if (tenantIdCandidate) where.tenantId = tenantIdCandidate;
+          const clientRec = await db.clientAccount.findOne({ where });
+          if (clientRec) {
+            payload.user.clientAccountId = clientRec.id;
+          } else {
+            // Fallback: check tenantUser pivot assignedClients
+            try {
+              const tenantUserWhere: any = { userId: payload.user.id };
+              if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
+              const tenantUser = await db.tenantUser.findOne({ where: tenantUserWhere, include: [{ model: db.clientAccount, as: 'assignedClients', attributes: ['id'] }] });
+              if (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.length) {
+                payload.user.clientAccountId = tenantUser.assignedClients[0].id;
+              }
+            } catch (e) {
+              // ignore fallback errors
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('authSignInCustomer: could not lookup clientAccount', (err && (err as any).message) ? (err as any).message : err);
     }
 
     return ApiResponseHandler.success(req, res, payload)

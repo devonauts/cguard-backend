@@ -564,16 +564,87 @@ export default class UserRepository {
       options,
     );
 
-    const record = await options.database.user.findOne({
-      where: {
-        [Op.and]: SequelizeFilterUtils.ilikeExact(
-          'user',
-          'email',
-          email,
-        ),
-      },
-      transaction,
-    });
+    // Build attributes list defensively: include only columns present on the model
+    // to avoid querying columns that may not exist in the DB (e.g., isSuperadmin).
+    let attributes: string[] | undefined = undefined;
+    try {
+      const raw = options && options.database && options.database.user && (options.database.user.rawAttributes || options.database.user.attributes);
+      if (raw) {
+        attributes = Object.keys(raw).filter(Boolean);
+      }
+    } catch (e) {
+      attributes = undefined;
+    }
+
+    // If raw attributes were found, ensure they include the standard fields order
+    // but avoid relying on DB having `isSuperadmin` (it will be present only if migrated).
+    let record;
+    try {
+      record = await options.database.user.findOne({
+        where: {
+          [Op.and]: SequelizeFilterUtils.ilikeExact(
+            'user',
+            'email',
+            email,
+          ),
+        },
+        transaction,
+        attributes,
+      });
+    } catch (err: any) {
+      // If the DB lacks a column referenced by the model (ER_BAD_FIELD_ERROR),
+      // fall back to a raw select that omits the problematic column.
+      const code = err && (err.original && err.original.code) || (err.parent && err.parent.code) || (err && err.code);
+      const isBadField = code === 'ER_BAD_FIELD_ERROR';
+      if (isBadField && options && options.database && options.database.sequelize) {
+        try {
+          const lowered = String(email).toLowerCase();
+          const rows = await options.database.sequelize.query(
+            `SELECT id, fullName, firstName, password, emailVerified, emailVerificationToken, emailVerificationTokenExpiresAt, provider, providerId, passwordResetToken, passwordResetTokenExpiresAt, lastName, phoneNumber, email, jwtTokenInvalidBefore, lastLoginAt, importHash, createdAt, updatedAt, deletedAt, createdById, updatedById FROM users WHERE (deletedAt IS NULL AND lower(email) LIKE ?) LIMIT 1`,
+            { replacements: [lowered], type: options.database.Sequelize.QueryTypes.SELECT },
+          );
+          if (Array.isArray(rows) && rows.length) {
+            const row = rows[0];
+            // Wrap raw row into a minimal Sequelize-like instance with
+            // the methods used by _fillWithRelationsAndFiles.
+            record = {
+              id: row.id,
+              get: (_o: any) => row,
+              getAvatars: async (opts: any) => {
+                try {
+                  const tableName = options.database.user.getTableName();
+                  return options.database.file.findAll({
+                    where: {
+                      belongsTo: tableName,
+                      belongsToId: row.id,
+                      belongsToColumn: 'avatars',
+                    },
+                    transaction: opts && opts.transaction,
+                  });
+                } catch (e) {
+                  return [];
+                }
+              },
+              getTenants: async (opts: any) => {
+                try {
+                  const TenantUserRepository = require('../repositories/tenantUserRepository').default;
+                  const tenants = await TenantUserRepository.findByUser(row.id, { ...options, transaction: opts && opts.transaction });
+                  return tenants;
+                } catch (e) {
+                  return [];
+                }
+              },
+            } as any;
+          } else {
+            record = null;
+          }
+        } catch (err2) {
+          throw err2;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     return this._fillWithRelationsAndFiles(record, options);
   }
@@ -586,16 +657,86 @@ export default class UserRepository {
       options,
     );
 
-    const record = await options.database.user.findOne({
-      where: {
-        [Op.and]: SequelizeFilterUtils.ilikeExact(
-          'user',
-          'email',
-          email,
-        ),
-      },
-      transaction,
-    });
+    // Defensive attributes selection as in findByEmail
+    let attributes: string[] | undefined = undefined;
+    try {
+      const raw = options && options.database && options.database.user && (options.database.user.rawAttributes || options.database.user.attributes);
+      if (raw) {
+        attributes = Object.keys(raw).filter(Boolean);
+      }
+    } catch (e) {
+      attributes = undefined;
+    }
+
+    let record;
+    try {
+      record = await options.database.user.findOne({
+        where: {
+          [Op.and]: SequelizeFilterUtils.ilikeExact(
+            'user',
+            'email',
+            email,
+          ),
+        },
+        transaction,
+        attributes,
+      });
+    } catch (err: any) {
+      const code = err && (err.original && err.original.code) || (err.parent && err.parent.code) || (err && err.code);
+      const isBadField = code === 'ER_BAD_FIELD_ERROR';
+      if (isBadField && options && options.database && options.database.sequelize) {
+        try {
+          const lowered = String(email).toLowerCase();
+          const rows = await options.database.sequelize.query(
+            `SELECT id, fullName, firstName, password, emailVerified, emailVerificationToken, emailVerificationTokenExpiresAt, provider, providerId, passwordResetToken, passwordResetTokenExpiresAt, lastName, phoneNumber, email, jwtTokenInvalidBefore, lastLoginAt, importHash, createdAt, updatedAt, deletedAt, createdById, updatedById FROM users WHERE (deletedAt IS NULL AND lower(email) LIKE ?) LIMIT 1`,
+            { replacements: [lowered], type: options.database.Sequelize.QueryTypes.SELECT },
+          );
+          if (Array.isArray(rows) && rows.length) {
+            const row = rows[0];
+            record = {
+              id: row.id,
+              get: (_o: any) => row,
+              getAvatars: async (opts: any) => {
+                try {
+                  const tableName = options.database.user.getTableName();
+                  return options.database.file.findAll({
+                    where: {
+                      belongsTo: tableName,
+                      belongsToId: row.id,
+                      belongsToColumn: 'avatars',
+                    },
+                    transaction: opts && opts.transaction,
+                  });
+                } catch (e) {
+                  return [];
+                }
+              },
+              getTenants: async (opts: any) => {
+                try {
+                  return options.database.tenantUser.findAll({
+                    where: { userId: row.id },
+                    include: [
+                      { model: options.database.tenant, as: 'tenant' },
+                      { model: options.database.clientAccount, as: 'assignedClients' },
+                      { model: options.database.businessInfo, as: 'assignedPostSites' },
+                    ],
+                    transaction: opts && opts.transaction,
+                  });
+                } catch (e) {
+                  return [];
+                }
+              },
+            } as any;
+          } else {
+            record = null;
+          }
+        } catch (err2) {
+          throw err2;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     return this._fillWithRelationsAndFiles(record, options);
   }
@@ -850,20 +991,71 @@ export default class UserRepository {
     );
 
     // Eager-load tenantUser relation with assigned clients and post sites
-    let record = await options.database.user.findByPk(id, {
-      transaction,
-      include: [
-        {
-          model: options.database.tenantUser,
-          as: 'tenants',
-            include: [
-            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-            { model: options.database.tenant, as: 'tenant' },
-          ],
-        },
-      ],
-    });
+    let record;
+    try {
+      record = await options.database.user.findByPk(id, {
+        transaction,
+        include: [
+          {
+            model: options.database.tenantUser,
+            as: 'tenants',
+              include: [
+              { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
+              { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
+              { model: options.database.tenant, as: 'tenant' },
+            ],
+          },
+        ],
+      });
+    } catch (err: any) {
+      const code = err && (err.original && err.original.code) || (err.parent && err.parent.code) || (err && err.code);
+      const isBadField = code === 'ER_BAD_FIELD_ERROR';
+      if (isBadField && options && options.database && options.database.sequelize) {
+        try {
+          const rows = await options.database.sequelize.query(
+            `SELECT id, fullName, firstName, lastName, password, emailVerified, emailVerificationToken, emailVerificationTokenExpiresAt, provider, providerId, passwordResetToken, passwordResetTokenExpiresAt, phoneNumber, email, jwtTokenInvalidBefore, lastLoginAt, importHash, createdAt, updatedAt, deletedAt, createdById, updatedById FROM users WHERE id = ? LIMIT 1`,
+            { replacements: [id], type: options.database.Sequelize.QueryTypes.SELECT },
+          );
+          if (Array.isArray(rows) && rows.length) {
+            const row = rows[0];
+            record = {
+              id: row.id,
+              get: (_o: any) => row,
+              getAvatars: async (opts: any) => {
+                try {
+                  const tableName = options.database.user.getTableName();
+                  return options.database.file.findAll({
+                    where: {
+                      belongsTo: tableName,
+                      belongsToId: row.id,
+                      belongsToColumn: 'avatars',
+                    },
+                    transaction: opts && opts.transaction,
+                  });
+                } catch (e) {
+                  return [];
+                }
+              },
+              getTenants: async (opts: any) => {
+                try {
+                  const TenantUserRepository = require('../repositories/tenantUserRepository').default;
+                  const tenants = await TenantUserRepository.findByUser(row.id, { ...options, transaction: opts && opts.transaction });
+                  return tenants;
+                } catch (e) {
+                  return [];
+                }
+              },
+            } as any;
+          } else {
+            record = null;
+          }
+        } catch (err2) {
+          throw err2;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     record = await this._fillWithRelationsAndFiles(
       record,
@@ -900,9 +1092,60 @@ export default class UserRepository {
       options,
     );
 
-    let record = await options.database.user.findByPk(id, {
-      transaction,
-    });
+    let record;
+    try {
+      record = await options.database.user.findByPk(id, {
+        transaction,
+      });
+    } catch (err: any) {
+      const code = err && (err.original && err.original.code) || (err.parent && err.parent.code) || (err && err.code);
+      const isBadField = code === 'ER_BAD_FIELD_ERROR';
+      if (isBadField && options && options.database && options.database.sequelize) {
+        try {
+          const rows = await options.database.sequelize.query(
+            `SELECT id, fullName, firstName, lastName, password, emailVerified, emailVerificationToken, emailVerificationTokenExpiresAt, provider, providerId, passwordResetToken, passwordResetTokenExpiresAt, phoneNumber, email, jwtTokenInvalidBefore, lastLoginAt, importHash, createdAt, updatedAt, deletedAt, createdById, updatedById FROM users WHERE id = ? LIMIT 1`,
+            { replacements: [id], type: options.database.Sequelize.QueryTypes.SELECT },
+          );
+          if (Array.isArray(rows) && rows.length) {
+            const row = rows[0];
+            record = {
+              id: row.id,
+              get: (_o: any) => row,
+              getAvatars: async (opts: any) => {
+                try {
+                  const tableName = options.database.user.getTableName();
+                  return options.database.file.findAll({
+                    where: {
+                      belongsTo: tableName,
+                      belongsToId: row.id,
+                      belongsToColumn: 'avatars',
+                    },
+                    transaction: opts && opts.transaction,
+                  });
+                } catch (e) {
+                  return [];
+                }
+              },
+              getTenants: async (opts: any) => {
+                try {
+                  const TenantUserRepository = require('../repositories/tenantUserRepository').default;
+                  const tenants = await TenantUserRepository.findByUser(row.id, { ...options, transaction: opts && opts.transaction });
+                  return tenants;
+                } catch (e) {
+                  return [];
+                }
+              },
+            } as any;
+          } else {
+            record = null;
+          }
+        } catch (err2) {
+          throw err2;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
       options,
@@ -1057,21 +1300,43 @@ export default class UserRepository {
       options,
     );
 
-    const record = await options.database.user.findByPk(
-      id,
-      {
-        // raw is responsible
-        // for bringing the password
-        raw: true,
-        transaction,
-      },
-    );
+    try {
+      const record = await options.database.user.findByPk(
+        id,
+        {
+          // raw is responsible
+          // for bringing the password
+          raw: true,
+          transaction,
+        },
+      );
 
-    if (!record) {
-      return null;
+      if (!record) {
+        return null;
+      }
+
+      return record.password;
+    } catch (err: any) {
+      const code = err && (err.original && err.original.code) || (err.parent && err.parent.code) || (err && err.code);
+      const isBadField = code === 'ER_BAD_FIELD_ERROR';
+      if (isBadField && options && options.database && options.database.sequelize) {
+        try {
+          const rows = await options.database.sequelize.query(
+            `SELECT password FROM users WHERE id = ? LIMIT 1`,
+            { replacements: [id], type: options.database.Sequelize.QueryTypes.SELECT },
+          );
+          if (Array.isArray(rows) && rows.length) {
+            const row: any = rows[0];
+            return row.password || null;
+          }
+          return null;
+        } catch (err2) {
+          throw err2;
+        }
+      }
+
+      throw err;
     }
-
-    return record.password;
   }
 
   static async createFromSocial(
