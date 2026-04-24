@@ -36,6 +36,11 @@ export default function (sequelize, DataTypes) {
         allowNull: false,
         defaultValue: false,
       },
+      isSuperadmin: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       emailVerificationToken: {
         type: DataTypes.STRING(255),
         allowNull: true,

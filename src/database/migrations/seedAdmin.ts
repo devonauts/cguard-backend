@@ -18,7 +18,7 @@ async function seedAdmin() {
 
 
     // Verifica si ya existe un usuario admin
-    const existing = await db.user.findOne({ where: { email: adminEmail } });
+    const existing = await db.user.findOne({ where: { email: adminEmail }, attributes: ['id', 'email'] });
     if (existing) {
         console.log('El usuario administrador ya existe.');
         process.exit(0);

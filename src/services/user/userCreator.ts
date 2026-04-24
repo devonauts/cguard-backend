@@ -153,6 +153,12 @@ export default class UserCreator {
 
     if (!user) {
       const createData: any = { email };
+      // Allow callers to force the created User id (e.g., match clientAccount id)
+      // The id can be provided at top-level (`this.data.id`) or inside the per-email
+      // object when `this.data.emails` is an array of objects.
+      if (this.data && this.data.id) {
+        createData.id = this.data.id;
+      }
 
       // If names are provided at top-level, prefer them
       // Accept both English and Spanish field names from clients
@@ -187,6 +193,7 @@ export default class UserCreator {
           if (matched.firstName) createData.firstName = matched.firstName;
           if (matched.lastName) createData.lastName = matched.lastName;
           if (matched.fullName) createData.fullName = matched.fullName;
+          if (!createData.id && matched.id) createData.id = matched.id;
         }
       }
 

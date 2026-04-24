@@ -33,9 +33,9 @@ async function migrate() {
     }
 
     // Find an admin user to use as createdBy/guard
-    let adminUser = await db.user.findOne({ where: { email: 'admin@cguard.com' } });
+    let adminUser = await db.user.findOne({ where: { email: 'admin@cguard.com' }, attributes: ['id', 'email'] });
     if (!adminUser) {
-      adminUser = await db.user.findOne();
+      adminUser = await db.user.findOne({ attributes: ['id', 'email'] });
     }
 
     // Seed stations if empty

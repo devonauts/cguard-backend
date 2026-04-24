@@ -2,6 +2,8 @@
 class Roles {
   static get values() {
     return {
+      // Super Administrator (above admin)
+      superadmin: 'superadmin',
       // System Administration
       admin: 'admin',
       // Management / Operations
@@ -27,6 +29,7 @@ class Roles {
   static get hierarchy() {
     // Higher numbers = higher authority
     return {
+      superadmin: 110,
       admin: 100,
       operationsManager: 90,
       securitySupervisor: 80,
@@ -41,6 +44,7 @@ class Roles {
 
   static get descriptions() {
     return {
+      superadmin: 'Super Administrator - Highest authority across tenants and system-wide settings',
       admin: 'System Administrator - Full system access',
       operationsManager: 'Operations Manager - Oversees operations and clients',
       securitySupervisor: 'Security Supervisor - Supervises guards and incidents',

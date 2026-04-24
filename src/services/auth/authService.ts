@@ -464,6 +464,13 @@ class AuthService {
             lastName: user.lastName || null,
           };
 
+      // Preserve explicit isSuperadmin flag from fullUser when present
+      try {
+        (safeUser as any).isSuperadmin = (fullUser && fullUser.isSuperadmin) ? true : ((user && (user as any).isSuperadmin) ? true : false);
+      } catch (e) {
+        try { (safeUser as any).isSuperadmin = false; } catch (ee) {}
+      }
+
       // Transform `safeUser.tenants` (array) into single `tenant` object
       try {
         let tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
@@ -472,6 +479,44 @@ class AuthService {
           // keep `tenant` as null so frontend can show a restricted dashboard.
           (safeUser as any).tenant = null;
           delete (safeUser as any).tenants;
+          const finalToken = jwt.sign(
+            { id: user.id },
+            getConfig().AUTH_JWT_SECRET,
+            { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
+          );
+
+          return { token: finalToken, user: safeUser };
+        }
+
+        // If any tenant entry contains `superadmin` role, treat the account
+        // as a global superadmin rather than tenant-scoped. This ensures the
+        // frontend receives a profile without tenant association and with a
+        // top-level `roles` entry containing `superadmin` so UI can grant
+        // platform-wide access.
+        const tenantHasSuperadmin = tenantEntries.some((te: any) => {
+          try {
+            if (!te || !te.roles) return false;
+            const names = Array.isArray(te.roles) ? te.roles.map((r: any) => String(r).toLowerCase()) : [String(te.roles).toLowerCase()];
+            return names.includes('superadmin') || names.includes('super_admin');
+          } catch (e) { return false; }
+        });
+
+        if (tenantHasSuperadmin) {
+          // Promote to global superadmin: remove tenant associations and expose role
+          try { (safeUser as any).tenant = null; } catch (e) {}
+          try { delete (safeUser as any).tenants; } catch (e) {}
+          try {
+            const existingRoles = (safeUser as any).roles ?? [];
+            const normalized = Array.isArray(existingRoles) ? existingRoles.map((r: any) => String(r)) : [String(existingRoles)];
+            if (!normalized.map((r) => r.toLowerCase()).includes('superadmin')) {
+              (safeUser as any).roles = [...normalized, 'superadmin'];
+            } else {
+              (safeUser as any).roles = normalized;
+            }
+          } catch (e) {}
+
+          // Mark explicit superadmin flag so frontend sees it directly
+          try { (safeUser as any).isSuperadmin = true; } catch (e) {}
 
           const finalToken = jwt.sign(
             { id: user.id },

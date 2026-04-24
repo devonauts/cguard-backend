@@ -34,18 +34,22 @@ class TenantRepository {
     );
 
     // If client provides an URL, validate uniqueness and reserved names.
-    // We no longer auto-generate a UUID for `url` — this field should
-    // represent a webpage (or subdomain) provided by the caller.
-    if (data.url) {
+    // If no URL is provided, keep it null to avoid unique-index conflicts
+    // on the default empty-string value.
+    const normalizedUrl = data.url && String(data.url).trim() !== ''
+      ? String(data.url).trim()
+      : null;
+
+    if (normalizedUrl) {
       const existsUrl = Boolean(
         await options.database.tenant.count({
-          where: { url: data.url },
+          where: { url: normalizedUrl },
           transaction,
         }),
       );
 
       if (
-        forbiddenTenantUrls.includes(data.url) ||
+        forbiddenTenantUrls.includes(normalizedUrl) ||
         existsUrl
       ) {
         throw new Error400(
@@ -60,7 +64,6 @@ class TenantRepository {
         ...lodash.pick(data, [
           'id',
           'name',
-          'url',
           'importHash',
           'address',
           'addressLine2',
@@ -79,6 +82,7 @@ class TenantRepository {
           'licenseNumber',
           'timezone',
         ]),
+        url: normalizedUrl,
         createdById: currentUser.id,
         updatedById: currentUser.id,
       },

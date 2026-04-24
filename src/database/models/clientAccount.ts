@@ -131,6 +131,10 @@ export default function (sequelize) {
           len: [0, 255],
         },
       },
+      userId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       categoryIds: {
         type: DataTypes.JSON,
         allowNull: true,
@@ -182,6 +186,12 @@ export default function (sequelize) {
       otherKey: 'tenantUserId',
       as: 'assignedTenantUsers',
       constraints: false,
+    });
+
+    // Link to the User record representing the client (optional)
+    models.clientAccount.belongsTo(models.user, {
+      as: 'user',
+      foreignKey: 'userId',
     });
   };
 

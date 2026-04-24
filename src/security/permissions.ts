@@ -7,14 +7,14 @@ const roles = Roles.values;
 const plans = Plans.values;
 
 // Role groups for easier permission management
-const ADMIN_ROLES = [roles.admin];
+const ADMIN_ROLES = [roles.superadmin, roles.admin];
 const MANAGEMENT_ROLES = [roles.admin, roles.operationsManager];
 const SUPERVISOR_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor];
 const HR_ROLES = [roles.admin, roles.operationsManager, roles.hrManager];
 const CLIENT_MANAGEMENT_ROLES = [roles.admin, roles.operationsManager, roles.clientAccountManager];
 const DISPATCHER_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.dispatcher];
 const GUARD_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.dispatcher, roles.securityGuard];
-const ALL_STAFF_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.clientAccountManager, roles.hrManager, roles.dispatcher, roles.securityGuard];
+const ALL_STAFF_ROLES = [roles.superadmin, roles.admin, roles.operationsManager, roles.securitySupervisor, roles.clientAccountManager, roles.hrManager, roles.dispatcher, roles.securityGuard];
 const ALL_ROLES = [...ALL_STAFF_ROLES, roles.customer, roles.custom];
 
 // Helper function to create permission with all required properties

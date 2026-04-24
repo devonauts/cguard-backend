@@ -3,6 +3,8 @@ import AuditLogRepository from './auditLogRepository';
 import Error404 from '../../errors/Error404';
 import Error400 from '../../errors/Error400';
 import { IRepositoryOptions } from './IRepositoryOptions';
+import UserRepository from './userRepository';
+import VehicleRepository from './vehicleRepository';
 
 class RouteRepository {
   static async create(data: any, options: IRepositoryOptions) {
@@ -218,9 +220,73 @@ class RouteRepository {
 
     const where = { [require('sequelize').Op.and]: whereAnd };
 
-    const { rows, count } = await options.database.route.findAndCountAll({ where, limit: limit ? Number(limit) : undefined, offset: offset ? Number(offset) : undefined, order: orderBy ? [orderBy.split('_')] : [['createdAt', 'DESC']], transaction: SequelizeRepository.getTransaction(options) });
+    const { rows, count } = await options.database.route.findAndCountAll({ where, include: [{ model: options.database.routePoint, as: 'points' }], limit: limit ? Number(limit) : undefined, offset: offset ? Number(offset) : undefined, order: orderBy ? [orderBy.split('_')] : [['createdAt', 'DESC']], transaction: SequelizeRepository.getTransaction(options) });
 
-    return { rows, count };
+    const filledRows = await this._fillWithRelationsAndFilesForRows(rows, options);
+
+    return { rows: filledRows, count };
+  }
+
+  static async _fillWithRelationsAndFilesForRows(rows, options: IRepositoryOptions) {
+    if (!rows) return rows;
+    return Promise.all(rows.map((r) => this._fillWithRelationsAndFiles(r, options)));
+  }
+
+  static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {
+    if (!record) return record;
+    const output = record.get ? record.get({ plain: true }) : record;
+
+    // Resolve assignedGuard if present (fetch user summary)
+    try {
+      if (output.assignedGuard) {
+        // attempt to fetch user details; fall back to original id on failure
+        try {
+          const user = await UserRepository.findById(output.assignedGuard, options);
+          output.assignedGuard = UserRepository.cleanupForRelationships(user);
+        } catch (e) {
+          // leave assignedGuard as-is (id)
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Resolve vehicle if present
+    try {
+      if (output.vehicleId) {
+        try {
+          const vehicle = await VehicleRepository.findById(output.vehicleId, options);
+          output.vehicle = vehicle;
+        } catch (e) {
+          // leave vehicle undefined
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Resolve points' site names when possible
+    try {
+      if (output.points && Array.isArray(output.points)) {
+        const transaction = SequelizeRepository.getTransaction(options);
+        for (const p of output.points) {
+          try {
+            if (p && p.siteId) {
+              const site = await options.database.businessInfo.findByPk(p.siteId, { transaction });
+              if (site) {
+                p.siteName = site.companyName || site.name || null;
+              }
+            }
+          } catch (e) {
+            // ignore per-point failures
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return output;
   }
 
   static async findAllAutocomplete(search, limit, options: IRepositoryOptions) {

@@ -70,15 +70,15 @@ export default (app) => {
     `/tenant/:tenantId/security-guard`,
     require('./securityGuardList').default,
   );
-  app.get(
-    `/tenant/:tenantId/security-guard/:id`,
-    require('./securityGuardFind').default,
-  );
-
   // Active guards with locations (prefer guardShift coords)
   app.get(
     `/tenant/:tenantId/security-guard/active-locations`,
     require('./securityGuardActiveLocations').default,
+  );
+
+  app.get(
+    `/tenant/:tenantId/security-guard/:id`,
+    require('./securityGuardFind').default,
   );
 
   app.get(

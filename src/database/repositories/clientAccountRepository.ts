@@ -52,10 +52,13 @@ class ClientAccountRepository {
 
     const record = await options.database.clientAccount.create(
       {
+        // Allow caller to force the id when needed (e.g., keep same id as user)
+        id: data && data.id ? data.id : undefined,
         ...lodash.pick(data, [
           'name',
           'lastName',
           'email',
+          'userId',
           'personType',
           'documentNumber',
           'phoneNumber',
@@ -131,6 +134,7 @@ class ClientAccountRepository {
       ...lodash.pick(data, [
         'name',
         'lastName',
+        'userId',
         'email',
         'personType',
         'documentNumber',

@@ -22,7 +22,8 @@ export default async (req, res, next) => {
         {
           model: db.securityGuard,
           as: 'guardName',
-          attributes: ['id', 'fullName', 'guardId', 'profileImage', 'isOnDuty'],
+          // Do not request association 'profileImage' as an attribute (it's a relation, not a DB column)
+          attributes: ['id', 'fullName', 'guardId', 'isOnDuty'],
         },
       ],
       order: [['punchInTime', 'DESC']],
@@ -54,7 +55,7 @@ export default async (req, res, next) => {
           [db.Sequelize.Op.notIn]: guardIdsSeen.length ? guardIdsSeen : [null],
         },
       },
-      attributes: ['id', 'fullName', 'guardId', 'profileImage', 'isOnDuty'],
+      attributes: ['id', 'fullName', 'guardId', 'isOnDuty'],
       limit: 1000,
     });
 
