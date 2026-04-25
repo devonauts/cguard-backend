@@ -283,7 +283,8 @@ export default class TenantService {
         transaction,
       });
 
-      await TenantUserRepository.create(
+      console.log('📝 tenantService.create — linking tenant to currentUser id:', this.options && this.options.currentUser && this.options.currentUser.id ? this.options.currentUser.id : 'NO_CURRENT_USER');
+      const createdTenantUser = await TenantUserRepository.create(
         record,
         this.options.currentUser,
         [Roles.values.admin],
@@ -292,6 +293,7 @@ export default class TenantService {
           transaction,
         },
       );
+      console.log('📝 tenantService.create — tenantUser created id:', createdTenantUser && createdTenantUser.id ? createdTenantUser.id : 'NO_TENANT_USER_ID');
 
       await SequelizeRepository.commitTransaction(
         transaction,
