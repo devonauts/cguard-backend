@@ -21,6 +21,9 @@ export default async (req: any, res: any) => {
     )
 
     // payload: { token, user }
+    // Ensure DB reference for additional checks
+    const db = (req && (req as any).database) ? (req as any).database : (req && req.app && req.app.locals && (req.app.locals as any).database) ? (req.app.locals as any).database : undefined;
+
     if (payload && payload.user && payload.user.tenant) {
       const tenantEntry: any = payload.user.tenant;
       const tenantId = tenantEntry.tenantId || (tenantEntry.tenant && tenantEntry.tenant.id) || null;
@@ -79,7 +82,38 @@ export default async (req: any, res: any) => {
 
       // clientAccount lookup moved below so it's executed even if tenant is null
     }
-
+    // If tenant payload is null, ensure the user has at least one tenant entry with `customer` role
+    if (payload && payload.user && !payload.user.tenant) {
+      try {
+        if (db) {
+          const tenantUsers = await db.tenantUser.findAll({ where: { userId: payload.user.id }, attributes: ['roles', 'tenantId'] });
+          let hasCustomer = false;
+          if (Array.isArray(tenantUsers) && tenantUsers.length) {
+            for (const tu of tenantUsers) {
+              try {
+                let roles: any = tu.roles;
+                if (typeof roles === 'string') {
+                  try { roles = JSON.parse(roles); } catch (e) { roles = [roles]; }
+                }
+                if (Array.isArray(roles) && roles.includes(Roles.values.customer)) {
+                  hasCustomer = true;
+                  break;
+                }
+              } catch (e) {
+                // ignore parsing errors
+              }
+            }
+          }
+          if (!hasCustomer) {
+            throw new Error400(req.language, 'auth.roleNotCustomer');
+          }
+        }
+      } catch (e) {
+        // If DB check fails, surface the original DB error or roleNotCustomer
+        if (e instanceof Error400) throw e;
+        console.warn('authSignInCustomer: tenantUser lookup failed', e && (e as any).message ? (e as any).message : e);
+      }
+    }
     // Attach clientAccount id if this user is linked to a clientAccount (always attempt)
     try {
       if (payload && payload.user && payload.user.id) {
