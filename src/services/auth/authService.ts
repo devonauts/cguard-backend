@@ -392,10 +392,35 @@ class AuthService {
       // tenant-user rows directly so signin can return tenant information.
       try {
         if (!fullUser || !Array.isArray(fullUser.tenants) || fullUser.tenants.length === 0) {
-          const tenantUsers = await TenantUserRepository.findByUser(user.id, {
-            ...options,
-            bypassPermissionValidation: true,
-          });
+          // Ensure we pass a valid `database` in options to the repository fallback.
+          // Build a clean fallbackOptions object with an explicit `database` reference
+          const fallbackOptions: any = { bypassPermissionValidation: true };
+          // Prefer options.database (when options is a plain options object)
+          if (options && (options as any).database) {
+            fallbackOptions.database = (options as any).database;
+          }
+          // If options looks like an Express req, prefer req.database
+          if (!fallbackOptions.database && options && (options as any).database === undefined) {
+            try {
+              // options may be the Express `req` itself
+              if (options && (options as any).database) {
+                fallbackOptions.database = (options as any).database;
+              } else if (options && (options as any).req && (options as any).req.database) {
+                fallbackOptions.database = (options as any).req.database;
+              } else if (options && (options as any).app && (options as any).app.locals && (options as any).app.locals.database) {
+                fallbackOptions.database = (options as any).app.locals.database;
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+
+          // Final fallback: if still not found, try req.app.locals.database (if options is req)
+          if (!fallbackOptions.database && options && (options as any).app && (options as any).app.locals && (options as any).app.locals.database) {
+            fallbackOptions.database = (options as any).app.locals.database;
+          }
+
+          const tenantUsers = await TenantUserRepository.findByUser(user.id, fallbackOptions);
 
           if (Array.isArray(tenantUsers) && tenantUsers.length) {
             fullUser = fullUser || {};
@@ -410,6 +435,51 @@ class AuthService {
               assignedPostSites: tu.assignedPostSites || [],
               status: tu.status || null,
             }));
+            // Debug: log tenants loaded during signin to help diagnose missing tenant info
+            try {
+              console.debug('[AuthService] signin loaded tenantUsers for user', user.id, '=>', fullUser.tenants.map((t: any) => ({ tenantId: t.tenantId, tenantPresent: !!t.tenant })));
+            } catch (e) {
+              // ignore logging errors
+            }
+            // If the tenant relation wasn't eagerly loaded, try to fetch it explicitly
+            try {
+              if (Array.isArray(fullUser.tenants) && fallbackOptions && fallbackOptions.database) {
+                for (const tu of fullUser.tenants) {
+                  try {
+                    if ((!tu.tenant || tu.tenant === null) && tu.tenantId) {
+                      // First try the repository (respects normal paranoid behavior)
+                      let fetched = null;
+                      try {
+                        fetched = await TenantRepository.findById(tu.tenantId, { ...fallbackOptions });
+                      } catch (e) {
+                        fetched = null;
+                      }
+
+                      // If repository didn't return a tenant (could be soft-deleted),
+                      // try loading directly from the sequelize model with paranoid:false
+                      if (!fetched && fallbackOptions && fallbackOptions.database && fallbackOptions.database.tenant) {
+                        try {
+                          fetched = await fallbackOptions.database.tenant.findByPk(tu.tenantId, { paranoid: false, include: ['settings'] });
+                        } catch (e) {
+                          fetched = null;
+                        }
+                      }
+
+                      if (fetched) {
+                        tu.tenant = fetched;
+                      }
+                    }
+                  } catch (e) {
+                    // non-fatal per-tenant; continue
+                  }
+                }
+                try {
+                  console.debug('[AuthService] signin post-fetch tenants for user', user.id, '=>', fullUser.tenants.map((t: any) => ({ tenantId: t.tenantId, tenantPresent: !!t.tenant })));
+                } catch (e) {}
+              }
+            } catch (e) {
+              // ignore
+            }
           }
         }
       } catch (e) {
@@ -474,6 +544,19 @@ class AuthService {
       // Transform `safeUser.tenants` (array) into single `tenant` object
       try {
         let tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
+        
+        // Debug: log tenantEntries before transformation
+        try {
+          console.log('[AuthService] signin transformation - tenantEntries count:', tenantEntries.length);
+          console.log('[AuthService] signin transformation - tenantEntries:', tenantEntries.map((te: any) => ({ 
+            tenantId: te.tenantId, 
+            hasTenant: !!te.tenant,
+            roles: te.roles 
+          })));
+        } catch (e) {
+          // ignore
+        }
+        
         if (tenantEntries.length === 0) {
           // No tenant assigned: allow signin but return a token without tenantId and
           // keep `tenant` as null so frontend can show a restricted dashboard.
@@ -546,6 +629,19 @@ class AuthService {
         }
 
         const tenantEntry = tenantEntries[0];
+        
+        // Debug: log what we have in tenantEntry before final transformation
+        try {
+          console.log('[AuthService] signin FINAL tenantEntry for user', user.id, '=>', {
+            tenantId: tenantEntry.tenantId,
+            hasTenant: !!tenantEntry.tenant,
+            tenantValue: tenantEntry.tenant ? { id: tenantEntry.tenant.id, name: tenantEntry.tenant.name } : null,
+            roles: tenantEntry.roles
+          });
+        } catch (e) {
+          console.log('[AuthService] signin FINAL tenantEntry (error logging):', e);
+        }
+        
         const tenantIdForToken = tenantEntry.tenantId || (tenantEntry.tenant && tenantEntry.tenant.id) || null;
 
         // Replace tenants array with single `tenant` key containing the tenant info + roles/permissions

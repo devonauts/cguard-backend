@@ -217,9 +217,40 @@ export default class TenantUserRepository {
       where: {
         userId,
       },
-      include: ['tenant', 'user'],
+      include: [
+        {
+          model: options.database.tenant,
+          as: 'tenant',
+          paranoid: false, // Include soft-deleted tenants
+          required: false,
+        },
+        {
+          model: options.database.user,
+          as: 'user',
+          required: false,
+        },
+      ],
       transaction,
     });
+
+    // Debug: log what we got from the DB
+    try {
+      console.log('[TenantUserRepository] findByUser result for', userId, '=> count:', records.length);
+      if (records.length > 0) {
+        records.forEach((rec: any, idx: number) => {
+          console.log(`[TenantUserRepository] findByUser [${idx}]:`, {
+            id: rec.id,
+            tenantId: rec.tenantId,
+            hasTenant: !!rec.tenant,
+            tenant: rec.tenant ? { id: rec.tenant.id, name: rec.tenant.name, deletedAt: rec.tenant.deletedAt } : null,
+            roles: rec.roles,
+            status: rec.status
+          });
+        });
+      }
+    } catch (e) {
+      console.log('[TenantUserRepository] findByUser logging error:', e);
+    }
 
     return records;
   }
