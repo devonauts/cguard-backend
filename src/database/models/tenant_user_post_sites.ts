@@ -27,16 +27,16 @@ export default function (sequelize) {
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
       },
-      station_id: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-          model: 'stations',
-          key: 'id',
-        },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
-      },
+      // station_id: {
+      //   type: DataTypes.UUID,
+      //   allowNull: true,
+      //   references: {
+      //     model: 'stations',
+      //     key: 'id',
+      //   },
+      //   onUpdate: 'CASCADE',
+      //   onDelete: 'SET NULL',
+      // },
       site_tours: {
         type: DataTypes.JSON,
         allowNull: true,

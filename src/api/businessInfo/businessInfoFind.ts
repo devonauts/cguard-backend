@@ -9,6 +9,10 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import BusinessInfoService from '../../services/businessInfoService';
+import Roles from '../../security/roles';
+import Error403 from '../../errors/Error403';
+import Roles from '../../security/roles';
+import Error403 from '../../errors/Error403';
 
 export default async (req, res, next) => {
   try {
@@ -48,6 +52,44 @@ export default async (req, res, next) => {
         console.error('[businessInfoFind] full error stack:', errAny && errAny.stack ? errAny.stack : errAny);
       } catch (ee) {}
       throw err;
+    }
+
+    // Validate that customer can only access their own postSites
+    const currentUser = req.currentUser;
+    const currentTenant = req.currentTenant;
+
+    if (currentUser && currentTenant && payload) {
+      const tenantForUser = (currentUser.tenants || [])
+        .filter((t) => t.status === 'active')
+        .find((t) => t.tenant && t.tenant.id === currentTenant.id);
+
+      if (tenantForUser) {
+        const userRoles = tenantForUser.roles || [];
+        const isCustomer = userRoles.includes(Roles.values.customer);
+
+        if (isCustomer) {
+          try {
+            const clientAccount = await req.database.clientAccount.findOne({
+              where: {
+                userId: currentUser.id,
+                tenantId: currentTenant.id,
+              },
+              attributes: ['id'],
+            });
+
+            const postSiteClientId = payload.clientAccountId || (payload.clientAccount && payload.clientAccount.id);
+            
+            if (!clientAccount || !clientAccount.id || postSiteClientId !== clientAccount.id) {
+              console.log('[businessInfoFind] Customer attempted to access postSite for different client');
+              throw new Error403(req.language);
+            }
+          } catch (err) {
+            if (err instanceof Error403) throw err;
+            console.error('[businessInfoFind] Error validating customer access:', err);
+            throw new Error403(req.language);
+          }
+        }
+      }
     }
 
     await ApiResponseHandler.success(req, res, payload);

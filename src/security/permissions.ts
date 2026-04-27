@@ -63,7 +63,7 @@ class Permissions {
       bannerSuperiorAppCreate: createPermission('bannerSuperiorAppCreate', MANAGEMENT_ROLES),
       bannerSuperiorAppEdit: createPermission('bannerSuperiorAppEdit', MANAGEMENT_ROLES),
       bannerSuperiorAppDestroy: createPermission('bannerSuperiorAppDestroy', MANAGEMENT_ROLES),
-      bannerSuperiorAppRead: createPermission('bannerSuperiorAppRead', ALL_STAFF_ROLES),
+      bannerSuperiorAppRead: createPermission('bannerSuperiorAppRead', [...ALL_STAFF_ROLES, roles.customer]),
       bannerSuperiorAppAutocomplete: createPermission('bannerSuperiorAppAutocomplete', ALL_STAFF_ROLES),
 
       // === SERVICES ===
@@ -71,7 +71,7 @@ class Permissions {
       serviceCreate: createPermission('serviceCreate', CLIENT_MANAGEMENT_ROLES),
       serviceEdit: createPermission('serviceEdit', CLIENT_MANAGEMENT_ROLES),
       serviceDestroy: createPermission('serviceDestroy', CLIENT_MANAGEMENT_ROLES),
-      serviceRead: createPermission('serviceRead', ALL_STAFF_ROLES),
+      serviceRead: createPermission('serviceRead', [...ALL_STAFF_ROLES, roles.customer]),
       serviceAutocomplete: createPermission('serviceAutocomplete', ALL_STAFF_ROLES),
 
       // === CERTIFICATIONS ===
@@ -96,7 +96,7 @@ class Permissions {
       securityGuardArchive: createPermission('securityGuardArchive', HR_ROLES),
       securityGuardEdit: createPermission('securityGuardEdit', [...SUPERVISOR_ROLES, roles.hrManager]),
       securityGuardDestroy: createPermission('securityGuardDestroy', HR_ROLES),
-      securityGuardRead: createPermission('securityGuardRead', ALL_STAFF_ROLES),
+      securityGuardRead: createPermission('securityGuardRead', [...ALL_STAFF_ROLES, roles.customer]),
       securityGuardAutocomplete: createPermission('securityGuardAutocomplete', ALL_STAFF_ROLES),
 
       // === CLIENT ACCOUNTS ===
@@ -185,7 +185,7 @@ class Permissions {
       guardShiftCreate: createPermission('guardShiftCreate', DISPATCHER_ROLES),
       guardShiftEdit: createPermission('guardShiftEdit', DISPATCHER_ROLES),
       guardShiftDestroy: createPermission('guardShiftDestroy', DISPATCHER_ROLES),
-      guardShiftRead: createPermission('guardShiftRead', ALL_STAFF_ROLES),
+      guardShiftRead: createPermission('guardShiftRead', [...ALL_STAFF_ROLES, roles.customer]),
       guardShiftAutocomplete: createPermission('guardShiftAutocomplete', ALL_STAFF_ROLES),
 
       // === PATROLS ===

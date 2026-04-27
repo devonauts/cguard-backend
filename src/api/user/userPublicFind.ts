@@ -6,12 +6,19 @@ export default async (req, res, next) => {
   try {
     const token = req.query && (req.query.token || req.query.invitationToken || req.query.invite);
     if (!token) {
-      throw new Error('Invalid invitation token');
+      const err = new Error('Token de invitación inválido o expirado');
+      (err as any).code = 400;
+      err.name = 'InvalidInvitationToken';
+      return await ApiResponseHandler.error(req, res, err);
     }
 
     const tenantUser = await TenantUserRepository.findByInvitationToken(token, req);
     if (!tenantUser) {
-      throw new Error('Invalid invitation token');
+      // Token invalid or expired - return a more specific error
+      const err = new Error('Token de invitación inválido o expirado');
+      err.name = 'InvalidInvitationToken';
+      (err as any).code = 400;
+      return await ApiResponseHandler.error(req, res, err);
     }
 
     const user = await UserRepository.findById(tenantUser.userId, {
@@ -23,16 +30,11 @@ export default async (req, res, next) => {
       throw new Error('Invalid invitation token');
     }
 
-    if (token && !user.emailVerified) {
-      try {
-        await UserRepository.markEmailVerified(user.id, {
-          ...req,
-          bypassPermissionValidation: true,
-        });
-      } catch (markErr) {
-        console.warn('Failed to mark invited user email verified:', markErr && (markErr as any).message ? (markErr as any).message : markErr);
-      }
-    }
+    // IMPORTANT: Do NOT mark email as verified here during the GET request.
+    // Marking email verified will invalidate the invitation token before
+    // the user completes registration. Email verification should only happen
+    // when the user submits their password (signup/POST).
+    // The invitation token must remain valid until form submission.
 
     const payload: any = {
       invitationToken: tenantUser.invitationToken || null,
@@ -44,6 +46,7 @@ export default async (req, res, next) => {
         user.fullName ||
         [user.firstName, user.lastName].filter(Boolean).join(' ') ||
         null,
+      roles: tenantUser.roles || [],
     };
 
     await ApiResponseHandler.success(req, res, payload);

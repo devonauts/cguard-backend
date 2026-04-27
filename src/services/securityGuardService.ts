@@ -60,10 +60,15 @@ export default class SecurityGuardService {
             const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
             if (tenantId) {
               console.log('🔧 [SecurityGuardService.update] ensuring tenantUser for guard in transaction', originalGuard, 'tenant', tenantId);
+              // Ensure securityGuard role is always included
+              let rolesToEnsure = Array.isArray(data.roles) ? [...data.roles] : (data.roles ? [data.roles] : []);
+              if (!rolesToEnsure.includes(Roles.values.securityGuard)) {
+                rolesToEnsure.push(Roles.values.securityGuard);
+              }
               await TenantUserRepository.updateRoles(
                 tenantId,
                 originalGuard,
-                data.roles || [],
+                rolesToEnsure,
                 { ...this.options, transaction, addRoles: true },
                 data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
                 data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
@@ -89,10 +94,15 @@ export default class SecurityGuardService {
           const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
           if (tenantId) {
             console.log('🔧 [SecurityGuardService.create] ensuring tenantUser for guard in transaction', originalGuardProvided, 'tenant', tenantId);
+            // Ensure securityGuard role is always included
+            let rolesToEnsure = Array.isArray(data.roles) ? [...data.roles] : (data.roles ? [data.roles] : []);
+            if (!rolesToEnsure.includes(Roles.values.securityGuard)) {
+              rolesToEnsure.push(Roles.values.securityGuard);
+            }
             await TenantUserRepository.updateRoles(
               tenantId,
               originalGuardProvided,
-              data.roles || [],
+              rolesToEnsure,
               { ...this.options, transaction, addRoles: true },
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
@@ -111,9 +121,13 @@ export default class SecurityGuardService {
           const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
           const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
           if (tenantId) {
-            const rolesToAdd = Array.isArray(data.roles)
+            let rolesToAdd = Array.isArray(data.roles)
               ? [...new Set(data.roles)]
               : (data.roles ? [data.roles] : []);
+            // Ensure securityGuard role is always included
+            if (!rolesToAdd.includes(Roles.values.securityGuard)) {
+              rolesToAdd.push(Roles.values.securityGuard);
+            }
             // Pass through client/postSite assignments when ensuring tenantUser roles
             await TenantUserRepository.updateRoles(
               tenantId,
@@ -196,9 +210,14 @@ export default class SecurityGuardService {
           if (!tenantId) {
             console.warn('⚠️ [SecurityGuardService.create] no current tenant found in options; cannot create tenantUser automatically');
           } else {
-            const rolesToAdd = Array.isArray(data.roles)
+            // Ensure securityGuard role is always included when creating a guard
+            let rolesToAdd = Array.isArray(data.roles)
               ? [...new Set(data.roles)]
               : (data.roles ? [data.roles] : []);
+            if (!rolesToAdd.includes(Roles.values.securityGuard)) {
+              rolesToAdd.push(Roles.values.securityGuard);
+              console.log('🔔 [SecurityGuardService.create] added securityGuard role to ensure invitation token generation');
+            }
             // When creating tenantUser for imported guard, also persist client/postSite assignments
             await TenantUserRepository.updateRoles(
               tenantId,
@@ -301,37 +320,9 @@ export default class SecurityGuardService {
             } catch (e) {
               console.warn('⚠️ [SecurityGuardService.create] failed to mark email verified for new user id', user.id, e && (e as any).message ? (e as any).message : e);
             }
-          } else if (data.sendVerificationEmails) {
-            // For manual creates (not invitation completion) where frontend explicitly
-            // requested verification emails, generate token and send verification email.
-            try {
-              const token = await UserRepository.generateEmailVerificationToken(
-                user.email,
-                { ...this.options, transaction, bypassPermissionValidation: true },
-              );
-
-              const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
-              const link = `${tenantSubdomain.frontendUrl(currentTenant)}/auth/verify-email?token=${token}`;
-              const templateId = EmailSender.TEMPLATES && EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION ? EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION : null;
-              try {
-                const vars: any = {
-                  link,
-                  tenant: currentTenant,
-                  guard: {
-                    firstName: data.firstName || (user && user.firstName) || null,
-                    lastName: data.lastName || (user && user.lastName) || null,
-                    email: user && user.email,
-                  },
-                };
-                await new EmailSender(templateId, vars).sendTo(user.email);
-                console.log('🔔 [SecurityGuardService.create] sent verification email for user', user.email);
-              } catch (sendErr) {
-                console.warn('⚠️ [SecurityGuardService.create] failed to send verification email for user', user.email, sendErr && (sendErr as any).message ? (sendErr as any).message : sendErr);
-              }
-            } catch (tokenErr) {
-              console.warn('⚠️ [SecurityGuardService.create] failed to generate verification token for user', user.email, tokenErr && (tokenErr as any).message ? (tokenErr as any).message : tokenErr);
-            }
           }
+          // Note: Email invitations are sent AFTER transaction commit (below)
+          // to avoid token not being persisted. No verification emails are sent here.
         }
       }
 
@@ -423,11 +414,16 @@ export default class SecurityGuardService {
           const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
           const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
           if (tenantId) {
+            // Ensure securityGuard role is always included
+            let rolesToUpdate = Array.isArray(data.roles) ? [...data.roles] : (data.roles ? [data.roles] : []);
+            if (!rolesToUpdate.includes(Roles.values.securityGuard)) {
+              rolesToUpdate.push(Roles.values.securityGuard);
+            }
             // Update pivot tables with the securityGuardId
             await TenantUserRepository.updateRoles(
               tenantId,
               data.guard,
-              data.roles || [],
+              rolesToUpdate,
               { ...this.options, transaction, addRoles: true },
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
@@ -443,6 +439,73 @@ export default class SecurityGuardService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // After transaction commit, send invitation email for "create profile" flow
+      // This must be AFTER commit to ensure the invitation token is persisted and available
+      try {
+        const hasInvitationToken = !!(data._invitationToken || data.token || data.invitationToken);
+        
+        // If no invitation token in payload, this is admin creating profile (not guard completing registration)
+        if (!hasInvitationToken && data.guard && record && record.id) {
+          const guardUser = await UserRepository.findById(data.guard, { ...this.options, bypassPermissionValidation: true });
+          const guardEmail = guardUser && guardUser.email;
+          const isRealEmail = guardEmail && !String(guardEmail).endsWith('@phone.local');
+
+          if (isRealEmail) {
+            const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+            const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
+            
+            if (tenantId) {
+              // Fetch tenantUser AFTER commit to ensure all changes are persisted
+              let tenantUser = await TenantUserRepository.findByTenantAndUser(tenantId, data.guard, this.options);
+              
+              if (tenantUser) {
+                // Ensure invitation token exists (similar to securityGuardInvite.ts resend logic)
+                if (!tenantUser.invitationToken) {
+                  tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
+                  tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+                  await TenantUserRepository.saveTenantUser(tenantUser, this.options);
+                  console.log('[SecurityGuardService.create] generated invitationToken after commit', { tenantUserId: tenantUser.id, guardId: data.guard, token: tenantUser.invitationToken });
+                } else {
+                  console.log('[SecurityGuardService.create] invitationToken already exists', { tenantUserId: tenantUser.id, token: tenantUser.invitationToken });
+                }
+
+                // Build invitation link
+                const link = `${tenantSubdomain.frontendUrl(currentTenant)}/auth/invitation?token=${encodeURIComponent(tenantUser.invitationToken)}&securityGuardId=${encodeURIComponent(String(record.id))}&inviteType=guard`;
+
+                // Send invitation email
+                try {
+                  await new EmailSender(
+                    EmailSender.TEMPLATES.INVITATION,
+                    {
+                      tenant: currentTenant || null,
+                      link,
+                      invitationLink: link,
+                      inviteLink: link,
+                      registrationLink: link,
+                      guard: {
+                        id: guardUser.id,
+                        firstName: guardUser.firstName || data.firstName || null,
+                        lastName: guardUser.lastName || data.lastName || null,
+                        email: guardUser.email,
+                      },
+                      invitation: true,
+                    },
+                  ).sendTo(guardEmail);
+                  console.log('[SecurityGuardService.create] sent invitation email to', guardEmail, 'for guard to complete registration');
+                } catch (emailErr) {
+                  console.warn('[SecurityGuardService.create] failed to send invitation email', emailErr && (emailErr as any).message ? (emailErr as any).message : emailErr);
+                }
+              } else {
+                console.warn('[SecurityGuardService.create] tenantUser not found after commit for guard', data.guard);
+              }
+            }
+          }
+        }
+      } catch (inviteEmailErr) {
+        console.warn('[SecurityGuardService.create] post-commit invitation email step failed', inviteEmailErr && (inviteEmailErr as any).message ? (inviteEmailErr as any).message : inviteEmailErr);
+        // Don't fail the create operation if email sending fails
+      }
 
       return record;
     } catch (error) {
@@ -488,10 +551,15 @@ export default class SecurityGuardService {
         const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
         const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
         if (tenantId && data.guard && id) {
+          // Ensure securityGuard role is always included
+          let rolesToUpdate = Array.isArray(data.roles) ? [...data.roles] : (data.roles ? [data.roles] : []);
+          if (!rolesToUpdate.includes(Roles.values.securityGuard)) {
+            rolesToUpdate.push(Roles.values.securityGuard);
+          }
           await TenantUserRepository.updateRoles(
             tenantId,
             data.guard,
-            data.roles || [],
+            rolesToUpdate,
             { ...this.options, transaction, addRoles: true },
             data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
             data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
@@ -554,10 +622,15 @@ export default class SecurityGuardService {
           // Only update pivots when client/postSite ids are explicitly provided
           if (Object.prototype.hasOwnProperty.call(data, 'clientIds') || Object.prototype.hasOwnProperty.call(data, 'clientId') ||
               Object.prototype.hasOwnProperty.call(data, 'postSiteIds') || Object.prototype.hasOwnProperty.call(data, 'postSiteId')) {
+            // Ensure securityGuard role is always included
+            let rolesToUpdate = Array.isArray(data.roles) ? [...data.roles] : (data.roles ? [data.roles] : []);
+            if (!rolesToUpdate.includes(Roles.values.securityGuard)) {
+              rolesToUpdate.push(Roles.values.securityGuard);
+            }
             await TenantUserRepository.updateRoles(
               tenantId,
               data.guard,
-              data.roles || [],
+              rolesToUpdate,
               { ...this.options, transaction, addRoles: true },
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),

@@ -330,6 +330,9 @@ export default class UserCreator {
         ...this.options,
         addRoles: true,
         transaction: tx,
+        // When creating invites, ensure the tenantUser remains in 'pending'
+        // status until the invited user completes the registration form.
+        forcePendingStatus: true,
       },
       clientIds,
       postSiteIds,
@@ -378,8 +381,23 @@ export default class UserCreator {
     for (const emailToInvite of this.emailsToInvite) {
       // Detect if el usuario es cliente (rol customer)
       const isCustomer = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.customer)) || this.data.role === Roles.values.customer;
-      const invitationPath = isCustomer ? '/client/registration' : '/auth/invitation';
-      const inviteType = isCustomer ? 'client' : 'guard';
+      // Detect if el usuario es supervisor o staff administrativo (no guardia)
+      const isSecurityGuard = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.securityGuard)) || this.data.role === Roles.values.securityGuard;
+      const isStaffNonGuard = !isCustomer && !isSecurityGuard; // supervisor, admin, etc.
+      
+      // Determinar el path y tipo de invitación
+      let invitationPath = '/auth/invitation';
+      let inviteType = 'guard';
+      
+      if (isCustomer) {
+        invitationPath = '/client/registration';
+        inviteType = 'client';
+      } else if (isStaffNonGuard) {
+        // Supervisores y otros roles de staff usan el mismo flujo simplificado que clientes
+        invitationPath = '/client/registration';
+        inviteType = 'staff';
+      }
+      
       if (!emailToInvite.token) {
         console.warn('userCreator: skipping invitation email because no token was generated', { email: emailToInvite.email, inviteType });
         results.push({ error: 'Missing invitation token' });
@@ -399,8 +417,11 @@ export default class UserCreator {
       }
 
       try {
-        // Detect if the user a cliente (rol customer)
+        // Detect if the user is cliente (rol customer), supervisor, or guard
         const isCustomer = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.customer)) || this.data.role === Roles.values.customer;
+        const isSecurityGuard = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.securityGuard)) || this.data.role === Roles.values.securityGuard;
+        const isStaffNonGuard = !isCustomer && !isSecurityGuard;
+        
         const templateVars = {
           tenant: this.options.currentTenant,
           link,
@@ -411,8 +432,8 @@ export default class UserCreator {
           firstName: this.data.firstName || this.data.nombre || undefined,
           lastName: this.data.lastName || this.data.apellido || undefined,
           email: emailToInvite.email,
-          // Forza el template de cliente si es customer
-          ...(isCustomer ? { type: 'client-invitation' } : {}),
+          // Use client template for customers and staff (supervisors, admins, etc.)
+          ...(isCustomer || isStaffNonGuard ? { type: 'client-invitation' } : {}),
         };
         const sender = new EmailSender(
           EmailSender.TEMPLATES.INVITATION,

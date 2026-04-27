@@ -16,7 +16,6 @@ async function seedAdmin() {
     const adminEmail = 'demo1@cguardpro.com';
     const adminPassword = 'Admindemo1234@'; // Cambia esta contraseña después de crear el usuario
 
-
     // Verifica si ya existe un usuario admin
     const existing = await db.user.findOne({ where: { email: adminEmail }, attributes: ['id', 'email'] });
     if (existing) {

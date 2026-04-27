@@ -31,7 +31,7 @@ export default async (req, res, next) => {
     }
 
     // Detect simple resend requests: payloads that only include guard/contact and optional names
-    const minimalResendKeys = ['guard', 'contact', 'firstName', 'lastName', 'isDraft'];
+    const minimalResendKeys = ['guard', 'contact', 'firstName', 'lastName', 'isDraft', 'securityGuardId'];
     const incomingKeys = Object.keys(incoming || {});
     const otherKeys = incomingKeys.filter((k) => !minimalResendKeys.includes(k));
     const isResendOnly = (incoming && (incoming.guard || incoming.contact) && otherKeys.length === 0);
@@ -93,7 +93,7 @@ export default async (req, res, next) => {
         }
 
         if (!tenantUser && invitedUserId) {
-          const updated = await TenantUserRepository.updateRoles(req.params.tenantId, invitedUserId, [Roles.values.securityGuard], req);
+          const updated = await TenantUserRepository.updateRoles(req.params.tenantId, invitedUserId, [Roles.values.securityGuard], { ...req, forcePendingStatus: true });
           if (updated) {
             tenantUser = await TenantUserRepository.findByTenantAndUser(req.params.tenantId, invitedUserId, req);
           }
@@ -129,14 +129,37 @@ export default async (req, res, next) => {
           }
 
         // Try to find associated securityGuard record to include securityGuardId in link
-        let securityGuardId = null;
-        try {
-          const sg = await SecurityGuardRepository.findAndCountAll({ filter: { guard: invitedUserId }, limit: 1, offset: 0 }, req);
-          if (sg && sg.rows && sg.rows.length) {
-            securityGuardId = sg.rows[0].id;
+        let securityGuardId = incoming.securityGuardId || null;
+        
+        // If not provided in payload, try to find it by guardId
+        if (!securityGuardId && invitedUserId) {
+          try {
+            const sg = await SecurityGuardRepository.findAndCountAll({ filter: { guard: invitedUserId }, limit: 1, offset: 0 }, req);
+            if (sg && sg.rows && sg.rows.length) {
+              securityGuardId = sg.rows[0].id;
+            }
+          } catch (e) {
+            // ignore
           }
-        } catch (e) {
-          // ignore
+        }
+
+        // If no securityGuard record exists, create a draft one so the invitation has a valid securityGuardId
+        if (!securityGuardId && invitedUserId) {
+          try {
+            console.log('[securityGuardInvite.resend] No securityGuard found, creating draft record for user', invitedUserId);
+            const draftGuard = await new SecurityGuardService(req).create({
+              guard: invitedUserId,
+              isDraft: true,
+              firstName: incoming.firstName || null,
+              lastName: incoming.lastName || null,
+            });
+            if (draftGuard && draftGuard.id) {
+              securityGuardId = draftGuard.id;
+              console.log('[securityGuardInvite.resend] Created draft securityGuard with id', securityGuardId);
+            }
+          } catch (createErr) {
+            console.warn('[securityGuardInvite.resend] Failed to create draft securityGuard:', createErr && (createErr as any).message ? (createErr as any).message : createErr);
+          }
         }
 
         const link = `${tenantSubdomain.frontendUrl(tenant)}/auth/invitation?token=${encodeURIComponent((tenantUser as any).invitationToken)}&securityGuardId=${encodeURIComponent(String(securityGuardId || ''))}&inviteType=guard`;
@@ -244,12 +267,12 @@ export default async (req, res, next) => {
         // Ensure there's a tenantUser record for this invited user so that
         // downstream calls that call UserRepository.filterIdInTenant
         // will succeed and the securityGuard record can be created.
-        try {
+          try {
           await TenantUserRepository.updateRoles(
             req.params.tenantId,
             invitedUser.id,
             [Roles.values.securityGuard],
-            req,
+            { ...req, forcePendingStatus: true },
           );
         } catch (e) {
           console.warn('Failed to ensure tenantUser for invited email user:', invitedUser && invitedUser.id, e && (e as any).message ? (e as any).message : e);
@@ -281,7 +304,7 @@ export default async (req, res, next) => {
             req.params.tenantId,
             invitedUser.id,
             [Roles.values.securityGuard],
-            req,
+            { ...req, forcePendingStatus: true },
           );
         } catch (e) {
           // ignore - updateRoles will throw only in unexpected cases
@@ -312,12 +335,19 @@ export default async (req, res, next) => {
     // Get invitation token for the invited user (if any)
     let invitationToken = null;
     try {
-      const tenantUser = await TenantUserRepository.findByTenantAndUser(
+      let tenantUser = await TenantUserRepository.findByTenantAndUser(
         req.params.tenantId,
         invitedUser ? invitedUser.id : incoming.guard,
         req,
       );
       if (tenantUser) {
+        // Ensure the tenantUser has an invitation token for the email link
+        if (!tenantUser.invitationToken) {
+          tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
+          tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+          await TenantUserRepository.saveTenantUser(tenantUser, req);
+          console.debug('[securityGuardInvite.create] generated invitationToken', { tenantUserId: tenantUser.id, invitationToken: tenantUser.invitationToken });
+        }
         invitationToken = tenantUser.invitationToken;
       }
     } catch (e) {

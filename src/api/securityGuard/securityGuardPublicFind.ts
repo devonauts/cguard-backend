@@ -17,35 +17,57 @@ export default async (req, res, next) => {
     const db = req.database || (req.app && req.app.locals && req.app.locals.database);
 
     if (token) {
-      tenantUser = await TenantUserRepository.findByInvitationToken(
-        token,
-        req,
-      );
+      console.log('[securityGuardPublicFind] token received:', token);
+      try {
+        tenantUser = await TenantUserRepository.findByInvitationToken(
+          token,
+          req,
+        );
 
-      console.log('tenantUser found:', !!tenantUser);
+        console.log('[securityGuardPublicFind] tenantUser found:', !!tenantUser);
 
-      if (!tenantUser) {
-        // continue to fallback to securityGuardId if provided
+        if (!tenantUser) {
+          console.log('[securityGuardPublicFind] No tenantUser found for token, will try securityGuardId fallback');
+          // continue to fallback to securityGuardId if provided
+          // Do NOT throw error here - allow fallback to securityGuardId
+        } else {
+          tenant = tenantUser.tenant;
+          const user = tenantUser.user;
+
+          console.log('[securityGuardPublicFind] tenantUser details:', {
+            hasTenant: !!tenant,
+            hasUser: !!user,
+            userId: user ? user.id : null,
+            tenantId: tenant ? tenant.id : null
+          });
+
+          if (!tenant) {
+            console.warn('[securityGuardPublicFind] tenantUser exists but tenant is null');
+            throw new Error('Invalid tenant for invitation');
+          }
+
+          if (!user) {
+            console.warn('[securityGuardPublicFind] tenantUser exists but user is null');
+            throw new Error('Invalid user for invitation');
+          }
+
+          // Find draft security guard for this invited user
+          record = await db.securityGuard.findOne({
+            where: {
+              guardId: user.id,
+              tenantId: tenant.id,
+            },
+          });
+
+          console.log('[securityGuardPublicFind] securityGuard record found by guardId:', !!record);
+        }
+      } catch (err) {
+        console.error('[securityGuardPublicFind] Error finding tenantUser by token:', err && (err as any).message ? (err as any).message : err);
+        if (err && (err as any).stack) console.error((err as any).stack);
+        // If error finding tenantUser, try fallback to securityGuardId
         if (!securityGuardId) {
-          throw new Error('Invalid invitation token');
+          throw err;
         }
-      } else {
-        tenant = tenantUser.tenant;
-        const user = tenantUser.user;
-
-        if (!tenant) {
-          throw new Error('Invalid tenant for invitation');
-        }
-
-        // Find draft security guard for this invited user
-        record = await db.securityGuard.findOne({
-          where: {
-            guardId: user.id,
-            tenantId: tenant.id,
-          },
-        });
-
-        console.log('securityGuard record found by guardId:', !!record);
       }
     }
 
@@ -88,10 +110,30 @@ export default async (req, res, next) => {
     }
 
     if (!record) {
-      throw new Error('No security guard draft found for this invitation or id');
+      console.warn('[securityGuardPublicFind] No security guard record found', {
+        hasToken: !!token,
+        hasSecurityGuardId: !!securityGuardId,
+        hasTenantUser: !!tenantUser
+      });
+      
+      // Return a more specific error message
+      if (token && !tenantUser && !securityGuardId) {
+        const err = new Error('Token de invitación inválido o expirado. Por favor solicita una nueva invitación.');
+        err.name = 'InvalidInvitationToken';
+        // Mark as client error so ApiResponseHandler returns 400 instead of 500
+        (err as any).code = 400;
+        return await ApiResponseHandler.error(req, res, err);
+      }
+      
+      throw new Error('No se encontró un registro de guardia para esta invitación o ID');
     }
+    
     // Si el guardia ya existe y no es borrador, enviar error especial
     if (record && record.governmentId && record.governmentId !== 'PENDING') {
+      console.log('[securityGuardPublicFind] Guard already fully created', {
+        guardId: record.id,
+        governmentId: record.governmentId
+      });
       const err = new Error('El usuario ya fue creado y no puede ser modificado nuevamente.');
       err.name = 'GuardAlreadyCreated';
       return await ApiResponseHandler.error(req, res, err);
@@ -113,34 +155,14 @@ export default async (req, res, next) => {
     // Merge user important fields. Do NOT generate an email verification token
     // during the public invitation fetch — generating the token here causes it
     // to be persisted prematurely and may trigger a verification email.
+    // IMPORTANT: Do NOT mark email as verified here either, as that will invalidate
+    // the invitation token before the guard completes the registration form.
+    // Email verification should only happen when the guard submits the form (POST).
     try {
       const guardUser = await options.database.user.findByPk(record.guardId);
         if (guardUser) {
-        // If an invitation token was provided in the query, mark the user's
-        // email as verified now (user clicked the invitation link). Do NOT
-        // accept the tenant invitation here — that will be done when the
-        // guard completes the registration form and submits the password.
-        try {
-          if (token && !guardUser.emailVerified) {
-            try {
-              await (UserRepository as any).markEmailVerified(guardUser.id, {
-                currentTenant: tenant || null,
-                currentUser: null,
-                language: req.language,
-                database: db,
-                bypassPermissionValidation: true,
-              });
-              console.log('🔔 [securityGuardPublicFind] marked email verified for user id', guardUser.id);
-              // reflect in payload
-              guardUser.emailVerified = true;
-            } catch (markErr) {
-              console.warn('⚠️ [securityGuardPublicFind] failed to mark email verified:', markErr && (markErr as any).message ? (markErr as any).message : markErr);
-            }
-          }
-        } catch (e) {
-          // non-fatal
-        }
-
+        // Just load the user info without modifying any verification status
+        // The invitation token must remain valid until form submission
         payload.guard = {
           id: guardUser.id,
           firstName: guardUser.firstName || null,
@@ -148,6 +170,7 @@ export default async (req, res, next) => {
           email: guardUser.email,
           phoneNumber: guardUser.phoneNumber || null,
           emailVerificationToken: null,
+          emailVerified: guardUser.emailVerified || false,
         };
       }
     } catch (err) {

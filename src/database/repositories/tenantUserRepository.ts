@@ -62,17 +62,41 @@ export default class TenantUserRepository {
 
     // Only return the tenantUser if the token exists and is not expired (or has no expiry)
     const now = new Date();
-    return await options.database.tenantUser.findOne({
-      where: {
-        invitationToken,
-        [Op.or]: [
-          { invitationTokenExpiresAt: null },
-          { invitationTokenExpiresAt: { [Op.gt]: now } },
-        ],
-      },
-      include: ['tenant', 'user'],
-      transaction,
-    });
+    console.log('[TenantUserRepository] findByInvitationToken - token:', invitationToken, 'now:', now.toISOString());
+    try {
+      const result = await options.database.tenantUser.findOne({
+        where: {
+          invitationToken,
+          [Op.or]: [
+            { invitationTokenExpiresAt: null },
+            { invitationTokenExpiresAt: { [Op.gt]: now } },
+          ],
+        },
+        include: ['tenant', 'user'],
+        transaction,
+      });
+      if (result) {
+        try {
+          console.log('[TenantUserRepository] findByInvitationToken - found tenantUser:', {
+            id: result.id,
+            tenantId: result.tenantId,
+            userId: result.userId,
+            invitationToken: result.invitationToken,
+            invitationTokenExpiresAt: result.invitationTokenExpiresAt,
+            status: result.status,
+            roles: result.roles,
+          });
+        } catch (e) {
+          console.log('[TenantUserRepository] findByInvitationToken - found tenantUser (logging failed)', e);
+        }
+      } else {
+        console.log('[TenantUserRepository] findByInvitationToken - no tenantUser found for token');
+      }
+      return result;
+    } catch (err) {
+      console.error('[TenantUserRepository] findByInvitationToken - DB error:', err && err.message ? err.message : err);
+      throw err;
+    }
   }
 
   static async create(
@@ -541,12 +565,25 @@ export default class TenantUserRepository {
       } catch (e) {
         console.warn('tenantUserRepository.updateRoles: email dedupe lookup failed', e && (e as any).message ? (e as any).message : e);
       }
-      // Decide initial status based on whether the user already verified their email.
-      // Use the mapped incoming slugs (if any) so that created tenant_user
-      // gets the intended roles instead of an empty array.
-      const initialStatus = user && user.emailVerified
-        ? selectStatus('active', incomingSlugs || [])
-        : selectStatus('invited', incomingSlugs || []);
+      // Decide initial status. For invitation flows we may want to force
+      // the 'invited' status even if the user already verified their email.
+      // Callers can request this behavior by passing `options.forceInvitedStatus = true`.
+      const optsAny: any = options || {};
+      const forcePending = optsAny.forcePendingStatus;
+      const forceInvited = optsAny.forceInvitedStatus;
+
+      let initialStatus;
+      if (forcePending) {
+        // Explicitly mark as 'pending' for invitation flows that should not
+        // mark the user active until they complete registration.
+        initialStatus = 'pending';
+      } else if (forceInvited) {
+        initialStatus = selectStatus('invited', incomingSlugs || []);
+      } else {
+        initialStatus = user && user.emailVerified
+          ? selectStatus('active', incomingSlugs || [])
+          : selectStatus('invited', incomingSlugs || []);
+      }
 
       // Only generate an invitation token if the initial status for the tenantUser is 'invited'
       const invitationToken = initialStatus === 'invited' ? crypto.randomBytes(20).toString('hex') : null;
@@ -812,16 +849,32 @@ export default class TenantUserRepository {
         // Insert missing pivot rows for post sites manually with generated UUIDs
         const toInsertPostIds = (mergedPosts || []).filter((pid) => !existingPostIds.includes(pid));
         if (toInsertPostIds.length) {
+          // Check if station_id column exists in the table
+          let hasStationColumn = false;
+          try {
+            const desc = await options.database.sequelize.getQueryInterface().describeTable('tenant_user_post_sites');
+            hasStationColumn = !!desc && Object.prototype.hasOwnProperty.call(desc, 'station_id');
+          } catch (e) {
+            // Column doesn't exist, skip it
+            hasStationColumn = false;
+          }
+
           const now = new Date();
-          const rows = toInsertPostIds.map((postId) => ({
-            id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
-            tenantUserId: tenantUser.id,
-            businessInfoId: postId,
-            security_guard_id: securityGuardId || null,
-            station_id: stationMap[postId] || null,
-            createdAt: now,
-            updatedAt: now,
-          }));
+          const rows = toInsertPostIds.map((postId) => {
+            const row: any = {
+              id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : crypto.randomBytes(16).toString('hex'),
+              tenantUserId: tenantUser.id,
+              businessInfoId: postId,
+              security_guard_id: securityGuardId || null,
+              createdAt: now,
+              updatedAt: now,
+            };
+            // Only include station_id if the column exists
+            if (hasStationColumn) {
+              row.station_id = stationMap[postId] || null;
+            }
+            return row;
+          });
 
           try {
             console.debug('tenantUser assignment - inserting pivot rows (posts)', { rows });

@@ -10,6 +10,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import BusinessInfoService from '../../services/businessInfoService';
 import ClientAccountService from '../../services/clientAccountService';
+import Roles from '../../security/roles';
 
 export default async (req, res, next) => {
   try {
@@ -17,9 +18,59 @@ export default async (req, res, next) => {
       Permissions.values.businessInfoRead,
     );
 
+    // Auto-filter by clientAccount for customer role
+    const currentUser = req.currentUser;
+    const currentTenant = req.currentTenant;
+    let query = { ...req.query };
+
+    if (currentUser && currentTenant) {
+      const tenantForUser = (currentUser.tenants || [])
+        .filter((t) => t.status === 'active')
+        .find((t) => t.tenant && t.tenant.id === currentTenant.id);
+
+      if (tenantForUser) {
+        const userRoles = tenantForUser.roles || [];
+        const isCustomer = userRoles.includes(Roles.values.customer);
+
+        if (isCustomer) {
+          // Find the clientAccount associated with this user
+          try {
+            const clientAccount = await req.database.clientAccount.findOne({
+              where: {
+                userId: currentUser.id,
+                tenantId: currentTenant.id,
+              },
+              attributes: ['id'],
+            });
+
+            if (clientAccount && clientAccount.id) {
+              // Apply clientAccountId filter
+              query = {
+                ...query,
+                filter: {
+                  ...(query.filter || {}),
+                  clientAccountId: clientAccount.id,
+                },
+              };
+              console.log(`[businessInfoList] Auto-filtering for customer - clientAccountId: ${clientAccount.id}`);
+            } else {
+              // Customer has no associated clientAccount - return empty result
+              console.log('[businessInfoList] Customer has no associated clientAccount - returning empty result');
+              await ApiResponseHandler.success(req, res, { rows: [], count: 0 });
+              return;
+            }
+          } catch (err) {
+            console.error('[businessInfoList] Error finding clientAccount for customer:', err);
+            await ApiResponseHandler.success(req, res, { rows: [], count: 0 });
+            return;
+          }
+        }
+      }
+    }
+
     const payload = await new BusinessInfoService(
       req,
-    ).findAndCountAll(req.query);
+    ).findAndCountAll(query);
 
     // Attach client account name (name + lastName) when clientAccountId present
     try {

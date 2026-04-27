@@ -493,6 +493,21 @@ class GuardShiftRepository {
           });
         }
       }
+
+      if (filter.postSiteId) {
+        // Support single id or array of ids
+        if (Array.isArray(filter.postSiteId)) {
+          whereAnd.push({
+            postSiteId: {
+              [Op.in]: filter.postSiteId.map((id) => SequelizeFilterUtils.uuid(id)),
+            },
+          });
+        } else {
+          whereAnd.push({
+            postSiteId: SequelizeFilterUtils.uuid(filter.postSiteId),
+          });
+        }
+      }
     }
 
     const where = { [Op.and]: whereAnd };

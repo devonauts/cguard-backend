@@ -83,6 +83,15 @@ export default class ShiftService {
         }
 
         if (tenantUserId && postSiteId) {
+          // Check if station_id column exists
+          let hasStationColumn = false;
+          try {
+            const desc = await sequelize.getQueryInterface().describeTable('tenant_user_post_sites');
+            hasStationColumn = !!desc && Object.prototype.hasOwnProperty.call(desc, 'station_id');
+          } catch (e) {
+            hasStationColumn = false;
+          }
+
           // Check existing assignment
           const existing = await sequelize.query(
             `SELECT id FROM tenant_user_post_sites WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId LIMIT 1`,
@@ -93,9 +102,8 @@ export default class ShiftService {
 
           if (existing && existing.length > 0) {
             // update
-            const updateData = {
+            const updateData: any = {
               security_guard_id: resolvedSecurityGuardId || null,
-              station_id: data.station || data.stationId || null,
               site_tours: normalizeJsonField(data.siteTours || data.site_tours),
               tasks: normalizeJsonField(data.tasks),
               post_orders: normalizeJsonField(data.postOrders || data.post_orders),
@@ -105,8 +113,13 @@ export default class ShiftService {
               updatedAt: now,
             };
 
+            if (hasStationColumn) {
+              updateData.station_id = data.station || data.stationId || null;
+            }
+
+            const updateFields = Object.keys(updateData).map(key => `${key} = :${key}`).join(', ');
             await sequelize.query(
-              `UPDATE tenant_user_post_sites SET security_guard_id = :security_guard_id, station_id = :station_id, site_tours = :site_tours, tasks = :tasks, post_orders = :post_orders, checklists = :checklists, skill_set = :skill_set, department = :department, updatedAt = :updatedAt WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId`,
+              `UPDATE tenant_user_post_sites SET ${updateFields} WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId`,
               { replacements: { ...updateData, tenantUserId, businessInfoId: postSiteId }, transaction },
             );
           } else {
@@ -117,7 +130,6 @@ export default class ShiftService {
               tenantUserId,
               businessInfoId: postSiteId,
               security_guard_id: resolvedSecurityGuardId || null,
-              station_id: data.station || data.stationId || null,
               site_tours: normalizeJsonField(data.siteTours || data.site_tours),
               tasks: normalizeJsonField(data.tasks),
               post_orders: normalizeJsonField(data.postOrders || data.post_orders),
@@ -127,6 +139,10 @@ export default class ShiftService {
               createdAt: now,
               updatedAt: now,
             };
+
+            if (hasStationColumn) {
+              row.station_id = data.station || data.stationId || null;
+            }
 
             await sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', [row], { transaction });
           }

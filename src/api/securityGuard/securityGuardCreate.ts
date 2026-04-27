@@ -150,11 +150,8 @@ export default async (req, res, next) => {
                 lastName: entry.lastName || null,
                 fullName: entry.fullName || null,
               },
-              false,
-              // Allow callers (frontend) to request email verification emails when creating users
-              // without sending invitations. If the frontend explicitly sets `sendVerificationEmails`,
-              // forward it; otherwise default behavior (false) remains unchanged.
-              (entry && typeof entry.sendVerificationEmails !== 'undefined') ? entry.sendVerificationEmails : undefined,
+              false, // Don't send invitation here - securityGuardService will send it
+              false, // Don't send verification email - securityGuardService will send invitation instead
             );
           } catch (ucErr) {
             console.error('[securityGuardCreate] UserCreator failed (normalizeEntry path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
@@ -404,9 +401,8 @@ export default async (req, res, next) => {
                     lastName: incoming.lastName || null,
                     fullName: incoming.fullName || null,
                   },
-                  false,
-                  // forward explicit request from frontend to send verification emails
-                  (typeof incoming.sendVerificationEmails !== 'undefined') ? incoming.sendVerificationEmails : undefined,
+                  false, // Don't send invitation here - securityGuardService will send it
+                  false, // Don't send verification email - securityGuardService will send invitation instead
                 );
               } catch (ucErr) {
                 console.error('[securityGuardCreate] UserCreator failed (incoming path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
