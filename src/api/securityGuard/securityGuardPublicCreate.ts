@@ -147,7 +147,20 @@ export default async (req, res, next) => {
       } catch (lg) {
         // ignore logging errors
       }
-      created = await new SecurityGuardService(req).create(incoming);
+      // When impersonating via invitation token, requests should be allowed to
+      // assign the `securityGuard` role to the impersonated user even if the
+      // impersonated user has no existing roles. To avoid privilege escalation
+      // protection blocking that action, set `bypassPrivilegeCheck=true` for
+      // the duration of this service call.
+      const originalBypass = (req && (req as any).bypassPrivilegeCheck) || false;
+      try {
+        if (impersonatedTenantUser) {
+          try { (req as any).bypassPrivilegeCheck = true; } catch (e) {}
+        }
+        created = await new SecurityGuardService(req).create(incoming);
+      } finally {
+        try { (req as any).bypassPrivilegeCheck = originalBypass; } catch (e) {}
+      }
 
       // If incoming provided email or phone and the user record lacks them, persist them
       try {
