@@ -1081,7 +1081,11 @@ export default class TenantUserRepository {
 function selectStatus(oldStatus, newRoles) {
   newRoles = newRoles || [];
 
-  if (oldStatus === 'invited') {
+  // Preserve invitation-related states so they are not promoted to 'active'
+  // by incidental role updates. Both 'invited' and 'pending' should remain
+  // until an explicit acceptance flow (acceptInvitation) marks the
+  // tenant_user as 'active'.
+  if (oldStatus === 'invited' || oldStatus === 'pending') {
     return oldStatus;
   }
 

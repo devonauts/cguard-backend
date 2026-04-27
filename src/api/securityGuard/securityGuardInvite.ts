@@ -58,6 +58,7 @@ export default async (req, res, next) => {
                 await new UserCreator(req).execute(
                   { emails: [contactEmail], roles: [Roles.values.securityGuard], firstName: incoming.firstName || undefined, lastName: incoming.lastName || undefined },
                   false,
+                  false,
                 );
               } catch (e) {
                 console.error('[securityGuardInvite] UserCreator failed (resend path)', e && (e as any).message ? (e as any).message : e);
@@ -251,6 +252,7 @@ export default async (req, res, next) => {
           try {
             await new UserCreator(req).execute(
               { emails: [contact], roles: [Roles.values.securityGuard], firstName: incoming.firstName || undefined, lastName: incoming.lastName || undefined },
+              false,
               false,
             );
           } catch (e) {

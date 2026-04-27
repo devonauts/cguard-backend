@@ -66,14 +66,14 @@ export default class SecurityGuardService {
                 rolesToEnsure.push(Roles.values.securityGuard);
               }
               await TenantUserRepository.updateRoles(
-                tenantId,
-                originalGuard,
-                rolesToEnsure,
-                { ...this.options, transaction, addRoles: true },
-                data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
-                data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
-                originalGuard
-              );
+                  tenantId,
+                  originalGuard,
+                  rolesToEnsure,
+                  { ...this.options, transaction, addRoles: true, forcePendingStatus: true },
+                  data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
+                  data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
+                  originalGuard
+                );
               data.guard = originalGuard;
             }
           } catch (e) {
@@ -103,7 +103,7 @@ export default class SecurityGuardService {
               tenantId,
               originalGuardProvided,
               rolesToEnsure,
-              { ...this.options, transaction, addRoles: true },
+              { ...this.options, transaction, addRoles: true, forcePendingStatus: true },
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
               originalGuardProvided
@@ -133,7 +133,7 @@ export default class SecurityGuardService {
               tenantId,
               data.guard,
               rolesToAdd,
-              { ...this.options, transaction, addRoles: true },
+              { ...this.options, transaction, addRoles: true, forcePendingStatus: true },
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
               data.guard
@@ -424,7 +424,7 @@ export default class SecurityGuardService {
               tenantId,
               data.guard,
               rolesToUpdate,
-              { ...this.options, transaction, addRoles: true },
+              { ...this.options, transaction, addRoles: true, forcePendingStatus: true },
               data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
               record.id, // Pass the created securityGuardId

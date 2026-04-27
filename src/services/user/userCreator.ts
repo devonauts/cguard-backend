@@ -24,7 +24,7 @@ export default class UserCreator {
    * Creates new user(s) via the User page.
    * Sends Invitation Emails if flagged.
    */
-  async execute(data, sendInvitationEmails = true, sendVerificationEmails = undefined) {
+  async execute(data, sendInvitationEmails = true, sendVerificationEmails?: boolean) {
     // Assign 'customer' role when creating users associated with client accounts
     // and no explicit roles are provided
     let inputData = { ...data };

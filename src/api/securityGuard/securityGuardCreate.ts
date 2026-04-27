@@ -1,23 +1,6 @@
-// Valida que la contraseña tenga mayúscula, minúscula, número y caracter especial
-function isStrongPassword(password) {
-  if (!password || String(password).length < 8) return false;
-  return /[A-Z]/.test(password) &&
-         /[a-z]/.test(password) &&
-         /[0-9]/.test(password) &&
-         /[^A-Za-z0-9]/.test(password);
-}
-const PASSWORD_POLICY_ERROR = 'mínimo 8 caracteres y contener al menos una letra mayúscula, una letra minúscula, un número y un carácter especial.';
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-/**
- * @openapi {
- *  "summary": "Create guard",
- *  "description": "Create a security guard for the tenant. Requires authentication.",
- *  "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
- *  "responses": { "200": { "description": "Created" } }
- * }
- */
 import SecurityGuardService from '../../services/securityGuardService';
 import Error400 from '../../errors/Error400';
 import moment from 'moment';
@@ -30,6 +13,14 @@ import TenantUserRepository from '../../database/repositories/tenantUserReposito
 import crypto from 'crypto';
 import Roles from '../../security/roles';
 import bcrypt from 'bcryptjs';
+function isStrongPassword(password) {
+  if (!password || String(password).length < 8) return false;
+  return /[A-Z]/.test(password) &&
+         /[a-z]/.test(password) &&
+         /[0-9]/.test(password) &&
+         /[^A-Za-z0-9]/.test(password);
+}
+const PASSWORD_POLICY_ERROR = 'mínimo 8 caracteres y contener al menos una letra mayúscula, una letra minúscula, un número y un carácter especial.';
 
 export default async (req, res, next) => {
   // Preserve the original currentUser (actor) and tenant before any possible impersonation
@@ -137,12 +128,13 @@ export default async (req, res, next) => {
         if (isEmail) {
           // Create or invite the user with role securityGuard via email
           try {
-            await new UserCreator({
+            const _uc_local2 = new UserCreator({
               currentUser: originalCurrentUser || req.currentUser,
               currentTenant: req.currentTenant,
               language: req.language,
               database: req.database,
-            }).execute(
+            });
+            await _uc_local2.execute(
               {
                 emails: [contact],
                 roles: [Roles.values.securityGuard],
@@ -150,7 +142,8 @@ export default async (req, res, next) => {
                 lastName: entry.lastName || null,
                 fullName: entry.fullName || null,
               },
-              false, // Don't send invitation here - securityGuardService will send it// Don't send verification email - securityGuardService will send invitation instead
+              false, // Don't send invitation here - securityGuardService will send it
+              false, // Also don't send verification emails for invite flows
             );
           } catch (ucErr) {
             console.error('[securityGuardCreate] UserCreator failed (normalizeEntry path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
@@ -387,12 +380,13 @@ export default async (req, res, next) => {
                   return await ApiResponseHandler.error(req, res, dupErr);
                 }
 
-                await new UserCreator({
+                const _uc2 = new UserCreator({
                   currentUser: originalCurrentUser || req.currentUser,
                   currentTenant: req.currentTenant,
                   language: req.language,
                   database: req.database,
-                }).execute(
+                });
+                await _uc2.execute(
                   {
                     emails: [contact],
                     roles: [Roles.values.securityGuard],
@@ -400,7 +394,8 @@ export default async (req, res, next) => {
                     lastName: incoming.lastName || null,
                     fullName: incoming.fullName || null,
                   },// Don't send invitation here - securityGuardService will send it
-                  false, // Don't send verification email - securityGuardService will send invitation instead
+                    false, // Don't send invitation emails
+                    false, // Also don't send verification emails for invite flows
                 );
               } catch (ucErr) {
                 console.error('[securityGuardCreate] UserCreator failed (incoming path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
