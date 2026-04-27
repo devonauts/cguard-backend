@@ -150,8 +150,7 @@ export default async (req, res, next) => {
                 lastName: entry.lastName || null,
                 fullName: entry.fullName || null,
               },
-              false, // Don't send invitation here - securityGuardService will send it
-              false, // Don't send verification email - securityGuardService will send invitation instead
+              false, // Don't send invitation here - securityGuardService will send it// Don't send verification email - securityGuardService will send invitation instead
             );
           } catch (ucErr) {
             console.error('[securityGuardCreate] UserCreator failed (normalizeEntry path)', ucErr && (ucErr as any).message ? (ucErr as any).message : ucErr);
@@ -400,8 +399,7 @@ export default async (req, res, next) => {
                     firstName: incoming.firstName || null,
                     lastName: incoming.lastName || null,
                     fullName: incoming.fullName || null,
-                  },
-                  false, // Don't send invitation here - securityGuardService will send it
+                  },// Don't send invitation here - securityGuardService will send it
                   false, // Don't send verification email - securityGuardService will send invitation instead
                 );
               } catch (ucErr) {
