@@ -3,7 +3,8 @@
   "description": "Backend",
   "scripts": {
     "start": "cross-env API_DOCUMENTATION_ENABLED=true TENANT_MODE=multi nodemon --watch \"src/**/*.ts\" -e ts,json --exec \"ts-node --transpile-only ./src/server.ts\"",
-    "test": "nodemon --exec \"cross-env NODE_ENV=test mocha -r ts-node/register ./src/**/*.test.ts --exit || exit 1\"",
+    "test": "nodemon --exec \"cross-env NODE_ENV=test TS_NODE_PROJECT=tsconfig.test.json mocha -r ts-node/register './tests/**/*.test.ts' './src/**/*.test.ts' --exit || exit 1\"",
+    "test:unit": "cross-env NODE_ENV=test TS_NODE_PROJECT=tsconfig.test.json mocha -r ts-node/register 'tests/unit/**/*.test.ts' --exit --timeout 10000",
     "build:documentation": "copyfiles --flat ./src/api/documentation/openapi.json ./dist/api/documentation/",
     "generate:openapi": "node tools/generate-openapi.js",
     "build": "tsc && npm run build:documentation",
