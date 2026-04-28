@@ -127,7 +127,7 @@ function buildSpec(routes) {
       version: '1.0.0',
       description: 'Auto-generated OpenAPI spec (minimal) — run tools/generate-openapi.js to regenerate with more details.',
     },
-    servers: [{ url: process.env.API_BASE_URL || 'http://localhost:8080' }],
+    servers: [{ url: process.env.API_BASE_URL || ' https://api.cguardpro.com/api/' }],
     components: {
       securitySchemes: {
         bearerAuth: {
