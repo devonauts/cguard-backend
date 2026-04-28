@@ -3,7 +3,8 @@
   "description": "Backend",
   "scripts": {
     "start": "cross-env API_DOCUMENTATION_ENABLED=true TENANT_MODE=multi nodemon --watch \"src/**/*.ts\" -e ts,json --exec \"ts-node --transpile-only ./src/server.ts\"",
-    "test": "nodemon --exec \"cross-env NODE_ENV=test mocha -r ts-node/register ./src/**/*.test.ts --exit || exit 1\"",
+    "test": "nodemon --exec \"cross-env NODE_ENV=test TS_NODE_PROJECT=tsconfig.test.json mocha -r ts-node/register './tests/**/*.test.ts' './src/**/*.test.ts' --exit || exit 1\"",
+    "test:unit": "cross-env NODE_ENV=test TS_NODE_PROJECT=tsconfig.test.json mocha -r ts-node/register 'tests/unit/**/*.test.ts' --exit --timeout 10000",
     "build:documentation": "copyfiles --flat ./src/api/documentation/openapi.json ./dist/api/documentation/",
     "generate:openapi": "node tools/generate-openapi.js",
     "build": "tsc && npm run build:documentation",
@@ -62,6 +63,7 @@
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/lodash": "^4.17.10",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.19.7",
     "@types/passport": "^1.0.16",
     "@types/passport-facebook": "^3.0.3",
@@ -69,12 +71,14 @@
     "@types/pdfkit": "^0.17.4",
     "@types/pg": "^8.11.10",
     "@types/react-select": "^5.0.0",
+    "@types/sinon": "^21.0.1",
     "copyfiles": "^2.4.1",
     "cross-env": "^7.0.3",
     "mocha": "^10.7.3",
     "node-mocks-http": "^1.16.1",
     "nodemon": "^3.1.7",
     "sequelize-cli": "^6.6.2",
+    "sinon": "^21.1.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

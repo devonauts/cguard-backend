@@ -141,7 +141,8 @@ export default async (req: any, res: any) => {
             if (clientRec) {
               payload.user.clientAccountId = clientRec.id;
             } else {
-              // Fallback: check tenantUser pivot assignedClients
+              // Fallback 1: check tenantUser pivot assignedClients
+              let foundViaFallback = false;
               try {
                 const tenantUserWhere: any = { userId: payload.user.id };
                 if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
@@ -150,9 +151,30 @@ export default async (req: any, res: any) => {
                 console.warn('authSignInCustomer: tenantUser fallback', { where: tenantUserWhere, found: !!tenantUser, assignedClients: assigned });
                 if (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.length) {
                   payload.user.clientAccountId = tenantUser.assignedClients[0].id;
+                  foundViaFallback = true;
                 }
               } catch (e) {
                 console.warn('authSignInCustomer: tenantUser fallback error', e && (e as any).message ? (e as any).message : e);
+              }
+              // Fallback 2: match by email — handles clientAccount where userId was never set
+              if (!foundViaFallback && payload.user.email) {
+                try {
+                  const emailWhere: any = { email: payload.user.email };
+                  if (tenantIdCandidate) emailWhere.tenantId = tenantIdCandidate;
+                  const emailRec = await db.clientAccount.findOne({ where: emailWhere });
+                  if (emailRec) {
+                    console.warn('authSignInCustomer: email fallback found clientAccount', { id: emailRec.id });
+                    payload.user.clientAccountId = emailRec.id;
+                    // Heal the data: set userId so future lookups skip this fallback
+                    try {
+                      await emailRec.update({ userId: payload.user.id });
+                    } catch (healErr) {
+                      console.warn('authSignInCustomer: could not heal clientAccount.userId', healErr && (healErr as any).message ? (healErr as any).message : healErr);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('authSignInCustomer: email fallback error', e && (e as any).message ? (e as any).message : e);
+                }
               }
             }
           } catch (e) {
