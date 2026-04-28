@@ -126,25 +126,37 @@ export default async (req: any, res: any) => {
         }
 
         const db = (req && (req as any).database) ? (req as any).database : (req && req.app && req.app.locals && (req.app.locals as any).database) ? (req.app.locals as any).database : undefined;
+        console.warn('authSignInCustomer: diagnostic', {
+          userId: payload.user.id,
+          tenantIdCandidate: tenantIdCandidate,
+          dbPresent: !!db,
+        });
         if (db) {
           // First try direct userId on clientAccount
-          const where: any = { userId: payload.user.id };
-          if (tenantIdCandidate) where.tenantId = tenantIdCandidate;
-          const clientRec = await db.clientAccount.findOne({ where });
-          if (clientRec) {
-            payload.user.clientAccountId = clientRec.id;
-          } else {
-            // Fallback: check tenantUser pivot assignedClients
-            try {
-              const tenantUserWhere: any = { userId: payload.user.id };
-              if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
-              const tenantUser = await db.tenantUser.findOne({ where: tenantUserWhere, include: [{ model: db.clientAccount, as: 'assignedClients', attributes: ['id'] }] });
-              if (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.length) {
-                payload.user.clientAccountId = tenantUser.assignedClients[0].id;
+          try {
+            const where: any = { userId: payload.user.id };
+            if (tenantIdCandidate) where.tenantId = tenantIdCandidate;
+            const clientRec = await db.clientAccount.findOne({ where });
+            console.warn('authSignInCustomer: clientAccount lookup result', { where, found: !!clientRec, clientId: clientRec ? clientRec.id : null });
+            if (clientRec) {
+              payload.user.clientAccountId = clientRec.id;
+            } else {
+              // Fallback: check tenantUser pivot assignedClients
+              try {
+                const tenantUserWhere: any = { userId: payload.user.id };
+                if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
+                const tenantUser = await db.tenantUser.findOne({ where: tenantUserWhere, include: [{ model: db.clientAccount, as: 'assignedClients', attributes: ['id'] }] });
+                const assigned = tenantUser && tenantUser.assignedClients ? tenantUser.assignedClients.map((c: any) => c.id) : [];
+                console.warn('authSignInCustomer: tenantUser fallback', { where: tenantUserWhere, found: !!tenantUser, assignedClients: assigned });
+                if (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.length) {
+                  payload.user.clientAccountId = tenantUser.assignedClients[0].id;
+                }
+              } catch (e) {
+                console.warn('authSignInCustomer: tenantUser fallback error', e && (e as any).message ? (e as any).message : e);
               }
-            } catch (e) {
-              // ignore fallback errors
             }
+          } catch (e) {
+            console.warn('authSignInCustomer: clientAccount lookup error', e && (e as any).message ? (e as any).message : e);
           }
         }
       }
