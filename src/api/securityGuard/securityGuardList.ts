@@ -95,7 +95,7 @@ export default async (req, res, next) => {
                 // Find guards assigned to these postSites via shifts table
                 const shifts = await req.database.shift.findAll({
                   where: {
-                    postSite: postSiteIds,
+                    postSiteId: postSiteIds,
                     tenantId: currentTenant.id,
                   },
                   attributes: ['tenantUserId'],
