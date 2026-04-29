@@ -294,6 +294,19 @@ class VisitorLogRepository {
     }
 
     if (!assignedPostSiteIds.length && !assignedStationIds.length) {
+      // If user has clientAccountId (customer), allow posts belonging to that client
+      try {
+        const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+        if (clientAccountId) {
+          const posts = await options.database.businessInfo.findAll({ where: { tenantId: currentTenant.id, clientAccountId }, attributes: ['id'], transaction });
+          assignedPostSiteIds = (posts || []).map((p) => p && p.id).filter(Boolean);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if (!assignedPostSiteIds.length && !assignedStationIds.length) {
       return { hasAssigned: false };
     }
 

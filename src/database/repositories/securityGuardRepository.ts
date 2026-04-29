@@ -192,30 +192,15 @@ class SecurityGuardRepository {
       // the existing FK with null when the caller meant to leave it unchanged.
       if (data.guard !== null && typeof data.guard !== 'undefined') {
         payloadToUpdate.guardId = data.guard;
-      } else {
-        console.warn('securityGuardRepository.update: received explicit guard=null/undefined; skipping guardId update to avoid NOT NULL violation');
       }
     }
 
     record = await record.update(payloadToUpdate, { transaction });
 
-    // If updating a draft, allow keeping placeholders when data.isDraft === true
-    if (data && data.isDraft) {
-      // Ensure guardId exists
-      if (!data.guard && !record.guardId) {
-        throw new Error('Draft securityGuard update requires a valid guard id');
-      }
-    }
-
-    await record.setMemos(data.memos || [], {
-      transaction,
-    });
-    await record.setRequests(data.requests || [], {
-      transaction,
-    });
-    await record.setTutoriales(data.tutoriales || [], {
-      transaction,
-    });
+    // Update relations/files if present in the payload
+    await record.setMemos(data.memos || [], { transaction });
+    await record.setRequests(data.requests || [], { transaction });
+    await record.setTutoriales(data.tutoriales || [], { transaction });
 
     await FileRepository.replaceRelationFiles(
       {
@@ -226,6 +211,7 @@ class SecurityGuardRepository {
       data.profileImage,
       options,
     );
+
     await FileRepository.replaceRelationFiles(
       {
         belongsTo: options.database.securityGuard.getTableName(),
@@ -235,6 +221,7 @@ class SecurityGuardRepository {
       data.credentialImage,
       options,
     );
+
     await FileRepository.replaceRelationFiles(
       {
         belongsTo: options.database.securityGuard.getTableName(),
@@ -638,8 +625,21 @@ class SecurityGuardRepository {
           include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
           transaction: SequelizeRepository.getTransaction(options),
         });
+        let allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
 
-        const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        // If no assigned posts, and current user has clientAccountId, resolve posts for that client
+        if (!allowedPostSiteIds.length) {
+          try {
+            const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            if (clientAccountId) {
+              const posts = await options.database.businessInfo.findAll({ where: { tenantId: tenant.id, clientAccountId }, attributes: ['id'], transaction: SequelizeRepository.getTransaction(options) });
+              allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
         if (!allowedPostSiteIds.length) {
           return { rows: [], count: 0 };
         }

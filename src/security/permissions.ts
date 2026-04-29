@@ -124,8 +124,8 @@ class Permissions {
       businessInfoCreate: createPermission('businessInfoCreate', MANAGEMENT_ROLES),
       businessInfoEdit: createPermission('businessInfoEdit', MANAGEMENT_ROLES),
       businessInfoDestroy: createPermission('businessInfoDestroy', ADMIN_ROLES),
-      businessInfoRead: createPermission('businessInfoRead', ALL_STAFF_ROLES),
-      businessInfoAutocomplete: createPermission('businessInfoAutocomplete', ALL_STAFF_ROLES),
+      businessInfoRead: createPermission('businessInfoRead', [...ALL_STAFF_ROLES, roles.customer]),
+      businessInfoAutocomplete: createPermission('businessInfoAutocomplete', [...ALL_STAFF_ROLES, roles.customer]),
 
       // === POST SITES (PostSite / Post-Site) ===
       postSiteCreate: createPermission('postSiteCreate', MANAGEMENT_ROLES),

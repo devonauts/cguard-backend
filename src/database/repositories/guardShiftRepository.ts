@@ -239,6 +239,52 @@ class GuardShiftRepository {
       throw new Error404();
     }
 
+    // Enforce ACL: non-admins can only access shifts for assigned posts or client's posts
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === currentTenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: currentTenant.id, userId: currentUser.id },
+          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        let allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+
+        if (!allowedPostSiteIds.length) {
+          try {
+            const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            if (clientAccountId) {
+              const posts = await options.database.businessInfo.findAll({ where: { tenantId: currentTenant.id, clientAccountId }, attributes: ['id'], transaction: SequelizeRepository.getTransaction(options) });
+              allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        const shiftPlain = record.get({ plain: true });
+        if (!shiftPlain.postSiteId || !allowedPostSiteIds.includes(shiftPlain.postSiteId)) {
+          throw new Error404();
+        }
+      }
+    } catch (e) {
+      if (e instanceof Error404) throw e;
+    }
+
     return this._fillWithRelationsAndFiles(record, options);
   }
 
@@ -338,6 +384,53 @@ class GuardShiftRepository {
     whereAnd.push({
       tenantId: tenant.id,
     });
+
+    // If current user is not admin, restrict guard shifts to assigned posts or client's posts
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: tenant.id, userId: currentUser.id },
+          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        let allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+
+        if (!allowedPostSiteIds.length) {
+          try {
+            const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            if (clientAccountId) {
+              const posts = await options.database.businessInfo.findAll({ where: { tenantId: tenant.id, clientAccountId }, attributes: ['id'], transaction: SequelizeRepository.getTransaction(options) });
+              allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        if (!allowedPostSiteIds.length) {
+          return { rows: [], count: 0 };
+        }
+
+        whereAnd.push({ postSiteId: { [Op.in]: allowedPostSiteIds } });
+      }
+    } catch (e) {
+      // ignore
+    }
 
     if (filter) {
       if (filter.id) {

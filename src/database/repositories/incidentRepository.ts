@@ -588,8 +588,22 @@ class IncidentRepository {
           transaction: SequelizeRepository.getTransaction(options),
         });
 
-        const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
-        const allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+        let allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        let allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+
+        // If no explicit assignments, allow access by token clientAccountId for customers
+        if (!allowedPostSiteIds.length && !allowedClientIds.length) {
+          try {
+            const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            if (clientAccountId) {
+              allowedClientIds = [clientAccountId];
+              const posts = await options.database.businessInfo.findAll({ where: { tenantId: tenant.id, clientAccountId }, attributes: ['id'], transaction: SequelizeRepository.getTransaction(options) });
+              allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
 
         if (!allowedPostSiteIds.length && !allowedClientIds.length) {
           return { rows: [], count: 0 };

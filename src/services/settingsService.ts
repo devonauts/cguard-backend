@@ -19,16 +19,24 @@ class SettingsService {
       options.database,
     );
 
-    const settings = await SettingsRepository.save(
-      data,
-      options,
-    );
+    try {
+      const settings = await SettingsRepository.save(
+        data,
+        {
+          ...options,
+          transaction,
+        },
+      );
 
-    await SequelizeRepository.commitTransaction(
-      transaction,
-    );
+      await SequelizeRepository.commitTransaction(
+        transaction,
+      );
 
-    return settings;
+      return settings;
+    } catch (error) {
+      await SequelizeRepository.rollbackTransaction(transaction);
+      throw error;
+    }
   }
 }
 

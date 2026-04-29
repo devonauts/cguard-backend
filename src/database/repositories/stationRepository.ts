@@ -241,13 +241,28 @@ class StationRepository {
     }
 
     if (!isAdmin) {
+      // First try tenantUser assigned posts
       const tenantUser = await options.database.tenantUser.findOne({
         where: { tenantId: currentTenant.id, userId: currentUser.id },
         include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
         transaction,
       });
 
-      const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+      let allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+
+      // If no assigned posts and user has a clientAccountId (customer), allow posts for that client
+      if (!allowedPostSiteIds.length) {
+        try {
+          const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+          if (clientAccountId) {
+            const posts = await options.database.businessInfo.findAll({ where: { tenantId: currentTenant.id, clientAccountId }, attributes: ['id'], transaction });
+            allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
       if (!allowedPostSiteIds.length) {
         throw new Error404();
       }
@@ -474,7 +489,21 @@ class StationRepository {
           transaction: SequelizeRepository.getTransaction(options),
         });
 
-        const allowedIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        let allowedIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+
+        // If not assigned and user has clientAccountId (customer), allow posts for that client
+        if (!allowedIds.length) {
+          try {
+            const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            if (clientAccountId) {
+              const posts = await options.database.businessInfo.findAll({ where: { tenantId: tenant.id, clientAccountId }, attributes: ['id'], transaction: SequelizeRepository.getTransaction(options) });
+              allowedIds = (posts || []).map((p) => p.id).filter(Boolean);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
         if (!allowedIds.length) {
           return { rows: [], count: 0 };
         }

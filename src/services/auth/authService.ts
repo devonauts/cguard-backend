@@ -762,6 +762,7 @@ class AuthService {
           const id = decoded?.id;
           const jwtTokenIat = decoded.iat;
           const tokenTenantId = decoded?.tenantId;
+          const tokenClientAccountId = decoded?.clientAccountId;
 
           UserRepository.findById(id, {
             ...options,
@@ -818,6 +819,15 @@ class AuthService {
                     return;
                   }
                 }
+
+                  // If the token contained a clientAccountId, attach it to the user object
+                  try {
+                    if (tokenClientAccountId && user) {
+                      try { (user as any).clientAccountId = tokenClientAccountId; } catch (e) { }
+                    }
+                  } catch (e) {
+                    // ignore
+                  }
 
                 // Prime role permissions cache for the user's tenants so
                 // synchronous permission checks can consult the in-memory cache.

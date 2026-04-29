@@ -564,10 +564,14 @@ class BusinessInfoRepository {
 
     const where = { [Op.and]: whereAnd };
 
-    // ACL: if current user is not admin, restrict list to assigned post sites
+    // ACL: if current user is not admin, restrict list.
+    // Special-case: customers may view postsites by `clientAccountId` (set by controller),
+    // so do not require `assignedPostSites` for customers when a client filter is present.
     try {
       const currentUser = SequelizeRepository.getCurrentUser(options);
       let isAdmin = false;
+      let isCustomer = false;
+
       if (currentUser && currentUser.tenants) {
         const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
         if (tenantUserRec) {
@@ -577,22 +581,33 @@ class BusinessInfoRepository {
             try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
           }
           isAdmin = roles.includes(Roles.values.admin);
+          isCustomer = roles.includes(Roles.values.customer);
         }
       }
 
       if (!isAdmin) {
-        const tenantUser = await options.database.tenantUser.findOne({
-          where: { tenantId: tenant.id, userId: currentUser.id },
-          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
-          transaction: SequelizeRepository.getTransaction(options),
-        });
+        if (isCustomer) {
+          // Customers must have a client filter to list postsites. If controller didn't
+          // set it (or it resolves to nothing), return empty result to avoid exposing data.
+          const clientFilter = filter && (filter.clientAccountId || filter.clientId);
+          if (!clientFilter) {
+            return { rows: [], count: 0 };
+          }
+          // Allow query to proceed using the clientAccountId filter without applying assignedPostSites ACL.
+        } else {
+          const tenantUser = await options.database.tenantUser.findOne({
+            where: { tenantId: tenant.id, userId: currentUser.id },
+            include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+            transaction: SequelizeRepository.getTransaction(options),
+          });
 
-        const allowedIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
-        if (!allowedIds.length) {
-          return { rows: [], count: 0 };
+          const allowedIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+          if (!allowedIds.length) {
+            return { rows: [], count: 0 };
+          }
+
+          where[Op.and].push({ id: { [Op.in]: allowedIds } });
         }
-
-        where[Op.and].push({ id: { [Op.in]: allowedIds } });
       }
     } catch (e) {
       // ignore and proceed

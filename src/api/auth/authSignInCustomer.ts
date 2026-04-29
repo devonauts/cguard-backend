@@ -8,6 +8,8 @@ import CertificationService from '../../services/certificationService'
 import ServiceService from '../../services/serviceService'
 import Roles from '../../security/roles'
 import SequelizeRepository from '../../database/repositories/sequelizeRepository'
+import jwt from 'jsonwebtoken'
+import { getConfig } from '../../config'
 
 export default async (req: any, res: any) => {
   try {
@@ -131,59 +133,122 @@ export default async (req: any, res: any) => {
           tenantIdCandidate: tenantIdCandidate,
           dbPresent: !!db,
         });
+
         if (db) {
-          // First try direct userId on clientAccount
-          try {
-            const where: any = { userId: payload.user.id };
-            if (tenantIdCandidate) where.tenantId = tenantIdCandidate;
-            const clientRec = await db.clientAccount.findOne({ where });
-            console.warn('authSignInCustomer: clientAccount lookup result', { where, found: !!clientRec, clientId: clientRec ? clientRec.id : null });
-            if (clientRec) {
-              payload.user.clientAccountId = clientRec.id;
-            } else {
-              // Fallback 1: check tenantUser pivot assignedClients
-              let foundViaFallback = false;
-              try {
-                const tenantUserWhere: any = { userId: payload.user.id };
-                if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
-                const tenantUser = await db.tenantUser.findOne({ where: tenantUserWhere, include: [{ model: db.clientAccount, as: 'assignedClients', attributes: ['id'] }] });
-                const assigned = tenantUser && tenantUser.assignedClients ? tenantUser.assignedClients.map((c: any) => c.id) : [];
-                console.warn('authSignInCustomer: tenantUser fallback', { where: tenantUserWhere, found: !!tenantUser, assignedClients: assigned });
-                if (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.length) {
-                  payload.user.clientAccountId = tenantUser.assignedClients[0].id;
-                  foundViaFallback = true;
-                }
-              } catch (e) {
-                console.warn('authSignInCustomer: tenantUser fallback error', e && (e as any).message ? (e as any).message : e);
+          // If the client supplied a desired clientAccountId at sign-in, validate it strictly
+          const requestedClientAccountId = req.body && req.body.clientAccountId ? req.body.clientAccountId : null;
+          if (requestedClientAccountId) {
+            try {
+              const whereReq: any = { id: requestedClientAccountId };
+              if (tenantIdCandidate) whereReq.tenantId = tenantIdCandidate;
+              const clientReqRec = await db.clientAccount.findOne({ where: whereReq });
+              if (!clientReqRec) {
+                throw new Error400(req.language, 'auth.clientAccountNotFound');
               }
-              // Fallback 2: match by email — handles clientAccount where userId was never set
-              if (!foundViaFallback && payload.user.email) {
+
+              // Validate association: userId match OR tenantUser.assignedClients OR email match (fallback)
+              let valid = false;
+              if (clientReqRec.userId && clientReqRec.userId === payload.user.id) {
+                valid = true;
+              }
+
+              if (!valid) {
                 try {
-                  const emailWhere: any = { email: payload.user.email };
-                  if (tenantIdCandidate) emailWhere.tenantId = tenantIdCandidate;
-                  const emailRec = await db.clientAccount.findOne({ where: emailWhere });
-                  if (emailRec) {
-                    console.warn('authSignInCustomer: email fallback found clientAccount', { id: emailRec.id });
-                    payload.user.clientAccountId = emailRec.id;
-                    // Heal the data: set userId so future lookups skip this fallback
-                    try {
-                      await emailRec.update({ userId: payload.user.id });
-                    } catch (healErr) {
-                      console.warn('authSignInCustomer: could not heal clientAccount.userId', healErr && (healErr as any).message ? (healErr as any).message : healErr);
-                    }
+                  const tenantUserWhere: any = { userId: payload.user.id };
+                  if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
+                  const tenantUser = await db.tenantUser.findOne({ where: tenantUserWhere, include: [{ model: db.clientAccount, as: 'assignedClients', attributes: ['id'] }] });
+                  const assigned = tenantUser && tenantUser.assignedClients ? tenantUser.assignedClients.map((c: any) => c.id) : [];
+                  if (assigned.includes(clientReqRec.id)) valid = true;
+                } catch (e) {
+                  console.warn('authSignInCustomer: tenantUser check failed', e && (e as any).message ? (e as any).message : e);
+                }
+              }
+
+              if (!valid && payload.user.email && clientReqRec.email && payload.user.email === clientReqRec.email) {
+                valid = true;
+              }
+
+              if (!valid) {
+                throw new Error400(req.language, 'auth.clientAccountNotAssignedToUser');
+              }
+
+              payload.user.clientAccountId = clientReqRec.id;
+            } catch (e) {
+              if (e instanceof Error400) throw e;
+              console.warn('authSignInCustomer: requested clientAccount validation failed', e && (e as any).message ? (e as any).message : e);
+              throw new Error400(req.language, 'auth.clientAccountInvalid');
+            }
+          } else {
+            // First try direct userId on clientAccount
+            try {
+              const where: any = { userId: payload.user.id };
+              if (tenantIdCandidate) where.tenantId = tenantIdCandidate;
+              const clientRec = await db.clientAccount.findOne({ where });
+              console.warn('authSignInCustomer: clientAccount lookup result', { where, found: !!clientRec, clientId: clientRec ? clientRec.id : null });
+              if (clientRec) {
+                payload.user.clientAccountId = clientRec.id;
+              } else {
+                // Fallback 1: check tenantUser pivot assignedClients
+                let foundViaFallback = false;
+                try {
+                  const tenantUserWhere: any = { userId: payload.user.id };
+                  if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
+                  const tenantUser = await db.tenantUser.findOne({ where: tenantUserWhere, include: [{ model: db.clientAccount, as: 'assignedClients', attributes: ['id'] }] });
+                  const assigned = tenantUser && tenantUser.assignedClients ? tenantUser.assignedClients.map((c: any) => c.id) : [];
+                  console.warn('authSignInCustomer: tenantUser fallback', { where: tenantUserWhere, found: !!tenantUser, assignedClients: assigned });
+                  if (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.length) {
+                    payload.user.clientAccountId = tenantUser.assignedClients[0].id;
+                    foundViaFallback = true;
                   }
                 } catch (e) {
-                  console.warn('authSignInCustomer: email fallback error', e && (e as any).message ? (e as any).message : e);
+                  console.warn('authSignInCustomer: tenantUser fallback error', e && (e as any).message ? (e as any).message : e);
+                }
+                // Fallback 2: match by email — handles clientAccount where userId was never set
+                if (!foundViaFallback && payload.user.email) {
+                  try {
+                    const emailWhere: any = { email: payload.user.email };
+                    if (tenantIdCandidate) emailWhere.tenantId = tenantIdCandidate;
+                    const emailRec = await db.clientAccount.findOne({ where: emailWhere });
+                    if (emailRec) {
+                      console.warn('authSignInCustomer: email fallback found clientAccount', { id: emailRec.id });
+                      payload.user.clientAccountId = emailRec.id;
+                      // Heal the data: set userId so future lookups skip this fallback
+                      try {
+                        await emailRec.update({ userId: payload.user.id });
+                      } catch (healErr) {
+                        console.warn('authSignInCustomer: could not heal clientAccount.userId', healErr && (healErr as any).message ? (healErr as any).message : healErr);
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('authSignInCustomer: email fallback error', e && (e as any).message ? (e as any).message : e);
+                  }
                 }
               }
+            } catch (e) {
+              console.warn('authSignInCustomer: clientAccount lookup error', e && (e as any).message ? (e as any).message : e);
             }
-          } catch (e) {
-            console.warn('authSignInCustomer: clientAccount lookup error', e && (e as any).message ? (e as any).message : e);
           }
         }
       }
     } catch (err) {
       console.warn('authSignInCustomer: could not lookup clientAccount', (err && (err as any).message) ? (err as any).message : err);
+    }
+
+    // If we resolved a clientAccountId during signin (server-side), ensure the token contains it.
+    try {
+      const tokenTenantId = (payload && payload.user && payload.user.tenant && (payload.user.tenant.tenantId || (payload.user.tenant.tenant && payload.user.tenant.tenant.id))) || req.body?.tenantId || (req.currentTenant && req.currentTenant.id) || null;
+      const resolvedClient = payload && payload.user && payload.user.clientAccountId ? payload.user.clientAccountId : null;
+      if (resolvedClient) {
+        try {
+          const tokenPayload: any = { id: payload.user.id, tenantId: tokenTenantId, clientAccountId: resolvedClient };
+          const newToken = jwt.sign(tokenPayload, getConfig().AUTH_JWT_SECRET, { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN });
+          payload.token = newToken;
+        } catch (e) {
+          console.warn('authSignInCustomer: could not re-sign token with clientAccountId', e && (e as any).message ? (e as any).message : e);
+        }
+      }
+    } catch (e) {
+      // non-fatal
     }
 
     return ApiResponseHandler.success(req, res, payload)
