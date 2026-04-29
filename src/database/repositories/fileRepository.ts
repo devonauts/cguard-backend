@@ -9,10 +9,31 @@ export default class FileRepository {
    * Crea un documento legal asociado a un tenant
    */
   static async createLegalDocument({ file, tenantId, uploadedBy, name, sizeInBytes, mimeType, database }) {
-    // Aquí deberías guardar el archivo en el storage y obtener la URL
-    // Para ejemplo, asumimos que file.path es la ruta temporal
-    const privateUrl = await FileStorage.upload(file);
-    // Usar el modelo sequelize directamente
+    // Build the privateUrl based on storage config
+    const StorageConfig = require('../../security/storage').default;
+    const config = StorageConfig.values['legalDocuments'];
+    if (!config) throw new Error('Storage config for legalDocuments not found');
+
+    let privateUrl = `${config.folder}/${name}`;
+    privateUrl = privateUrl.replace(':tenantId', tenantId);
+    privateUrl = privateUrl.replace(':userId', uploadedBy);
+
+    // Attempt to upload the file into configured storage. If the active FileStorage
+    // implementation exposes an `upload(fileTempPath, privateUrl)` method, use it.
+    // Otherwise, fall back to the local uploader implementation.
+    try {
+      if (typeof FileStorage.upload === 'function') {
+        await FileStorage.upload(file.path, privateUrl);
+      } else {
+        const LocalStorage = require('../../services/file/localhostFileStorage').default;
+        await LocalStorage.upload(file.path, privateUrl);
+      }
+    } catch (err) {
+      // If upload fails, surface an error
+      throw err;
+    }
+
+    // Create the DB record for the uploaded file
     const record = await database.file.create({
       belongsTo: 'tenant',
       belongsToId: tenantId,
@@ -26,6 +47,7 @@ export default class FileRepository {
       updatedById: uploadedBy,
       isLegalDocument: true,
     });
+
     return record;
   }
   static async fillDownloadUrl(files) {

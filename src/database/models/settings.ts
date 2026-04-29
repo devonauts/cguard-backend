@@ -49,6 +49,16 @@ export default function (sequelize, DataTypes) {
       },
     });
 
+    models.settings.hasMany(models.file, {
+      as: 'legalDocuments',
+      foreignKey: 'belongsToId',
+      constraints: false,
+      scope: {
+        belongsTo: models.settings.getTableName(),
+        belongsToColumn: 'legalDocuments',
+      },
+    });
+
     models.settings.belongsTo(models.tenant, {
       as: 'tenant',
       foreignKey: {

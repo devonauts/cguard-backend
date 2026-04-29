@@ -257,6 +257,49 @@ class IncidentRepository {
       throw new Error404();
     }
 
+    // If current user is not admin, ensure the incident is related to the
+    // customer's assigned postSites or assigned client accounts.
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === currentTenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: currentTenant.id, userId: currentUser.id },
+          include: [
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] },
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] },
+          ],
+          transaction,
+        });
+
+        const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        const allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+
+        const incidentPlain = record.get({ plain: true });
+
+        const matchesPost = incidentPlain.postSiteId && allowedPostSiteIds.includes(incidentPlain.postSiteId);
+        const matchesClient = incidentPlain.clientId && allowedClientIds.includes(incidentPlain.clientId);
+
+        if (!matchesPost && !matchesClient) {
+          throw new Error404();
+        }
+      }
+    } catch (e) {
+      if (e instanceof Error404) throw e;
+    }
+
     return this._fillWithRelationsAndFiles(record, options);
   }
 
@@ -517,6 +560,53 @@ class IncidentRepository {
           });
         }
       }
+    }
+
+    // If current user is not admin, restrict incidents to assigned postsites or assigned clients
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: tenant.id, userId: currentUser.id },
+          include: [
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] },
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] },
+          ],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        const allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+
+        if (!allowedPostSiteIds.length && !allowedClientIds.length) {
+          return { rows: [], count: 0 };
+        }
+
+        const clauses: any[] = [];
+        if (allowedPostSiteIds.length) clauses.push({ postSiteId: { [Op.in]: allowedPostSiteIds } });
+        if (allowedClientIds.length) clauses.push({ clientId: { [Op.in]: allowedClientIds } });
+
+        if (clauses.length === 1) {
+          whereAnd.push(clauses[0]);
+        } else {
+          whereAnd.push({ [Op.or]: clauses });
+        }
+      }
+    } catch (e) {
+      // ignore and proceed
     }
 
     const where = { [Op.and]: whereAnd };

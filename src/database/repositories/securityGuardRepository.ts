@@ -374,6 +374,61 @@ class SecurityGuardRepository {
       throw new Error404(language, 'entities.securityGuard.errors.notFound');
     }
 
+    // If current user is not admin, ensure the found guard is linked to one of
+    // the current user's assigned post sites. We do this by checking the guard's
+    // tenantUser.assignedPostSites overlap with the current user's assignedPostSites.
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === currentTenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        // current user's allowed posts
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: currentTenant.id, userId: currentUser.id },
+          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+          transaction,
+        });
+        const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        if (!allowedPostSiteIds.length) {
+          const language = options && options.language ? options.language : 'es';
+          throw new Error404(language);
+        }
+
+        const guardUserId = record.guardId || (record.guard && record.guard.id);
+        if (!guardUserId) {
+          const language = options && options.language ? options.language : 'es';
+          throw new Error404(language, 'entities.securityGuard.errors.notFound');
+        }
+
+        const guardTenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: currentTenant.id, userId: guardUserId },
+          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+          transaction,
+        });
+
+        const guardPostIds = (guardTenantUser && guardTenantUser.assignedPostSites && guardTenantUser.assignedPostSites.map((c) => c.id)) || [];
+        const overlap = guardPostIds.some((p) => allowedPostSiteIds.includes(p));
+        if (!overlap) {
+          const language = options && options.language ? options.language : 'es';
+          throw new Error404(language, 'entities.securityGuard.errors.notFound');
+        }
+      }
+    } catch (e) {
+      // If any check fails, default to previous behaviour (fail closed by throwing)
+      if (e instanceof Error404) throw e;
+    }
+
     return this._fillWithRelationsAndFiles(record, options);
   }
 
@@ -559,6 +614,53 @@ class SecurityGuardRepository {
     whereAnd.push({
       tenantId: tenant.id,
     });
+
+    // If current user is not admin, restrict guards to those whose tenantUser.assignedPostSites
+    // overlap with the current user's assignedPostSites.
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && currentUser.tenants) {
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: tenant.id, userId: currentUser.id },
+          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        if (!allowedPostSiteIds.length) {
+          return { rows: [], count: 0 };
+        }
+
+        // Find tenantUsers (guards) assigned to any of these posts
+        const guardTenantUsers = await options.database.tenantUser.findAll({
+          where: { tenantId: tenant.id },
+          include: [{ model: options.database.businessInfo, as: 'assignedPostSites', where: { id: { [Op.in]: allowedPostSiteIds } }, attributes: ['id'] }],
+          transaction: SequelizeRepository.getTransaction(options),
+        });
+
+        const guardUserIds = (guardTenantUsers || []).map((t) => t.userId).filter(Boolean);
+        if (!guardUserIds.length) {
+          return { rows: [], count: 0 };
+        }
+
+        whereAnd.push({ guardId: { [Op.in]: guardUserIds } });
+      }
+    } catch (e) {
+      // ignore and proceed
+    }
 
     if (filter) {
       if (filter.id) {

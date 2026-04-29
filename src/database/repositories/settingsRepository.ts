@@ -93,6 +93,17 @@ export default class SettingsRepository {
       options,
     );
 
+    // Replace legal documents relation if provided
+    await FileRepository.replaceRelationFiles(
+      {
+        belongsTo: options.database.settings.getTableName(),
+        belongsToColumn: 'legalDocuments',
+        belongsToId: settings.id,
+      },
+      data.legalDocuments,
+      options,
+    );
+
     await AuditLogRepository.log(
       {
         entityName: 'settings',
@@ -128,6 +139,13 @@ export default class SettingsRepository {
 
     output.backgroundImages = await FileRepository.fillDownloadUrl(
       await record.getBackgroundImages({
+        transaction,
+      }),
+    );
+
+    // Attach legal documents with downloadUrl
+    output.legalDocuments = await FileRepository.fillDownloadUrl(
+      await record.getLegalDocuments({
         transaction,
       }),
     );

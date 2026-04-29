@@ -131,8 +131,10 @@ class Permissions {
       postSiteCreate: createPermission('postSiteCreate', MANAGEMENT_ROLES),
       postSiteEdit: createPermission('postSiteEdit', MANAGEMENT_ROLES),
       postSiteDestroy: createPermission('postSiteDestroy', MANAGEMENT_ROLES),
-      postSiteRead: createPermission('postSiteRead', ALL_STAFF_ROLES),
-      postSiteAutocomplete: createPermission('postSiteAutocomplete', ALL_STAFF_ROLES),
+      // Allow customers to read their own postsites (list/detail). Backend
+      // should still scope results to postsites the customer manages.
+      postSiteRead: createPermission('postSiteRead', [...ALL_STAFF_ROLES, roles.customer]),
+      postSiteAutocomplete: createPermission('postSiteAutocomplete', [...ALL_STAFF_ROLES, roles.customer]),
 
       // === COMPANY REPRESENTATIVES ===
       representanteEmpresaImport: createPermission('representanteEmpresaImport', CLIENT_MANAGEMENT_ROLES),
