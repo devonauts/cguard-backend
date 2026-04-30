@@ -67,6 +67,10 @@ export default (app) => {
     require('./userResendInvitation').default,
   );
   app.post(
+    `/tenant/:tenantId/user/:id/send-portal-invitation`,
+    require('./userSendPortalInvitation').default,
+  );
+  app.post(
     `/tenant/:tenantId/user/:id/suspend`,
     require('./userSuspend').default,
   );
