@@ -12,6 +12,7 @@ export default function setupSwaggerUI(app) {
     res,
   ) {
     // The generated spec is placed under src/api/documentation/openapi.json
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.resolve(__dirname + '/documentation/openapi.json'));
   };
   app.get('/documentation-config', serveSwaggerDef);
@@ -22,10 +23,16 @@ export default function setupSwaggerUI(app) {
   const urlRegex = /url: "[^"]*",/;
 
   const patchIndex = function patchIndex(req, res) {
+    // Add a cache-busting query string to all script/link tags so that browsers
+    // that previously cached broken (404) responses are forced to re-fetch.
+    const cb = `v=${Math.floor(Date.now() / 3600000)}`; // changes every hour
     const indexContent = fs
       .readFileSync(`${swaggerUiAssetPath}/index.html`)
       .toString()
-      .replace(urlRegex, 'url: "../documentation-config",');
+      .replace(urlRegex, 'url: "../documentation-config",')
+      .replace(/(href="\.\/)([^"]+)(")/g, `$1$2?${cb}$3`)
+      .replace(/(src="\.\/)([^"]+)(")/g, `$1$2?${cb}$3`);
+    res.setHeader('Cache-Control', 'no-store');
     res.send(indexContent);
   };
 
