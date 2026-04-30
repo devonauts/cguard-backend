@@ -90,4 +90,10 @@ export default (app) => {
   app.delete(
     `/tenant/:tenantId/client-account/:id/notes/:noteId`,
     require('./clientAccountNoteDestroy').default,
-  );};
+  );
+
+  app.post(
+    `/tenant/:tenantId/client-account/:id/send-portal-invitation`,
+    require('./clientAccountSendPortalInvitation').default,
+  );
+};

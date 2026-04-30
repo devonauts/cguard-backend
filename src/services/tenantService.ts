@@ -13,6 +13,7 @@ import SettingsService from './settingsService';
 import Plans from '../security/plans';
 import { IServiceOptions } from './IServiceOptions';
 import jwt from 'jsonwebtoken';
+import CustomerIdentityService from './customerIdentityService';
 
 export default class TenantService {
   options: IServiceOptions;
@@ -615,6 +616,10 @@ export default class TenantService {
         await TenantInvitationRepository.consume(token, { ...this.options, transaction });
 
         await SequelizeRepository.commitTransaction(transaction);
+
+        // Sync linked clientAccount to 'active' (fire-and-forget, non-blocking)
+        CustomerIdentityService.markActive(this.options.currentUser.id, tenantId, this.options.database)
+          .catch((e) => console.warn('acceptInvitation: markActive failed:', e && e.message ? e.message : e));
         
         // ✅ CLAVE: Recargar el usuario completo con tenants actualizados y generar nuevo JWT
         const updatedUser = await UserRepository.findById(this.options.currentUser.id, {
@@ -672,6 +677,10 @@ export default class TenantService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Sync linked clientAccount to 'active' (fire-and-forget, non-blocking)
+      CustomerIdentityService.markActive(this.options.currentUser.id, tenantUser.tenant.id, this.options.database)
+        .catch((e) => console.warn('acceptInvitation legacy: markActive failed:', e && e.message ? e.message : e));
 
       // ✅ CLAVE: Recargar el usuario completo con tenants actualizados y generar nuevo JWT
       const updatedUser = await UserRepository.findById(this.options.currentUser.id, {

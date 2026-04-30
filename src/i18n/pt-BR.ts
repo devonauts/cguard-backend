@@ -38,6 +38,7 @@ const ptBR = {
     passwordChange: {
       invalidPassword: 'A senha antiga é inválida',
     },
+    customerCrmNotAllowed: 'Sua conta possui apenas acesso de cliente. Por favor, use o app de clientes para fazer login.',
   },
 
   user: {

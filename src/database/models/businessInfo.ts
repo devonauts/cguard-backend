@@ -18,25 +18,18 @@ export default function (sequelize) {
       },
       description: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: true,
         validate: {
           len: [0, 5000],
-          notEmpty: true,
         }
       },
       contactPhone: {
         type: DataTypes.TEXT,
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-        }
+        allowNull: true,
       },
       contactEmail: {
         type: DataTypes.TEXT,
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-        }
+        allowNull: true,
       },
       latitud: {
         type: DataTypes.STRING(100),
@@ -92,10 +85,17 @@ export default function (sequelize) {
       },
       address: {
         type: DataTypes.TEXT,
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-        }
+        allowNull: true,
+      },
+      serviceType: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        // Valid values: manned | alarm | cctv | patrol | custody | (custom string)
+      },
+      serviceConfig: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: null,
       },
       importHash: {
         type: DataTypes.STRING(255),

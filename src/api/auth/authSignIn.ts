@@ -2,6 +2,7 @@
 
 import ApiResponseHandler from '../apiResponseHandler'
 import AuthService from '../../services/auth/authService'
+import Error403 from '../../errors/Error403'
 
 export default async (req, res) => {
   try {
@@ -12,6 +13,18 @@ export default async (req, res) => {
       req.body.tenantId,
       req,
     )
+
+    // Block customer-only accounts from accessing the CRM panel.
+    // They must use /auth/sign-in-customer (the mobile/portal app endpoint).
+    const tenantEntry = (payload?.user as any)?.tenant;
+    if (tenantEntry) {
+      const roles: string[] = Array.isArray(tenantEntry.roles)
+        ? tenantEntry.roles.map((r: any) => String(r).toLowerCase())
+        : [];
+      if (roles.length > 0 && roles.every((r) => r === 'customer')) {
+        throw new Error403(req.language, 'auth.customerCrmNotAllowed');
+      }
+    }
 
     // ✅ RETORNO OBLIGATORIO para evitar doble respuesta
     return ApiResponseHandler.success(req, res, payload)

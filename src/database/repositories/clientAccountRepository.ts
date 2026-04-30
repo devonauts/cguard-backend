@@ -1,5 +1,6 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import AuditLogRepository from '../../database/repositories/auditLogRepository';
+import FileRepository from '../../database/repositories/fileRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
@@ -76,6 +77,8 @@ class ClientAccountRepository {
           'importHash',
           'categoryIds',
           'active',
+          'commercialName',
+          'contractDate',
         ]),
         tenantId: tenant.id,
         createdById: currentUser.id,
@@ -84,6 +87,26 @@ class ClientAccountRepository {
       {
         transaction,
       },
+    );
+
+    await FileRepository.replaceRelationFiles(
+      {
+        belongsTo: options.database.clientAccount.getTableName(),
+        belongsToColumn: 'logoUrl',
+        belongsToId: record.id,
+      },
+      data.logoUrl,
+      options,
+    );
+
+    await FileRepository.replaceRelationFiles(
+      {
+        belongsTo: options.database.clientAccount.getTableName(),
+        belongsToColumn: 'placePictureUrl',
+        belongsToId: record.id,
+      },
+      data.placePictureUrl,
+      options,
     );
 
     await this._createAuditLog(
@@ -153,6 +176,8 @@ class ClientAccountRepository {
         'importHash',
         'categoryIds',
         'active',
+        'commercialName',
+        'contractDate',
       ]),
       updatedById: currentUser.id,
     };
@@ -196,6 +221,30 @@ class ClientAccountRepository {
     console.log('✅ Registro actualizado en BD:', record.toJSON());
     console.log('✅ Registro (active):', record.active);
 
+
+    if (data.logoUrl !== undefined) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.clientAccount.getTableName(),
+          belongsToColumn: 'logoUrl',
+          belongsToId: id,
+        },
+        data.logoUrl,
+        options,
+      );
+    }
+
+    if (data.placePictureUrl !== undefined) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.clientAccount.getTableName(),
+          belongsToColumn: 'placePictureUrl',
+          belongsToId: id,
+        },
+        data.placePictureUrl,
+        options,
+      );
+    }
 
     await this._createAuditLog(
       AuditLogRepository.UPDATE,
@@ -773,10 +822,10 @@ class ClientAccountRepository {
     }
 
     const output = record.get({ plain: true });
+    const transaction = SequelizeRepository.getTransaction(options);
 
     // Load categories from categoryIds JSON array
     if (output.categoryIds && Array.isArray(output.categoryIds) && output.categoryIds.length > 0) {
-      const transaction = SequelizeRepository.getTransaction(options);
       const categories = await options.database.category.findAll({
         where: {
           id: {
@@ -789,6 +838,14 @@ class ClientAccountRepository {
     } else {
       output.categories = [];
     }
+
+    output.logoUrl = await FileRepository.fillDownloadUrl(
+      await record.getLogoUrl({ transaction }),
+    );
+
+    output.placePictureUrl = await FileRepository.fillDownloadUrl(
+      await record.getPlacePictureUrl({ transaction }),
+    );
 
     return output;
   }
