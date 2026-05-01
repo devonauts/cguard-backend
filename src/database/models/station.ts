@@ -19,47 +19,24 @@ export default function (sequelize) {
       },
       latitud: {
         type: DataTypes.STRING(100),
-        allowNull: false,
+        allowNull: true,
         validate: {
           len: [0, 100],
-          notEmpty: true,
         }
       },
       longitud: {
         type: DataTypes.STRING(100),
-        allowNull: false,
+        allowNull: true,
         validate: {
           len: [0, 100],
-          notEmpty: true,
         }
       },
       numberOfGuardsInStation: {
         type: DataTypes.TEXT,
-        validate: {
-          isIn: [[
-            "1",
-            "2",
-            "3",
-            "4"
-          ]],
-        }
       },
       stationSchedule: {
         type: DataTypes.TEXT,
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-          isIn: [[
-            "1 hora",
-            "4 horas",
-            "8 horas",
-            "10 horas",
-            "12 horas",
-            "14 horas",
-            "16 horas",
-            "24 horas"
-          ]],
-        }
+        allowNull: true,
       },
       startingTimeInDay: {
         type: DataTypes.TEXT,
