@@ -4,10 +4,8 @@ import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import ClientAccountRepository from '../database/repositories/clientAccountRepository';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
-import UserRepository from '../database/repositories/userRepository';
-import Roles from '../security/roles';
 import crypto from 'crypto';
-import UserCreator from './user/userCreator';
+import CustomerIdentityService from './customerIdentityService';
 
 export default class ClientAccountService {
   options: IServiceOptions;
@@ -37,97 +35,13 @@ export default class ClientAccountService {
 
     try {
       // No relationship filtering needed for simplified model
-      // If an existing User exists with the provided email, capture it to link later
-      let existingUser: any = null;
-      try {
-        if (data && data.email) {
-          existingUser = await UserRepository.findByEmailWithoutAvatar(data.email, {
-            ...this.options,
-            transaction,
-          });
-        }
-      } catch (err) {
-        console.warn('Could not lookup existing user by email before creating clientAccount:', err && (err as any).message ? (err as any).message : err);
-      }
-
       const record = await ClientAccountRepository.create(data, {
         ...this.options,
         transaction,
       });
 
-      // --- INICIO integración creación de usuario/tenantUser para clientes ---
-      try {
-        // If we found an existing user earlier, ensure they have a tenantUser entry
-        // with the customer role and assigned client.
-        if (existingUser && existingUser.id) {
-          try {
-            // Link clientAccount to existing user via userId
-            try {
-              await record.update({ userId: existingUser.id }, { transaction });
-            } catch (e) {
-              console.warn('Failed to set userId on clientAccount record:', e && (e as any).message ? (e as any).message : e);
-            }
-
-            await TenantUserRepository.updateRoles(
-              this.options.currentTenant.id,
-              existingUser.id,
-              [Roles.values.customer],
-              { ...this.options, transaction, addRoles: true },
-              [record.id],
-            );
-            console.info('[ClientAccountService] Existing user linked to clientAccount and tenantUser updated:', existingUser.id);
-          } catch (err) {
-            console.error('[ClientAccountService] Error linking existing user to clientAccount:', err);
-          }
-        } else {
-          // Solo crear usuario si hay email y no se indicó explícitamente que no se cree
-          if (data && data.email) {
-            const userCreator = new UserCreator({
-              ...this.options,
-              transaction,
-            });
-            // El email puede venir como string o array, normalizamos
-            const emails = Array.isArray(data.email) ? data.email : [data.email];
-            // Se puede pasar nombre, apellido, etc. desde el front
-            const userData = {
-              emails,
-              firstName: data.firstName || data.nombre || data.name || undefined,
-              lastName: data.lastName || data.apellido || undefined,
-              // Unir nombre y apellido para fullName si ambos existen
-              fullName: (
-                (data.firstName || data.nombre || data.name)
-                  ? ((data.firstName || data.nombre || data.name) +
-                    ((data.lastName || data.apellido) ? ' ' + (data.lastName || data.apellido) : ''))
-                  : (data.fullName || data.nombreCompleto || data.name || undefined)
-              ),
-              clientIds: [record.id],
-              roles: [Roles.values.customer],
-            };
-            console.info('[ClientAccountService] Creando usuario/tenantUser para cliente:', userData);
-            await userCreator.execute(userData, true); // true: enviar invitación, verificación por defecto
-            console.info('[ClientAccountService] Usuario/tenantUser creado e invitación enviada para cliente:', emails);
-
-            // After creating the user, fetch it by email and link to clientAccount.userId
-            try {
-              const createdUser = await UserRepository.findByEmailWithoutAvatar(emails[0], { ...this.options, transaction });
-              if (createdUser && createdUser.id) {
-                try {
-                  await record.update({ userId: createdUser.id }, { transaction });
-                } catch (e) {
-                  console.warn('Failed to set userId on clientAccount after creating user:', e && (e as any).message ? (e as any).message : e);
-                }
-              }
-            } catch (e) {
-              console.warn('Could not fetch created user to link to clientAccount:', e && (e as any).message ? (e as any).message : e);
-            }
-          } else {
-            console.warn('[ClientAccountService] No se proporcionó email para crear usuario cliente.');
-          }
-        }
-      } catch (err) {
-        console.error('[ClientAccountService] Error creando/relacionando usuario/tenantUser para cliente:', err);
-      }
-      // --- FIN integración usuario cliente ---
+      // Identity provisioning happens after the outer transaction commits.
+      // See the post-commit CustomerIdentityService call below.
 
       // If the creator is not an admin, auto-assign the created client to that tenant user.
       try {
@@ -200,9 +114,24 @@ export default class ClientAccountService {
         console.error('Auto-assign client to creator failed:', err);
       }
 
-      await SequelizeRepository.commitTransaction(
-        transaction,
-      );
+      await SequelizeRepository.commitTransaction(transaction);
+
+      // ── Post-commit: provision identity and send invitation ───────────────────
+      // Runs in its own independent transaction via CustomerIdentityService.
+      // If it fails, the clientAccount record is safely committed and the admin
+      // can retry by clicking "Enviar acceso a la app".
+      if (data && data.email) {
+        try {
+          await new CustomerIdentityService(this.options).provisionAndInvite(record);
+          (record as any).onboardingStatus = 'invited';
+        } catch (err) {
+          console.error(
+            '[ClientAccountService] Identity provisioning failed — client was created but invitation was not sent:',
+            err && (err as any).message ? (err as any).message : err,
+          );
+          // onboardingStatus stays 'not_invited'. Admin can retry via "Enviar acceso".
+        }
+      }
 
       return record;
     } catch (error) {

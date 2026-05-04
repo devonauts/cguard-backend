@@ -42,6 +42,8 @@ class BusinessInfoRepository {
           'postalCode',
           'active',
           'importHash',
+          'serviceType',
+          'serviceConfig',
         ]),
 
         tenantId: tenant.id,
@@ -124,6 +126,8 @@ class BusinessInfoRepository {
           'postalCode',
           'active',
           'importHash',
+          'serviceType',
+          'serviceConfig',
         ]),
 
         updatedById: currentUser.id,

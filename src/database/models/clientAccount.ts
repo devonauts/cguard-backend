@@ -145,6 +145,23 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: true,
       },
+      commercialName: {
+        type: DataTypes.STRING(200),
+        allowNull: true,
+        validate: {
+          len: [0, 200],
+        },
+      },
+      contractDate: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
+      onboardingStatus: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'not_invited',
+        // Valid values: not_invited | invited | active | suspended
+      },
     },
     {
       indexes: [
@@ -162,6 +179,26 @@ export default function (sequelize) {
   );
 
   clientAccount.associate = (models) => {
+    models.clientAccount.hasMany(models.file, {
+      as: 'logoUrl',
+      foreignKey: 'belongsToId',
+      constraints: false,
+      scope: {
+        belongsTo: clientAccount.getTableName(),
+        belongsToColumn: 'logoUrl',
+      },
+    });
+
+    models.clientAccount.hasMany(models.file, {
+      as: 'placePictureUrl',
+      foreignKey: 'belongsToId',
+      constraints: false,
+      scope: {
+        belongsTo: clientAccount.getTableName(),
+        belongsToColumn: 'placePictureUrl',
+      },
+    });
+
     // Multi-tenant relationship
     models.clientAccount.belongsTo(models.tenant, {
       as: 'tenant',

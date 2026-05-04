@@ -48,23 +48,16 @@ export default async (req, res, next) => {
       country: find(['country'], undefined),
       city: find(['city'], undefined),
       postalCode: find(['postalCode', 'postal_code'], undefined),
+      serviceType: find(['serviceType'], undefined),
     };
 
     // Validate required fields — return 400 instead of saving placeholders
     const required = [
       'companyName',
-      'description',
-      'contactPhone',
-      'contactEmail',
-      'address',
     ];
 
     const placeholders = new Set([
       'Sin nombre',
-      'Sin descripción',
-      'Sin teléfono',
-      'sin-email@local.invalid',
-      'Sin dirección',
     ]);
 
     const missing = required.filter((k) => {

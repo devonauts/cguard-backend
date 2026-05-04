@@ -30,6 +30,7 @@ const es = {
         'La contraseña anterior no es válida.',
     },
     roleNotCustomer: 'Rol no permitido',
+    customerCrmNotAllowed: 'Tu cuenta solo tiene acceso de cliente. Por favor usa la app de clientes para iniciar sesión.',
     passwordChanged: 'Contraseña cambiada correctamente. Ahora puedes iniciar sesión con tu nueva contraseña.',
     passwordSetByAdmin: 'Contraseña actualizada por el administrador.',
   },

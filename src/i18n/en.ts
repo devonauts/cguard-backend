@@ -37,6 +37,7 @@ const en = {
       signedInAsWrongUser: `This email confirmation was sent to {0} but you're signed in as {1}.`,
     },
     roleNotCustomer: 'User does not have the customer role for this endpoint.',
+    customerCrmNotAllowed: 'Your account only has customer access. Please use the customer app to log in.',
     passwordChange: {
       invalidPassword: 'The old password is invalid',
     },
