@@ -12,7 +12,9 @@ export default class Storage {
     return {
       userAvatarsProfiles: {
         id: 'userAvatarsProfiles',
-        folder: 'user/avatars/profile/:userId',
+        // Store user avatars under tenant-scoped folder so files are
+        // organized by tenant and user: uploads/tenant/<tenantId>/user/<userId>/avatar
+        folder: 'tenant/:tenantId/user/:userId/avatar',
         maxSizeInBytes: 10 * 1024 * 1024,
         bypassWritingPermissions: true,
         publicRead: true,

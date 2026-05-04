@@ -32,6 +32,14 @@ export default (app) => {
     `/tenant/:tenantId/user/import`,
     require('./userImport').default,
   );
+  // Upload avatar for a user (multipart/form-data, field `file`)
+  const multer = require('multer');
+  const multipart = multer();
+  app.post(
+    `/tenant/:tenantId/user/:id/avatar`,
+    multipart.single('file'),
+    require('./uploadAvatar').default,
+  );
   app.delete(
     `/tenant/:tenantId/user`,
     require('./userDestroy').default,

@@ -11,6 +11,12 @@ import { IRepositoryOptions } from './IRepositoryOptions';
 import SequelizeArrayUtils from '../utils/sequelizeArrayUtils';
 import lodash from 'lodash';
 
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { v4 as uuid } from 'uuid';
+import FileStorage from '../../services/file/fileStorage';
+
 const Op = Sequelize.Op;
 
 export default class UserRepository {
@@ -198,6 +204,74 @@ export default class UserRepository {
       },
       { transaction },
     );
+
+    // If client provided base64 images in data.avatars, process and upload them
+    try {
+      const StorageConfig = require('../../security/storage').default;
+      const storageCfg = StorageConfig.values['userAvatarsProfiles'];
+
+      if (Array.isArray(data.avatars) && data.avatars.length > 0) {
+        for (let i = 0; i < data.avatars.length; i++) {
+          const f = data.avatars[i];
+          const b64 = f && (f.base64 || f.dataUrl || f.dataURI || f.data);
+          if (!b64) continue;
+
+          try {
+            let matches = String(b64).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
+            let mimeType = 'image/png';
+            let base64Data = String(b64);
+
+            if (matches) {
+              mimeType = matches[1];
+              base64Data = matches[2];
+            }
+
+            const ext = mimeType.split('/').pop() || 'png';
+            const filename = `${uuid()}.${ext}`;
+
+            let privateUrl = `${storageCfg.folder}/${filename}`;
+            privateUrl = privateUrl.replace(':userId', user.id);
+
+            const buffer = Buffer.from(base64Data, 'base64');
+            const tmpPath = path.join(os.tmpdir(), filename);
+            fs.writeFileSync(tmpPath, buffer);
+
+            try {
+              if (typeof FileStorage.upload === 'function') {
+                await FileStorage.upload(tmpPath, privateUrl);
+              } else {
+                const LocalStorage = require('../../services/file/localhostFileStorage').default;
+                await LocalStorage.upload(tmpPath, privateUrl);
+              }
+            } finally {
+              try { fs.unlinkSync(tmpPath); } catch (e) { /* ignore */ }
+            }
+
+            const currentTenant = SequelizeRepository.getCurrentTenant(options);
+
+            const fileRecord = await options.database.file.create({
+              belongsTo: options.database.user.getTableName(),
+              belongsToColumn: 'avatars',
+              belongsToId: user.id,
+              name: filename,
+              sizeInBytes: buffer.length,
+              privateUrl: privateUrl,
+              mimeType: mimeType,
+              tenantId: currentTenant ? currentTenant.id : null,
+              createdById: currentUser ? currentUser.id : null,
+              updatedById: currentUser ? currentUser.id : null,
+            }, { transaction });
+
+            // Replace base64 entry with existing file reference so replaceRelationFiles won't duplicate
+            data.avatars[i] = { id: fileRecord.id };
+          } catch (err) {
+            console.warn('Failed to process base64 avatar entry:', err && err.message ? err.message : err);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('userRepository: base64 avatar handling failed', err && err.message ? err.message : err);
+    }
 
     await FileRepository.replaceRelationFiles(
       {
@@ -471,15 +545,83 @@ export default class UserRepository {
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'avatars')) {
-      await FileRepository.replaceRelationFiles(
-        {
-          belongsTo: options.database.user.getTableName(),
-          belongsToColumn: 'avatars',
-          belongsToId: user.id,
-        },
-        data.avatars,
-        options,
-      );
+        // If client provided base64 images in data.avatars, process and upload them
+        try {
+          const StorageConfig = require('../../security/storage').default;
+          const storageCfg = StorageConfig.values['userAvatarsProfiles'];
+
+          if (Array.isArray(data.avatars) && data.avatars.length > 0) {
+            for (let i = 0; i < data.avatars.length; i++) {
+              const f = data.avatars[i];
+              const b64 = f && (f.base64 || f.dataUrl || f.dataURI || f.data);
+              if (!b64) continue;
+
+              try {
+                let matches = String(b64).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
+                let mimeType = 'image/png';
+                let base64Data = String(b64);
+
+                if (matches) {
+                  mimeType = matches[1];
+                  base64Data = matches[2];
+                }
+
+                const ext = mimeType.split('/').pop() || 'png';
+                const filename = `${uuid()}.${ext}`;
+
+                let privateUrl = `${storageCfg.folder}/${filename}`;
+                privateUrl = privateUrl.replace(':userId', user.id);
+
+                const buffer = Buffer.from(base64Data, 'base64');
+                const tmpPath = path.join(os.tmpdir(), filename);
+                fs.writeFileSync(tmpPath, buffer);
+
+                try {
+                  if (typeof FileStorage.upload === 'function') {
+                    await FileStorage.upload(tmpPath, privateUrl);
+                  } else {
+                    const LocalStorage = require('../../services/file/localhostFileStorage').default;
+                    await LocalStorage.upload(tmpPath, privateUrl);
+                  }
+                } finally {
+                  try { fs.unlinkSync(tmpPath); } catch (e) { /* ignore */ }
+                }
+
+                const currentTenant = SequelizeRepository.getCurrentTenant(options);
+
+                const fileRecord = await options.database.file.create({
+                  belongsTo: options.database.user.getTableName(),
+                  belongsToColumn: 'avatars',
+                  belongsToId: user.id,
+                  name: filename,
+                  sizeInBytes: buffer.length,
+                  privateUrl: privateUrl,
+                  mimeType: mimeType,
+                  tenantId: currentTenant ? currentTenant.id : null,
+                  createdById: currentUser ? currentUser.id : null,
+                  updatedById: currentUser ? currentUser.id : null,
+                }, { transaction });
+
+                // Replace base64 entry with existing file reference so replaceRelationFiles won't duplicate
+                data.avatars[i] = { id: fileRecord.id };
+              } catch (err) {
+                console.warn('Failed to process base64 avatar entry:', err && err.message ? err.message : err);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('userRepository: base64 avatar handling failed', err && err.message ? err.message : err);
+        }
+
+        await FileRepository.replaceRelationFiles(
+          {
+            belongsTo: options.database.user.getTableName(),
+            belongsToColumn: 'avatars',
+            belongsToId: user.id,
+          },
+          data.avatars,
+          options,
+        );
     }
 
     await AuditLogRepository.log(
