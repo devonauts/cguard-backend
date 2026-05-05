@@ -64,7 +64,7 @@ class Permissions {
       bannerSuperiorAppEdit: createPermission('bannerSuperiorAppEdit', MANAGEMENT_ROLES),
       bannerSuperiorAppDestroy: createPermission('bannerSuperiorAppDestroy', MANAGEMENT_ROLES),
       bannerSuperiorAppRead: createPermission('bannerSuperiorAppRead', [...ALL_STAFF_ROLES, roles.customer]),
-      bannerSuperiorAppAutocomplete: createPermission('bannerSuperiorAppAutocomplete', ALL_STAFF_ROLES),
+      bannerSuperiorAppAutocomplete: createPermission('bannerSuperiorAppAutocomplete', [...ALL_STAFF_ROLES, roles.customer]),
 
       // === SERVICES ===
       serviceImport: createPermission('serviceImport', CLIENT_MANAGEMENT_ROLES),
@@ -72,15 +72,15 @@ class Permissions {
       serviceEdit: createPermission('serviceEdit', CLIENT_MANAGEMENT_ROLES),
       serviceDestroy: createPermission('serviceDestroy', CLIENT_MANAGEMENT_ROLES),
       serviceRead: createPermission('serviceRead', [...ALL_STAFF_ROLES, roles.customer]),
-      serviceAutocomplete: createPermission('serviceAutocomplete', ALL_STAFF_ROLES),
+      serviceAutocomplete: createPermission('serviceAutocomplete', [...ALL_STAFF_ROLES, roles.customer]),
 
       // === CERTIFICATIONS ===
       certificationImport: createPermission('certificationImport', HR_ROLES),
       certificationCreate: createPermission('certificationCreate', HR_ROLES),
       certificationEdit: createPermission('certificationEdit', HR_ROLES),
       certificationDestroy: createPermission('certificationDestroy', HR_ROLES),
-      certificationRead: createPermission('certificationRead', ALL_STAFF_ROLES),
-      certificationAutocomplete: createPermission('certificationAutocomplete', ALL_STAFF_ROLES),
+      certificationRead: createPermission('certificationRead', [...ALL_STAFF_ROLES, roles.customer]),
+      certificationAutocomplete: createPermission('certificationAutocomplete', [...ALL_STAFF_ROLES, roles.customer]),
 
       // === LICENSE TYPES ===
       licenseTypeCreate: createPermission('licenseTypeCreate', MANAGEMENT_ROLES),
