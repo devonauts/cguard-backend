@@ -36,7 +36,7 @@ app.get('/api/places/autocomplete', (req, res) => {
   const key = process.env.GOOGLE_MAPS_API_KEY || process.env.FLUTTER_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) return res.status(500).json({ message: 'maps_key_missing' });
   const uri = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${key}&types=address&language=${encodeURIComponent(lang)}`;
-  https.get(uri, (r) => {
+  return https.get(uri, (r) => {
     let data = '';
     r.on('data', (chunk) => (data += chunk));
     r.on('end', () => {
@@ -54,7 +54,7 @@ app.get('/api/places/details', (req, res) => {
   const key = process.env.GOOGLE_MAPS_API_KEY || process.env.FLUTTER_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) return res.status(500).json({ message: 'maps_key_missing' });
   const uri = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${key}&fields=formatted_address,address_components,geometry`;
-  https.get(uri, (r) => {
+  return https.get(uri, (r) => {
     let data = '';
     r.on('data', (chunk) => (data += chunk));
     r.on('end', () => {
