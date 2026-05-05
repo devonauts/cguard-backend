@@ -1,4 +1,5 @@
 import express from 'express';
+import https from 'https';
 import cors from 'cors';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { tenantMiddleware } from '../middlewares/tenantMiddleware';
@@ -27,6 +28,44 @@ app.use(languageMiddleware);
 
 // Public shared request route (no auth)
 app.get('/public/dispatch/:token', require('./publicRequest').default);
+
+// Proxy endpoints for Google Places (server-side) to avoid CORS issues
+app.get('/api/places/autocomplete', (req, res) => {
+  const input = String(req.query.input || '');
+  const lang = String(req.query.language || 'es');
+  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.FLUTTER_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!key) return res.status(500).json({ message: 'maps_key_missing' });
+  const uri = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${key}&types=address&language=${encodeURIComponent(lang)}`;
+  https.get(uri, (r) => {
+    let data = '';
+    r.on('data', (chunk) => (data += chunk));
+    r.on('end', () => {
+      res.set('Content-Type', 'application/json');
+      res.send(data);
+    });
+  }).on('error', (err) => {
+    console.error('Places autocomplete proxy error:', err);
+    res.status(502).json({ message: 'places_proxy_error' });
+  });
+});
+
+app.get('/api/places/details', (req, res) => {
+  const placeId = String(req.query.place_id || '');
+  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.FLUTTER_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!key) return res.status(500).json({ message: 'maps_key_missing' });
+  const uri = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${key}&fields=formatted_address,address_components,geometry`;
+  https.get(uri, (r) => {
+    let data = '';
+    r.on('data', (chunk) => (data += chunk));
+    r.on('end', () => {
+      res.set('Content-Type', 'application/json');
+      res.send(data);
+    });
+  }).on('error', (err) => {
+    console.error('Places details proxy error:', err);
+    res.status(502).json({ message: 'places_proxy_error' });
+  });
+});
 
 // Configures the authentication middleware
 // to set the currentUser to the requests
