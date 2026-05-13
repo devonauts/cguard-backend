@@ -38,11 +38,35 @@ export default async (req: any, res: any) => {
     // Parse include param: if provided, only include those relation keys
     // Example: ?include=guards,incidents
     const includeParam = (req.query && req.query.include) ? String(req.query.include) : '';
-    const includeList = includeParam.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
-    const includeAll = includeList.length === 0;
+    const rawIncludeList = includeParam.split(',').map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0);
+    const includeAll = rawIncludeList.length === 0;
 
-    // Helper to decide whether to fetch/return a relation
-    const shouldInclude = (key: string) => includeAll || includeList.includes(key);
+    // support aliases and normalization (case-insensitive)
+    const aliasMap: Record<string, string> = {
+      guards: 'guards',
+      guard: 'guards',
+      incidents: 'incidents',
+      incident: 'incidents',
+      activeshifts: 'activeShifts',
+      activeshift: 'activeShifts',
+      shifts: 'activeShifts',
+      shift: 'activeShifts',
+      inventory: 'inventory',
+      inventories: 'inventory',
+      postsites: 'postSites',
+      postsite: 'postSites',
+      postsites: 'postSites',
+      posts: 'postSites',
+      stations: 'postSites',
+    };
+
+    const includeSet = new Set<string>();
+    for (const raw of rawIncludeList) {
+      const mapped = aliasMap[raw] || raw;
+      includeSet.add(mapped);
+    }
+
+    const shouldInclude = (key: string) => includeAll || includeSet.has(key);
 
     // ── 1. Client account record ─────────────────────────────────────────────
     const clientAccount = await db.clientAccount.findOne({
