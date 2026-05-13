@@ -35,6 +35,15 @@ export default async (req: any, res: any) => {
     const db = req.database;
     const tenantId = currentUser.tenantId || (req.currentTenant && req.currentTenant.id);
 
+    // Parse include param: if provided, only include those relation keys
+    // Example: ?include=guards,incidents
+    const includeParam = (req.query && req.query.include) ? String(req.query.include) : '';
+    const includeList = includeParam.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+    const includeAll = includeList.length === 0;
+
+    // Helper to decide whether to fetch/return a relation
+    const shouldInclude = (key: string) => includeAll || includeList.includes(key);
+
     // ── 1. Client account record ─────────────────────────────────────────────
     const clientAccount = await db.clientAccount.findOne({
       where: { id: clientAccountId, ...(tenantId ? { tenantId } : {}) },
@@ -87,28 +96,30 @@ export default async (req: any, res: any) => {
     // ── 3. Assigned security guards ──────────────────────────────────────────
     // Guards are linked via tenant_user_client_accounts (tenantUser → securityGuard)
     let guards: any[] = [];
-    try {
-      const sequelize = db.sequelize;
-      const [guardRows] = await sequelize.query(
-        `SELECT DISTINCT sg.id, sg.fullName, sg.phone, sg.isOnDuty, sg.gender
-         FROM tenant_user_client_accounts tuca
-         JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
-         JOIN securityGuards sg ON sg.tenantUserId = tu.id
-         WHERE tuca.clientAccountId = :clientAccountId
-           AND tuca.deletedAt IS NULL
-           AND tu.deletedAt IS NULL
-           AND sg.deletedAt IS NULL
-           ${tenantId ? 'AND (tu.tenantId = :tenantId OR tuca.tenantId = :tenantId)' : ''}`,
-        { replacements: { clientAccountId, tenantId } },
-      );
-      guards = Array.isArray(guardRows) ? guardRows : [];
-    } catch (e) {
-      guards = [];
+    if (shouldInclude('guards')) {
+      try {
+        const sequelize = db.sequelize;
+        const [guardRows] = await sequelize.query(
+          `SELECT DISTINCT sg.id, sg.fullName, sg.phone, sg.isOnDuty, sg.gender
+           FROM tenant_user_client_accounts tuca
+           JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
+           JOIN securityGuards sg ON sg.tenantUserId = tu.id
+           WHERE tuca.clientAccountId = :clientAccountId
+             AND tuca.deletedAt IS NULL
+             AND tu.deletedAt IS NULL
+             AND sg.deletedAt IS NULL
+             ${tenantId ? 'AND (tu.tenantId = :tenantId OR tuca.tenantId = :tenantId)' : ''}`,
+          { replacements: { clientAccountId, tenantId } },
+        );
+        guards = Array.isArray(guardRows) ? guardRows : [];
+      } catch (e) {
+        guards = [];
+      }
     }
 
     // ── 4. Recent incidents (last 30 days) ───────────────────────────────────
     let incidents: any[] = [];
-    if (postSiteIds.length) {
+    if (shouldInclude('incidents') && postSiteIds.length) {
       try {
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const rows = await db.incident.findAll({
@@ -133,7 +144,7 @@ export default async (req: any, res: any) => {
 
     // ── 5. Active / upcoming shifts ──────────────────────────────────────────
     let activeShifts: any[] = [];
-    if (postSiteIds.length) {
+    if (shouldInclude('activeShifts') && postSiteIds.length) {
       try {
         const now = new Date();
         const sevenDaysAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -157,7 +168,7 @@ export default async (req: any, res: any) => {
     // ── 6. Inventory items per station ───────────────────────────────────────
     let inventory: any[] = [];
     const stationIds = stationsRaw.map((s: any) => s.id);
-    if (stationIds.length) {
+    if (shouldInclude('inventory') && stationIds.length) {
       try {
         const rows = await db.inventory.findAll({
           where: {
@@ -172,14 +183,16 @@ export default async (req: any, res: any) => {
       }
     }
 
-    return ApiResponseHandler.success(req, res, {
-      clientAccount: plain,
-      postSites,
-      guards,
-      incidents,
-      activeShifts,
-      inventory,
-    });
+    // Build response object. `clientAccount` always present. Other keys
+    // returned only if requested (or when no include param provided).
+    const response: any = { clientAccount: plain };
+    if (shouldInclude('postSites')) response.postSites = postSites;
+    if (shouldInclude('guards')) response.guards = guards;
+    if (shouldInclude('incidents')) response.incidents = incidents;
+    if (shouldInclude('activeShifts')) response.activeShifts = activeShifts;
+    if (shouldInclude('inventory')) response.inventory = inventory;
+
+    return ApiResponseHandler.success(req, res, response);
   } catch (error) {
     return ApiResponseHandler.error(req, res, error);
   }
