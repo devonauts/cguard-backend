@@ -91,6 +91,9 @@ export default async (req: any, res: any) => {
 
     const postSiteIds = postSitesRaw.map((p: any) => p.id);
 
+    // DEBUG: log postSite ids
+    console.debug('[customerAccountMe] postSiteIds:', postSiteIds);
+
     // Stations grouped per post site
     const stationsRaw = postSiteIds.length
       ? await db.station.findAll({
@@ -98,6 +101,8 @@ export default async (req: any, res: any) => {
           attributes: ['id', 'stationName', 'latitud', 'longitud', 'postSiteId'],
         })
       : [];
+
+    console.debug('[customerAccountMe] stationsRaw count:', Array.isArray(stationsRaw) ? stationsRaw.length : 0);
 
     const stationsByPostSite: Record<string, any[]> = {};
     for (const s of stationsRaw) {
@@ -122,6 +127,7 @@ export default async (req: any, res: any) => {
     if (shouldInclude('guards')) {
       try {
         const sequelize = db.sequelize;
+        console.debug('[customerAccountMe] fetching guards for clientAccountId, tenantId:', clientAccountId, tenantId);
         const [guardRows] = await sequelize.query(
           `SELECT DISTINCT sg.id, sg.fullName, sg.phone, sg.isOnDuty, sg.gender
            FROM tenant_user_client_accounts tuca
@@ -135,6 +141,7 @@ export default async (req: any, res: any) => {
           { replacements: { clientAccountId, tenantId } },
         );
         guards = Array.isArray(guardRows) ? guardRows : [];
+        console.debug('[customerAccountMe] guards count:', Array.isArray(guards) ? guards.length : 0);
       } catch (e) {
         guards = [];
       }
@@ -144,6 +151,7 @@ export default async (req: any, res: any) => {
     let incidents: any[] = [];
     if (shouldInclude('incidents') && postSiteIds.length) {
       try {
+        console.debug('[customerAccountMe] fetching incidents postSiteIds:', postSiteIds, 'tenantId:', tenantId);
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const rows = await db.incident.findAll({
           where: {
@@ -160,6 +168,7 @@ export default async (req: any, res: any) => {
           limit: 50,
         });
         incidents = rows.map((r: any) => r.get({ plain: true }));
+        console.debug('[customerAccountMe] incidents count:', incidents.length);
       } catch (e) {
         incidents = [];
       }
@@ -169,6 +178,7 @@ export default async (req: any, res: any) => {
     let activeShifts: any[] = [];
     if (shouldInclude('activeShifts') && postSiteIds.length) {
       try {
+        console.debug('[customerAccountMe] fetching shifts postSiteIds:', postSiteIds, 'tenantId:', tenantId);
         const now = new Date();
         const sevenDaysAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         const rows = await db.shift.findAll({
@@ -183,6 +193,7 @@ export default async (req: any, res: any) => {
           limit: 100,
         });
         activeShifts = rows.map((r: any) => r.get({ plain: true }));
+        console.debug('[customerAccountMe] activeShifts count:', activeShifts.length);
       } catch (e) {
         activeShifts = [];
       }
@@ -193,6 +204,7 @@ export default async (req: any, res: any) => {
     const stationIds = stationsRaw.map((s: any) => s.id);
     if (shouldInclude('inventory') && stationIds.length) {
       try {
+        console.debug('[customerAccountMe] fetching inventory stationIds:', stationIds, 'tenantId:', tenantId);
         const rows = await db.inventory.findAll({
           where: {
             belongsToStation: stationIds,
@@ -201,6 +213,7 @@ export default async (req: any, res: any) => {
           limit: 200,
         });
         inventory = rows.map((r: any) => r.get({ plain: true }));
+        console.debug('[customerAccountMe] inventory count:', inventory.length);
       } catch (e) {
         inventory = [];
       }
