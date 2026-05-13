@@ -55,7 +55,6 @@ export default async (req: any, res: any) => {
       inventories: 'inventory',
       postsites: 'postSites',
       postsite: 'postSites',
-      postsites: 'postSites',
       posts: 'postSites',
       stations: 'postSites',
     };
