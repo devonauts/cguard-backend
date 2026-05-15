@@ -14,6 +14,7 @@ module.exports = {
     {
       name: 'cguard-backend',
       script: './dist/server.js',
+      cwd: '/home/cguardpro/cguard-backend',
       
       // ============================================================
       // CLUSTER MODE - Critical for 10K+ tenants
