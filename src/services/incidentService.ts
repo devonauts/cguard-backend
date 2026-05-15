@@ -7,6 +7,7 @@ import IncidentTypeRepository from '../database/repositories/incidentTypeReposit
 import ClientAccountRepository from '../database/repositories/clientAccountRepository';
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
+import { dispatch } from '../lib/notificationDispatcher';
 
 export default class IncidentService {
   options: IServiceOptions;
@@ -87,6 +88,19 @@ export default class IncidentService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Notify supervisors of new incident
+      dispatch('incident.created', {
+        incidentTitle: record.title,
+        description: record.description,
+        guardName: record.guardName?.fullName || record.guardName?.name || null,
+        siteName: record.postSite?.name || record.site?.name || null,
+      }, {
+        database: this.options.database,
+        tenantId: this.options.currentTenant?.id,
+        sourceEntityType: 'incident',
+        sourceEntityId: record.id,
+      }).catch(() => {});
 
       return record;
     } catch (error) {

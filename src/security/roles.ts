@@ -18,6 +18,11 @@ class Roles {
       // Operational Roles
       securityGuard: 'securityGuard',
 
+      // Administrative Office Roles
+      administrativeSupervisor: 'administrativeSupervisor',
+      administrativeAssistant: 'administrativeAssistant',
+      secretary: 'secretary',
+
       // External Users
       customer: 'customer',
 
@@ -35,7 +40,10 @@ class Roles {
       securitySupervisor: 80,
       hrManager: 75,
       clientAccountManager: 70,
+      administrativeSupervisor: 68,
       dispatcher: 60,
+      administrativeAssistant: 55,
+      secretary: 52,
       securityGuard: 50,
       customer: 10,
       custom: 1,
@@ -52,6 +60,9 @@ class Roles {
       clientAccountManager: 'Client Account Manager - Manages client accounts',
       dispatcher: 'Dispatcher - Manages scheduling and shifts',
       securityGuard: 'Security Guard - Operational guard role',
+      administrativeSupervisor: 'Administrative Supervisor - Oversees administrative staff and office operations',
+      administrativeAssistant: 'Administrative Assistant - Office support and administrative access',
+      secretary: 'Secretary - Reception, visitor management, and office coordination',
       customer: 'Customer - Client access to assigned services',
       custom: 'Custom Role - Configurable permissions',
     };

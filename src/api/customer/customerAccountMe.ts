@@ -6,7 +6,7 @@
  *
  * Response shape:
  * {
- *   clientAccount: { id, name, email, phone, address, onboardingStatus, ... },
+ *   clientAccount: { id, name, email, phone, address, onboardingStatus, logoUrl: [...], placePictureUrl: [...] },
  *   postSites: [{ id, name, address, lat, lng, stations: [{ id, stationName, lat, lng }] }],
  *   guards: [{ id, fullName, isOnDuty, phone, photo }],
  *   incidents: [{ id, title, description, incidentAt, severity, postSiteId }],
@@ -19,6 +19,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
 import { Op } from 'sequelize';
+import FileRepository from '../../database/repositories/fileRepository';
 
 export default async (req: any, res: any) => {
   try {
@@ -83,6 +84,22 @@ export default async (req: any, res: any) => {
 
     const plain = clientAccount.get({ plain: true });
 
+    // ── 1b. Logo and place picture ───────────────────────────────────────────
+    try {
+      const clientAccountTable = db.clientAccount.getTableName();
+      const logoFiles = await db.file.findAll({
+        where: { belongsTo: clientAccountTable, belongsToId: clientAccountId, belongsToColumn: 'logoUrl', deletedAt: null },
+      });
+      const placeFiles = await db.file.findAll({
+        where: { belongsTo: clientAccountTable, belongsToId: clientAccountId, belongsToColumn: 'placePictureUrl', deletedAt: null },
+      });
+      plain.logoUrl = await FileRepository.fillDownloadUrl(logoFiles);
+      plain.placePictureUrl = await FileRepository.fillDownloadUrl(placeFiles);
+    } catch (e) {
+      plain.logoUrl = [];
+      plain.placePictureUrl = [];
+    }
+
     // ── 2. Post sites (businessInfo) ─────────────────────────────────────────
     const postSitesRaw = await db.businessInfo.findAll({
       where: { clientAccountId, ...(tenantId ? { tenantId } : {}) },
@@ -127,9 +144,13 @@ export default async (req: any, res: any) => {
     if (shouldInclude('guards')) {
       try {
         const sequelize = db.sequelize;
-        console.debug('[customerAccountMe] fetching guards for clientAccountId, tenantId:', clientAccountId, tenantId);
         const [guardRows] = await sequelize.query(
-          `SELECT DISTINCT sg.id, sg.fullName, sg.phone, sg.isOnDuty, sg.gender
+          `SELECT DISTINCT
+             sg.id, sg.fullName, sg.isOnDuty, sg.gender, sg.governmentId,
+             sg.bloodType, sg.birthDate, sg.birthPlace, sg.maritalStatus,
+             sg.academicInstruction, sg.address, sg.guardCredentials,
+             sg.hiringContractDate, sg.availability, sg.languages, sg.skills,
+             sg.guardId
            FROM tenant_user_client_accounts tuca
            JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
            JOIN securityGuards sg ON sg.tenantUserId = tu.id
@@ -140,8 +161,31 @@ export default async (req: any, res: any) => {
              ${tenantId ? 'AND (tu.tenantId = :tenantId OR tuca.tenantId = :tenantId)' : ''}`,
           { replacements: { clientAccountId, tenantId } },
         );
-        guards = Array.isArray(guardRows) ? guardRows : [];
-        console.debug('[customerAccountMe] guards count:', Array.isArray(guards) ? guards.length : 0);
+        const rawGuards = Array.isArray(guardRows) ? guardRows : [];
+
+        // Load profile photos for all guards
+        const guardRecordIds = rawGuards.map((g: any) => g.id).filter(Boolean);
+        const guardPhotos = guardRecordIds.length
+          ? await db.file.findAll({
+              where: {
+                belongsTo: db.securityGuard.getTableName(),
+                belongsToId: guardRecordIds,
+                belongsToColumn: 'profileImage',
+                deletedAt: null,
+              },
+              attributes: ['belongsToId', 'publicUrl', 'privateUrl'],
+            })
+          : [];
+        const photoByGuardId = new Map<string, string>();
+        for (const p of guardPhotos) {
+          const url = p.publicUrl || p.privateUrl || null;
+          if (url && !photoByGuardId.has(p.belongsToId)) photoByGuardId.set(p.belongsToId, url);
+        }
+
+        guards = rawGuards.map((g: any) => ({
+          ...g,
+          photoUrl: photoByGuardId.get(g.id) || null,
+        }));
       } catch (e) {
         guards = [];
       }

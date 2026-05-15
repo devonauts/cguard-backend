@@ -168,11 +168,20 @@ export default class UserCreator {
         createData.firstName = this.data.nombre;
       }
 
+      if (this.data.middleName) createData.middleName = this.data.middleName;
+
       if (this.data.lastName) {
         createData.lastName = this.data.lastName;
       } else if (this.data.apellido) {
         createData.lastName = this.data.apellido;
       }
+
+      // Extra profile fields forwarded from guard creation
+      if (this.data.homeAddress !== undefined) createData.homeAddress = this.data.homeAddress;
+      if (this.data.homeAddressLat !== undefined) createData.homeAddressLat = this.data.homeAddressLat;
+      if (this.data.homeAddressLng !== undefined) createData.homeAddressLng = this.data.homeAddressLng;
+      if (this.data.bloodType !== undefined) createData.bloodType = this.data.bloodType;
+      if (this.data.identificationNumber !== undefined) createData.identificationNumber = this.data.identificationNumber;
 
       // fullName may be provided directly; if not, derive from nombre/apellido
       if (this.data.fullName) {
@@ -273,6 +282,8 @@ export default class UserCreator {
       if (this.data.firstName) profileUpdate.firstName = this.data.firstName;
       else if (this.data.nombre) profileUpdate.firstName = this.data.nombre;
 
+      if (this.data.middleName) profileUpdate.middleName = this.data.middleName;
+
       if (this.data.lastName) profileUpdate.lastName = this.data.lastName;
       else if (this.data.apellido) profileUpdate.lastName = this.data.apellido;
 
@@ -281,6 +292,11 @@ export default class UserCreator {
         profileUpdate.fullName = [profileUpdate.firstName, profileUpdate.lastName].filter(Boolean).join(' ').trim();
       }
       if (this.data.phoneNumber) profileUpdate.phoneNumber = this.data.phoneNumber;
+      if (this.data.homeAddress !== undefined) profileUpdate.homeAddress = this.data.homeAddress;
+      if (this.data.homeAddressLat !== undefined) profileUpdate.homeAddressLat = this.data.homeAddressLat;
+      if (this.data.homeAddressLng !== undefined) profileUpdate.homeAddressLng = this.data.homeAddressLng;
+      if (this.data.bloodType !== undefined) profileUpdate.bloodType = this.data.bloodType;
+      if (this.data.identificationNumber !== undefined) profileUpdate.identificationNumber = this.data.identificationNumber;
 
       const hasProfileUpdates = Object.keys(profileUpdate).length > 0;
       if (hasProfileUpdates) {

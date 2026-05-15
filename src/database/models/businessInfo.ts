@@ -97,6 +97,14 @@ export default function (sequelize) {
         allowNull: true,
         defaultValue: null,
       },
+      chargeRate: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+      },
+      payRate: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    

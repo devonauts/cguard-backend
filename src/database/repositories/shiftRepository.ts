@@ -373,6 +373,16 @@ class ShiftRepository {
         });
       }
 
+      if (filter.openOnly === 'true' || filter.openOnly === true) {
+        whereAnd.push({ guardId: null });
+      }
+
+      if (filter.postSite) {
+        whereAnd.push({
+          ['postSiteId']: SequelizeFilterUtils.uuid(filter.postSite),
+        });
+      }
+
       if (filter.createdAtRange) {
         const [start, end] = filter.createdAtRange;
 

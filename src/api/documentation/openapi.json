@@ -1240,6 +1240,9 @@
                   "invitationToken": {
                     "type": "string"
                   },
+                  "clientAccountId": {
+                    "type": "string"
+                  },
                   "data": {
                     "type": "string"
                   },
@@ -1257,6 +1260,7 @@
                 "tenantId": "string",
                 "email": "string",
                 "invitationToken": "string",
+                "clientAccountId": "string",
                 "data": "string",
                 "code": "string"
               }
@@ -1322,6 +1326,9 @@
                   "invitationToken": {
                     "type": "string"
                   },
+                  "clientAccountId": {
+                    "type": "string"
+                  },
                   "data": {
                     "type": "string"
                   }
@@ -1337,6 +1344,7 @@
                 "tenantId": "string",
                 "email": "string",
                 "invitationToken": "string",
+                "clientAccountId": "string",
                 "data": "string"
               }
             }
@@ -2339,7 +2347,7 @@
           "businessInfo"
         ],
         "summary": "GET /tenant/:tenantId/business-info",
-        "description": "{\r\n \n \"summary\": \"List business info\",\r\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List business info\",\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -2467,8 +2475,15 @@
                   "active": {
                     "type": "boolean"
                   },
-                  "importHash": {
-                    "type": "string"
+                  "serviceType": {
+                    "type": "string",
+                    "enum": [
+                      "manned",
+                      "alarm",
+                      "cctv",
+                      "patrol",
+                      "custody"
+                    ]
                   },
                   "logo": {
                     "type": "string"
@@ -2502,7 +2517,7 @@
                   "string"
                 ],
                 "active": false,
-                "importHash": "string",
+                "serviceType": "string",
                 "logo": "string",
                 "clientAccountId": "string",
                 "secondAddress": "string",
@@ -2597,8 +2612,15 @@
                   "active": {
                     "type": "boolean"
                   },
-                  "importHash": {
-                    "type": "string"
+                  "serviceType": {
+                    "type": "string",
+                    "enum": [
+                      "manned",
+                      "alarm",
+                      "cctv",
+                      "patrol",
+                      "custody"
+                    ]
                   },
                   "logo": {
                     "type": "string"
@@ -2632,7 +2654,7 @@
                   "string"
                 ],
                 "active": false,
-                "importHash": "string",
+                "serviceType": "string",
                 "logo": "string",
                 "clientAccountId": "string",
                 "secondAddress": "string",
@@ -2649,7 +2671,7 @@
           "businessInfo"
         ],
         "summary": "GET /tenant/:tenantId/business-info/:id",
-        "description": "{\r\n \n \"summary\": \"Find business info\",\r\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find business info\",\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -3475,8 +3497,8 @@
                 "title": "string",
                 "code": "string",
                 "description": "string",
-                "acquisitionDate": "2026-04-21T20:36:44.720Z",
-                "expirationDate": "2026-04-21T20:36:44.720Z",
+                "acquisitionDate": "2026-05-14T13:20:00.353Z",
+                "expirationDate": "2026-05-14T13:20:00.354Z",
                 "image": [
                   {}
                 ],
@@ -3671,8 +3693,8 @@
                 "title": "string",
                 "code": "string",
                 "description": "string",
-                "acquisitionDate": "2026-04-21T20:36:44.721Z",
-                "expirationDate": "2026-04-21T20:36:44.721Z",
+                "acquisitionDate": "2026-05-14T13:20:00.354Z",
+                "expirationDate": "2026-05-14T13:20:00.354Z",
                 "image": [
                   {}
                 ],
@@ -4039,7 +4061,7 @@
           "clientAccount"
         ],
         "summary": "GET /tenant/:tenantId/client-account",
-        "description": "{\r\n \n \"summary\": \"List client accounts\",\r\n \n \"description\": \"List client accounts with pagination and filters.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List client accounts\",\n \n \"description\": \"List client accounts with pagination and filters.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -4341,7 +4363,7 @@
           "clientAccount"
         ],
         "summary": "GET /tenant/:tenantId/client-account/:id",
-        "description": "{\r\n \n \"summary\": \"Find client account\",\r\n \n \"description\": \"Retrieve a client account by id.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Client account object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find client account\",\n \n \"description\": \"Retrieve a client account by id.\",\n \n \"responses\": { \"200\": { \"description\": \"Client account object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -4631,6 +4653,9 @@
                   "attachment": {
                     "type": "string"
                   },
+                  "email": {
+                    "type": "string"
+                  },
                   "active": {
                     "type": "string"
                   }
@@ -4657,6 +4682,7 @@
                 "notableType": "string",
                 "notableId": "string",
                 "attachment": "string",
+                "email": "string",
                 "active": "string"
               }
             }
@@ -5505,7 +5531,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-21T20:36:44.731Z",
+                "noteDate": "2026-05-14T13:20:00.357Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -5624,7 +5650,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-21T20:36:44.731Z",
+                "noteDate": "2026-05-14T13:20:00.357Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -5704,6 +5730,894 @@
         ]
       }
     },
+    "/tenant/{tenantId}/client-account/{id}/send-portal-invitation": {
+      "post": {
+        "tags": [
+          "clientAccount"
+        ],
+        "summary": "POST /tenant/:tenantId/client-account/:id/send-portal-invitation",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "clientAccountId": {
+                    "type": "string"
+                  },
+                  "addressLine2": {
+                    "type": "string"
+                  },
+                  "addressComplement": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "zipCode": {
+                    "type": "string"
+                  },
+                  "categoryIds": {
+                    "type": "string"
+                  },
+                  "latitude": {
+                    "type": "string"
+                  },
+                  "latitud": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "string"
+                  },
+                  "longitude": {
+                    "type": "string"
+                  },
+                  "longitud": {
+                    "type": "string"
+                  },
+                  "lng": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  },
+                  "importHash": {
+                    "type": "string"
+                  },
+                  "push": {
+                    "type": "string"
+                  },
+                  "length": {
+                    "type": "string"
+                  },
+                  "notableType": {
+                    "type": "string"
+                  },
+                  "notableId": {
+                    "type": "string"
+                  },
+                  "attachment": {
+                    "type": "string"
+                  },
+                  "active": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "email": "string",
+                "clientAccountId": "string",
+                "addressLine2": "string",
+                "addressComplement": "string",
+                "postalCode": "string",
+                "zipCode": "string",
+                "categoryIds": "string",
+                "latitude": "string",
+                "latitud": "string",
+                "lat": "string",
+                "longitude": "string",
+                "longitud": "string",
+                "lng": "string",
+                "ids": "string",
+                "data": "string",
+                "importHash": "string",
+                "push": "string",
+                "length": "string",
+                "notableType": "string",
+                "notableId": "string",
+                "attachment": "string",
+                "active": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant/{tenantId}/client-project": {
+      "get": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "GET /tenant/:tenantId/client-project",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "POST /tenant/:tenantId/client-project",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "clientAccountId": {
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "type": "string"
+                  },
+                  "businessInfoId": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "estimatedHours": {
+                    "type": "string"
+                  },
+                  "assignedGuards": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "name": "string",
+                "type": "string",
+                "clientAccountId": "string",
+                "clientId": "string",
+                "businessInfoId": "string",
+                "siteId": "string",
+                "description": "string",
+                "status": "string",
+                "startDate": "string",
+                "endDate": "string",
+                "location": "string",
+                "estimatedHours": "string",
+                "assignedGuards": "string",
+                "notes": "string",
+                "ids": "string",
+                "id": "string"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "DELETE /tenant/:tenantId/client-project",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/client-project/{id}": {
+      "get": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "GET /tenant/:tenantId/client-project/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "PUT /tenant/:tenantId/client-project/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "estimatedHours": {
+                    "type": "string"
+                  },
+                  "assignedGuards": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "businessInfoId": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  },
+                  "clientAccountId": {
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "name": "string",
+                "type": "string",
+                "description": "string",
+                "status": "string",
+                "startDate": "string",
+                "endDate": "string",
+                "location": "string",
+                "estimatedHours": "string",
+                "assignedGuards": "string",
+                "notes": "string",
+                "businessInfoId": "string",
+                "siteId": "string",
+                "clientAccountId": "string",
+                "clientId": "string",
+                "ids": "string",
+                "id": "string"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "PATCH /tenant/:tenantId/client-project/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "estimatedHours": {
+                    "type": "string"
+                  },
+                  "assignedGuards": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "businessInfoId": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  },
+                  "clientAccountId": {
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "name": "string",
+                "type": "string",
+                "description": "string",
+                "status": "string",
+                "startDate": "string",
+                "endDate": "string",
+                "location": "string",
+                "estimatedHours": "string",
+                "assignedGuards": "string",
+                "notes": "string",
+                "businessInfoId": "string",
+                "siteId": "string",
+                "clientAccountId": "string",
+                "clientId": "string",
+                "ids": "string",
+                "id": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant/{tenantId}/client-account/{id}/projects": {
+      "get": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "GET /tenant/:tenantId/client-account/:id/projects",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "clientProject"
+        ],
+        "summary": "POST /tenant/:tenantId/client-account/:id/projects",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "clientAccountId": {
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "type": "string"
+                  },
+                  "businessInfoId": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "estimatedHours": {
+                    "type": "string"
+                  },
+                  "assignedGuards": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "name": "string",
+                "type": "string",
+                "clientAccountId": "string",
+                "clientId": "string",
+                "businessInfoId": "string",
+                "siteId": "string",
+                "description": "string",
+                "status": "string",
+                "startDate": "string",
+                "endDate": "string",
+                "location": "string",
+                "estimatedHours": "string",
+                "assignedGuards": "string",
+                "notes": "string",
+                "ids": "string",
+                "id": "string"
+              }
+            }
+          }
+        }
+      }
+    },
     "/tenant/{tenantId}/completion-of-tutorial": {
       "post": {
         "tags": [
@@ -5774,7 +6688,7 @@
               "example": {
                 "userId": "string",
                 "tutorialId": "string",
-                "completedAt": "2026-04-21T20:36:44.731Z",
+                "completedAt": "2026-05-14T13:20:00.360Z",
                 "notes": "string",
                 "importHash": "string"
               }
@@ -6091,6 +7005,96 @@
         "parameters": [
           {
             "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/customer/me/account": {
+      "get": {
+        "tags": [
+          "customer"
+        ],
+        "summary": "GET /customer/me/account",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/customer/post-site/{postSiteId}/active-status": {
+      "get": {
+        "tags": [
+          "customer"
+        ],
+        "summary": "GET /customer/post-site/:postSiteId/active-status",
+        "parameters": [
+          {
+            "name": "postSiteId",
             "in": "path",
             "required": true,
             "schema": {
@@ -8281,9 +9285,9 @@
                 ]
               },
               "example": {
-                "date": "2026-04-21T20:36:44.750Z",
-                "dateTime": "2026-04-21T20:36:44.750Z",
-                "incidentAt": "2026-04-21T20:36:44.750Z",
+                "date": "2026-05-14T13:20:00.365Z",
+                "dateTime": "2026-05-14T13:20:00.365Z",
+                "incidentAt": "2026-05-14T13:20:00.365Z",
                 "title": "string",
                 "subject": "string",
                 "description": "string",
@@ -8580,9 +9584,9 @@
                 "required": []
               },
               "example": {
-                "date": "2026-04-21T20:36:44.750Z",
-                "dateTime": "2026-04-21T20:36:44.750Z",
-                "incidentAt": "2026-04-21T20:36:44.750Z",
+                "date": "2026-05-14T13:20:00.365Z",
+                "dateTime": "2026-05-14T13:20:00.365Z",
+                "incidentAt": "2026-05-14T13:20:00.365Z",
                 "title": "string",
                 "subject": "string",
                 "description": "string",
@@ -8893,7 +9897,7 @@
                 "siteId": "string",
                 "stationId": "string",
                 "guardId": "string",
-                "incidentAt": "2026-04-21T20:36:44.751Z",
+                "incidentAt": "2026-05-14T13:20:00.365Z",
                 "incidentTypeId": "string",
                 "content": "string",
                 "location": "string",
@@ -10426,8 +11430,8 @@
                 "policyNumber": "string",
                 "coverage": "string",
                 "premium": 0,
-                "startDate": "2026-04-21T20:36:44.765Z",
-                "endDate": "2026-04-21T20:36:44.765Z",
+                "startDate": "2026-05-14T13:20:00.369Z",
+                "endDate": "2026-05-14T13:20:00.369Z",
                 "contactName": "string",
                 "contactPhone": "string",
                 "contactEmail": "string",
@@ -10580,8 +11584,8 @@
                     "policyNumber": "string",
                     "coverage": "string",
                     "premium": 0,
-                    "startDate": "2026-04-21T20:36:44.766Z",
-                    "endDate": "2026-04-21T20:36:44.766Z"
+                    "startDate": "2026-05-14T13:20:00.369Z",
+                    "endDate": "2026-05-14T13:20:00.369Z"
                   }
                 ],
                 "importHash": "string"
@@ -11194,6 +12198,422 @@
         ]
       }
     },
+    "/tenant/{tenantId}/inventory-assignment": {
+      "post": {
+        "tags": [
+          "inventoryAssignment"
+        ],
+        "summary": "POST /tenant/:tenantId/inventory-assignment",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "data": "string"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "inventoryAssignment"
+        ],
+        "summary": "DELETE /tenant/:tenantId/inventory-assignment",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "inventoryAssignment"
+        ],
+        "summary": "GET /tenant/:tenantId/inventory-assignment",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/inventory-assignment/{id}": {
+      "put": {
+        "tags": [
+          "inventoryAssignment"
+        ],
+        "summary": "PUT /tenant/:tenantId/inventory-assignment/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "data": "string"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "inventoryAssignment"
+        ],
+        "summary": "PATCH /tenant/:tenantId/inventory-assignment/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "data": "string"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "inventoryAssignment"
+        ],
+        "summary": "DELETE /tenant/:tenantId/inventory-assignment/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "inventoryAssignment"
+        ],
+        "summary": "GET /tenant/:tenantId/inventory-assignment/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/tenant/{tenantId}/inventory-history": {
       "post": {
         "tags": [
@@ -11440,7 +12860,7 @@
                 "productId": "string",
                 "type": "string",
                 "quantity": 0,
-                "date": "2026-04-21T20:36:44.770Z",
+                "date": "2026-05-14T13:20:00.371Z",
                 "note": "string",
                 "metadata": {}
               }
@@ -11585,7 +13005,7 @@
                     "productId": "string",
                     "type": "string",
                     "quantity": 0,
-                    "date": "2026-04-21T20:36:44.770Z"
+                    "date": "2026-05-14T13:20:00.371Z"
                   }
                 ],
                 "importHash": "string"
@@ -11649,8 +13069,7 @@
         "tags": [
           "inventoryHistory"
         ],
-        "summary": "Create inventory history snapshots for a patrol",
-        "description": "Create one or more inventory history snapshots scoped to a patrol. Accepts an array `inventories` to create multiple rows in one call. Each inventory item may include `photos` referencing files (new or existing) using the same shape used elsewhere in the API.",
+        "summary": "POST /tenant/:tenantId/patrols/:patrolId/inventory-history",
         "parameters": [
           {
             "name": "tenantId",
@@ -11680,10 +13099,19 @@
         ],
         "responses": {
           "200": {
-            "description": "Created inventory histories (array)"
+            "description": "OK"
           },
           "400": {
-            "description": "Validation error"
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         },
         "security": [
@@ -11696,120 +13124,18 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "data"
-                ],
                 "properties": {
                   "data": {
-                    "type": "object",
-                    "required": [
-                      "inventories"
-                    ],
-                    "properties": {
-                      "inventories": {
-                        "type": "array",
-                        "description": "Array of inventory snapshot objects to create in the context of the patrol.",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "inventoryId"
-                          ],
-                          "properties": {
-                            "inventoryId": {
-                              "type": "string",
-                              "description": "Identifier of the inventory item to which this snapshot belongs (required)."
-                            },
-                            "inventoryOrigin": {
-                              "type": "string",
-                              "description": "Optional origin or source identifier for the inventory (e.g., manual/import)."
-                            },
-                            "snapshot": {
-                              "type": "object",
-                              "description": "Optional arbitrary JSON snapshot of the inventory state (items, counts, metadata)."
-                            },
-                            "isComplete": {
-                              "type": "boolean",
-                              "description": "Flag indicating supervisor verified this inventory as complete. Used by auto-close logic when true."
-                            },
-                            "observation": {
-                              "type": "string",
-                              "description": "Optional free-text observation or note provided by the supervisor."
-                            },
-                            "inventoryCheckedDate": {
-                              "type": "string",
-                              "format": "date",
-                              "description": "Date when the inventory was checked/verified (ISO date)."
-                            },
-                            "photos": {
-                              "type": "array",
-                              "description": "Array of file descriptors. Each item can reference an existing file by `id` or provide a `privateUrl` for a freshly uploaded file.",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "new": {
-                                    "type": "boolean",
-                                    "description": "True when this file descriptor represents a newly uploaded file (client-side)."
-                                  },
-                                  "id": {
-                                    "type": "string",
-                                    "description": "Existing file id (use to reference previously uploaded files)."
-                                  },
-                                  "name": {
-                                    "type": "string",
-                                    "description": "Original filename or label for the file."
-                                  },
-                                  "sizeInBytes": {
-                                    "type": "integer",
-                                    "description": "Size of the file in bytes."
-                                  },
-                                  "mimeType": {
-                                    "type": "string",
-                                    "description": "MIME type of the file (e.g., image/jpeg)."
-                                  },
-                                  "privateUrl": {
-                                    "type": "string",
-                                    "description": "Private storage URL returned by the upload flow; server will persist this into the file table."
-                                  },
-                                  "publicUrl": {
-                                    "type": "string",
-                                    "description": "Optional public URL for previewing the file."
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
+                    "type": "string"
+                  },
+                  "importHash": {
+                    "type": "string"
                   }
                 }
               },
               "example": {
-                "data": {
-                  "inventories": [
-                    {
-                      "inventoryId": "abc123",
-                      "inventoryOrigin": "manual",
-                      "snapshot": {
-                        "items": []
-                      },
-                      "isComplete": true,
-                      "observation": "Checked by supervisor",
-                      "inventoryCheckedDate": "2026-04-21",
-                      "photos": [
-                        {
-                          "new": false,
-                          "id": "file-uuid",
-                          "name": "photo.jpg",
-                          "sizeInBytes": 12345,
-                          "mimeType": "image/jpeg",
-                          "privateUrl": "https://storage.internal/..",
-                          "publicUrl": "https://cdn.example/.."
-                        }
-                      ]
-                    }
-                  ]
-                }
+                "data": "string",
+                "importHash": "string"
               }
             }
           }
@@ -11941,6 +13267,616 @@
         }
       }
     },
+    "/tenant/{tenantId}/global-inventory": {
+      "post": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "Create global inventory item",
+        "description": "Creates a new item in the global inventory catalog.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created item"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "radio",
+                      "arma",
+                      "chaleco_antibalas",
+                      "tolete",
+                      "pito",
+                      "linterna",
+                      "bitacora",
+                      "cinto_completo",
+                      "poncho_de_aguas",
+                      "detector_de_metales",
+                      "caseta",
+                      "vehiculo",
+                      "otro"
+                    ]
+                  },
+                  "brand": {
+                    "type": "string"
+                  },
+                  "modelName": {
+                    "type": "string"
+                  },
+                  "serialNumber": {
+                    "type": "string"
+                  },
+                  "condition": {
+                    "type": "string",
+                    "enum": [
+                      "bueno",
+                      "regular",
+                      "dañado"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "disponible",
+                      "asignado",
+                      "en_mantenimiento",
+                      "retirado"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "expirationDate": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "importHash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type"
+                ]
+              },
+              "example": {
+                "name": "string",
+                "type": "string",
+                "brand": "string",
+                "modelName": "string",
+                "serialNumber": "string",
+                "condition": "string",
+                "status": "string",
+                "notes": "string",
+                "expirationDate": "string",
+                "importHash": "string"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "Delete global inventory item(s)",
+        "description": "Deletes one or more items from the global inventory catalog.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "List global inventory items",
+        "description": "Returns a paginated list of items from the global inventory catalog.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of inventory items"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/global-inventory/{id}": {
+      "put": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "Update global inventory item",
+        "description": "Updates an existing item in the global inventory catalog.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated item"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "radio",
+                      "arma",
+                      "chaleco_antibalas",
+                      "tolete",
+                      "pito",
+                      "linterna",
+                      "bitacora",
+                      "cinto_completo",
+                      "poncho_de_aguas",
+                      "detector_de_metales",
+                      "caseta",
+                      "vehiculo",
+                      "otro"
+                    ]
+                  },
+                  "brand": {
+                    "type": "string"
+                  },
+                  "modelName": {
+                    "type": "string"
+                  },
+                  "serialNumber": {
+                    "type": "string"
+                  },
+                  "condition": {
+                    "type": "string",
+                    "enum": [
+                      "bueno",
+                      "regular",
+                      "dañado"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "disponible",
+                      "asignado",
+                      "en_mantenimiento",
+                      "retirado"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "expirationDate": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                }
+              },
+              "example": {
+                "name": "string",
+                "type": "string",
+                "brand": "string",
+                "modelName": "string",
+                "serialNumber": "string",
+                "condition": "string",
+                "status": "string",
+                "notes": "string",
+                "expirationDate": "string"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "Update global inventory item",
+        "description": "Updates an existing item in the global inventory catalog.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated item"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "radio",
+                      "arma",
+                      "chaleco_antibalas",
+                      "tolete",
+                      "pito",
+                      "linterna",
+                      "bitacora",
+                      "cinto_completo",
+                      "poncho_de_aguas",
+                      "detector_de_metales",
+                      "caseta",
+                      "vehiculo",
+                      "otro"
+                    ]
+                  },
+                  "brand": {
+                    "type": "string"
+                  },
+                  "modelName": {
+                    "type": "string"
+                  },
+                  "serialNumber": {
+                    "type": "string"
+                  },
+                  "condition": {
+                    "type": "string",
+                    "enum": [
+                      "bueno",
+                      "regular",
+                      "dañado"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "disponible",
+                      "asignado",
+                      "en_mantenimiento",
+                      "retirado"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "expirationDate": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                }
+              },
+              "example": {
+                "name": "string",
+                "type": "string",
+                "brand": "string",
+                "modelName": "string",
+                "serialNumber": "string",
+                "condition": "string",
+                "status": "string",
+                "notes": "string",
+                "expirationDate": "string"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "Delete global inventory item(s)",
+        "description": "Deletes one or more items from the global inventory catalog.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "Find global inventory item by ID",
+        "description": "Returns a single item from the global inventory catalog.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inventory item details"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/global-inventory/autocomplete": {
+      "get": {
+        "tags": [
+          "inventoryItem"
+        ],
+        "summary": "Autocomplete global inventory items",
+        "description": "Returns matching items for autocomplete/typeahead fields.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of {id, label} matches"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/tenant/{tenantId}/invoice": {
       "post": {
         "tags": [
@@ -12068,7 +14004,7 @@
           "invoice"
         ],
         "summary": "GET /tenant/:tenantId/invoice",
-        "description": "{\r\n \n \"summary\": \"List invoices\",\r\n \n \"description\": \"List invoices with filters and pagination.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List invoices\",\n \n \"description\": \"List invoices with filters and pagination.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -12244,7 +14180,7 @@
           "invoice"
         ],
         "summary": "GET /tenant/:tenantId/invoice/:id",
-        "description": "{\r\n \n \"summary\": \"Find invoice\",\r\n \n \"description\": \"Retrieve an invoice by id.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Invoice object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find invoice\",\n \n \"description\": \"Retrieve an invoice by id.\",\n \n \"responses\": { \"200\": { \"description\": \"Invoice object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -12426,6 +14362,122 @@
             }
           }
         }
+      }
+    },
+    "/tenant/{tenantId}/invoice/client/{clientId}": {
+      "get": {
+        "tags": [
+          "invoice"
+        ],
+        "summary": "GET /tenant/:tenantId/invoice/client/:clientId",
+        "description": "{\n \n \"summary\": \"List invoices by client\",\n \n \"description\": \"List invoices for a given client with filters and pagination.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clientId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/invoice/{id}/pending-payments": {
+      "get": {
+        "tags": [
+          "invoice"
+        ],
+        "summary": "GET /tenant/:tenantId/invoice/:id/pending-payments",
+        "description": "{\n \n \"summary\": \"Get pending payments for invoice\",\n \n \"description\": \"Return the invoice total, payments received and pending amount.\",\n \n \"responses\": { \"200\": { \"description\": \"Pending payments object\" } }\n \n}",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/tenant/{tenantId}/kpi": {
@@ -13321,7 +15373,7 @@
                 ]
               },
               "example": {
-                "dateTime": "2026-04-21T20:36:44.785Z",
+                "dateTime": "2026-05-14T13:20:00.377Z",
                 "subject": "string",
                 "content": "string",
                 "wasAccepted": false,
@@ -13538,7 +15590,7 @@
                 "required": []
               },
               "example": {
-                "dateTime": "2026-04-21T20:36:44.785Z",
+                "dateTime": "2026-05-14T13:20:00.377Z",
                 "subject": "string",
                 "content": "string",
                 "wasAccepted": false,
@@ -14444,7 +16496,7 @@
                 "recipientId": "string",
                 "readStatus": false,
                 "deliveryStatus": "string",
-                "dateDelivered": "2026-04-21T20:36:44.788Z",
+                "dateDelivered": "2026-05-14T13:20:00.377Z",
                 "importHash": "string"
               }
             }
@@ -14626,7 +16678,7 @@
                 "recipientId": "string",
                 "readStatus": false,
                 "deliveryStatus": "string",
-                "dateDelivered": "2026-04-21T20:36:44.788Z",
+                "dateDelivered": "2026-05-14T13:20:00.377Z",
                 "importHash": "string"
               }
             }
@@ -14772,7 +16824,7 @@
                     "recipientId": "string",
                     "readStatus": false,
                     "deliveryStatus": "string",
-                    "dateDelivered": "2026-04-21T20:36:44.788Z"
+                    "dateDelivered": "2026-05-14T13:20:00.377Z"
                   }
                 ],
                 "importHash": "string"
@@ -14914,9 +16966,9 @@
                 "required": []
               },
               "example": {
-                "scheduledTime": "2026-04-21T20:36:44.789Z",
+                "scheduledTime": "2026-05-14T13:20:00.378Z",
                 "completed": false,
-                "completionTime": "2026-04-21T20:36:44.789Z",
+                "completionTime": "2026-05-14T13:20:00.378Z",
                 "status": "string",
                 "assignedGuard": "string",
                 "supervisorId": "string",
@@ -15118,9 +17170,9 @@
                 "required": []
               },
               "example": {
-                "scheduledTime": "2026-04-21T20:36:44.790Z",
+                "scheduledTime": "2026-05-14T13:20:00.378Z",
                 "completed": false,
-                "completionTime": "2026-04-21T20:36:44.790Z",
+                "completionTime": "2026-05-14T13:20:00.378Z",
                 "status": "string",
                 "assignedGuard": "string",
                 "supervisorId": "string",
@@ -15892,7 +17944,7 @@
               },
               "example": {
                 "patrol": "string",
-                "scanTime": "2026-04-21T20:36:44.793Z",
+                "scanTime": "2026-05-14T13:20:00.378Z",
                 "latitude": "string",
                 "longitude": "string",
                 "validLocation": false,
@@ -16081,7 +18133,7 @@
               },
               "example": {
                 "patrol": "string",
-                "scanTime": "2026-04-21T20:36:44.793Z",
+                "scanTime": "2026-05-14T13:20:00.378Z",
                 "latitude": "string",
                 "longitude": "string",
                 "validLocation": false,
@@ -16335,7 +18387,7 @@
               "example": {
                 "invoiceId": "string",
                 "amount": 0,
-                "date": "2026-04-21T20:36:44.794Z",
+                "date": "2026-05-14T13:20:00.379Z",
                 "method": "string",
                 "note": "string",
                 "reference": "string"
@@ -16649,7 +18701,7 @@
           "postSite"
         ],
         "summary": "GET /tenant/:tenantId/post-site",
-        "description": "{\r\n \n \"summary\": \"List business info\",\r\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List business info\",\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -16777,8 +18829,15 @@
                   "active": {
                     "type": "boolean"
                   },
-                  "importHash": {
-                    "type": "string"
+                  "serviceType": {
+                    "type": "string",
+                    "enum": [
+                      "manned",
+                      "alarm",
+                      "cctv",
+                      "patrol",
+                      "custody"
+                    ]
                   },
                   "logo": {
                     "type": "string"
@@ -16812,7 +18871,7 @@
                   "string"
                 ],
                 "active": false,
-                "importHash": "string",
+                "serviceType": "string",
                 "logo": "string",
                 "clientAccountId": "string",
                 "secondAddress": "string",
@@ -16829,7 +18888,7 @@
           "postSite"
         ],
         "summary": "GET /tenant/:tenantId/post-site/:id",
-        "description": "{\r\n \n \"summary\": \"Find business info\",\r\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find business info\",\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -17705,6 +19764,63 @@
         ]
       }
     },
+    "/tenant/{tenantId}/post-site/{id}/active-status": {
+      "get": {
+        "tags": [
+          "postSite"
+        ],
+        "summary": "GET /tenant/:tenantId/post-site/:id/active-status",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/tenant/{tenantId}/post-site/{id}/overview": {
       "get": {
         "tags": [
@@ -17825,6 +19941,63 @@
           "postSite"
         ],
         "summary": "GET /tenant/:tenantId/post-site/:id/merged-inventory",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/post-site/{id}/coverage-gaps": {
+      "get": {
+        "tags": [
+          "postSite"
+        ],
+        "summary": "GET /tenant/:tenantId/post-site/:id/coverage-gaps",
         "parameters": [
           {
             "name": "tenantId",
@@ -18027,7 +20200,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-21T20:36:44.802Z",
+                "noteDate": "2026-05-14T13:20:00.381Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -18146,7 +20319,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-04-21T20:36:44.802Z",
+                "noteDate": "2026-05-14T13:20:00.381Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -20856,10 +23029,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "ids": {
@@ -20913,13 +23086,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -20943,9 +23119,6 @@
                   "birthDate": {
                     "type": "string"
                   },
-                  "securityGuardId": {
-                    "type": "string"
-                  },
                   "security_guard_id": {
                     "type": "string"
                   }
@@ -20963,8 +23136,8 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "ids": "string",
                 "data": "string",
                 "token": "string",
@@ -20982,9 +23155,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -20992,7 +23166,6 @@
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -21141,10 +23314,10 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
+                  "isDraft": {
                     "type": "string"
                   },
-                  "isDraft": {
+                  "stationIds": {
                     "type": "string"
                   },
                   "importHash": {
@@ -21195,10 +23368,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -21232,8 +23405,8 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
                 "guardId": "string",
                 "notableType": "string",
@@ -21250,8 +23423,8 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string"
@@ -21267,7 +23440,6 @@
           "securityGuard"
         ],
         "summary": "POST /tenant/:tenantId/security-guard",
-        "description": "{\r\n \n \"summary\": \"Create guard\",\r\n \n \"description\": \"Create a security guard for the tenant. Requires authentication.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -21363,16 +23535,19 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
+                  "isDraft": {
                     "type": "string"
                   },
-                  "isDraft": {
+                  "stationIds": {
                     "type": "string"
                   },
                   "ids": {
                     "type": "string"
                   },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -21420,10 +23595,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -21433,9 +23608,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -21460,10 +23632,11 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "ids": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -21479,12 +23652,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -21543,7 +23715,7 @@
           "securityGuard"
         ],
         "summary": "GET /tenant/:tenantId/security-guard",
-        "description": "{\r\n \n \"summary\": \"List guards\",\r\n \n \"description\": \"List security guards with pagination and filters. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List guards\",\n \n \"description\": \"List security guards with pagination and filters. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -21708,13 +23880,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -21762,13 +23937,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -21797,9 +23969,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -21815,9 +23988,8 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
-                "securityGuardId": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "security_guard_id": "string"
               }
             }
@@ -21944,13 +24116,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -21998,13 +24173,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -22033,9 +24205,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -22051,9 +24224,8 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
-                "securityGuardId": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "security_guard_id": "string"
               }
             }
@@ -22065,7 +24237,7 @@
           "securityGuard"
         ],
         "summary": "GET /tenant/:tenantId/security-guard/:id",
-        "description": "{\r\n \n \"summary\": \"Find guard\",\r\n \n \"description\": \"Retrieve a security guard by id. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Security guard object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find guard\",\n \n \"description\": \"Retrieve a security guard by id. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Security guard object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -22221,13 +24393,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -22275,10 +24450,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -22288,9 +24463,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -22316,9 +24488,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -22334,12 +24507,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -22454,10 +24626,13 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
+                  "isDraft": {
                     "type": "string"
                   },
-                  "isDraft": {
+                  "stationIds": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -22505,10 +24680,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -22518,9 +24693,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -22547,8 +24719,9 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -22564,12 +24737,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -22746,6 +24918,9 @@
                   "lastName": {
                     "type": "string"
                   },
+                  "securityGuardId": {
+                    "type": "string"
+                  },
                   "fullName": {
                     "type": "string"
                   },
@@ -22782,7 +24957,7 @@
                   "password": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
+                  "stationIds": {
                     "type": "string"
                   },
                   "importHash": {
@@ -22833,10 +25008,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -22846,9 +25021,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -22863,6 +25035,7 @@
                 "contact": "string",
                 "firstName": "string",
                 "lastName": "string",
+                "securityGuardId": "string",
                 "fullName": "string",
                 "isDraft": "string",
                 "ids": "string",
@@ -22875,7 +25048,7 @@
                 "phoneNumber": "string",
                 "phone": "string",
                 "password": "string",
-                "sendVerificationEmails": "string",
+                "stationIds": "string",
                 "importHash": "string",
                 "guardId": "string",
                 "notableType": "string",
@@ -22892,12 +25065,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -23009,13 +25181,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -23063,10 +25238,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -23076,9 +25251,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -23104,9 +25276,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -23122,12 +25295,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -23239,13 +25411,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -23293,10 +25468,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -23306,9 +25481,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -23334,9 +25506,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -23352,12 +25525,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -23371,6 +25543,55 @@
           "securityGuard"
         ],
         "summary": "GET /tenant/:tenantId/security-guard/autocomplete",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/security-guard/active-locations": {
+      "get": {
+        "tags": [
+          "securityGuard"
+        ],
+        "summary": "GET /tenant/:tenantId/security-guard/active-locations",
         "parameters": [
           {
             "name": "tenantId",
@@ -23647,13 +25868,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -23692,10 +25916,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -23705,9 +25929,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -23736,9 +25957,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "punchInLatitude": "string",
                 "punchInLongitude": "string",
@@ -23751,12 +25973,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -23884,13 +26105,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -23938,10 +26162,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -23951,9 +26175,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -23979,9 +26200,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -23997,12 +26219,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -24243,13 +26464,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "notableType": {
@@ -24294,10 +26518,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -24307,9 +26531,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -24336,9 +26557,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "notableType": "string",
                 "notableId": "string",
                 "attachment": "string",
@@ -24353,12 +26575,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -24604,13 +26825,16 @@
                   "fullName": {
                     "type": "string"
                   },
-                  "sendVerificationEmails": {
-                    "type": "string"
-                  },
                   "isDraft": {
                     "type": "string"
                   },
+                  "stationIds": {
+                    "type": "string"
+                  },
                   "importHash": {
+                    "type": "string"
+                  },
+                  "securityGuardId": {
                     "type": "string"
                   },
                   "guardId": {
@@ -24658,10 +26882,10 @@
                   "patrolsDone": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      dailyIncidents": {
+                  "// array de IDs\n      dailyIncidents": {
                     "type": "string"
                   },
-                  "// array de IDs\r\n      punchInLatitude": {
+                  "// array de IDs\n      punchInLatitude": {
                     "type": "string"
                   },
                   "governmentId": {
@@ -24671,9 +26895,6 @@
                     "type": "string"
                   },
                   "birthDate": {
-                    "type": "string"
-                  },
-                  "securityGuardId": {
                     "type": "string"
                   },
                   "security_guard_id": {
@@ -24699,9 +26920,10 @@
                 "phone": "string",
                 "password": "string",
                 "fullName": "string",
-                "sendVerificationEmails": "string",
                 "isDraft": "string",
+                "stationIds": "string",
                 "importHash": "string",
+                "securityGuardId": "string",
                 "guardId": "string",
                 "notableType": "string",
                 "notableId": "string",
@@ -24717,12 +26939,11 @@
                 "shiftSchedule": "string",
                 "observations": "string",
                 "patrolsDone": "string",
-                "// array de IDs\r\n      dailyIncidents": "string",
-                "// array de IDs\r\n      punchInLatitude": "string",
+                "// array de IDs\n      dailyIncidents": "string",
+                "// array de IDs\n      punchInLatitude": "string",
                 "governmentId": "string",
                 "guardCredentials": "string",
                 "birthDate": "string",
-                "securityGuardId": "string",
                 "security_guard_id": "string"
               }
             }
@@ -24801,7 +27022,7 @@
           "service"
         ],
         "summary": "POST /tenant/:tenantId/service",
-        "description": "{\r\n \n \"summary\": \"Create service\",\r\n \n \"description\": \"Creates a new service entry.\",\r\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\r\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Create service\",\n \n \"description\": \"Creates a new service entry.\",\n \n \"requestBody\": { \"content\": { \"application/json\": { \"schema\": { \"type\": \"object\" } } } },\n \n \"responses\": { \"200\": { \"description\": \"Created\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -24917,7 +27138,7 @@
           "service"
         ],
         "summary": "GET /tenant/:tenantId/service",
-        "description": "{\r\n \n \"summary\": \"List services\",\r\n \n \"description\": \"List services with pagination and filters.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List services\",\n \n \"description\": \"List services with pagination and filters.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -25043,7 +27264,7 @@
           "service"
         ],
         "summary": "GET /tenant/:tenantId/service/:id",
-        "description": "{\r\n \n \"summary\": \"Find service\",\r\n \n \"description\": \"Retrieve a service by id.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Service object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find service\",\n \n \"description\": \"Retrieve a service by id.\",\n \n \"responses\": { \"200\": { \"description\": \"Service object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -25327,6 +27548,88 @@
         ]
       }
     },
+    "/tenant/{tenantId}/shift/{id}/assign": {
+      "patch": {
+        "tags": [
+          "shift"
+        ],
+        "summary": "PATCH /tenant/:tenantId/shift/:id/assign",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "guard": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  },
+                  "importHash": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "guard": "string",
+                "data": "string",
+                "importHash": "string"
+              }
+            }
+          }
+        }
+      }
+    },
     "/tenant/{tenantId}/shift": {
       "post": {
         "tags": [
@@ -25384,6 +27687,9 @@
                   "data": {
                     "type": "string"
                   },
+                  "guard": {
+                    "type": "string"
+                  },
                   "importHash": {
                     "type": "string"
                   }
@@ -25391,6 +27697,7 @@
               },
               "example": {
                 "data": "string",
+                "guard": "string",
                 "importHash": "string"
               }
             }
@@ -25613,8 +27920,8 @@
                 "skillSet": [
                   "string"
                 ],
-                "startAt": "2026-04-21T20:36:44.914Z",
-                "endAt": "2026-04-21T20:36:44.914Z"
+                "startAt": "2026-05-14T13:20:00.421Z",
+                "endAt": "2026-05-14T13:20:00.421Z"
               }
             }
           }
@@ -25812,8 +28119,8 @@
                     "postSite": "string",
                     "tenantUserId": "string",
                     "station": "string",
-                    "startAt": "2026-04-21T20:36:44.914Z",
-                    "endAt": "2026-04-21T20:36:44.914Z"
+                    "startAt": "2026-05-14T13:20:00.421Z",
+                    "endAt": "2026-05-14T13:20:00.421Z"
                   }
                 ],
                 "importHash": "string"
@@ -25870,6 +28177,313 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/tenant/{tenantId}/shift-exchange-request": {
+      "get": {
+        "tags": [
+          "shiftExchangeRequest"
+        ],
+        "summary": "GET /tenant/:tenantId/shift-exchange-request",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "shiftExchangeRequest"
+        ],
+        "summary": "POST /tenant/:tenantId/shift-exchange-request",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "data": "string",
+                "status": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant/{tenantId}/shift-exchange-request/{id}": {
+      "get": {
+        "tags": [
+          "shiftExchangeRequest"
+        ],
+        "summary": "GET /tenant/:tenantId/shift-exchange-request/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "shiftExchangeRequest"
+        ],
+        "summary": "DELETE /tenant/:tenantId/shift-exchange-request/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/shift-exchange-request/{id}/status": {
+      "patch": {
+        "tags": [
+          "shiftExchangeRequest"
+        ],
+        "summary": "PATCH /tenant/:tenantId/shift-exchange-request/:id/status",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "status": "string",
+                "data": "string"
+              }
+            }
+          }
+        }
       }
     },
     "/tenant/{tenantId}/station": {
@@ -26529,7 +29143,7 @@
           "station"
         ],
         "summary": "GET /tenant/:tenantId/stations",
-        "description": "{\r\n \n \"summary\": \"List business info\",\r\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List business info\",\n \n \"description\": \"List business infos (post sites) with pagination and filters. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -26657,8 +29271,15 @@
                   "active": {
                     "type": "boolean"
                   },
-                  "importHash": {
-                    "type": "string"
+                  "serviceType": {
+                    "type": "string",
+                    "enum": [
+                      "manned",
+                      "alarm",
+                      "cctv",
+                      "patrol",
+                      "custody"
+                    ]
                   },
                   "logo": {
                     "type": "string"
@@ -26692,7 +29313,7 @@
                   "string"
                 ],
                 "active": false,
-                "importHash": "string",
+                "serviceType": "string",
                 "logo": "string",
                 "clientAccountId": "string",
                 "secondAddress": "string",
@@ -26709,7 +29330,7 @@
           "station"
         ],
         "summary": "GET /tenant/:tenantId/stations/:id",
-        "description": "{\r\n \n \"summary\": \"Find business info\",\r\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find business info\",\n \n \"description\": \"Retrieve a business info (post site) by id. Requires authentication.\",\n \n \"responses\": { \"200\": { \"description\": \"Business info object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -28669,6 +31290,321 @@
         }
       }
     },
+    "/tenant/{tenantId}/time-off-request": {
+      "get": {
+        "tags": [
+          "timeOffRequest"
+        ],
+        "summary": "GET /tenant/:tenantId/time-off-request",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "timeOffRequest"
+        ],
+        "summary": "POST /tenant/:tenantId/time-off-request",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "comment": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "data": "string",
+                "status": "string",
+                "comment": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant/{tenantId}/time-off-request/{id}": {
+      "get": {
+        "tags": [
+          "timeOffRequest"
+        ],
+        "summary": "GET /tenant/:tenantId/time-off-request/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "timeOffRequest"
+        ],
+        "summary": "DELETE /tenant/:tenantId/time-off-request/:id",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/tenant/{tenantId}/time-off-request/{id}/status": {
+      "patch": {
+        "tags": [
+          "timeOffRequest"
+        ],
+        "summary": "PATCH /tenant/:tenantId/time-off-request/:id/status",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "comment": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "status": "string",
+                "comment": "string",
+                "data": "string"
+              }
+            }
+          }
+        }
+      }
+    },
     "/tenant/{tenantId}/tutorial": {
       "post": {
         "tags": [
@@ -29346,7 +32282,7 @@
           "user"
         ],
         "summary": "GET /tenant/:tenantId/user",
-        "description": "{\r\n \n \"summary\": \"List users\",\r\n \n \"description\": \"List users with pagination and filters.\",\r\n \n \"responses\": { \"200\": { \"description\": \"Paginated list of users\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"List users\",\n \n \"description\": \"List users with pagination and filters.\",\n \n \"responses\": { \"200\": { \"description\": \"Paginated list of users\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -30046,7 +32982,7 @@
           "user"
         ],
         "summary": "GET /tenant/:tenantId/user/:id",
-        "description": "{\r\n \n \"summary\": \"Find a user\",\r\n \n \"description\": \"Retrieve a user by id.\",\r\n \n \"responses\": { \"200\": { \"description\": \"User object\" } }\r\n \n}",
+        "description": "{\n \n \"summary\": \"Find a user\",\n \n \"description\": \"Retrieve a user by id.\",\n \n \"responses\": { \"200\": { \"description\": \"User object\" } }\n \n}",
         "parameters": [
           {
             "name": "tenantId",
@@ -30798,6 +33734,164 @@
                 "format": "string",
                 "filter": "string",
                 "importHash": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant/{tenantId}/user/{id}/send-portal-invitation": {
+      "post": {
+        "tags": [
+          "user"
+        ],
+        "summary": "POST /tenant/:tenantId/user/:id/send-portal-invitation",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "string"
+                  },
+                  "length": {
+                    "type": "string"
+                  },
+                  "map": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  },
+                  "newPassword": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "oldPassword": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "roles": {
+                    "type": "string"
+                  },
+                  "emails": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "type": "string"
+                  },
+                  "firstName": {
+                    "type": "string"
+                  },
+                  "lastName": {
+                    "type": "string"
+                  },
+                  "clientIds": {
+                    "type": "string"
+                  },
+                  "postSiteIds": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string"
+                  },
+                  "filter": {
+                    "type": "string"
+                  },
+                  "importHash": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "email": "string",
+                "ids": "string",
+                "length": "string",
+                "map": "string",
+                "data": "string",
+                "newPassword": "string",
+                "password": "string",
+                "oldPassword": "string",
+                "id": "string",
+                "role": "string",
+                "roles": "string",
+                "emails": "string",
+                "name": "string",
+                "fullName": "string",
+                "firstName": "string",
+                "lastName": "string",
+                "clientIds": "string",
+                "postSiteIds": "string",
+                "format": "string",
+                "filter": "string",
+                "importHash": "string",
+                "to": "string"
               }
             }
           }

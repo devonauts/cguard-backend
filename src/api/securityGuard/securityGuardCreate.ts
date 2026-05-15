@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import SecurityGuardService from '../../services/securityGuardService';
+import StationService from '../../services/stationService';
 import Error400 from '../../errors/Error400';
 import moment from 'moment';
 import UserCreator from '../../services/user/userCreator';
@@ -231,6 +232,16 @@ export default async (req, res, next) => {
         if (!bd.isValid() || moment().diff(bd, 'years') < 18) {
           throw new Error400(req.language, 'entities.securityGuard.errors.validation.mustBeAdult');
         }
+      }
+
+      // Map identificationNumber → governmentId when governmentId is not explicitly provided
+      if (!entry.governmentId && entry.identificationNumber) {
+        entry.governmentId = entry.identificationNumber;
+      }
+
+      // Auto-derive fullName from firstName + lastName when not explicitly provided
+      if (!entry.fullName && (entry.firstName || entry.lastName)) {
+        entry.fullName = [entry.firstName, entry.lastName].filter(Boolean).join(' ');
       }
 
       // If some DB-required fields are missing, mark as draft so repository will fill placeholders
@@ -634,6 +645,26 @@ export default async (req, res, next) => {
         }
 
         results.push({ record: created, invitationToken: null });
+
+        // Assign guard to stations if stationIds provided on this entry
+        const entryStationIds: string[] = Array.isArray(item?.stationIds) ? item.stationIds : [];
+        for (const stationId of entryStationIds) {
+          try {
+            const station = await new StationService(req).findById(stationId);
+            if (station) {
+              const existingGuards = (station.assignedGuards || []).map((g: any) => g.id ?? g).filter(Boolean);
+              const guardUserId = entry.guard;
+              if (guardUserId && !existingGuards.includes(guardUserId)) {
+                await new StationService(req).update(stationId, {
+                  ...station,
+                  assignedGuards: [...existingGuards, guardUserId],
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('[securityGuardCreate] failed to assign station (invite flow)', stationId, e && (e as any).message ? (e as any).message : e);
+          }
+        }
       }
       payload = results;
     } else {
@@ -647,6 +678,26 @@ export default async (req, res, next) => {
         console.log('📄 Creating security guard as draft for guard:', entry.guard);
       }
       const created = await new SecurityGuardService(req).create(entry);
+
+      // Assign guard to stations if stationIds provided
+      const stationIds: string[] = Array.isArray(incoming?.stationIds) ? incoming.stationIds : [];
+      for (const stationId of stationIds) {
+        try {
+          const station = await new StationService(req).findById(stationId);
+          if (station) {
+            const existingGuards = (station.assignedGuards || []).map((g: any) => g.id ?? g).filter(Boolean);
+            const guardUserId = entry.guard;
+            if (guardUserId && !existingGuards.includes(guardUserId)) {
+              await new StationService(req).update(stationId, {
+                ...station,
+                assignedGuards: [...existingGuards, guardUserId],
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('[securityGuardCreate] failed to assign station', stationId, e && (e as any).message ? (e as any).message : e);
+        }
+      }
 
       // Invitation email is sent by SecurityGuardService.create; skip here.
 

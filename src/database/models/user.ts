@@ -81,6 +81,34 @@ export default function (sequelize, DataTypes) {
           len: [0, 175],
         },
       },
+      middleName: {
+        type: DataTypes.STRING(80),
+        allowNull: true,
+        validate: { len: [0, 80] },
+      },
+      homeAddress: {
+        type: DataTypes.STRING(512),
+        allowNull: true,
+        validate: { len: [0, 512] },
+      },
+      homeAddressLat: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+      },
+      homeAddressLng: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+      },
+      bloodType: {
+        type: DataTypes.STRING(10),
+        allowNull: true,
+        validate: { len: [0, 10] },
+      },
+      identificationNumber: {
+        type: DataTypes.STRING(40),
+        allowNull: true,
+        validate: { len: [0, 40] },
+      },
       phoneNumber: {
         type: DataTypes.STRING(24),
         allowNull: true,

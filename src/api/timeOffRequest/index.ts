@@ -1,0 +1,22 @@
+export default (app) => {
+  app.get(
+    `/tenant/:tenantId/time-off-request`,
+    require('./timeOffRequestList').default,
+  );
+  app.post(
+    `/tenant/:tenantId/time-off-request`,
+    require('./timeOffRequestCreate').default,
+  );
+  app.get(
+    `/tenant/:tenantId/time-off-request/:id`,
+    require('./timeOffRequestFind').default,
+  );
+  app.patch(
+    `/tenant/:tenantId/time-off-request/:id/status`,
+    require('./timeOffRequestUpdateStatus').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/time-off-request/:id`,
+    require('./timeOffRequestDestroy').default,
+  );
+};

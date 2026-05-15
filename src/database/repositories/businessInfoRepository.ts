@@ -128,6 +128,8 @@ class BusinessInfoRepository {
           'importHash',
           'serviceType',
           'serviceConfig',
+          'chargeRate',
+          'payRate',
         ]),
 
         updatedById: currentUser.id,
@@ -747,6 +749,14 @@ class BusinessInfoRepository {
       output.clientAccountName = output.clientAccount
         ? `${output.clientAccount.name || ''} ${output.clientAccount.lastName || ''}`.trim()
         : null;
+      if (client) {
+        output.clientAccount.logoUrl = await FileRepository.fillDownloadUrl(
+          await client.getLogoUrl({ transaction }),
+        );
+        output.clientAccount.placePictureUrl = await FileRepository.fillDownloadUrl(
+          await client.getPlacePictureUrl({ transaction }),
+        );
+      }
     } catch (e) {
       output.clientAccount = null;
       output.clientAccountName = null;

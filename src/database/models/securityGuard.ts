@@ -139,6 +139,16 @@ export default function (sequelize) {
         type: DataTypes.JSON,
         allowNull: true,
       },
+      languages: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
+      skills: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+      },
     },
     {
       indexes: [

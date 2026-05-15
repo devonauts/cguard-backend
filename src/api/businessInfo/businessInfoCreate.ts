@@ -49,6 +49,7 @@ export default async (req, res, next) => {
       city: find(['city'], undefined),
       postalCode: find(['postalCode', 'postal_code'], undefined),
       serviceType: find(['serviceType'], undefined),
+      serviceConfig: find(['serviceConfig'], undefined),
     };
 
     // Validate required fields — return 400 instead of saving placeholders

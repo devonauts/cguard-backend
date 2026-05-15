@@ -69,6 +69,10 @@ export default function (sequelize) {
           len: [0, 255],
         }
       },
+      armorExpirationDate: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
       tolete: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

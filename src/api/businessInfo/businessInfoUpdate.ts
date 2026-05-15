@@ -65,6 +65,15 @@ export default async (req, res, next) => {
     const serviceType = find(['serviceType']);
     if (serviceType !== undefined) mapped.serviceType = serviceType;
 
+    const serviceConfig = find(['serviceConfig']);
+    if (serviceConfig !== undefined) mapped.serviceConfig = serviceConfig;
+
+    const chargeRate = find(['chargeRate']);
+    if (chargeRate !== undefined) mapped.chargeRate = chargeRate === '' ? null : Number(chargeRate);
+
+    const payRate = find(['payRate']);
+    if (payRate !== undefined) mapped.payRate = payRate === '' ? null : Number(payRate);
+
     const fax = find(['fax']);
     if (fax !== undefined) mapped.fax = fax;
 

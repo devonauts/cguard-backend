@@ -10,6 +10,7 @@ import InventoryHistoryService from './inventoryHistoryService';
 import InventoryRepository from '../database/repositories/inventoryRepository';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
 import GuardShiftRepository from '../database/repositories/guardShiftRepository';
+import { dispatch } from '../lib/notificationDispatcher';
 
 export default class PatrolLogService {
   options: IServiceOptions;
@@ -209,6 +210,19 @@ export default class PatrolLogService {
           console.warn('patrolLogService post-create side-effects failed', e);
         }
       })();
+
+      // Notify supervisors of patrol scan result
+      const patrolEventType =
+        record.status === 'Missed' ? 'patrol.missed' : 'patrol.completed';
+      dispatch(patrolEventType, {
+        guardName: null,
+        siteName: null,
+      }, {
+        database: this.options.database,
+        tenantId: this.options.currentTenant?.id,
+        sourceEntityType: 'patrolLog',
+        sourceEntityId: record.id,
+      }).catch(() => {});
 
       return record;
     } catch (error) {

@@ -97,6 +97,46 @@ export default class Storage {
         folder: 'tenant/:tenantId/securityGuard/recordPolicial',
         maxSizeInBytes: 100 * 1024 * 1024,
       },
+      securityGuardIdentificationImage: {
+        id: 'securityGuardIdentificationImage',
+        folder: 'tenant/:tenantId/securityGuard/identificationImage',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
+      securityGuardAfisCertificate: {
+        id: 'securityGuardAfisCertificate',
+        folder: 'tenant/:tenantId/securityGuard/afisCertificate',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
+      securityGuardMedicalCertificate: {
+        id: 'securityGuardMedicalCertificate',
+        folder: 'tenant/:tenantId/securityGuard/medicalCertificate',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
+      securityGuardPsychologicalCertificate: {
+        id: 'securityGuardPsychologicalCertificate',
+        folder: 'tenant/:tenantId/securityGuard/psychologicalCertificate',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
+      securityGuardCredentialDocument: {
+        id: 'securityGuardCredentialDocument',
+        folder: 'tenant/:tenantId/securityGuard/credentialDocument',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
+      securityGuardCertificationLevel1: {
+        id: 'securityGuardCertificationLevel1',
+        folder: 'tenant/:tenantId/securityGuard/certificationLevel1',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
+      securityGuardCertificationLevel2: {
+        id: 'securityGuardCertificationLevel2',
+        folder: 'tenant/:tenantId/securityGuard/certificationLevel2',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
+      securityGuardFamilyViolenceCertificate: {
+        id: 'securityGuardFamilyViolenceCertificate',
+        folder: 'tenant/:tenantId/securityGuard/familyViolenceCertificate',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
 
       clientAccountLogoUrl: {
         id: 'clientAccountLogoUrl',
@@ -208,6 +248,21 @@ export default class Storage {
         id: 'insuranceDocument',
         folder: 'tenant/:tenantId/insurance/document',
         maxSizeInBytes: 100 * 1024 * 1024,
+      },
+
+      inventoryItemPhotos: {
+        id: 'inventoryItemPhotos',
+        folder: 'tenant/:tenantId/inventoryItem/photos',
+        maxSizeInBytes: 20 * 1024 * 1024,
+        publicRead: true,
+      },
+
+      visitorLogIdPhoto: {
+        id: 'visitorLogIdPhoto',
+        folder: 'tenant/:tenantId/visitorLog/idPhoto',
+        maxSizeInBytes: 10 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
       },
 
 

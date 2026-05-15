@@ -8,6 +8,7 @@ import InventoryHistoryRepository from '../database/repositories/inventoryHistor
 import PatrolLogRepository from '../database/repositories/patrolLogRepository';
 import IncidentRepository from '../database/repositories/incidentRepository';
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
+import { dispatch } from '../lib/notificationDispatcher';
 
 export default class GuardShiftService {
   options: IServiceOptions;
@@ -37,6 +38,18 @@ export default class GuardShiftService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Notify supervisors of guard check-in
+      dispatch('guard.checkin', {
+        guardName: record.guardName?.fullName || record.guardName?.name || null,
+        siteName: record.postSite?.name || null,
+        stationName: record.stationName?.name || null,
+      }, {
+        database: this.options.database,
+        tenantId: this.options.currentTenant?.id,
+        sourceEntityType: 'guardShift',
+        sourceEntityId: record.id,
+      }).catch(() => {});
 
       return record;
     } catch (error) {
@@ -79,6 +92,20 @@ export default class GuardShiftService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Notify supervisors of guard check-out (shift update with endTime)
+      if (data.checkOutTime || data.endTime || data.clockOut) {
+        dispatch('guard.checkout', {
+          guardName: record.guardName?.fullName || record.guardName?.name || null,
+          siteName: record.postSite?.name || null,
+          stationName: record.stationName?.name || null,
+        }, {
+          database: this.options.database,
+          tenantId: this.options.currentTenant?.id,
+          sourceEntityType: 'guardShift',
+          sourceEntityId: record.id,
+        }).catch(() => {});
+      }
 
       return record;
     } catch (error) {

@@ -1,4 +1,5 @@
 import Error400 from '../errors/Error400';
+import Error404 from '../errors/Error404';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
@@ -50,6 +51,10 @@ export default class SecurityGuardService {
       const hasGuardField = Object.prototype.hasOwnProperty.call(data, 'guard');
       const originalGuard = data.guard;
       if (hasGuardField) {
+        // Normalize full user object to a plain id string before filtering
+        if (data.guard !== null && typeof data.guard === 'object') {
+          data.guard = data.guard.id ?? null;
+        }
         data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
 
         // If client provided a guard id but it's not yet associated to tenant,
@@ -239,6 +244,14 @@ export default class SecurityGuardService {
 
           // If important securityGuard fields are missing, mark the record as a draft so repository fills placeholders.
           // A draft still requires a guardId, so require email or guard to be present.
+          // Map identificationNumber → governmentId when not explicitly provided
+          if (!data.governmentId && data.identificationNumber) {
+            data.governmentId = data.identificationNumber;
+          }
+          // Auto-derive fullName from firstName + lastName when not explicitly provided
+          if (!data.fullName && (data.firstName || data.lastName)) {
+            data.fullName = [data.firstName, data.lastName].filter(Boolean).join(' ');
+          }
           const requiredFields = ['governmentId', 'fullName', 'gender', 'bloodType', 'birthDate', 'maritalStatus', 'academicInstruction'];
           const missingRequired = requiredFields.some(f => !data[f]);
           if (missingRequired) {
@@ -349,9 +362,15 @@ export default class SecurityGuardService {
             data.guard,
             {
               ...(data.firstName ? { firstName: data.firstName } : {}),
+              ...(data.middleName ? { middleName: data.middleName } : {}),
               ...(data.lastName ? { lastName: data.lastName } : {}),
               ...(data.fullName ? { fullName: data.fullName } : {}),
               ...(data.phoneNumber || data.phone ? { phoneNumber: data.phoneNumber || data.phone } : {}),
+              ...(data.homeAddress !== undefined ? { homeAddress: data.homeAddress } : {}),
+              ...(data.homeAddressLat !== undefined ? { homeAddressLat: data.homeAddressLat } : {}),
+              ...(data.homeAddressLng !== undefined ? { homeAddressLng: data.homeAddressLng } : {}),
+              ...(data.bloodType !== undefined ? { bloodType: data.bloodType } : {}),
+              ...(data.identificationNumber !== undefined ? { identificationNumber: data.identificationNumber } : {}),
             },
             { ...this.options, transaction, bypassPermissionValidation: true },
           );
@@ -463,7 +482,7 @@ export default class SecurityGuardService {
                 // Ensure invitation token exists (similar to securityGuardInvite.ts resend logic)
                 if (!tenantUser.invitationToken) {
                   tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
-                  tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+                  tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)); // 7 days
                   await TenantUserRepository.saveTenantUser(tenantUser, this.options);
                   console.log('[SecurityGuardService.create] generated invitationToken after commit', { tenantUserId: tenantUser.id, guardId: data.guard, token: tenantUser.invitationToken });
                 } else {
@@ -595,6 +614,12 @@ export default class SecurityGuardService {
   async patchUpdate(id, data) {
     // Partial update flow: only apply fields present in `data` and update pivots/files if provided.
     data = data || {};
+
+    // Normalize `guard` to a plain ID string early — the frontend may send a full user object.
+    if (Object.prototype.hasOwnProperty.call(data, 'guard') && data.guard !== null && typeof data.guard === 'object') {
+      data.guard = data.guard.id ?? null;
+    }
+
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
 
     try {
@@ -660,26 +685,66 @@ export default class SecurityGuardService {
 
     try {
       for (const id of ids) {
-        // Before destroying, ensure tenantUser status is 'archived'
-        const record = await SecurityGuardRepository.findById(id, { ...this.options, transaction });
+        const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
 
-        const tenantUser = await TenantUserRepository.findByTenantAndUser(
-          record.tenantId,
-          record.guard && record.guard.id ? record.guard.id : record.guardId,
-          { ...this.options, transaction },
-        );
+        // Look up by securityGuard primary key first, then fall back to guardId (user uuid).
+        // This avoids the complex permission checks in SecurityGuardRepository.findById
+        // that can throw 404 for non-admin users without assigned post sites.
+        let record: any = await (this.options.database as any).securityGuard.findOne({
+          where: { id, tenantId: currentTenant.id },
+          include: [{ model: (this.options.database as any).user, as: 'guard' }],
+          paranoid: false,
+          transaction,
+        });
 
-        if (!tenantUser || tenantUser.status !== 'archived') {
-          throw new Error400(this.options.language, 'entities.securityGuard.errors.mustBeArchivedBeforeDelete');
+        if (!record) {
+          record = await (this.options.database as any).securityGuard.findOne({
+            where: { guardId: id, tenantId: currentTenant.id },
+            include: [{ model: (this.options.database as any).user, as: 'guard' }],
+            paranoid: false,
+            transaction,
+          });
+        }
+
+        if (!record) {
+          throw new Error404(this.options.language, 'entities.securityGuard.errors.notFound');
         }
 
         // Validate not occupied before delete
         await this._ensureNotOccupied(record, { ...this.options, transaction });
 
-        await SecurityGuardRepository.destroy(id, {
+        // Archive tenantUser automatically if not already archived
+        const guardUserId = (record.guard && record.guard.id) ? record.guard.id : record.guardId;
+
+        // Use record.id (actual primary key) — not the input id which may be a guardId/user uuid
+        await SecurityGuardRepository.destroy(record.id, {
           ...this.options,
           transaction,
         });
+
+        // Hard-delete the tenantUser and user records so the email is freed
+        if (guardUserId) {
+          // Delete tenantUser row(s) for this user+tenant
+          await (this.options.database as any).tenantUser.destroy({
+            where: { userId: guardUserId, tenantId: record.tenantId },
+            transaction,
+            force: true,
+          });
+
+          // Check the user isn't referenced by any other tenant before deleting
+          const remainingTenants = await (this.options.database as any).tenantUser.count({
+            where: { userId: guardUserId },
+            transaction,
+          });
+
+          if (remainingTenants === 0) {
+            await (this.options.database as any).user.destroy({
+              where: { id: guardUserId },
+              transaction,
+              force: true,
+            });
+          }
+        }
       }
 
       await SequelizeRepository.commitTransaction(

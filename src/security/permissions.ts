@@ -14,7 +14,14 @@ const HR_ROLES = [roles.admin, roles.operationsManager, roles.hrManager];
 const CLIENT_MANAGEMENT_ROLES = [roles.admin, roles.operationsManager, roles.clientAccountManager];
 const DISPATCHER_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.dispatcher];
 const GUARD_ROLES = [roles.admin, roles.operationsManager, roles.securitySupervisor, roles.dispatcher, roles.securityGuard];
-const ALL_STAFF_ROLES = [roles.superadmin, roles.admin, roles.operationsManager, roles.securitySupervisor, roles.clientAccountManager, roles.hrManager, roles.dispatcher, roles.securityGuard];
+// Administrative office roles (supervisor, assistant, secretary)
+const OFFICE_ROLES = [roles.administrativeSupervisor, roles.administrativeAssistant, roles.secretary];
+const ALL_STAFF_ROLES = [
+  roles.superadmin, roles.admin, roles.operationsManager,
+  roles.securitySupervisor, roles.clientAccountManager, roles.hrManager,
+  roles.dispatcher, roles.securityGuard,
+  roles.administrativeSupervisor, roles.administrativeAssistant, roles.secretary,
+];
 const ALL_ROLES = [...ALL_STAFF_ROLES, roles.customer, roles.custom];
 
 // Helper function to create permission with all required properties
@@ -90,11 +97,11 @@ class Permissions {
       licenseTypeAutocomplete: createPermission('licenseTypeAutocomplete', ALL_STAFF_ROLES),
 
       // === SECURITY GUARD MANAGEMENT ===
-      securityGuardImport: createPermission('securityGuardImport', HR_ROLES),
-      securityGuardCreate: createPermission('securityGuardCreate', HR_ROLES),
-      securityGuardRestore: createPermission('securityGuardRestore', HR_ROLES),
-      securityGuardArchive: createPermission('securityGuardArchive', HR_ROLES),
-      securityGuardEdit: createPermission('securityGuardEdit', [...SUPERVISOR_ROLES, roles.hrManager]),
+      securityGuardImport: createPermission('securityGuardImport', [...HR_ROLES, ...SUPERVISOR_ROLES, ...OFFICE_ROLES]),
+      securityGuardCreate: createPermission('securityGuardCreate', [...HR_ROLES, ...SUPERVISOR_ROLES, ...OFFICE_ROLES]),
+      securityGuardRestore: createPermission('securityGuardRestore', [...HR_ROLES, ...SUPERVISOR_ROLES, ...OFFICE_ROLES]),
+      securityGuardArchive: createPermission('securityGuardArchive', [...HR_ROLES, ...SUPERVISOR_ROLES, ...OFFICE_ROLES]),
+      securityGuardEdit: createPermission('securityGuardEdit', [...SUPERVISOR_ROLES, roles.hrManager, ...OFFICE_ROLES]),
       securityGuardDestroy: createPermission('securityGuardDestroy', HR_ROLES),
       securityGuardRead: createPermission('securityGuardRead', [...ALL_STAFF_ROLES, roles.customer]),
       securityGuardAutocomplete: createPermission('securityGuardAutocomplete', ALL_STAFF_ROLES),
@@ -128,9 +135,9 @@ class Permissions {
       businessInfoAutocomplete: createPermission('businessInfoAutocomplete', [...ALL_STAFF_ROLES, roles.customer]),
 
       // === POST SITES (PostSite / Post-Site) ===
-      postSiteCreate: createPermission('postSiteCreate', MANAGEMENT_ROLES),
-      postSiteEdit: createPermission('postSiteEdit', MANAGEMENT_ROLES),
-      postSiteDestroy: createPermission('postSiteDestroy', MANAGEMENT_ROLES),
+      postSiteCreate: createPermission('postSiteCreate', SUPERVISOR_ROLES),
+      postSiteEdit: createPermission('postSiteEdit', SUPERVISOR_ROLES),
+      postSiteDestroy: createPermission('postSiteDestroy', SUPERVISOR_ROLES),
       // Allow customers to read their own postsites (list/detail). Backend
       // should still scope results to postsites the customer manages.
       postSiteRead: createPermission('postSiteRead', [...ALL_STAFF_ROLES, roles.customer]),
@@ -160,10 +167,10 @@ class Permissions {
       incidentTypeAutocomplete: createPermission('incidentTypeAutocomplete', ALL_STAFF_ROLES),
 
       // === STATIONS ===
-      stationImport: createPermission('stationImport', MANAGEMENT_ROLES),
-      stationCreate: createPermission('stationCreate', MANAGEMENT_ROLES),
+      stationImport: createPermission('stationImport', SUPERVISOR_ROLES),
+      stationCreate: createPermission('stationCreate', SUPERVISOR_ROLES),
       stationEdit: createPermission('stationEdit', SUPERVISOR_ROLES),
-      stationDestroy: createPermission('stationDestroy', MANAGEMENT_ROLES),
+      stationDestroy: createPermission('stationDestroy', SUPERVISOR_ROLES),
       stationRead: createPermission('stationRead', [...ALL_STAFF_ROLES, roles.customer]),
       stationAutocomplete: createPermission('stationAutocomplete', ALL_STAFF_ROLES),
 
@@ -230,6 +237,18 @@ class Permissions {
       visitorLogRead: createPermission('visitorLogRead', [...ALL_STAFF_ROLES, roles.customer]),
       visitorLogAutocomplete: createPermission('visitorLogAutocomplete', ALL_STAFF_ROLES),
 
+      // === TIME OFF REQUESTS ===
+      timeOffRequestCreate: createPermission('timeOffRequestCreate', GUARD_ROLES),
+      timeOffRequestEdit: createPermission('timeOffRequestEdit', HR_ROLES),
+      timeOffRequestDestroy: createPermission('timeOffRequestDestroy', HR_ROLES),
+      timeOffRequestRead: createPermission('timeOffRequestRead', ALL_STAFF_ROLES),
+
+      // === SHIFT EXCHANGE REQUESTS ===
+      shiftExchangeRequestCreate: createPermission('shiftExchangeRequestCreate', GUARD_ROLES),
+      shiftExchangeRequestEdit: createPermission('shiftExchangeRequestEdit', HR_ROLES),
+      shiftExchangeRequestDestroy: createPermission('shiftExchangeRequestDestroy', HR_ROLES),
+      shiftExchangeRequestRead: createPermission('shiftExchangeRequestRead', ALL_STAFF_ROLES),
+
       // === REPORTS ===
       reportImport: createPermission('reportImport', SUPERVISOR_ROLES),
       reportCreate: createPermission('reportCreate', GUARD_ROLES),
@@ -245,6 +264,12 @@ class Permissions {
       inventoryDestroy: createPermission('inventoryDestroy', SUPERVISOR_ROLES),
       inventoryRead: createPermission('inventoryRead', ALL_STAFF_ROLES),
       inventoryAutocomplete: createPermission('inventoryAutocomplete', ALL_STAFF_ROLES),
+
+      // === INVENTORY ITEM (global catalog) ===
+      inventoryItemCreate: createPermission('inventoryItemCreate', SUPERVISOR_ROLES),
+      inventoryItemEdit: createPermission('inventoryItemEdit', SUPERVISOR_ROLES),
+      inventoryItemDestroy: createPermission('inventoryItemDestroy', MANAGEMENT_ROLES),
+      inventoryItemRead: createPermission('inventoryItemRead', ALL_STAFF_ROLES),
 
       // === INVENTORY HISTORY ===
       inventoryHistoryImport: createPermission('inventoryHistoryImport', SUPERVISOR_ROLES),

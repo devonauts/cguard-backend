@@ -113,11 +113,19 @@ export default class RoleRepository {
   }
 
   static getProtectedDefaultRoleSlugs() {
-    const {
-      custom,
-      ...defaultRoles
-    } = Roles.values;
-    return Object.values(defaultRoles).map((slug) => String(slug).toLowerCase());
+    // Only truly locked system roles — new tenant-configurable roles (e.g. office roles) are intentionally excluded
+    const LOCKED_SYSTEM_ROLES: string[] = [
+      Roles.values.superadmin,
+      Roles.values.admin,
+      Roles.values.operationsManager,
+      Roles.values.securitySupervisor,
+      Roles.values.hrManager,
+      Roles.values.clientAccountManager,
+      Roles.values.dispatcher,
+      Roles.values.securityGuard,
+      Roles.values.customer,
+    ];
+    return LOCKED_SYSTEM_ROLES.map((slug) => String(slug).toLowerCase());
   }
 
   static isProtectedDefaultRole(slug) {

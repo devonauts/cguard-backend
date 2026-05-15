@@ -82,6 +82,12 @@ export default (app) => {
     require('./postSiteTasks').default,
   );
 
+  // Active status: stations with on-duty guards and next shift info
+  app.get(
+    `/tenant/:tenantId/post-site/:id/active-status`,
+    require('./postSiteActiveStatus').default,
+  );
+
   // Overview counters for a post site (assigned guards, onsite, tours/tasks/incidents last 7 days, hours logged)
   app.get(
     `/tenant/:tenantId/post-site/:id/overview`,
@@ -98,6 +104,12 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/post-site/:id/merged-inventory`,
     require('./mergedInventoryGet').default,
+  );
+
+  // Coverage gap analysis
+  app.get(
+    `/tenant/:tenantId/post-site/:id/coverage-gaps`,
+    require('./postSiteCoverageGaps').default,
   );
 
   // Post site notes CRUD

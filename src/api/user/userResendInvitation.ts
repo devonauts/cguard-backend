@@ -29,12 +29,13 @@ export default async (req, res) => {
       throw new Error('TenantUser not found');
     }
 
-    if (tenantUser.status !== 'invited') {
-      throw new Error('Only invited users can receive invitations');
+    if (tenantUser.status !== 'invited' && tenantUser.status !== 'pending') {
+      throw new Error('User has already accepted the invitation');
     }
 
     if (!tenantUser.invitationToken) {
       tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
+      tenantUser.invitationTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
       await tenantUser.save({ transaction });
     }
 

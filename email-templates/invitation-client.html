@@ -4,45 +4,73 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width,initial-scale=1" />
 		<style>
-			body { font-family: Arial, Helvetica, sans-serif; background:#f7f8fb; margin:0; padding:24px }
-			.card { max-width:600px; margin:0 auto; background:#ffffff; border-radius:8px; padding:28px; box-shadow:0 4px 20px rgba(16,24,40,0.06) }
-			.logo { text-align:center; margin-bottom:18px }
-			.logo img { height:120px; max-width:320px }
-			h1 { font-size:20px; color:#111827; margin:0 0 12px }
-			p { color:#6b7280; line-height:1.6 }
-			.btn { display:inline-block; background:#f97316; color:white; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:700; text-transform:uppercase }
-			.footer { margin-top:24px; font-size:13px; color:#9ca3af }
+			body { font-family: Arial, Helvetica, sans-serif; background:#f0f4f8; margin:0; padding:24px }
+			.card { max-width:600px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 4px 24px rgba(16,24,40,0.08) }
+			.header { background:#0f172a; padding:28px 32px; text-align:center }
+			.header img { height:56px; max-width:220px; object-fit:contain }
+			.body { padding:32px }
+			h1 { font-size:22px; color:#111827; margin:0 0 8px; line-height:1.3 }
+			.subtitle { font-size:15px; color:#6b7280; margin:0 0 24px; line-height:1.6 }
+			p { color:#374151; line-height:1.7; margin:0 0 16px }
+			.app-block { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:20px 24px; margin:24px 0; display:flex; align-items:center; gap:20px }
+			.app-logo { flex-shrink:0 }
+			.app-logo img { height:64px; width:64px; border-radius:14px; object-fit:contain }
+			.app-info h2 { font-size:18px; color:#111827; margin:0 0 4px }
+			.app-info p { font-size:13px; color:#6b7280; margin:0; line-height:1.5 }
+			.btn-wrap { text-align:center; margin:28px 0 }
+			.btn { display:inline-block; background:#0ea5e9; color:#ffffff; padding:15px 32px; border-radius:8px; text-decoration:none; font-weight:700; font-size:15px; letter-spacing:0.5px; box-shadow:0 6px 20px rgba(14,165,233,0.30) }
+			.store-links { text-align:center; margin:20px 0 0 }
+			.store-links a { color:#0ea5e9; font-weight:600; text-decoration:none; font-size:14px; margin:0 8px }
+			.store-links a:hover { text-decoration:underline }
+			.divider { border:none; border-top:1px solid #e5e7eb; margin:28px 0 }
+			.footer { font-size:12px; color:#9ca3af; line-height:1.6 }
 		</style>
 	</head>
 	<body>
 		<div class="card">
-			<div class="logo">
-				<img src="{{logoUrl}}" alt="CGuard" style="height:120px; display:block; margin:0 auto;" />
+			<!-- Tenant header -->
+			<div class="header">
+				<img src="{{logoUrl}}" alt="{{tenant.name}}" />
 			</div>
 
-			<h1>¡Bienvenido a la plataforma de clientes de {{tenant.name}}!</h1>
+			<div class="body">
+				<h1>Tu servicio de seguridad ahora en la palma de tu mano</h1>
+				<p class="subtitle"><strong>{{tenant.name}}</strong> te invita a monitorear tu servicio de seguridad desde la aplicación <strong>Mi Seguridad</strong>.</p>
 
-			<p style="font-weight:700; color:#111827; margin-top:8px">{{firstName}} {{lastName}}</p>
-			<p style="color:#6b7280; margin-top:4px; font-size:14px">{{email}}</p>
+				<p>Hola <strong>{{firstName}} {{lastName}}</strong>,</p>
+				<p>Hemos creado tu acceso exclusivo para que puedas seguir en tiempo real el estado de tu servicio de seguridad: ver los puestos activos, el personal asignado, incidentes reportados y mucho más, todo desde tu teléfono.</p>
 
-			<p style="margin-top:12px">Te hemos creado una cuenta exclusiva para que puedas acceder y gestionar toda la información de tus servicios, puestos de vigilancia y estaciones de manera segura y sencilla.</p>
+				<!-- Mi Seguridad app highlight -->
+				<div class="app-block">
+					<div class="app-logo">
+						<img src="{{miSeguridadLogoUrl}}" alt="Mi Seguridad" />
+					</div>
+					<div class="app-info">
+						<h2>Mi Seguridad</h2>
+						<p>Tu portal personal para monitorear el servicio de seguridad de <strong>{{tenant.name}}</strong>. Accede a reportes, alertas y cobertura en tiempo real.</p>
+					</div>
+				</div>
 
-			<p>Para comenzar, haz clic en el siguiente botón para crear tu contraseña y activar tu acceso:</p>
+				<p>Para activar tu cuenta haz clic en el botón y crea tu contraseña:</p>
 
-			<p style="text-align:center; margin:22px 0">
-				<a class="btn" href="{{link}}" style="display:inline-block; background:#f97316; color:#ffffff; padding:14px 24px; border-radius:8px; text-decoration:none; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; font-family: Arial, Helvetica, sans-serif; box-shadow: 0 6px 18px rgba(249,115,22,0.18);">ACTIVAR MI CUENTA</a>
-			</p>
+				<div class="btn-wrap">
+					<a class="btn" href="{{link}}">ACTIVAR MI CUENTA</a>
+				</div>
 
-			<p style="margin-top:18px; color:#111827; font-weight:500;">¿Ya tienes la app de clientes?</p>
-			<p>Puedes descargarla aquí:
-				<a href="https://play.google.com/store/apps/details?id=com.cguard.cliente" style="color:#f97316; font-weight:700; text-decoration:none;">Google Play</a>
-				|
-				<a href="https://apps.apple.com/app/idXXXXXXXXX" style="color:#f97316; font-weight:700; text-decoration:none;">App Store</a>
-			</p>
+				<p style="text-align:center; font-size:13px; color:#6b7280">Una vez activada tu cuenta, descarga <strong>Mi Seguridad</strong> en tu dispositivo:</p>
 
-			<p class="footer">Si no esperabas esta invitación, puedes ignorar este correo. El enlace de invitación puede expirar por seguridad.</p>
-			<hr style="border:none;border-top:1px solid #eef2f6;margin:20px 0" />
-			<p style="font-size:12px;color:#9ca3af;margin:0">¿Necesitas ayuda? Contáctanos: <a href="mailto:{{supportEmail}}" style="color:#6b7280">{{supportEmail}}</a></p>
+				<div class="store-links">
+					<a href="https://play.google.com/store/apps/details?id=com.cguard.miseguridad">&#9654; Google Play</a>
+					<a href="https://apps.apple.com/app/mi-seguridad">&#9654; App Store</a>
+				</div>
+
+				<hr class="divider" />
+
+				<p class="footer">
+					Si no esperabas esta invitación puedes ignorar este correo con seguridad. El enlace expira en 24 horas.<br /><br />
+					¿Necesitas ayuda? Contacta a <strong>{{tenant.name}}</strong> directamente o escríbenos a <a href="mailto:{{supportEmail}}" style="color:#6b7280">{{supportEmail}}</a>.
+				</p>
+			</div>
 		</div>
 	</body>
 </html>

@@ -13,6 +13,7 @@ if (process.env.MAIL_DEFAULT_SENDER_NAME && !process.env.SENDGRID_EMAIL_FROM_NAM
 import api from './api'
 import { databaseInit } from './database/databaseConnection';
 import TenantInvitationRepository from './database/repositories/tenantInvitationRepository';
+import { ensurePlatformEventsTable, cleanupOldPlatformEvents } from './lib/platformEventStore';
 import { setInterval as nodeSetInterval } from 'timers';
 
 // const PORT = process.env.PORT || 8080
@@ -72,8 +73,31 @@ async function runExpiredInvitesCleanup() {
 // Run once at startup
 runExpiredInvitesCleanup();
 
+// Initialize platform_events table and schedule cleanup
+async function initPlatformEvents() {
+  try {
+    const database = await databaseInit();
+    await ensurePlatformEventsTable(database);
+    console.log('[PlatformEvents] Table ready');
+  } catch (err) {
+    console.error('[PlatformEvents] Table init failed:', (err as any)?.message || err);
+  }
+}
+
+async function runPlatformEventsCleanup() {
+  try {
+    const database = await databaseInit();
+    await cleanupOldPlatformEvents(database);
+  } catch (err) {
+    console.error('[PlatformEvents] Cleanup failed:', (err as any)?.message || err);
+  }
+}
+
+initPlatformEvents();
+
 // Schedule periodic cleanup every 3 hours
 nodeSetInterval(() => {
   runExpiredInvitesCleanup();
+  runPlatformEventsCleanup();
 }, 3 * 60 * 60 * 1000);
 

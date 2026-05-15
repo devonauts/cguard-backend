@@ -587,7 +587,7 @@ export default class TenantUserRepository {
 
       // Only generate an invitation token if the initial status for the tenantUser is 'invited'
       const invitationToken = initialStatus === 'invited' ? crypto.randomBytes(20).toString('hex') : null;
-      const invitationTokenExpiresAt = invitationToken ? new Date(Date.now() + (60 * 60 * 1000)) : null;
+      const invitationTokenExpiresAt = invitationToken ? new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)) : null; // 7 days
 
       tenantUser = await retryOnLock(() => options.database.tenantUser.create(
         {
@@ -676,7 +676,7 @@ export default class TenantUserRepository {
     if ((tenantUser.status === 'invited' || tenantUser.status === 'pending') && !tenantUser.invitationToken) {
       try {
         tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
-        tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+        tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)); // 7 days
       } catch (e) {
         console.warn('tenantUserRepository.updateRoles: failed to generate invitation token', e && (e as any).message ? (e as any).message : e);
       }

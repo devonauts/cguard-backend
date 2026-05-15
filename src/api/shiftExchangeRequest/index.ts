@@ -1,0 +1,22 @@
+export default (app) => {
+  app.get(
+    `/tenant/:tenantId/shift-exchange-request`,
+    require('./shiftExchangeRequestList').default,
+  );
+  app.post(
+    `/tenant/:tenantId/shift-exchange-request`,
+    require('./shiftExchangeRequestCreate').default,
+  );
+  app.get(
+    `/tenant/:tenantId/shift-exchange-request/:id`,
+    require('./shiftExchangeRequestFind').default,
+  );
+  app.patch(
+    `/tenant/:tenantId/shift-exchange-request/:id/status`,
+    require('./shiftExchangeRequestUpdateStatus').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/shift-exchange-request/:id`,
+    require('./shiftExchangeRequestDestroy').default,
+  );
+};

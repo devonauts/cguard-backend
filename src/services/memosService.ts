@@ -3,6 +3,7 @@ import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import MemosRepository from '../database/repositories/memosRepository';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
+import { dispatch } from '../lib/notificationDispatcher';
 
 export default class MemosService {
   options: IServiceOptions;
@@ -27,6 +28,17 @@ export default class MemosService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Notify all staff of new memo
+      dispatch('memo.created', {
+        memoTitle: record.title || record.subject || null,
+        body: record.body || record.content || record.message || null,
+      }, {
+        database: this.options.database,
+        tenantId: this.options.currentTenant?.id,
+        sourceEntityType: 'memos',
+        sourceEntityId: record.id,
+      }).catch(() => {});
 
       return record;
     } catch (error) {

@@ -1,4 +1,8 @@
 export default (app) => {
+  app.patch(
+    `/tenant/:tenantId/shift/:id/assign`,
+    require('./shiftAssign').default,
+  );
   app.post(
     `/tenant/:tenantId/shift`,
     require('./shiftCreate').default,

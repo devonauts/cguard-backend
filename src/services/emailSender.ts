@@ -118,6 +118,11 @@ export default class EmailSender {
         // Normalize some common keys across callers
         const has = (keys: string[]) => keys.some((k) => typeof v[k] !== 'undefined' && v[k] !== null);
 
+        // Client portal invitation — use dedicated Mi Seguridad template
+        if (has(['clientInvitation'])) {
+          return 'invitation-client.html';
+        }
+
         // Invitation signals: explicit 'invitation', 'invite', 'invitationToken', or presence of a guard object
         if (has(['invitation', 'invite', 'invitationToken', 'inviteToken']) || v.guard) {
           return 'invitation.html';
@@ -161,14 +166,17 @@ export default class EmailSender {
       };
 
       let templateFile = chooseTemplate();
-      // Force invitation template when variables explicitly indicate an invite
-      if (this.variables && (this.variables.invitation || this.variables.guard)) {
+      // Force client invitation template when flag is set
+      if (this.variables && this.variables.clientInvitation) {
+        templateFile = 'invitation-client.html';
+      } else if (this.variables && (this.variables.invitation || this.variables.guard)) {
+        // Force guard/staff invitation template
         templateFile = 'invitation.html';
       }
       console.info('[EmailSender] Fallback chosen template', { templateFile, to: recipient, variables: this.variables });
       if (templateFile) {
         // Attempt several paths: absolute workspace path or relative src path
-        const absolutePath = path.resolve(process.cwd(), 'e:\\cguard\\cguard-backend\\email-templates\\' + templateFile);
+        const absolutePath = path.resolve(process.cwd(), 'email-templates', templateFile);
         const altPath = path.resolve(__dirname, '..', '..', 'email-templates', templateFile);
 
         let htmlTemplate: string | null = null;
@@ -183,36 +191,62 @@ export default class EmailSender {
         }
 
         // Determine subject default per template
-        if (templateFile === 'invitation.html') subject = 'Invitación al sistema';
-        else if (templateFile === 'emailAddressVerification.html') subject = 'Verifique su dirección de correo';
-        else if (templateFile === 'passwordReset.html') subject = 'Reset your password';
+        if (templateFile === 'invitation-client.html') {
+          const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
+          subject = tName ? `Tu acceso a Mi Seguridad — ${tName}` : 'Tu acceso a Mi Seguridad';
+        } else if (templateFile === 'invitation.html') {
+          const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
+          subject = tName ? `Invitación de ${tName}` : 'Invitación al sistema';
+        } else if (templateFile === 'emailAddressVerification.html') {
+          const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
+          subject = tName ? `${tName} — Verifica tu correo electrónico` : 'Verifique su dirección de correo';
+        } else if (templateFile === 'passwordReset.html') {
+          const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
+          subject = tName ? `${tName} — Restablecer contraseña` : 'Restablecer contraseña';
+        }
 
         if (htmlTemplate) {
           console.info('[EmailSender] Loaded local template file', { path: absolutePath, altPath });
           if (templateFile === 'passwordReset.html') {
             console.warn('[EmailSender] Sending passwordReset.html via fallback', { to: recipient, variables: this.variables });
           }
-          const logoUrl = (getConfig().EMAIL_LOGO_URL) || '';
+          // Resolve tenant logo — prefer the tenant's own uploaded logo
+          const tenantObj = this.variables?.tenant;
+          const tenantSettings = tenantObj?.settings || tenantObj?.dataValues?.settings;
+          const tenantSettingsData = (tenantSettings && typeof tenantSettings.get === 'function') ? tenantSettings.get({ plain: true }) : tenantSettings;
+          // Try all possible locations: file association publicUrl/privateUrl, direct logoUrl field, settings, env
+          const tenantLogoUrl =
+            (tenantObj?.logo?.publicUrl) ||
+            (tenantObj?.logo?.privateUrl) ||
+            (tenantObj?.logoUrl) ||
+            (tenantSettingsData?.logoUrl) ||
+            (getConfig().EMAIL_LOGO_URL) ||
+            '';
+          const tenantName = (tenantObj && (tenantObj.name || tenantObj.displayName)) || '';
           let rendered = htmlTemplate;
 
           const attachments: any[] = [];
-          if (logoUrl) {
-            rendered = rendered.replace(/{{logoUrl}}/g, logoUrl);
+          if (tenantLogoUrl) {
+            rendered = rendered.replace(/{{logoUrl}}/g, tenantLogoUrl);
           } else {
-            const localLogoPath = path.resolve(process.cwd(), 'e:\\cguard\\cguard-backend\\assets\\logo.png');
-            try {
-              const exists = await fs.promises.access(localLogoPath).then(() => true).catch(() => false);
-              if (exists) {
-                const cid = 'logo@cguard';
-                rendered = rendered.replace(/{{logoUrl}}/g, `cid:${cid}`);
-                attachments.push({ filename: 'logo.png', path: localLogoPath, cid });
-              } else {
-                rendered = rendered.replace(/<div class="logo">[\s\S]*?<\/div>/, '');
-              }
-            } catch (e) {
-              rendered = rendered.replace(/<div class="logo">[\s\S]*?<\/div>/, '');
-            }
+            // No tenant logo available — replace the logo block with a styled text header
+            // using the tenant name so the email is still tenant-branded
+            const textHeader = tenantName
+              ? `<div style="text-align:center;padding:16px 0 8px;">
+                  <span style="font-size:22px;font-weight:700;color:#111827;letter-spacing:-0.5px;">${tenantName}</span>
+                </div>`
+              : '';
+            rendered = rendered.replace(
+              /<div class="logo">[\s\S]*?<\/div>/,
+              textHeader
+            );
+            // Also replace any standalone img with {{logoUrl}} in case template structure differs
+            rendered = rendered.replace(/<img[^>]*\{\{logoUrl\}\}[^>]*>/g, textHeader || '');
           }
+
+          // Mi Seguridad app logo — use public hosted URL (Gmail blocks base64 inline images)
+          const miSeguridadPublicUrl = `${(getConfig().FRONTEND_URL || 'https://app.cguardpro.com').replace(/\/+$/, '')}/assets/logo/miseguridad.png`;
+          rendered = rendered.replace(/{{miSeguridadLogoUrl}}/g, miSeguridadPublicUrl);
 
           // Replace common placeholders
           if (this.variables) {
@@ -234,11 +268,14 @@ export default class EmailSender {
           rendered = rendered.replace(/{{lastName}}/g, lastName);
           rendered = rendered.replace(/{{email}}/g, emailVar);
 
-          // Tenant name replacements (template uses {{tenant.name}})
-          const tenantName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
+          // Tenant name replacements (template uses {{tenant.name}}) — use tenantName already declared above
           // Always replace placeholders to avoid leaking template markers when value missing
           rendered = rendered.replace(/{{tenant\.name}}/g, tenantName);
           rendered = rendered.replace(/{{tenantName}}/g, tenantName);
+
+          // Support email
+          const supportEmail = (getConfig() as any).SUPPORT_EMAIL || (getConfig() as any).SENDGRID_EMAIL_FROM || '';
+          rendered = rendered.replace(/{{supportEmail}}/g, supportEmail);
 
           // Deduplicate quick repeated sends: skip if same recipient+subject sent within the last few seconds
           try {
@@ -285,7 +322,11 @@ export default class EmailSender {
           }
 
           try {
-            const result = await mailService.sendMail({ to: recipient, subject, html: rendered, from: getConfig().SENDGRID_EMAIL_FROM, attachments: attachments.length ? attachments : undefined });
+            // Build per-tenant sender display name so recipients see e.g. "Ecuaseguridad Team" not the platform name
+            const baseFromEmail = getConfig().SENDGRID_EMAIL_FROM || '';
+            const fromDisplayName = tenantName ? `${tenantName} Team` : '';
+            const fromField = fromDisplayName && baseFromEmail ? `${fromDisplayName} <${baseFromEmail}>` : (baseFromEmail || undefined);
+            const result = await mailService.sendMail({ to: recipient, subject, html: rendered, from: fromField, attachments: attachments.length ? attachments : undefined });
             console.info('[EmailSender] mailService.sendMail result', { to: recipient, subject, success: true });
             return result;
           } catch (err) {

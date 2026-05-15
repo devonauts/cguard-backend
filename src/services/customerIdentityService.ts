@@ -138,13 +138,27 @@ export default class CustomerIdentityService {
       // ── Step 7: Send invitation email (after commit — safe to fail) ──────────
       const link = `${tenantSubdomain.frontendUrl(currentTenant)}/client/registration?token=${encodeURIComponent(invitationToken)}&inviteType=client`;
 
+      // Fetch the tenant's settings to get their logo URL
+      let tenantLogoUrl: string | null = null;
+      try {
+        const tenantSettings = await database.settings.findOne({ where: { tenantId: currentTenant.id } });
+        tenantLogoUrl = (tenantSettings && tenantSettings.logoUrl) || null;
+      } catch (settingsErr) {
+        console.warn('CustomerIdentityService: could not load tenant settings for logo', settingsErr);
+      }
+
+      const tenantWithLogo = { ...((currentTenant.get ? currentTenant.get({ plain: true }) : currentTenant)), logoUrl: tenantLogoUrl };
+
       const sender = new EmailSender(EmailSender.TEMPLATES.INVITATION, {
-        tenant: currentTenant,
+        tenant: tenantWithLogo,
         link,
         invitationLink: link,
         inviteLink: link,
         registrationLink: link,
+        firstName: (clientAccount as any).name || '',
+        lastName: '',
         invitation: true,
+        clientInvitation: true,
       });
 
       await sender.sendTo(recipientEmail);

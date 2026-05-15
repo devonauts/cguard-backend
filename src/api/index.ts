@@ -67,6 +67,20 @@ app.get('/api/places/details', (req, res) => {
   });
 });
 
+// SSE token promotion: EventSource cannot send custom headers, so the frontend
+// passes the JWT as ?token=<jwt>. Promote it to Authorization header here,
+// BEFORE authMiddleware runs, so the standard middleware picks it up.
+app.use((req: any, res: any, next: any) => {
+  if (
+    (req.path || '').includes('/events/stream') &&
+    req.query.token &&
+    !req.headers.authorization
+  ) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  next();
+});
+
 // Configures the authentication middleware
 // to set the currentUser to the requests
 app.use(authMiddleware);
@@ -156,6 +170,8 @@ require('./representanteEmpresa').default(routes);
 require('./incident').default(routes);
 require('./incidentType').default(routes);
 require('./inventory').default(routes);
+require('./inventoryItem').default(routes);
+require('./inventoryAssignment').default(routes);
 require('./additionalService').default(routes);
 require('./patrolCheckpoint').default(routes);
 require('./patrolLog').default(routes);
@@ -177,6 +193,8 @@ require('./memos').default(routes);
 require('./request').default(routes);
 // Comments endpoints (in-memory, replace with DB-backed implementation as needed)
 require('./request/comments').default(routes);
+require('./timeOffRequest').default(routes);
+require('./shiftExchangeRequest').default(routes);
 require('./clientLog').default(app);
 require('./debug').default(routes);
 require('./videoTutorialCategory').default(routes);
@@ -195,6 +213,7 @@ require('./insurance').default(routes);
 require('./notificationRecipient').default(routes);
 require('./report').default(routes);
 require('./shift').default(routes);
+require('./events').default(routes);
 
 // CRUD endpoints for tenant_user_client_accounts
 app.get('/api/tenant-user-client-accounts', tenantUserClientAccounts.listTenantUserClientAccounts);

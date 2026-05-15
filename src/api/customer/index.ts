@@ -12,4 +12,15 @@ export default (app) => {
     '/customer/me/account',
     require('./customerAccountMe').default,
   );
+
+  /**
+   * GET /api/customer/post-site/:postSiteId/active-status
+   *
+   * Returns stations + on-duty guards + next shift info for a specific post site.
+   * The post site must belong to the authenticated customer's clientAccount.
+   */
+  app.get(
+    '/customer/post-site/:postSiteId/active-status',
+    require('./customerPostSiteActiveStatus').default,
+  );
 };

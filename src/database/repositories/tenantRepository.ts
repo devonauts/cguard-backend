@@ -316,7 +316,7 @@ class TenantRepository {
       options,
     );
 
-    const include = ['settings'];
+    const include = ['settings', 'logo'];
 
     const record = await options.database.tenant.findByPk(
       id,
@@ -334,7 +334,7 @@ class TenantRepository {
       options,
     );
 
-    const include = ['settings'];
+    const include = ['settings', 'logo'];
 
     const record = await options.database.tenant.findOne({
       where: { url },

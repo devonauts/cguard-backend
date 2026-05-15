@@ -3,6 +3,7 @@ import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import VisitorLogRepository from '../database/repositories/visitorLogRepository';
 import StationRepository from '../database/repositories/stationRepository';
+import { dispatch } from '../lib/notificationDispatcher';
 
 export default class VisitorLogService {
   options: IServiceOptions;
@@ -22,6 +23,18 @@ export default class VisitorLogService {
       const record = await VisitorLogRepository.create(data, { ...this.options, transaction });
 
       await SequelizeRepository.commitTransaction(transaction);
+
+      // Notify supervisors of visitor arrival
+      dispatch('visitor.arrival', {
+        visitorName: record.visitorName || record.name || null,
+        stationName: record.station?.name || record.stationName || null,
+        purpose: record.purpose || record.reason || null,
+      }, {
+        database: this.options.database,
+        tenantId: this.options.currentTenant?.id,
+        sourceEntityType: 'visitorLog',
+        sourceEntityId: record.id,
+      }).catch(() => {});
 
       return record;
     } catch (error) {

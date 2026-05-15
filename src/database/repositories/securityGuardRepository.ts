@@ -41,6 +41,8 @@ class SecurityGuardRepository {
       'address',          
       'importHash',
       'availability',
+      'languages',
+      'skills',
     ]);
 
     createPayload.guardId = data.guard || null;
@@ -182,6 +184,8 @@ class SecurityGuardRepository {
         'address',          
         'importHash',
         'availability',
+        'languages',
+        'skills',
       ]),
       updatedById: currentUser.id,
     };
@@ -191,7 +195,8 @@ class SecurityGuardRepository {
       // and the provided value is not null/undefined. This avoids overwriting
       // the existing FK with null when the caller meant to leave it unchanged.
       if (data.guard !== null && typeof data.guard !== 'undefined') {
-        payloadToUpdate.guardId = data.guard;
+        // data.guard may be a plain ID string or a full user object — extract just the ID
+        payloadToUpdate.guardId = typeof data.guard === 'object' ? (data.guard?.id ?? null) : data.guard;
       }
     }
 
@@ -257,6 +262,7 @@ class SecurityGuardRepository {
           id,
           tenantId: currentTenant.id,
         },
+        paranoid: false,
         transaction,
       },
     );
@@ -267,6 +273,7 @@ class SecurityGuardRepository {
 
     await record.destroy({
       transaction,
+      force: true,
     });
 
     await this._createAuditLog(
@@ -448,6 +455,8 @@ class SecurityGuardRepository {
       'academicInstruction',
       'address',
       'importHash',
+      'languages',
+      'skills',
     ];
 
     const updatePayload: any = {};
@@ -458,7 +467,10 @@ class SecurityGuardRepository {
     });
 
     if (Object.prototype.hasOwnProperty.call(data, 'guard')) {
-      updatePayload.guardId = data.guard || null;
+      const guardVal = data.guard;
+      updatePayload.guardId = typeof guardVal === 'object' && guardVal !== null
+        ? (guardVal.id ?? null)
+        : (guardVal || null);
     }
 
     // Always set updatedById
@@ -604,22 +616,35 @@ class SecurityGuardRepository {
 
     // If current user is not admin, restrict guards to those whose tenantUser.assignedPostSites
     // overlap with the current user's assignedPostSites.
+    // ONLY applies to customer/dispatcher roles — supervisors and managers see all guards.
     try {
       const currentUser = SequelizeRepository.getCurrentUser(options);
-      let isAdmin = false;
+      const RolesModule = (await import('../../security/roles')).default;
+      const UNRESTRICTED_ROLES = [
+        RolesModule.values.admin,
+        RolesModule.values.operationsManager,
+        RolesModule.values.securitySupervisor,
+        RolesModule.values.hrManager,
+        RolesModule.values.clientAccountManager,
+        RolesModule.values.dispatcher,
+        RolesModule.values.administrativeSupervisor,
+        RolesModule.values.administrativeAssistant,
+        RolesModule.values.secretary,
+      ];
+      let isUnrestricted = false;
       if (currentUser && currentUser.tenants) {
-        const tenantUserRec = currentUser.tenants.find((t) => t.tenant.id === tenant.id && t.status === 'active');
+        const tenantUserRec = currentUser.tenants.find((t) => t.tenant && t.tenant.id === tenant.id && t.status === 'active');
         if (tenantUserRec) {
           let roles: any = [];
           if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
           else if (typeof tenantUserRec.roles === 'string') {
             try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
           }
-          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+          isUnrestricted = roles.some((r) => UNRESTRICTED_ROLES.includes(r));
         }
       }
 
-      if (!isAdmin) {
+      if (!isUnrestricted) {
         const tenantUser = await options.database.tenantUser.findOne({
           where: { tenantId: tenant.id, userId: currentUser.id },
           include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
@@ -1124,6 +1149,14 @@ class SecurityGuardRepository {
     } else if (output.guardId) {
       guardUserId = output.guardId;
     }
+    // Extract sensitive fields from raw guard data BEFORE cleanup
+    const rawPassword = output.guard && output.guard.password ? output.guard.password : null;
+    const rawLastLoginAt = output.guard && output.guard.lastLoginAt ? output.guard.lastLoginAt : null;
+    const rawMiddleName = output.guard && output.guard.middleName ? output.guard.middleName : null;
+    const rawHomeAddress = output.guard && output.guard.homeAddress ? output.guard.homeAddress : null;
+    const rawBloodType = output.guard && output.guard.bloodType ? output.guard.bloodType : null;
+    const rawIdentificationNumber = output.guard && output.guard.identificationNumber ? output.guard.identificationNumber : null;
+
     if (guardUserId && output.tenantId) {
       const tenantUser = await options.database.tenantUser.findOne({
         where: {
@@ -1135,9 +1168,26 @@ class SecurityGuardRepository {
       output.guard = {
         ...guardObj,
         status: tenantUser ? tenantUser.status : null,
+        // Access status fields (never expose raw password hash)
+        hasPassword: !!rawPassword,
+        lastLoginAt: rawLastLoginAt || null,
+        invitationTokenExpiresAt: tenantUser ? tenantUser.invitationTokenExpiresAt : null,
+        // Extended profile fields stored on user record
+        middleName: rawMiddleName,
+        homeAddress: rawHomeAddress,
+        bloodType: rawBloodType,
+        identificationNumber: rawIdentificationNumber,
       };
     } else {
-      output.guard = UserRepository.cleanupForRelationships(output.guard);
+      output.guard = {
+        ...UserRepository.cleanupForRelationships(output.guard),
+        hasPassword: !!rawPassword,
+        lastLoginAt: rawLastLoginAt || null,
+        middleName: rawMiddleName,
+        homeAddress: rawHomeAddress,
+        bloodType: rawBloodType,
+        identificationNumber: rawIdentificationNumber,
+      };
     }
 
     // Add explicit archived boolean for convenience (soft-deleted records)
