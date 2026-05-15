@@ -26,6 +26,10 @@ console.log(`TENANT_MODE: ${tenantMode}`);
 function startServer(port: number, attemptsLeft = 5) {
   const server = api.listen(port, () => {
     console.log(`Listening on port ${port}`);
+    // Signal PM2 that the app is ready (for wait_ready / graceful reload)
+    if (typeof process.send === 'function') {
+      process.send('ready');
+    }
   });
 
   server.on('error', (err: any) => {
