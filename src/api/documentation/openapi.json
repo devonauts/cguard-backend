@@ -3497,8 +3497,8 @@
                 "title": "string",
                 "code": "string",
                 "description": "string",
-                "acquisitionDate": "2026-05-14T13:20:00.353Z",
-                "expirationDate": "2026-05-14T13:20:00.354Z",
+                "acquisitionDate": "2026-05-15T12:58:17.756Z",
+                "expirationDate": "2026-05-15T12:58:17.758Z",
                 "image": [
                   {}
                 ],
@@ -3693,8 +3693,8 @@
                 "title": "string",
                 "code": "string",
                 "description": "string",
-                "acquisitionDate": "2026-05-14T13:20:00.354Z",
-                "expirationDate": "2026-05-14T13:20:00.354Z",
+                "acquisitionDate": "2026-05-15T12:58:17.758Z",
+                "expirationDate": "2026-05-15T12:58:17.758Z",
                 "image": [
                   {}
                 ],
@@ -5531,7 +5531,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-05-14T13:20:00.357Z",
+                "noteDate": "2026-05-15T12:58:17.760Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -5650,7 +5650,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-05-14T13:20:00.357Z",
+                "noteDate": "2026-05-15T12:58:17.760Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -6688,7 +6688,7 @@
               "example": {
                 "userId": "string",
                 "tutorialId": "string",
-                "completedAt": "2026-05-14T13:20:00.360Z",
+                "completedAt": "2026-05-15T12:58:17.763Z",
                 "notes": "string",
                 "importHash": "string"
               }
@@ -9285,9 +9285,9 @@
                 ]
               },
               "example": {
-                "date": "2026-05-14T13:20:00.365Z",
-                "dateTime": "2026-05-14T13:20:00.365Z",
-                "incidentAt": "2026-05-14T13:20:00.365Z",
+                "date": "2026-05-15T12:58:17.769Z",
+                "dateTime": "2026-05-15T12:58:17.769Z",
+                "incidentAt": "2026-05-15T12:58:17.769Z",
                 "title": "string",
                 "subject": "string",
                 "description": "string",
@@ -9584,9 +9584,9 @@
                 "required": []
               },
               "example": {
-                "date": "2026-05-14T13:20:00.365Z",
-                "dateTime": "2026-05-14T13:20:00.365Z",
-                "incidentAt": "2026-05-14T13:20:00.365Z",
+                "date": "2026-05-15T12:58:17.769Z",
+                "dateTime": "2026-05-15T12:58:17.769Z",
+                "incidentAt": "2026-05-15T12:58:17.769Z",
                 "title": "string",
                 "subject": "string",
                 "description": "string",
@@ -9897,7 +9897,7 @@
                 "siteId": "string",
                 "stationId": "string",
                 "guardId": "string",
-                "incidentAt": "2026-05-14T13:20:00.365Z",
+                "incidentAt": "2026-05-15T12:58:17.770Z",
                 "incidentTypeId": "string",
                 "content": "string",
                 "location": "string",
@@ -10438,6 +10438,88 @@
               "type": "string"
             }
           },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/places/autocomplete": {
+      "get": {
+        "tags": [
+          "index.ts"
+        ],
+        "summary": "GET /api/places/autocomplete",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/places/details": {
+      "get": {
+        "tags": [
+          "index.ts"
+        ],
+        "summary": "GET /api/places/details",
+        "parameters": [
           {
             "name": "Authorization",
             "in": "header",
@@ -11430,8 +11512,8 @@
                 "policyNumber": "string",
                 "coverage": "string",
                 "premium": 0,
-                "startDate": "2026-05-14T13:20:00.369Z",
-                "endDate": "2026-05-14T13:20:00.369Z",
+                "startDate": "2026-05-15T12:58:17.773Z",
+                "endDate": "2026-05-15T12:58:17.773Z",
                 "contactName": "string",
                 "contactPhone": "string",
                 "contactEmail": "string",
@@ -11584,8 +11666,8 @@
                     "policyNumber": "string",
                     "coverage": "string",
                     "premium": 0,
-                    "startDate": "2026-05-14T13:20:00.369Z",
-                    "endDate": "2026-05-14T13:20:00.369Z"
+                    "startDate": "2026-05-15T12:58:17.773Z",
+                    "endDate": "2026-05-15T12:58:17.773Z"
                   }
                 ],
                 "importHash": "string"
@@ -12860,7 +12942,7 @@
                 "productId": "string",
                 "type": "string",
                 "quantity": 0,
-                "date": "2026-05-14T13:20:00.371Z",
+                "date": "2026-05-15T12:58:17.776Z",
                 "note": "string",
                 "metadata": {}
               }
@@ -13005,7 +13087,7 @@
                     "productId": "string",
                     "type": "string",
                     "quantity": 0,
-                    "date": "2026-05-14T13:20:00.371Z"
+                    "date": "2026-05-15T12:58:17.776Z"
                   }
                 ],
                 "importHash": "string"
@@ -13270,7 +13352,7 @@
     "/tenant/{tenantId}/global-inventory": {
       "post": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "Create global inventory item",
         "description": "Creates a new item in the global inventory catalog.",
@@ -13396,7 +13478,7 @@
       },
       "delete": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "Delete global inventory item(s)",
         "description": "Deletes one or more items from the global inventory catalog.",
@@ -13438,7 +13520,7 @@
       },
       "get": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "List global inventory items",
         "description": "Returns a paginated list of items from the global inventory catalog.",
@@ -13479,7 +13561,7 @@
     "/tenant/{tenantId}/global-inventory/{id}": {
       "put": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "Update global inventory item",
         "description": "Updates an existing item in the global inventory catalog.",
@@ -13608,7 +13690,7 @@
       },
       "patch": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "Update global inventory item",
         "description": "Updates an existing item in the global inventory catalog.",
@@ -13737,7 +13819,7 @@
       },
       "delete": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "Delete global inventory item(s)",
         "description": "Deletes one or more items from the global inventory catalog.",
@@ -13787,7 +13869,7 @@
       },
       "get": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "Find global inventory item by ID",
         "description": "Returns a single item from the global inventory catalog.",
@@ -13839,7 +13921,7 @@
     "/tenant/{tenantId}/global-inventory/autocomplete": {
       "get": {
         "tags": [
-          "inventoryItem"
+          "GlobalInventory"
         ],
         "summary": "Autocomplete global inventory items",
         "description": "Returns matching items for autocomplete/typeahead fields.",
@@ -15373,7 +15455,7 @@
                 ]
               },
               "example": {
-                "dateTime": "2026-05-14T13:20:00.377Z",
+                "dateTime": "2026-05-15T12:58:17.781Z",
                 "subject": "string",
                 "content": "string",
                 "wasAccepted": false,
@@ -15590,7 +15672,7 @@
                 "required": []
               },
               "example": {
-                "dateTime": "2026-05-14T13:20:00.377Z",
+                "dateTime": "2026-05-15T12:58:17.781Z",
                 "subject": "string",
                 "content": "string",
                 "wasAccepted": false,
@@ -16496,7 +16578,7 @@
                 "recipientId": "string",
                 "readStatus": false,
                 "deliveryStatus": "string",
-                "dateDelivered": "2026-05-14T13:20:00.377Z",
+                "dateDelivered": "2026-05-15T12:58:17.782Z",
                 "importHash": "string"
               }
             }
@@ -16678,7 +16760,7 @@
                 "recipientId": "string",
                 "readStatus": false,
                 "deliveryStatus": "string",
-                "dateDelivered": "2026-05-14T13:20:00.377Z",
+                "dateDelivered": "2026-05-15T12:58:17.783Z",
                 "importHash": "string"
               }
             }
@@ -16824,7 +16906,7 @@
                     "recipientId": "string",
                     "readStatus": false,
                     "deliveryStatus": "string",
-                    "dateDelivered": "2026-05-14T13:20:00.377Z"
+                    "dateDelivered": "2026-05-15T12:58:17.783Z"
                   }
                 ],
                 "importHash": "string"
@@ -16966,9 +17048,9 @@
                 "required": []
               },
               "example": {
-                "scheduledTime": "2026-05-14T13:20:00.378Z",
+                "scheduledTime": "2026-05-15T12:58:17.783Z",
                 "completed": false,
-                "completionTime": "2026-05-14T13:20:00.378Z",
+                "completionTime": "2026-05-15T12:58:17.783Z",
                 "status": "string",
                 "assignedGuard": "string",
                 "supervisorId": "string",
@@ -17170,9 +17252,9 @@
                 "required": []
               },
               "example": {
-                "scheduledTime": "2026-05-14T13:20:00.378Z",
+                "scheduledTime": "2026-05-15T12:58:17.783Z",
                 "completed": false,
-                "completionTime": "2026-05-14T13:20:00.378Z",
+                "completionTime": "2026-05-15T12:58:17.783Z",
                 "status": "string",
                 "assignedGuard": "string",
                 "supervisorId": "string",
@@ -17944,7 +18026,7 @@
               },
               "example": {
                 "patrol": "string",
-                "scanTime": "2026-05-14T13:20:00.378Z",
+                "scanTime": "2026-05-15T12:58:17.784Z",
                 "latitude": "string",
                 "longitude": "string",
                 "validLocation": false,
@@ -18133,7 +18215,7 @@
               },
               "example": {
                 "patrol": "string",
-                "scanTime": "2026-05-14T13:20:00.378Z",
+                "scanTime": "2026-05-15T12:58:17.784Z",
                 "latitude": "string",
                 "longitude": "string",
                 "validLocation": false,
@@ -18387,7 +18469,7 @@
               "example": {
                 "invoiceId": "string",
                 "amount": 0,
-                "date": "2026-05-14T13:20:00.379Z",
+                "date": "2026-05-15T12:58:17.784Z",
                 "method": "string",
                 "note": "string",
                 "reference": "string"
@@ -20200,7 +20282,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-05-14T13:20:00.381Z",
+                "noteDate": "2026-05-15T12:58:17.787Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -20319,7 +20401,7 @@
               "example": {
                 "title": "string",
                 "description": "string",
-                "noteDate": "2026-05-14T13:20:00.381Z",
+                "noteDate": "2026-05-15T12:58:17.787Z",
                 "attachment": [
                   {
                     "name": "string",
@@ -27920,8 +28002,8 @@
                 "skillSet": [
                   "string"
                 ],
-                "startAt": "2026-05-14T13:20:00.421Z",
-                "endAt": "2026-05-14T13:20:00.421Z"
+                "startAt": "2026-05-15T12:58:17.827Z",
+                "endAt": "2026-05-15T12:58:17.827Z"
               }
             }
           }
@@ -28119,8 +28201,8 @@
                     "postSite": "string",
                     "tenantUserId": "string",
                     "station": "string",
-                    "startAt": "2026-05-14T13:20:00.421Z",
-                    "endAt": "2026-05-14T13:20:00.421Z"
+                    "startAt": "2026-05-15T12:58:17.828Z",
+                    "endAt": "2026-05-15T12:58:17.828Z"
                   }
                 ],
                 "importHash": "string"
@@ -33177,6 +33259,164 @@
                 "postSiteIds": "string",
                 "format": "string",
                 "filter": "string",
+                "to": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant/{tenantId}/user/{id}/avatar": {
+      "post": {
+        "tags": [
+          "user"
+        ],
+        "summary": "POST /tenant/:tenantId/user/:id/avatar",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "string"
+                  },
+                  "length": {
+                    "type": "string"
+                  },
+                  "map": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  },
+                  "newPassword": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "oldPassword": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "roles": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "emails": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "type": "string"
+                  },
+                  "firstName": {
+                    "type": "string"
+                  },
+                  "lastName": {
+                    "type": "string"
+                  },
+                  "clientIds": {
+                    "type": "string"
+                  },
+                  "postSiteIds": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string"
+                  },
+                  "filter": {
+                    "type": "string"
+                  },
+                  "importHash": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "ids": "string",
+                "length": "string",
+                "map": "string",
+                "data": "string",
+                "newPassword": "string",
+                "password": "string",
+                "oldPassword": "string",
+                "id": "string",
+                "role": "string",
+                "roles": "string",
+                "email": "string",
+                "emails": "string",
+                "name": "string",
+                "fullName": "string",
+                "firstName": "string",
+                "lastName": "string",
+                "clientIds": "string",
+                "postSiteIds": "string",
+                "format": "string",
+                "filter": "string",
+                "importHash": "string",
                 "to": "string"
               }
             }

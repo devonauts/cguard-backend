@@ -234,7 +234,7 @@ function buildSpec(routes) {
     }
 
     const operation = {
-      tags: [tag],
+      tags: (handlerOpenApi && handlerOpenApi.tags) ? handlerOpenApi.tags : [tag],
       summary: handlerOpenApi && handlerOpenApi.summary ? handlerOpenApi.summary : `${r.method.toUpperCase()} ${r.rawPath}`,
       description: handlerOpenApi && handlerOpenApi.description ? handlerOpenApi.description : undefined,
       parameters: params,
