@@ -239,12 +239,13 @@ export default class TenantService {
   }
 
   async create(data) {
-    // Validate taxNumber / RUC if provided
+    // Validate taxNumber (cédula 10 digits or RUC 13 digits) if provided
     try {
-      const { validateEcuadorRuc } = require('../lib/validators/id');
+      const { validateCedulaOrRuc } = require('../lib/validators/id');
       if (data && data.taxNumber) {
         const digits = (data.taxNumber || '').toString().replace(/\D/g, '');
-        if (!validateEcuadorRuc(digits)) {
+        // Skip validation for non-numeric placeholders (e.g. 'PENDING')
+        if (digits.length > 0 && !validateCedulaOrRuc(digits)) {
           throw new Error('INVALID_RUC');
         }
       }
@@ -315,12 +316,13 @@ export default class TenantService {
     );
 
     try {
-      // Validate taxNumber / RUC if provided on update
+      // Validate taxNumber (cédula 10 digits or RUC 13 digits) if provided on update
       try {
-        const { validateEcuadorRuc } = require('../lib/validators/id');
+        const { validateCedulaOrRuc } = require('../lib/validators/id');
         if (data && data.taxNumber) {
           const digits = (data.taxNumber || '').toString().replace(/\D/g, '');
-          if (!validateEcuadorRuc(digits)) {
+          // Skip validation for non-numeric placeholders (e.g. 'PENDING')
+          if (digits.length > 0 && !validateCedulaOrRuc(digits)) {
             throw new Error('INVALID_RUC');
           }
         }
