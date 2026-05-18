@@ -20,12 +20,15 @@ export default class SettingsRepository {
       options,
     );
 
+    // Strip virtual/association fields
+    const { logos, backgroundImages, ...columnDefaults } = defaults || {};
+
     const [
       settings,
     ] = await options.database.settings.findOrCreate({
       where: { id: tenant.id, tenantId: tenant.id },
       defaults: {
-        ...defaults,
+        ...columnDefaults,
         id: tenant.id,
         tenantId: tenant.id,
         createdById: currentUser ? currentUser.id : null,
@@ -61,12 +64,15 @@ export default class SettingsRepository {
     );
     data.logoUrl = _get(data, 'logos[0].downloadUrl', null);
 
+    // Strip virtual/association fields before passing to findOrCreate defaults
+    const { logos, backgroundImages, ...columnData } = data;
+
     const [
       settings,
     ] = await options.database.settings.findOrCreate({
       where: { id: tenant.id, tenantId: tenant.id },
       defaults: {
-        ...data,
+        ...columnData,
         id: tenant.id,
         tenantId: tenant.id,
         createdById: currentUser ? currentUser.id : null,
@@ -74,7 +80,7 @@ export default class SettingsRepository {
       transaction,
     });
 
-    await settings.update(data, {
+    await settings.update(columnData, {
       transaction,
     });
 

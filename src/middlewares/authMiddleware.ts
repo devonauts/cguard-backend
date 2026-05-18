@@ -99,7 +99,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   } catch (error) {
     // Log verification failure to help debugging (without leaking token)
     try {
-      console.warn('🔐 authMiddleware — AuthService.findByToken failed:', error && (error as any).message ? (error as any).message : error);
+      console.debug('🔐 authMiddleware — AuthService.findByToken failed:', error && (error as any).message ? (error as any).message : error);
     } catch (e) {
       // ignore
     }
