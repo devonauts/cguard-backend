@@ -30,7 +30,14 @@
 		<div class="card">
 			<!-- Tenant header -->
 			<div class="header">
-				<img src="{{logoUrl}}" alt="{{tenant.name}}" />
+				<!--[if mso]>
+				<table role="presentation" width="100%"><tr><td style="text-align:center;padding:0;">
+				<![endif]-->
+				<img src="{{logoUrl}}" alt="{{tenant.name}}" style="height:56px;max-width:220px;object-fit:contain;display:block;margin:0 auto;" />
+				<div style="font-size:20px;font-weight:700;color:#ffffff;margin-top:10px;letter-spacing:-0.3px;">{{tenant.name}}</div>
+				<!--[if mso]>
+				</td></tr></table>
+				<![endif]-->
 			</div>
 
 			<div class="body">

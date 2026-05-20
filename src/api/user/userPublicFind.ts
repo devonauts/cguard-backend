@@ -30,6 +30,26 @@ export default async (req, res, next) => {
       throw new Error('Invalid invitation token');
     }
 
+    // Extract tenant info from the included association
+    let tenantInfo: any = null;
+    if (tenantUser.tenant) {
+      const t = tenantUser.tenant;
+      tenantInfo = {
+        name: t.name || t.dataValues?.name || null,
+        logoUrl: null,
+      };
+      // Try to get logo URL from settings
+      try {
+        const settings = await req.database.settings.findOne({
+          where: { tenantId: tenantUser.tenantId },
+          raw: true,
+        });
+        if (settings?.logoUrl) {
+          tenantInfo.logoUrl = settings.logoUrl;
+        }
+      } catch (_e) { /* ignore */ }
+    }
+
     // IMPORTANT: Do NOT mark email as verified here during the GET request.
     // Marking email verified will invalidate the invitation token before
     // the user completes registration. Email verification should only happen
@@ -47,6 +67,7 @@ export default async (req, res, next) => {
         [user.firstName, user.lastName].filter(Boolean).join(' ') ||
         null,
       roles: tenantUser.roles || [],
+      tenant: tenantInfo,
     };
 
     await ApiResponseHandler.success(req, res, payload);

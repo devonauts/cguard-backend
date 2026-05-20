@@ -229,19 +229,8 @@ export default class EmailSender {
           if (tenantLogoUrl) {
             rendered = rendered.replace(/{{logoUrl}}/g, tenantLogoUrl);
           } else {
-            // No tenant logo available — replace the logo block with a styled text header
-            // using the tenant name so the email is still tenant-branded
-            const textHeader = tenantName
-              ? `<div style="text-align:center;padding:16px 0 8px;">
-                  <span style="font-size:22px;font-weight:700;color:#111827;letter-spacing:-0.5px;">${tenantName}</span>
-                </div>`
-              : '';
-            rendered = rendered.replace(
-              /<div class="logo">[\s\S]*?<\/div>/,
-              textHeader
-            );
-            // Also replace any standalone img with {{logoUrl}} in case template structure differs
-            rendered = rendered.replace(/<img[^>]*\{\{logoUrl\}\}[^>]*>/g, textHeader || '');
+            // No tenant logo available — hide the img tag entirely (tenant name text is already in template)
+            rendered = rendered.replace(/<img[^>]*\{\{logoUrl\}\}[^>]*\/?\s*>/g, '');
           }
 
           // Mi Seguridad app logo — use public hosted URL (Gmail blocks base64 inline images)

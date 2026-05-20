@@ -58,10 +58,14 @@ class ShiftRepository {
       },
     );
 
-    
-  
+    // Also add the guard to the station's assignedGuards junction table
+    if (record.stationId && record.guardId) {
+      const station = await options.database.station.findByPk(record.stationId, { transaction });
+      if (station) {
+        await station.addAssignedGuards(record.guardId, { transaction });
+      }
+    }
 
-  
     await this._createAuditLog(
       AuditLogRepository.CREATE,
       record,
