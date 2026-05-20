@@ -8,9 +8,9 @@ import Error403 from '../../errors/Error403';
 
 /**
  * The directory where the files should be uploaded.
- * Now set to a persistent 'uploads' folder in the project root.
+ * Uses UPLOAD_DIR env var if set, otherwise 'uploads' relative to the working directory.
  */
-const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'uploads');
 
 // Crea la carpeta uploads si no existe al iniciar el módulo
 if (!fs.existsSync(UPLOAD_DIR)) {

@@ -153,12 +153,12 @@ export default async (req: any, res: any) => {
              sg.guardId
            FROM tenant_user_client_accounts tuca
            JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
-           JOIN securityGuards sg ON sg.tenantUserId = tu.id
+           JOIN securityGuards sg ON sg.guardId = tu.userId
            WHERE tuca.clientAccountId = :clientAccountId
              AND tuca.deletedAt IS NULL
              AND tu.deletedAt IS NULL
              AND sg.deletedAt IS NULL
-             ${tenantId ? 'AND (tu.tenantId = :tenantId OR tuca.tenantId = :tenantId)' : ''}`,
+             ${tenantId ? 'AND tu.tenantId = :tenantId' : ''}`,
           { replacements: { clientAccountId, tenantId } },
         );
         const rawGuards = Array.isArray(guardRows) ? guardRows : [];
