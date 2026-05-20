@@ -209,6 +209,7 @@ require('./route').default(routes);
 require('./geocode').default(routes);
 require('./siteTour').default(routes);
 require('./kpi').default(routes);
+require('./operations').default(routes);
 require('./insurance').default(routes);
 require('./notificationRecipient').default(routes);
 require('./report').default(routes);
