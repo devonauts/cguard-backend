@@ -214,6 +214,7 @@ require('./insurance').default(routes);
 require('./notificationRecipient').default(routes);
 require('./report').default(routes);
 require('./shift').default(routes);
+require('./scheduler').default(routes);
 require('./events').default(routes);
 
 // CRUD endpoints for tenant_user_client_accounts

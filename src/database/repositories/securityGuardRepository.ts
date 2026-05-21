@@ -43,6 +43,8 @@ class SecurityGuardRepository {
       'availability',
       'languages',
       'skills',
+      'guardType',
+      'workRules',
     ]);
 
     createPayload.guardId = data.guard || null;
@@ -186,6 +188,8 @@ class SecurityGuardRepository {
         'availability',
         'languages',
         'skills',
+        'guardType',
+        'workRules',
       ]),
       updatedById: currentUser.id,
     };

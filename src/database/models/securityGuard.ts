@@ -149,6 +149,16 @@ export default function (sequelize) {
         allowNull: true,
         defaultValue: [],
       },
+      guardType: {
+        type: DataTypes.ENUM('titular', 'sacafranco'),
+        allowNull: false,
+        defaultValue: 'titular',
+      },
+      workRules: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: null,
+      },
     },
     {
       indexes: [
