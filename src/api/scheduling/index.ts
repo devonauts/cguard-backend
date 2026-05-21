@@ -16,6 +16,7 @@ export default (app) => {
   // Rotation styles
   app.get('/tenant/:tenantId/rotation-styles', rotationStyleList);
   app.post('/tenant/:tenantId/rotation-style', rotationStyleCreate);
+  app.post('/tenant/:tenantId/rotation-styles', rotationStyleCreate);
 
   // Station positions
   app.get('/tenant/:tenantId/station/:stationId/positions', stationPositionList);
