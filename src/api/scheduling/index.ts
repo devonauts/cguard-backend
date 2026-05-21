@@ -11,6 +11,9 @@ import {
   stationAutoPositions,
   schedulerOverview,
   schedulerAutoAssign,
+  scheduleOverrideList,
+  scheduleOverrideCreate,
+  scheduleOverrideDelete,
 } from './schedulingEndpoints';
 
 export default (app) => {
@@ -34,4 +37,9 @@ export default (app) => {
   // Scheduler overview (unified view)
   app.get('/tenant/:tenantId/scheduler/overview', schedulerOverview);
   app.post('/tenant/:tenantId/scheduler/auto-assign', schedulerAutoAssign);
+
+  // Schedule overrides (vacations, permissions, absences, manual shifts)
+  app.get('/tenant/:tenantId/schedule-overrides', scheduleOverrideList);
+  app.post('/tenant/:tenantId/schedule-overrides', scheduleOverrideCreate);
+  app.delete('/tenant/:tenantId/schedule-overrides/:id', scheduleOverrideDelete);
 };

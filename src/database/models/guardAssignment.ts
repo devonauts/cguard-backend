@@ -49,6 +49,19 @@ export default function (sequelize) {
         defaultValue: false,
         comment: 'True if this is a sacafranco/floating relief guard',
       },
+      coveredStationIds: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'JSON array of station IDs this sacafranco covers (e.g. ["id1","id2"])',
+        get() {
+          const raw = this.getDataValue('coveredStationIds');
+          if (!raw) return [];
+          try { return JSON.parse(raw); } catch { return []; }
+        },
+        set(val: any) {
+          this.setDataValue('coveredStationIds', val ? JSON.stringify(val) : null);
+        },
+      },
       status: {
         type: DataTypes.ENUM('active', 'paused', 'ended'),
         allowNull: false,

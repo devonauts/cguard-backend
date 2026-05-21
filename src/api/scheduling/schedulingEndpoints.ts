@@ -349,11 +349,20 @@ export async function schedulerOverview(req, res) {
       order: [['startTime', 'ASC']],
     });
 
+    // Get schedule overrides for the date range
+    const overrides = await req.database.scheduleOverride?.findAll?.({
+      where: {
+        tenantId,
+        date: { [req.database.Sequelize.Op.between]: [startDate, endDate] },
+      },
+    }).catch(() => []) || [];
+
     await ApiResponseHandler.success(req, res, {
       stations: stations.map((s: any) => s.get({ plain: true })),
       positions: positions.map((p: any) => p.get({ plain: true })),
       assignments: assignments.map((a: any) => a.get({ plain: true })),
       shifts: shifts.map((sh: any) => sh.get({ plain: true })),
+      overrides: overrides.map((o: any) => o.get ? o.get({ plain: true }) : o),
     });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
@@ -483,6 +492,78 @@ export async function schedulerAutoAssign(req, res) {
       sacafrancosAssigned: newAssignments.filter(a => a.isRelief).length,
       unassignedRemaining: guardsLeft.length,
     });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
+
+// ─── Schedule Overrides (V, PM, F, manual shifts) ────────────────────────────
+
+// GET /tenant/:tenantId/schedule-overrides?startDate=&endDate=
+export async function scheduleOverrideList(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationRead);
+    const tenantId = req.currentTenant.id;
+    const { startDate, endDate, guardId } = req.query;
+    const where: any = { tenantId };
+    if (startDate && endDate) {
+      where.date = { [req.database.Sequelize.Op.between]: [startDate, endDate] };
+    }
+    if (guardId) where.guardId = guardId;
+
+    const rows = await req.database.scheduleOverride.findAll({
+      where,
+      include: [{ model: req.database.user, as: 'guard', attributes: ['id', 'firstName', 'lastName', 'email'] }],
+      order: [['date', 'ASC']],
+    });
+    await ApiResponseHandler.success(req, res, { rows, count: rows.length });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
+
+// POST /tenant/:tenantId/schedule-overrides
+export async function scheduleOverrideCreate(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationCreate);
+    const tenantId = req.currentTenant.id;
+    const userId = req.currentUser.id;
+    const { guardId, assignmentId, date, type, note } = req.body?.data || req.body || {};
+
+    if (!guardId || !date || !type) {
+      return await ApiResponseHandler.error(req, res, { message: 'guardId, date and type are required', code: 400 });
+    }
+
+    const validTypes = ['V', 'PM', 'F', '24', 'D', 'N', 'L'];
+    if (!validTypes.includes(type)) {
+      return await ApiResponseHandler.error(req, res, { message: `type must be one of: ${validTypes.join(', ')}`, code: 400 });
+    }
+
+    // Upsert: if override already exists for this guard+date, update it
+    const [record, created] = await req.database.scheduleOverride.findOrCreate({
+      where: { guardId, date, tenantId },
+      defaults: { guardId, assignmentId, date, type, note, tenantId, createdById: userId },
+    });
+
+    if (!created) {
+      await record.update({ type, note, assignmentId });
+    }
+
+    await ApiResponseHandler.success(req, res, record);
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
+
+// DELETE /tenant/:tenantId/schedule-overrides/:id
+export async function scheduleOverrideDelete(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationCreate);
+    const tenantId = req.currentTenant.id;
+    const { id } = req.params;
+
+    await req.database.scheduleOverride.destroy({ where: { id, tenantId } });
+    await ApiResponseHandler.success(req, res, { deleted: true });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
