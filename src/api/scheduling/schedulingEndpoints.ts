@@ -308,14 +308,12 @@ export async function stationAutoPositions(req, res) {
       positions.push(
         { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
         { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: halfCycle, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'sacafranco', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 2, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     } else if (scheduleType === '12h-day' || scheduleType === '12h-night') {
       const start = scheduleType === '12h-day' ? '07:00' : '19:00';
       const end = scheduleType === '12h-day' ? '19:00' : '07:00';
       positions.push(
         { name: 'Fijo 1', type: 'fijo', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 0, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'sacafranco', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 1, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     } else {
       // Custom
@@ -323,7 +321,6 @@ export async function stationAutoPositions(req, res) {
       const customEnd = data.endTime || '19:00';
       positions.push(
         { name: 'Fijo 1', type: 'fijo', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'sacafranco', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 1, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     }
 
@@ -412,6 +409,80 @@ export async function schedulerOverview(req, res) {
       assignments: assignments.map((a: any) => a.get({ plain: true })),
       shifts: shifts.map((sh: any) => sh.get({ plain: true })),
       overrides: overrides.map((o: any) => o.get ? o.get({ plain: true }) : o),
+    });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
+
+// GET /tenant/:tenantId/scheduler/staffing
+// Returns staffing requirements: how many fijos + sacafrancos needed
+export async function schedulerStaffing(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationRead);
+    const tenantId = req.currentTenant.id;
+    const { Op } = req.database.Sequelize;
+
+    // Get all stations with rotation configured
+    const stations = await req.database.station.findAll({
+      where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
+      attributes: ['id', 'stationName', 'rotationStyleId'],
+    });
+
+    // Get all fijo positions
+    const fijoPositions = await req.database.stationPosition.findAll({
+      where: { tenantId, deletedAt: null, type: 'fijo' },
+      attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder'],
+    });
+
+    // Build station configs
+    const stationConfigs: any[] = [];
+    for (const station of stations) {
+      const rot = await req.database.rotationStyle.findByPk(station.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+      if (!rot) continue;
+      const sFijos = fijoPositions.filter((p: any) => p.stationId === station.id);
+      stationConfigs.push({
+        stationId: station.id,
+        stationName: station.stationName,
+        fijoPositions: sFijos.map((f: any) => ({
+          platoonOffset: f.platoonOffset || 0,
+          dayShifts: rot.dayShifts,
+          nightShifts: rot.nightShifts,
+          restDays: rot.restDays,
+        })),
+      });
+    }
+
+    // Get SF rotation (from existing or default 6-1)
+    let sfRot: any = null;
+    const existingSf = await req.database.guardAssignment.findOne({ where: { tenantId, isRelief: true, status: 'active', deletedAt: null } });
+    if (existingSf) {
+      sfRot = await req.database.rotationStyle.findByPk(existingSf.rotationStyleId, { attributes: ['id', 'name', 'dayShifts', 'nightShifts', 'restDays'] });
+    }
+    if (!sfRot) {
+      sfRot = await req.database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true }, attributes: ['id', 'name', 'dayShifts', 'nightShifts', 'restDays'] });
+    }
+    if (!sfRot) {
+      sfRot = { dayShifts: 6, nightShifts: 0, restDays: 1 };
+    }
+
+    const { calculateStaffingNeeds } = await import('../../services/shiftGenerationService');
+    const staffing = calculateStaffingNeeds(stationConfigs, { dayShifts: sfRot.dayShifts, nightShifts: sfRot.nightShifts, restDays: sfRot.restDays });
+
+    // Count currently assigned guards
+    const currentAssignments = await req.database.guardAssignment.findAll({
+      where: { tenantId, status: 'active', deletedAt: null },
+      attributes: ['guardId', 'isRelief'],
+    });
+    const fijoGuards = new Set(currentAssignments.filter((a: any) => !a.isRelief && a.guardId).map((a: any) => a.guardId));
+    const sfGuards = new Set(currentAssignments.filter((a: any) => a.isRelief && a.guardId).map((a: any) => a.guardId));
+
+    await ApiResponseHandler.success(req, res, {
+      ...staffing,
+      sfRotation: { id: sfRot.id, name: sfRot.name, dayShifts: sfRot.dayShifts, nightShifts: sfRot.nightShifts, restDays: sfRot.restDays },
+      currentFijoGuards: fijoGuards.size,
+      currentSfGuards: sfGuards.size,
+      totalGuardsNeeded: staffing.fijosNeeded + staffing.sacafrancosNeeded,
     });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

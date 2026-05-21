@@ -11,6 +11,7 @@ import {
   stationAutoPositions,
   stationGenerateYearly,
   schedulerOverview,
+  schedulerStaffing,
   schedulerAutoAssign,
   schedulerOptimizeSacafrancos,
   scheduleOverrideList,
@@ -39,6 +40,7 @@ export default (app) => {
 
   // Scheduler overview (unified view)
   app.get('/tenant/:tenantId/scheduler/overview', schedulerOverview);
+  app.get('/tenant/:tenantId/scheduler/staffing', schedulerStaffing);
   app.post('/tenant/:tenantId/scheduler/auto-assign', schedulerAutoAssign);
   app.post('/tenant/:tenantId/scheduler/optimize-sacafrancos', schedulerOptimizeSacafrancos);
 

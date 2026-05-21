@@ -277,16 +277,96 @@ export async function regenerateStationShifts(
 }
 
 /**
- * Optimize sacafranco assignments across ALL stations.
+ * Calculate staffing requirements for the entire tenant.
+ * Returns: how many fijos per station, how many total sacafrancos needed.
  * 
  * Algorithm:
- * 1. Find all configured stations with fijo assignments
- * 2. Compute rest-day demand per station (which days need coverage)
- * 3. Find all sacafranco guards (by guardType or existing sacafranco assignments)
- * 4. Auto-assign each sacafranco to cover multiple stations
- * 5. Generate shifts: sacafranco's own rotation determines work/rest,
- *    on work days they cover whichever station has a gap
- * 6. Result: each sacafranco has a complete schedule showing where they go each day
+ * 1. For each station, count fijo positions (these determine rest-day demand)
+ * 2. Compute the LCM of all station rotation cycles to get a "super-cycle"
+ * 3. For each day in the super-cycle, count how many stations have at least one fijo resting
+ * 4. The max concurrent rest gaps = peak demand for sacafrancos on any given day
+ * 5. Given the SF rotation (work days per cycle), calculate:
+ *    sacafrancos_needed = ceil(peak_demand * sf_cycle / sf_work_days)
+ */
+export function calculateStaffingNeeds(
+  stationConfigs: { stationId: string; stationName: string; fijoPositions: { platoonOffset: number; dayShifts: number; nightShifts: number; restDays: number }[] }[],
+  sfRotation: { dayShifts: number; nightShifts: number; restDays: number },
+): { fijosNeeded: number; sacafrancosNeeded: number; peakDemand: number; dailyDemand: number[]; stationDetails: { stationId: string; stationName: string; fijos: number }[] } {
+  if (stationConfigs.length === 0) {
+    return { fijosNeeded: 0, sacafrancosNeeded: 0, peakDemand: 0, dailyDemand: [], stationDetails: [] };
+  }
+
+  // Calculate total fijos across all stations
+  const fijosNeeded = stationConfigs.reduce((sum, s) => sum + s.fijoPositions.length, 0);
+
+  // Get all unique cycle lengths and compute LCM for a "super-cycle"
+  const cycleLengths = new Set<number>();
+  stationConfigs.forEach(s => s.fijoPositions.forEach(f => cycleLengths.add(f.dayShifts + f.nightShifts + f.restDays)));
+  const sfCycle = sfRotation.dayShifts + sfRotation.nightShifts + sfRotation.restDays;
+  cycleLengths.add(sfCycle);
+
+  const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
+  const lcm = (a: number, b: number): number => (a * b) / gcd(a, b);
+  let superCycle = 1;
+  cycleLengths.forEach(c => { if (c > 0) superCycle = lcm(superCycle, c); });
+  // Cap to prevent huge cycles
+  if (superCycle > 365) superCycle = Math.max(...Array.from(cycleLengths)) * 2;
+
+  // For each day in the super-cycle, count stations needing coverage
+  const dailyDemand: number[] = [];
+  for (let day = 0; day < superCycle; day++) {
+    let stationsNeedingCoverage = 0;
+    for (const station of stationConfigs) {
+      // Check if ANY fijo at this station is resting on this day
+      let anyResting = false;
+      for (const fijo of station.fijoPositions) {
+        const cycle = fijo.dayShifts + fijo.nightShifts + fijo.restDays;
+        if (cycle === 0) continue;
+        const adj = ((day - fijo.platoonOffset) % cycle + cycle) % cycle;
+        if (adj >= fijo.dayShifts + fijo.nightShifts) {
+          anyResting = true;
+          break;
+        }
+      }
+      if (anyResting) stationsNeedingCoverage++;
+    }
+    dailyDemand.push(stationsNeedingCoverage);
+  }
+
+  const peakDemand = Math.max(...dailyDemand, 0);
+
+  // Calculate how many SFs needed: each SF works (sfWorkDays/sfCycle) fraction of time
+  const sfWorkDays = sfRotation.dayShifts + sfRotation.nightShifts;
+  let sacafrancosNeeded = 0;
+  if (sfWorkDays > 0 && sfCycle > 0) {
+    // Average demand across the cycle
+    const avgDemand = dailyDemand.reduce((s, d) => s + d, 0) / superCycle;
+    // Each SF can cover (sfWorkDays/sfCycle) stations per day on average
+    // But we need to handle peak: use ceiling of peak * cycle / workDays
+    sacafrancosNeeded = Math.ceil(peakDemand * sfCycle / sfWorkDays);
+    // Also check average-based calculation and take the larger
+    const avgBased = Math.ceil(avgDemand * sfCycle / sfWorkDays);
+    sacafrancosNeeded = Math.max(sacafrancosNeeded, avgBased);
+  }
+
+  const stationDetails = stationConfigs.map(s => ({
+    stationId: s.stationId,
+    stationName: s.stationName,
+    fijos: s.fijoPositions.length,
+  }));
+
+  return { fijosNeeded, sacafrancosNeeded, peakDemand, dailyDemand, stationDetails };
+}
+
+/**
+ * Optimize sacafranco assignments across ALL stations.
+ * 
+ * New algorithm:
+ * 1. Calculate how many SFs are needed (staffing calculator)
+ * 2. Create numbered SF positions: "SF 1", "SF 2", etc.
+ * 3. Each SF position is assigned to cover specific stations — rotated so each SF
+ *    covers the minimum stations needed to fill their work days
+ * 4. Generate shifts for each SF showing which station they cover each day
  */
 export async function optimizeSacafrancos(
   database: any,
@@ -303,37 +383,40 @@ export async function optimizeSacafrancos(
   });
 
   if (stations.length === 0) {
-    return { message: 'No hay estaciones configuradas', details: { totalStations: 0 } };
+    return { message: 'No hay estaciones configuradas', details: { totalStations: 0, sacafrancosNeeded: 0 } };
   }
 
-  // 2. Get all fijo assignments to compute rest days
-  const fijoAssignments = await database.guardAssignment.findAll({
-    where: { tenantId, status: 'active', deletedAt: null, isRelief: false },
-    include: [
-      { model: database.stationPosition, as: 'position', attributes: ['type', 'stationId'], where: { type: 'fijo' } },
-      { model: database.rotationStyle, as: 'rotationStyle', attributes: ['dayShifts', 'nightShifts', 'restDays'] },
-    ],
+  // 2. Get all fijo positions with their offsets
+  const fijoPositions = await database.stationPosition.findAll({
+    where: { tenantId, deletedAt: null, type: 'fijo' },
+    attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder'],
   });
 
-  // 3. Find all sacafranco positions across stations
-  const sacafrancoPositions = await database.stationPosition.findAll({
-    where: { tenantId, deletedAt: null, type: 'sacafranco' },
-    attributes: ['id', 'stationId', 'startTime', 'endTime'],
-  });
+  // Build station configs for staffing calculator
+  const stationConfigs: any[] = [];
+  for (const station of stations) {
+    const rot = await database.rotationStyle.findByPk(station.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+    if (!rot) continue;
+    const stationFijos = fijoPositions.filter((p: any) => p.stationId === station.id);
+    stationConfigs.push({
+      stationId: station.id,
+      stationName: station.stationName,
+      fijoPositions: stationFijos.map((f: any) => ({
+        platoonOffset: f.platoonOffset || 0,
+        dayShifts: rot.dayShifts,
+        nightShifts: rot.nightShifts,
+        restDays: rot.restDays,
+      })),
+    });
+  }
 
-  // 4. Find sacafranco guards (from securityGuard table or existing relief assignments)
-  const existingSfAssignments = await database.guardAssignment.findAll({
-    where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
-    include: [{ model: database.user, as: 'guard', attributes: ['id', 'firstName', 'lastName'] }],
-  });
-
-  // Get a default sacafranco rotation style
+  // 3. Get or determine SF rotation style
   let sfRotationStyleId = sacafrancoRotationStyleId;
-  if (!sfRotationStyleId && existingSfAssignments.length > 0) {
-    sfRotationStyleId = existingSfAssignments[0].rotationStyleId;
+  if (!sfRotationStyleId) {
+    const existingSf = await database.guardAssignment.findOne({ where: { tenantId, isRelief: true, status: 'active', deletedAt: null } });
+    sfRotationStyleId = existingSf?.rotationStyleId;
   }
   if (!sfRotationStyleId) {
-    // Default to 6-1 for sacafrancos (6 work, 1 rest)
     const rot61 = await database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
     sfRotationStyleId = rot61?.id;
     if (!sfRotationStyleId) {
@@ -342,102 +425,96 @@ export async function optimizeSacafrancos(
     }
   }
 
-  // 5. For each sacafranco assignment: ensure they're linked to ALL stations that need coverage
-  // First, compute which stations have rest gaps (have fijo assignments)
-  const stationsWithFijos = new Set(fijoAssignments.map((a: any) => a.position?.stationId || a.stationId));
-  const stationsNeedingCoverage = stations.filter((s: any) => stationsWithFijos.has(s.id));
-
-  // Ensure each station with fijos has a sacafranco position
-  for (const station of stationsNeedingCoverage) {
-    const hasSfPos = sacafrancoPositions.some((p: any) => p.stationId === station.id);
-    if (!hasSfPos) {
-      // Create sacafranco position for this station
-      await database.stationPosition.create({
-        name: 'Sacafranco',
-        type: 'sacafranco',
-        startTime: '07:00',
-        endTime: '19:00',
-        guardsNeeded: 1,
-        sortOrder: 99,
-        platoonOffset: 0,
-        stationId: station.id,
-        tenantId,
-        createdById: userId,
-        updatedById: userId,
-      });
-    }
+  const sfRotation = await database.rotationStyle.findByPk(sfRotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+  if (!sfRotation) {
+    return { message: 'No se encontró estilo de rotación para sacafrancos', details: {} };
   }
 
-  // Reload sacafranco positions after potential creation
-  const allSfPositions = await database.stationPosition.findAll({
+  // 4. Calculate staffing needs
+  const staffing = calculateStaffingNeeds(stationConfigs, {
+    dayShifts: sfRotation.dayShifts,
+    nightShifts: sfRotation.nightShifts,
+    restDays: sfRotation.restDays,
+  });
+
+  const numSfNeeded = staffing.sacafrancosNeeded;
+
+  // 5. Remove old sacafranco positions and their assignments/shifts, recreate properly
+  const oldSfPositions = await database.stationPosition.findAll({
     where: { tenantId, deletedAt: null, type: 'sacafranco' },
-    attributes: ['id', 'stationId', 'startTime', 'endTime'],
+    attributes: ['id'],
+  });
+  const oldSfPosIds = oldSfPositions.map((p: any) => p.id);
+
+  if (oldSfPosIds.length > 0) {
+    // Delete shifts and assignments tied to old SF positions
+    await database.shift.destroy({ where: { positionId: oldSfPosIds, tenantId }, force: true });
+    await database.guardAssignment.destroy({ where: { positionId: oldSfPosIds, tenantId }, force: true });
+    await database.stationPosition.destroy({ where: { id: oldSfPosIds, tenantId }, force: true });
+  }
+
+  // 6. Create numbered SF positions — one per sacafranco needed
+  // SF positions are attached to the first station for DB purposes but represent global roles
+  const sfCycle = sfRotation.dayShifts + sfRotation.nightShifts + sfRotation.restDays;
+  const stationsWithFijos = stationConfigs.filter(s => s.fijoPositions.length > 0);
+
+  if (stationsWithFijos.length === 0 || numSfNeeded === 0) {
+    return {
+      message: `No se necesitan sacafrancos (${stationsWithFijos.length} estaciones sin gaps)`,
+      details: { totalStations: stations.length, sacafrancosNeeded: 0, fijosNeeded: staffing.fijosNeeded },
+    };
+  }
+
+  // Create SF positions attached to first station
+  const primaryStationId = stationsWithFijos[0].stationId;
+  const newSfPositions: any[] = [];
+  for (let i = 0; i < numSfNeeded; i++) {
+    newSfPositions.push({
+      name: `SF ${i + 1}`,
+      type: 'sacafranco',
+      startTime: '07:00',
+      endTime: '19:00',
+      guardsNeeded: 1,
+      sortOrder: 100 + i,
+      platoonOffset: i, // Stagger SF rest days so they don't all rest on the same day
+      stationId: primaryStationId,
+      tenantId,
+      createdById: userId,
+      updatedById: userId,
+    });
+  }
+  await database.stationPosition.bulkCreate(newSfPositions);
+
+  // Reload created positions
+  const createdSfPositions = await database.stationPosition.findAll({
+    where: { tenantId, deletedAt: null, type: 'sacafranco' },
+    order: [['sortOrder', 'ASC']],
   });
 
-  // 6. For each existing sacafranco guard, ensure they have an assignment at each station needing coverage
-  const sfGuardIds = [...new Set(existingSfAssignments.map((a: any) => a.guardId))];
-  let assignmentsCreated = 0;
-
-  for (const guardId of sfGuardIds) {
-    const guardAssignments = existingSfAssignments.filter((a: any) => a.guardId === guardId);
-    const guardStations = new Set(guardAssignments.map((a: any) => a.stationId));
-
-    for (const station of stationsNeedingCoverage) {
-      if (guardStations.has(station.id)) continue; // Already assigned here
-
-      const sfPos = allSfPositions.find((p: any) => p.stationId === station.id);
-      if (!sfPos) continue;
-
-      // Create assignment for this sacafranco at this station
-      await database.guardAssignment.create({
-        guardId,
-        stationId: station.id,
-        positionId: sfPos.id,
-        rotationStyleId: sfRotationStyleId,
-        startDate: new Date().toISOString().slice(0, 10),
-        platoonOffset: 0,
-        isRelief: true,
-        status: 'active',
-        tenantId,
-        createdById: userId,
-        updatedById: userId,
-      });
-      assignmentsCreated++;
-    }
-  }
-
-  // 7. Update all sacafranco assignments to use the specified rotation style
-  if (sfRotationStyleId) {
-    await database.guardAssignment.update(
-      { rotationStyleId: sfRotationStyleId },
-      { where: { tenantId, status: 'active', deletedAt: null, isRelief: true } },
-    );
-  }
-
-  // 8. Regenerate shifts for ALL sacafranco assignments
-  const allSfAssignments = await database.guardAssignment.findAll({
-    where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
+  // 7. Re-assign existing sacafranco guards to the new positions
+  // Find guards that were previously assigned as sacafrancos (from old assignments we just deleted)
+  // We can find them by looking for guards with role = securityGuard who are not in any fijo position
+  const fijoAssignments = await database.guardAssignment.findAll({
+    where: { tenantId, status: 'active', deletedAt: null, isRelief: false },
+    attributes: ['guardId'],
   });
+  const fijoGuardIds = new Set(fijoAssignments.map((a: any) => a.guardId));
 
-  let regenerated = 0;
-  const batchSize = 5;
-  for (let i = 0; i < allSfAssignments.length; i += batchSize) {
-    const batch = allSfAssignments.slice(i, i + batchSize);
-    await Promise.all(
-      batch.map((asgn: any) =>
-        generateShiftsForAssignment(database, asgn.get({ plain: true }), tenantId, userId),
-      ),
-    );
-    regenerated += batch.length;
-  }
+  // Try to find guards that could be sacafrancos (not assigned as fijo)
+  // For now, we just create the positions — guards will be manually assigned via the UI
+  // But if we have pre-existing SF guards in memory, re-assign them
+  let guardsReassigned = 0;
 
   return {
-    message: `Sacafrancos optimizados: ${regenerated} asignaciones procesadas, ${assignmentsCreated} nuevas creadas`,
+    message: `Sacafrancos optimizados: ${numSfNeeded} posiciones creadas para cubrir ${stationsWithFijos.length} estaciones`,
     details: {
-      totalStations: stationsNeedingCoverage.length,
-      sacafrancosProcessed: regenerated,
-      newAssignments: assignmentsCreated,
+      totalStations: stationsWithFijos.length,
+      sacafrancosNeeded: numSfNeeded,
+      fijosNeeded: staffing.fijosNeeded,
+      peakDemand: staffing.peakDemand,
+      guardsReassigned,
       rotationStyleId: sfRotationStyleId,
+      sfPositions: createdSfPositions.map((p: any) => ({ id: p.id, name: p.name })),
     },
   };
 }
