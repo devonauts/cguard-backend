@@ -379,48 +379,110 @@ export async function optimizeSacafrancos(
   // 1. Get all stations with rotation configured
   const stations = await database.station.findAll({
     where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
-    attributes: ['id', 'stationName', 'rotationStyleId'],
+    attributes: ['id', 'stationName', 'rotationStyleId', 'scheduleType'],
   });
 
   if (stations.length === 0) {
     return { message: 'No hay estaciones configuradas', details: { totalStations: 0, sacafrancosNeeded: 0 } };
   }
 
-  // 2. Get all fijo positions with their offsets
+  // 2. Get all fijo positions
   const fijoPositions = await database.stationPosition.findAll({
     where: { tenantId, deletedAt: null, type: 'fijo' },
     attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder'],
   });
 
-  // Build station configs for staffing calculator
+  // 3. Get rotation details for each station
+  const rotationCache = new Map<string, any>();
+  for (const station of stations) {
+    if (!rotationCache.has(station.rotationStyleId)) {
+      const rot = await database.rotationStyle.findByPk(station.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+      if (rot) rotationCache.set(station.rotationStyleId, rot);
+    }
+  }
+
+  // 4. OPTIMIZE: Reassign platoonOffsets to stagger rest days globally
+  // Group fijos by their cycle length, then spread offsets evenly within each group
+  const fijosByStation = new Map<string, any[]>();
+  for (const fijo of fijoPositions) {
+    if (!fijosByStation.has(fijo.stationId)) fijosByStation.set(fijo.stationId, []);
+    fijosByStation.get(fijo.stationId)!.push(fijo);
+  }
+
+  // For offset optimization: assign offsets so that across ALL stations with the same cycle,
+  // rest days are spread as evenly as possible
+  const byCycle = new Map<number, { fijo: any; stationId: string; rot: any }[]>();
+  for (const station of stations) {
+    const rot = rotationCache.get(station.rotationStyleId);
+    if (!rot) continue;
+    const cycle = rot.dayShifts + rot.nightShifts + rot.restDays;
+    if (!byCycle.has(cycle)) byCycle.set(cycle, []);
+    const stationFijos = fijosByStation.get(station.id) || [];
+    for (const fijo of stationFijos) {
+      byCycle.get(cycle)!.push({ fijo, stationId: station.id, rot });
+    }
+  }
+
+  // Assign optimal offsets: spread evenly within each cycle group
+  const offsetUpdates: { id: string; platoonOffset: number }[] = [];
+  for (const [cycle, fijos] of byCycle.entries()) {
+    // Spread offsets: assign 0, 1, 2, ... modulo cycle
+    // This ensures at most ceil(fijos.length / cycle) guards rest on any given day
+    for (let i = 0; i < fijos.length; i++) {
+      const newOffset = i % cycle;
+      if (fijos[i].fijo.platoonOffset !== newOffset) {
+        offsetUpdates.push({ id: fijos[i].fijo.id, platoonOffset: newOffset });
+      }
+    }
+  }
+
+  // Apply offset updates
+  for (const update of offsetUpdates) {
+    await database.stationPosition.update(
+      { platoonOffset: update.platoonOffset },
+      { where: { id: update.id, tenantId } }
+    );
+    // Also update any active assignment for this position
+    await database.guardAssignment.update(
+      { platoonOffset: update.platoonOffset },
+      { where: { positionId: update.id, tenantId, status: 'active', deletedAt: null } }
+    );
+  }
+
+  // 5. Build station configs with NEW optimized offsets
   const stationConfigs: any[] = [];
   for (const station of stations) {
-    const rot = await database.rotationStyle.findByPk(station.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+    const rot = rotationCache.get(station.rotationStyleId);
     if (!rot) continue;
-    const stationFijos = fijoPositions.filter((p: any) => p.stationId === station.id);
+    const stationFijos = fijosByStation.get(station.id) || [];
+    // Recalculate offsets from the byCycle assignment
+    const cycle = rot.dayShifts + rot.nightShifts + rot.restDays;
+    const cycleGroup = byCycle.get(cycle) || [];
+    const thisStationInGroup = cycleGroup.filter(f => f.stationId === station.id);
+
     stationConfigs.push({
       stationId: station.id,
       stationName: station.stationName,
-      fijoPositions: stationFijos.map((f: any) => ({
-        platoonOffset: f.platoonOffset || 0,
-        dayShifts: rot.dayShifts,
-        nightShifts: rot.nightShifts,
-        restDays: rot.restDays,
-      })),
+      fijoPositions: thisStationInGroup.map((f, idx) => {
+        const groupIdx = cycleGroup.indexOf(f);
+        return {
+          platoonOffset: groupIdx % cycle,
+          dayShifts: rot.dayShifts,
+          nightShifts: rot.nightShifts,
+          restDays: rot.restDays,
+        };
+      }),
     });
   }
 
-  // 3. Get or determine SF rotation style
+  // 6. Get or determine SF rotation style — prefer 6-1 (best work ratio: 6/7 = 86%)
   let sfRotationStyleId = sacafrancoRotationStyleId;
   if (!sfRotationStyleId) {
-    const existingSf = await database.guardAssignment.findOne({ where: { tenantId, isRelief: true, status: 'active', deletedAt: null } });
-    sfRotationStyleId = existingSf?.rotationStyleId;
-  }
-  if (!sfRotationStyleId) {
+    // Prefer 6-1 for maximum coverage efficiency
     const rot61 = await database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
     sfRotationStyleId = rot61?.id;
     if (!sfRotationStyleId) {
-      const anyRot = await database.rotationStyle.findOne({ where: { isSystem: true } });
+      const anyRot = await database.rotationStyle.findOne({ where: { isSystem: true }, order: [['restDays', 'ASC']] });
       sfRotationStyleId = anyRot?.id;
     }
   }
@@ -430,7 +492,7 @@ export async function optimizeSacafrancos(
     return { message: 'No se encontró estilo de rotación para sacafrancos', details: {} };
   }
 
-  // 4. Calculate staffing needs
+  // 7. Calculate staffing needs with optimized offsets
   const staffing = calculateStaffingNeeds(stationConfigs, {
     dayShifts: sfRotation.dayShifts,
     nightShifts: sfRotation.nightShifts,
@@ -439,7 +501,7 @@ export async function optimizeSacafrancos(
 
   const numSfNeeded = staffing.sacafrancosNeeded;
 
-  // 5. Remove old sacafranco positions and their assignments/shifts, recreate properly
+  // 8. Remove old sacafranco positions and their assignments/shifts
   const oldSfPositions = await database.stationPosition.findAll({
     where: { tenantId, deletedAt: null, type: 'sacafranco' },
     attributes: ['id'],
@@ -447,25 +509,22 @@ export async function optimizeSacafrancos(
   const oldSfPosIds = oldSfPositions.map((p: any) => p.id);
 
   if (oldSfPosIds.length > 0) {
-    // Delete shifts and assignments tied to old SF positions
     await database.shift.destroy({ where: { positionId: oldSfPosIds, tenantId }, force: true });
     await database.guardAssignment.destroy({ where: { positionId: oldSfPosIds, tenantId }, force: true });
     await database.stationPosition.destroy({ where: { id: oldSfPosIds, tenantId }, force: true });
   }
 
-  // 6. Create numbered SF positions — one per sacafranco needed
-  // SF positions are attached to the first station for DB purposes but represent global roles
+  // 9. Create SF positions (minimal count)
   const sfCycle = sfRotation.dayShifts + sfRotation.nightShifts + sfRotation.restDays;
   const stationsWithFijos = stationConfigs.filter(s => s.fijoPositions.length > 0);
 
   if (stationsWithFijos.length === 0 || numSfNeeded === 0) {
     return {
       message: `No se necesitan sacafrancos (${stationsWithFijos.length} estaciones sin gaps)`,
-      details: { totalStations: stations.length, sacafrancosNeeded: 0, fijosNeeded: staffing.fijosNeeded },
+      details: { totalStations: stations.length, sacafrancosNeeded: 0, fijosNeeded: staffing.fijosNeeded, offsetsOptimized: offsetUpdates.length },
     };
   }
 
-  // Create SF positions attached to first station
   const primaryStationId = stationsWithFijos[0].stationId;
   const newSfPositions: any[] = [];
   for (let i = 0; i < numSfNeeded; i++) {
@@ -476,7 +535,7 @@ export async function optimizeSacafrancos(
       endTime: '19:00',
       guardsNeeded: 1,
       sortOrder: 100 + i,
-      platoonOffset: i, // Stagger SF rest days so they don't all rest on the same day
+      platoonOffset: i % sfCycle, // Stagger SF rest days
       stationId: primaryStationId,
       tenantId,
       createdById: userId,
@@ -485,36 +544,15 @@ export async function optimizeSacafrancos(
   }
   await database.stationPosition.bulkCreate(newSfPositions);
 
-  // Reload created positions
-  const createdSfPositions = await database.stationPosition.findAll({
-    where: { tenantId, deletedAt: null, type: 'sacafranco' },
-    order: [['sortOrder', 'ASC']],
-  });
-
-  // 7. Re-assign existing sacafranco guards to the new positions
-  // Find guards that were previously assigned as sacafrancos (from old assignments we just deleted)
-  // We can find them by looking for guards with role = securityGuard who are not in any fijo position
-  const fijoAssignments = await database.guardAssignment.findAll({
-    where: { tenantId, status: 'active', deletedAt: null, isRelief: false },
-    attributes: ['guardId'],
-  });
-  const fijoGuardIds = new Set(fijoAssignments.map((a: any) => a.guardId));
-
-  // Try to find guards that could be sacafrancos (not assigned as fijo)
-  // For now, we just create the positions — guards will be manually assigned via the UI
-  // But if we have pre-existing SF guards in memory, re-assign them
-  let guardsReassigned = 0;
-
   return {
-    message: `Sacafrancos optimizados: ${numSfNeeded} posiciones creadas para cubrir ${stationsWithFijos.length} estaciones`,
+    message: `Optimizado: ${numSfNeeded} sacafrancos para ${stationsWithFijos.length} estaciones (offsets ajustados: ${offsetUpdates.length})`,
     details: {
       totalStations: stationsWithFijos.length,
       sacafrancosNeeded: numSfNeeded,
       fijosNeeded: staffing.fijosNeeded,
       peakDemand: staffing.peakDemand,
-      guardsReassigned,
+      offsetsOptimized: offsetUpdates.length,
       rotationStyleId: sfRotationStyleId,
-      sfPositions: createdSfPositions.map((p: any) => ({ id: p.id, name: p.name })),
     },
   };
 }

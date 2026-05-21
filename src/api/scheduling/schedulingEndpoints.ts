@@ -274,7 +274,19 @@ export async function stationAutoPositions(req, res) {
     const tenantId = req.currentTenant.id;
     const data = req.body?.data || req.body || {};
     const scheduleType = data.scheduleType || '24h';
-    const rotationStyleId = data.rotationStyleId || null;
+    let rotationStyleId = data.rotationStyleId || null;
+
+    // Auto-pick recommended rotation if not specified
+    if (!rotationStyleId) {
+      let recommendedName: string;
+      if (scheduleType === '24h') {
+        recommendedName = '4-4-2'; // 4 day, 4 night, 2 rest — standard for 24H
+      } else {
+        recommendedName = '5-2'; // 5 work, 2 rest — standard for 12H
+      }
+      const recommended = await req.database.rotationStyle.findOne({ where: { name: recommendedName, isSystem: true } });
+      rotationStyleId = recommended?.id || null;
+    }
 
     // Update station scheduleType and rotationStyleId
     const stationUpdate: any = { scheduleType };
