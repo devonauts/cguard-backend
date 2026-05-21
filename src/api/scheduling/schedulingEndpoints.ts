@@ -167,7 +167,32 @@ export async function guardAssignmentCreate(req, res) {
       return;
     }
 
-    // If no rotationStyleId provided, use the station's default
+    // Check position type to determine if fijo or sacafranco
+    const position = await req.database.stationPosition.findByPk(positionId, { attributes: ['type'] });
+    const isSacafranco = !!isRelief || position?.type === 'sacafranco';
+
+    // VALIDATION: Fijo guards can only be assigned to ONE station
+    if (!isSacafranco) {
+      const existingFijo = await req.database.guardAssignment.findOne({
+        where: {
+          guardId,
+          tenantId,
+          status: 'active',
+          isRelief: false,
+          deletedAt: null,
+        },
+        include: [{ model: req.database.stationPosition, as: 'position', attributes: ['type'], where: { type: 'fijo' } }],
+      });
+      if (existingFijo) {
+        const existingStation = await req.database.station.findByPk(existingFijo.stationId, { attributes: ['stationName'] });
+        res.status(400).send({
+          message: `Este guardia ya está asignado como Fijo en "${existingStation?.stationName || 'otra estación'}". Los guardias Fijo solo pueden estar en una estación.`,
+        });
+        return;
+      }
+    }
+
+    // Rotation style: sacafrancos can have their own, fijos use station's
     if (!rotationStyleId) {
       const station = await req.database.station.findByPk(stationId, { attributes: ['rotationStyleId'] });
       rotationStyleId = station?.rotationStyleId;
@@ -185,7 +210,7 @@ export async function guardAssignmentCreate(req, res) {
       startDate,
       endDate: endDate || null,
       platoonOffset: parseInt(platoonOffset) || 0,
-      isRelief: !!isRelief,
+      isRelief: isSacafranco,
       status: 'active',
       tenantId,
       createdById: req.currentUser.id,
