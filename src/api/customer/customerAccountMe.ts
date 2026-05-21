@@ -115,7 +115,9 @@ export default async (req: any, res: any) => {
     const stationsRaw = postSiteIds.length
       ? await db.station.findAll({
           where: { postSiteId: postSiteIds, ...(tenantId ? { tenantId } : {}) },
-          attributes: ['id', 'stationName', 'latitud', 'longitud', 'postSiteId'],
+          attributes: ['id', 'stationName', 'latitud', 'longitud', 'postSiteId',
+                       'stationSchedule', 'startingTimeInDay', 'finishTimeInDay',
+                       'numberOfGuardsInStation'],
         })
       : [];
 
@@ -130,6 +132,10 @@ export default async (req: any, res: any) => {
         stationName: sp.stationName,
         latitud: sp.latitud,
         longitud: sp.longitud,
+        stationSchedule: sp.stationSchedule,
+        startingTimeInDay: sp.startingTimeInDay,
+        finishTimeInDay: sp.finishTimeInDay,
+        numberOfGuardsInStation: sp.numberOfGuardsInStation,
       });
     }
 

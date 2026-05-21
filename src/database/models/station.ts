@@ -51,6 +51,12 @@ export default function (sequelize) {
           len: [0, 255],
         },    
       },
+      geofenceRadius: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 100,
+        comment: 'Radius in meters for clock-in geofence validation',
+      },
       postSiteId: {
         type: DataTypes.UUID,
         allowNull: true,

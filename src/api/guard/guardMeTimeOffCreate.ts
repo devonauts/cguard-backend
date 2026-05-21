@@ -1,0 +1,53 @@
+/**
+ * POST /api/tenant/:tenantId/guard/me/time-off
+ * 
+ * Guard creates a time-off request.
+ * Body: { type, startDate, endDate, reason? }
+ */
+import ApiResponseHandler from '../apiResponseHandler';
+import Error400 from '../../errors/Error400';
+import Error401 from '../../errors/Error401';
+
+export default async (req: any, res: any) => {
+  try {
+    const currentUser = req.currentUser;
+    if (!currentUser) throw new Error401();
+
+    const db = req.database;
+    const userId = currentUser.id;
+    const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
+
+    const data = req.body.data || req.body;
+    const { type, startDate, endDate, reason } = data;
+
+    if (!type || !startDate || !endDate) {
+      throw new Error400(req.language, 'guard.timeOff.requiredFields');
+    }
+
+    const securityGuard = await db.securityGuard.findOne({
+      where: { guardId: userId, tenantId, deletedAt: null },
+      attributes: ['id', 'fullName'],
+    });
+
+    if (!securityGuard) {
+      throw new Error400(req.language, 'guard.profileNotFound');
+    }
+
+    const record = await db.timeOffRequest.create({
+      guardId: securityGuard.id,
+      guardName: securityGuard.fullName,
+      type,
+      startDate,
+      endDate,
+      reason: reason || '',
+      status: 'pending',
+      tenantId,
+      createdById: userId,
+      updatedById: userId,
+    });
+
+    return ApiResponseHandler.success(req, res, record.get({ plain: true }));
+  } catch (error) {
+    return ApiResponseHandler.error(req, res, error);
+  }
+};
