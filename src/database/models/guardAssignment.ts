@@ -53,12 +53,12 @@ export default function (sequelize) {
         type: DataTypes.TEXT,
         allowNull: true,
         comment: 'JSON array of station IDs this sacafranco covers (e.g. ["id1","id2"])',
-        get() {
+        get(this: any) {
           const raw = this.getDataValue('coveredStationIds');
           if (!raw) return [];
           try { return JSON.parse(raw); } catch { return []; }
         },
-        set(val: any) {
+        set(this: any, val: any) {
           this.setDataValue('coveredStationIds', val ? JSON.stringify(val) : null);
         },
       },
