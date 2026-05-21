@@ -251,8 +251,14 @@ export async function stationAutoPositions(req, res) {
     if (rotationStyleId) stationUpdate.rotationStyleId = rotationStyleId;
     await req.database.station.update(stationUpdate, { where: { id: stationId, tenantId } });
 
-    // Delete existing positions for this station
-    await req.database.stationPosition.destroy({ where: { stationId, tenantId }, force: true });
+    // Delete assignments and shifts referencing existing positions, then delete positions
+    const existingPositions = await req.database.stationPosition.findAll({ where: { stationId, tenantId }, attributes: ['id'] });
+    const positionIds = existingPositions.map((p: any) => p.id);
+    if (positionIds.length > 0) {
+      await req.database.shift.destroy({ where: { positionId: positionIds, tenantId }, force: true });
+      await req.database.guardAssignment.destroy({ where: { positionId: positionIds, tenantId }, force: true });
+      await req.database.stationPosition.destroy({ where: { id: positionIds, tenantId }, force: true });
+    }
 
     const positions: any[] = [];
     const userId = req.currentUser.id;
