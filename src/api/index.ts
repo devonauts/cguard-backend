@@ -215,6 +215,7 @@ require('./notificationRecipient').default(routes);
 require('./report').default(routes);
 require('./shift').default(routes);
 require('./scheduler').default(routes);
+require('./scheduling').default(routes);
 require('./guard').default(routes);
 require('./events').default(routes);
 
