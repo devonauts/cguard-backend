@@ -159,11 +159,22 @@ export async function guardAssignmentCreate(req, res) {
     new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const tenantId = req.currentTenant.id;
     const data = req.body?.data || req.body || {};
-    const { guardId, stationId, positionId, rotationStyleId, startDate, endDate, platoonOffset, isRelief } = data;
+    const { guardId, stationId, positionId, startDate, endDate, platoonOffset, isRelief } = data;
+    let rotationStyleId = data.rotationStyleId;
 
-    if (!guardId || !stationId || !positionId || !rotationStyleId || !startDate) {
-      res.status(400).send({ message: 'guardId, stationId, positionId, rotationStyleId, and startDate are required' });
+    if (!guardId || !stationId || !positionId || !startDate) {
+      res.status(400).send({ message: 'guardId, stationId, positionId, and startDate are required' });
       return;
+    }
+
+    // If no rotationStyleId provided, use the station's default
+    if (!rotationStyleId) {
+      const station = await req.database.station.findByPk(stationId, { attributes: ['rotationStyleId'] });
+      rotationStyleId = station?.rotationStyleId;
+      if (!rotationStyleId) {
+        res.status(400).send({ message: 'La estación no tiene un estilo de rotación configurado. Configúrela primero.' });
+        return;
+      }
     }
 
     const record = await req.database.guardAssignment.create({
@@ -233,9 +244,12 @@ export async function stationAutoPositions(req, res) {
     const tenantId = req.currentTenant.id;
     const data = req.body?.data || req.body || {};
     const scheduleType = data.scheduleType || '24h';
+    const rotationStyleId = data.rotationStyleId || null;
 
-    // Update station scheduleType
-    await req.database.station.update({ scheduleType }, { where: { id: stationId, tenantId } });
+    // Update station scheduleType and rotationStyleId
+    const stationUpdate: any = { scheduleType };
+    if (rotationStyleId) stationUpdate.rotationStyleId = rotationStyleId;
+    await req.database.station.update(stationUpdate, { where: { id: stationId, tenantId } });
 
     // Delete existing positions for this station
     await req.database.stationPosition.destroy({ where: { stationId, tenantId }, force: true });
