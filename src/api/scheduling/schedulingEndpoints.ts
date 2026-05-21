@@ -333,13 +333,15 @@ export async function stationAutoPositions(req, res) {
       order: [['sortOrder', 'ASC']],
     });
 
-    // Async: generate yearly schedule if there are existing assignments
+    // Async: generate yearly schedule + auto-optimize sacafrancos across all stations
     setImmediate(async () => {
       try {
-        const { generateYearlyScheduleForStation } = await import('../../services/shiftGenerationService');
+        const { generateYearlyScheduleForStation, optimizeSacafrancos } = await import('../../services/shiftGenerationService');
         await generateYearlyScheduleForStation(req.database, stationId, tenantId, userId);
+        // Auto-optimize: ensures sacafrancos are synced across ALL stations
+        await optimizeSacafrancos(req.database, tenantId, userId);
       } catch (e) {
-        console.error('[stationAutoPositions] Yearly generation error:', e);
+        console.error('[stationAutoPositions] Yearly generation / sacafranco optimization error:', e);
       }
     });
 

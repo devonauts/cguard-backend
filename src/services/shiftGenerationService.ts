@@ -163,8 +163,9 @@ export async function generateShiftsForAssignment(
 
 /**
  * Generate sacafranco shifts.
- * Sacafrancos work on days when any fijo guard at their station is resting,
- * but they also follow their own rotation cycle for rest days.
+ * Sacafrancos follow their OWN rotation cycle (D/N/L) independently.
+ * On work days (D or N), they work — covering fijo rest gaps is implicit.
+ * On rest days (L), they don't work.
  */
 async function generateSacafrancoShifts(
   database: any,
@@ -177,103 +178,55 @@ async function generateSacafrancoShifts(
   userId: string,
 ): Promise<any[]> {
   const { dayShifts, nightShifts, restDays } = rotationStyle;
-
-  // Find all active fijo assignments for this station
-  const fijoAssignments = await database.guardAssignment.findAll({
-    where: {
-      stationId: assignment.stationId,
-      tenantId,
-      status: 'active',
-      deletedAt: null,
-      id: { [database.Sequelize.Op.ne]: assignment.id },
-      isRelief: false,
-    },
-    include: [
-      { model: database.stationPosition, as: 'position', attributes: ['type'] },
-      { model: database.rotationStyle, as: 'rotationStyle', attributes: ['dayShifts', 'nightShifts', 'restDays'] },
-    ],
-  });
-
-  // Filter to only fijo positions
-  const mainAssignments = fijoAssignments.filter((a: any) => {
-    const pos = a.position || a.get?.('position');
-    return pos && pos.type === 'fijo';
-  });
-
-  if (mainAssignments.length === 0) {
-    console.log(`[shiftGen] No fijo guards to cover for sacafranco assignment ${assignment.id}`);
-    return [];
-  }
+  const cycleLength = dayShifts + nightShifts + restDays;
+  if (cycleLength === 0) return [];
 
   const shifts: any[] = [];
   const cursor = new Date(genStart);
   const assignmentStart = new Date(assignment.startDate);
 
+  // Time windows
+  const dayStartTime = position.startTime || '07:00';
+  const dayEndTime = position.endTime || '19:00';
+  const nightStartTime = dayEndTime;
+  const nightEndTime = dayStartTime;
+
   while (cursor <= genEnd) {
     const dateStr = cursor.toISOString().slice(0, 10);
     const daysSinceSfStart = Math.floor((cursor.getTime() - assignmentStart.getTime()) / (24 * 60 * 60 * 1000));
 
-    // Check sacafranco's own rotation: if they're on rest, skip
-    const sfStatus = getRotationStatus(daysSinceSfStart, assignment.platoonOffset, dayShifts, nightShifts, restDays);
-    if (sfStatus === 'rest') {
-      cursor.setDate(cursor.getDate() + 1);
-      continue;
-    }
+    if (daysSinceSfStart >= 0) {
+      // Check sacafranco's own rotation
+      const sfStatus = getRotationStatus(daysSinceSfStart, assignment.platoonOffset, dayShifts, nightShifts, restDays);
 
-    // Check if ANY fijo guard at this station is resting today
-    let someoneResting = false;
+      if (sfStatus !== 'rest') {
+        // Sacafranco works on this day — generate shift
+        let startTime: Date;
+        let endTime: Date;
 
-    for (const mainAssign of mainAssignments) {
-      const mainRot = mainAssign.rotationStyle || mainAssign.get?.('rotationStyle');
-      if (!mainRot) continue;
+        if (sfStatus === 'night') {
+          startTime = new Date(`${dateStr}T${nightStartTime}:00`);
+          endTime = new Date(`${dateStr}T${nightEndTime}:00`);
+          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+        } else {
+          startTime = new Date(`${dateStr}T${dayStartTime}:00`);
+          endTime = new Date(`${dateStr}T${dayEndTime}:00`);
+          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+        }
 
-      const mainStart = new Date(mainAssign.startDate);
-      const daysSinceMainStart = Math.floor((cursor.getTime() - mainStart.getTime()) / (24 * 60 * 60 * 1000));
-      if (daysSinceMainStart < 0) continue;
-
-      const mainStatus = getRotationStatus(
-        daysSinceMainStart,
-        mainAssign.platoonOffset || 0,
-        mainRot.dayShifts,
-        mainRot.nightShifts,
-        mainRot.restDays,
-      );
-
-      if (mainStatus === 'rest') {
-        someoneResting = true;
-        break;
+        shifts.push({
+          guardId: assignment.guardId,
+          stationId: assignment.stationId,
+          positionId: assignment.positionId,
+          guardAssignmentId: assignment.id,
+          postSiteId: null,
+          startTime,
+          endTime,
+          tenantId,
+          createdById: userId,
+          updatedById: userId,
+        });
       }
-    }
-
-    if (someoneResting) {
-      // Sacafranco covers with shift type based on their own rotation status
-      let startTime: Date;
-      let endTime: Date;
-
-      if (sfStatus === 'night') {
-        const nightStart = position.endTime || '19:00';
-        const nightEnd = position.startTime || '07:00';
-        startTime = new Date(`${dateStr}T${nightStart}:00`);
-        endTime = new Date(`${dateStr}T${nightEnd}:00`);
-        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-      } else {
-        startTime = new Date(`${dateStr}T${position.startTime}:00`);
-        endTime = new Date(`${dateStr}T${position.endTime}:00`);
-        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-      }
-
-      shifts.push({
-        guardId: assignment.guardId,
-        stationId: assignment.stationId,
-        positionId: assignment.positionId,
-        guardAssignmentId: assignment.id,
-        postSiteId: null,
-        startTime,
-        endTime,
-        tenantId,
-        createdById: userId,
-        updatedById: userId,
-      });
     }
 
     cursor.setDate(cursor.getDate() + 1);
