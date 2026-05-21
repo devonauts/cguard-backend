@@ -236,7 +236,7 @@ export async function guardAssignmentDelete(req, res) {
 }
 
 // POST /tenant/:tenantId/station/:stationId/auto-positions
-// Auto-creates positions based on station scheduleType
+// Auto-creates positions based on station scheduleType + generates yearly schedule
 export async function stationAutoPositions(req, res) {
   try {
     new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
@@ -265,28 +265,26 @@ export async function stationAutoPositions(req, res) {
     const now = new Date();
 
     if (scheduleType === '24h') {
+      // 24h station: 2 fijo positions (Fijo 1 rotates D/N/L, Fijo 2 offset covers gaps)
       positions.push(
-        { name: 'Diurno', type: 'day', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Nocturno', type: 'night', startTime: '19:00', endTime: '07:00', guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'relief', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 2, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Sacafranco', type: 'sacafranco', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 2, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
-    } else if (scheduleType === '12h-day') {
+    } else if (scheduleType === '12h-day' || scheduleType === '12h-night') {
+      const start = scheduleType === '12h-day' ? '07:00' : '19:00';
+      const end = scheduleType === '12h-day' ? '19:00' : '07:00';
       positions.push(
-        { name: 'Diurno', type: 'day', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'relief', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-      );
-    } else if (scheduleType === '12h-night') {
-      positions.push(
-        { name: 'Nocturno', type: 'night', startTime: '19:00', endTime: '07:00', guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'relief', startTime: '19:00', endTime: '07:00', guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 1', type: 'fijo', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Sacafranco', type: 'sacafranco', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     } else {
       // Custom: create from provided times
       const customStart = data.startTime || '07:00';
       const customEnd = data.endTime || '19:00';
       positions.push(
-        { name: 'Turno Principal', type: 'day', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'relief', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 1', type: 'fijo', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Sacafranco', type: 'sacafranco', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     }
 
@@ -294,6 +292,16 @@ export async function stationAutoPositions(req, res) {
     const created = await req.database.stationPosition.findAll({
       where: { stationId, tenantId, deletedAt: null },
       order: [['sortOrder', 'ASC']],
+    });
+
+    // Async: generate yearly schedule if there are existing assignments
+    setImmediate(async () => {
+      try {
+        const { generateYearlyScheduleForStation } = await import('../../services/shiftGenerationService');
+        await generateYearlyScheduleForStation(req.database, stationId, tenantId, userId);
+      } catch (e) {
+        console.error('[stationAutoPositions] Yearly generation error:', e);
+      }
     });
 
     await ApiResponseHandler.success(req, res, { rows: created, count: created.length });
@@ -425,12 +433,12 @@ export async function schedulerAutoAssign(req, res) {
     const stationsPlain = stations.map((s: any) => s.get({ plain: true }));
     const newAssignments: any[] = [];
 
-    // Build demand: unfilled non-relief positions
+    // Build demand: unfilled fijo positions
     const demand: { stationId: string; positionId: string; type: string; station: any }[] = [];
     for (const station of stationsPlain) {
       const stPos = positionsByStation.get(station.id) || [];
       for (const pos of stPos) {
-        if (pos.type === 'relief') continue;
+        if (pos.type === 'sacafranco') continue;
         if (!existingAssignments.some((a: any) => a.positionId === pos.id)) {
           demand.push({ stationId: station.id, positionId: pos.id, type: pos.type, station });
         }
@@ -452,12 +460,12 @@ export async function schedulerAutoAssign(req, res) {
       platoonCounter++;
     }
 
-    // Assign sacafrancos to relief positions (reuse across stations)
+    // Assign sacafrancos to sacafranco positions (reuse across stations)
     const reliefDemand: { stationId: string; positionId: string; station: any }[] = [];
     for (const station of stationsPlain) {
       const stPos = positionsByStation.get(station.id) || [];
       for (const pos of stPos) {
-        if (pos.type !== 'relief') continue;
+        if (pos.type !== 'sacafranco') continue;
         if (!existingAssignments.some((a: any) => a.positionId === pos.id)) {
           reliefDemand.push({ stationId: station.id, positionId: pos.id, station });
         }
@@ -564,6 +572,48 @@ export async function scheduleOverrideDelete(req, res) {
 
     await req.database.scheduleOverride.destroy({ where: { id, tenantId } });
     await ApiResponseHandler.success(req, res, { deleted: true });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
+
+// POST /tenant/:tenantId/station/:stationId/generate-yearly
+// Generate full year schedule for a station
+export async function stationGenerateYearly(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
+    const { stationId } = req.params;
+    const tenantId = req.currentTenant.id;
+    const userId = req.currentUser.id;
+
+    // Verify station has rotation configured
+    const station = await req.database.station.findByPk(stationId, { attributes: ['id', 'rotationStyleId'] });
+    if (!station?.rotationStyleId) {
+      res.status(400).send({ message: 'La estación no tiene un estilo de rotación configurado.' });
+      return;
+    }
+
+    const { generateYearlyScheduleForStation } = await import('../../services/shiftGenerationService');
+    const result = await generateYearlyScheduleForStation(req.database, stationId, tenantId, userId);
+
+    await ApiResponseHandler.success(req, res, result);
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
+
+// POST /tenant/:tenantId/scheduler/optimize-sacafrancos
+// Optimize sacafranco coverage across all stations
+export async function schedulerOptimizeSacafrancos(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
+    const tenantId = req.currentTenant.id;
+    const userId = req.currentUser.id;
+
+    const { optimizeSacafrancos } = await import('../../services/shiftGenerationService');
+    const result = await optimizeSacafrancos(req.database, tenantId, userId);
+
+    await ApiResponseHandler.success(req, res, result);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }

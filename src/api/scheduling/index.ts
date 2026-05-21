@@ -9,8 +9,10 @@ import {
   guardAssignmentCreate,
   guardAssignmentDelete,
   stationAutoPositions,
+  stationGenerateYearly,
   schedulerOverview,
   schedulerAutoAssign,
+  schedulerOptimizeSacafrancos,
   scheduleOverrideList,
   scheduleOverrideCreate,
   scheduleOverrideDelete,
@@ -28,6 +30,7 @@ export default (app) => {
   app.put('/tenant/:tenantId/station/:stationId/positions/:positionId', stationPositionUpdate);
   app.delete('/tenant/:tenantId/station/:stationId/positions/:positionId', stationPositionDelete);
   app.post('/tenant/:tenantId/station/:stationId/auto-positions', stationAutoPositions);
+  app.post('/tenant/:tenantId/station/:stationId/generate-yearly', stationGenerateYearly);
 
   // Guard assignments
   app.get('/tenant/:tenantId/guard-assignments', guardAssignmentList);
@@ -37,6 +40,7 @@ export default (app) => {
   // Scheduler overview (unified view)
   app.get('/tenant/:tenantId/scheduler/overview', schedulerOverview);
   app.post('/tenant/:tenantId/scheduler/auto-assign', schedulerAutoAssign);
+  app.post('/tenant/:tenantId/scheduler/optimize-sacafrancos', schedulerOptimizeSacafrancos);
 
   // Schedule overrides (vacations, permissions, absences, manual shifts)
   app.get('/tenant/:tenantId/schedule-overrides', scheduleOverrideList);

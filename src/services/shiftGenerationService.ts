@@ -1,15 +1,15 @@
 /**
- * Shift Generation Service
+ * Shift Generation Service (v2 - Position-based architecture)
  * 
- * Generates shift records based on guard assignments and rotation styles.
- * Handles:
- * - Day/night rotation patterns (e.g., 3-3-2: 3 days, 3 nights, 2 rest)
- * - Simple work/rest patterns (e.g., 5-2: 5 work, 2 rest)
- * - Platoon offsets for staggered coverage
- * - Relief (sacafranco) guards that fill rest-day gaps across stations
+ * Key concepts:
+ * - "Fijo" positions rotate D/N/L: e.g., 4-4-2 means 4 day, 4 night, 2 rest
+ * - "Sacafranco" positions cover rest gaps of Fijo guards + have own rotation
+ * - Rotation belongs to the STATION, not the individual guard
+ * - platoonOffset staggers guards so they don't all rest the same day
+ * - Yearly schedule generation for performance
  */
 
-const GENERATION_WEEKS = 6; // Generate 6 weeks of shifts ahead
+const GENERATION_DAYS = 365; // Generate 1 full year of shifts
 
 interface AssignmentData {
   id: string;
@@ -24,8 +24,27 @@ interface AssignmentData {
 }
 
 /**
+ * Determine what a guard does on a given day based on rotation.
+ * Returns: 'day' | 'night' | 'rest'
+ */
+function getRotationStatus(
+  daysSinceStart: number,
+  platoonOffset: number,
+  dayShifts: number,
+  nightShifts: number,
+  restDays: number,
+): 'day' | 'night' | 'rest' {
+  const cycleLength = dayShifts + nightShifts + restDays;
+  const adjustedDay = ((daysSinceStart - platoonOffset) % cycleLength + cycleLength) % cycleLength;
+  if (adjustedDay < dayShifts) return 'day';
+  if (adjustedDay < dayShifts + nightShifts) return 'night';
+  return 'rest';
+}
+
+/**
  * Generate shifts for a single guard assignment.
- * Called when a new assignment is created or when regenerating.
+ * For "fijo" positions: generates both D and N shifts following the rotation cycle.
+ * For "sacafranco" positions: generates shifts on days when fijo guards rest + own rotation.
  */
 export async function generateShiftsForAssignment(
   database: any,
@@ -35,14 +54,14 @@ export async function generateShiftsForAssignment(
 ) {
   const { Op } = database.Sequelize;
 
-  // Load rotation style
+  // Load rotation style (from station)
   const rotationStyle = await database.rotationStyle.findByPk(assignment.rotationStyleId);
   if (!rotationStyle) {
     console.error('[shiftGen] Rotation style not found:', assignment.rotationStyleId);
     return;
   }
 
-  // Load position to get time windows
+  // Load position
   const position = await database.stationPosition.findByPk(assignment.positionId);
   if (!position) {
     console.error('[shiftGen] Position not found:', assignment.positionId);
@@ -50,7 +69,6 @@ export async function generateShiftsForAssignment(
   }
 
   const { dayShifts, nightShifts, restDays } = rotationStyle;
-  const cycleLength = dayShifts + nightShifts + restDays;
 
   // Determine generation window
   const today = new Date();
@@ -59,7 +77,7 @@ export async function generateShiftsForAssignment(
   const genStart = startDate > today ? startDate : today;
   const genEnd = assignment.endDate
     ? new Date(assignment.endDate)
-    : new Date(today.getTime() + GENERATION_WEEKS * 7 * 24 * 60 * 60 * 1000);
+    : new Date(today.getTime() + GENERATION_DAYS * 24 * 60 * 60 * 1000);
 
   // Delete existing generated shifts for this assignment in the future
   await database.shift.destroy({
@@ -71,89 +89,84 @@ export async function generateShiftsForAssignment(
     force: true,
   });
 
-  // ─── RELIEF (SACAFRANCO) LOGIC ─────────────────────────────────────────
-  // Relief guards only work on days when the main guards at this station are resting.
-  if (assignment.isRelief || position.type === 'relief') {
-    const shifts = await generateReliefShifts(database, assignment, position, rotationStyle, genStart, genEnd, tenantId, userId);
+  // Get station info for postSiteId
+  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
+  const postSiteId = station?.postSiteId || null;
+
+  // ─── SACAFRANCO LOGIC ──────────────────────────────────────────────────
+  if (position.type === 'sacafranco' || assignment.isRelief) {
+    const shifts = await generateSacafrancoShifts(
+      database, assignment, position, rotationStyle, genStart, genEnd, tenantId, userId,
+    );
     if (shifts.length > 0) {
-      const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
-      const postSiteId = station?.postSiteId || null;
       shifts.forEach(s => { s.postSiteId = postSiteId; });
       await database.shift.bulkCreate(shifts);
-      console.log(`[shiftGen] Created ${shifts.length} RELIEF shifts for assignment ${assignment.id}`);
+      console.log(`[shiftGen] Created ${shifts.length} SACAFRANCO shifts for assignment ${assignment.id}`);
     }
     return;
   }
 
-  // ─── REGULAR GUARD LOGIC ───────────────────────────────────────────────
+  // ─── FIJO LOGIC ────────────────────────────────────────────────────────
+  // Fijo positions rotate through D → N → L following the station's rotation style
   const shifts: any[] = [];
   const cursor = new Date(genStart);
   const assignmentStart = new Date(assignment.startDate);
 
+  // Time windows: day shift uses position startTime/endTime, night is the inverse
+  const dayStartTime = position.startTime || '07:00';
+  const dayEndTime = position.endTime || '19:00';
+  const nightStartTime = dayEndTime;
+  const nightEndTime = dayStartTime;
+
   while (cursor <= genEnd) {
     const daysSinceStart = Math.floor((cursor.getTime() - assignmentStart.getTime()) / (24 * 60 * 60 * 1000));
-    const adjustedDay = ((daysSinceStart - assignment.platoonOffset) % cycleLength + cycleLength) % cycleLength;
+    const status = getRotationStatus(daysSinceStart, assignment.platoonOffset, dayShifts, nightShifts, restDays);
 
-    let positionType: 'day' | 'night' | null = null;
+    if (status !== 'rest') {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      let startTime: Date;
+      let endTime: Date;
 
-    if (adjustedDay < dayShifts) {
-      positionType = 'day';
-    } else if (adjustedDay < dayShifts + nightShifts) {
-      positionType = 'night';
-    }
-
-    if (positionType) {
-      const shouldWork = position.type === positionType || position.type === 'day' && positionType === 'day' || position.type === 'night' && positionType === 'night';
-
-      if (shouldWork) {
-        const dateStr = cursor.toISOString().slice(0, 10);
-        let startTime: Date;
-        let endTime: Date;
-
-        if (positionType === 'night') {
-          startTime = new Date(`${dateStr}T${position.startTime}:00`);
-          endTime = new Date(`${dateStr}T${position.endTime}:00`);
-          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-        } else {
-          startTime = new Date(`${dateStr}T${position.startTime}:00`);
-          endTime = new Date(`${dateStr}T${position.endTime}:00`);
-          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-        }
-
-        shifts.push({
-          guardId: assignment.guardId,
-          stationId: assignment.stationId,
-          positionId: assignment.positionId,
-          guardAssignmentId: assignment.id,
-          postSiteId: null,
-          startTime,
-          endTime,
-          tenantId,
-          createdById: userId,
-          updatedById: userId,
-        });
+      if (status === 'day') {
+        startTime = new Date(`${dateStr}T${dayStartTime}:00`);
+        endTime = new Date(`${dateStr}T${dayEndTime}:00`);
+        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+      } else {
+        // night
+        startTime = new Date(`${dateStr}T${nightStartTime}:00`);
+        endTime = new Date(`${dateStr}T${nightEndTime}:00`);
+        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
       }
+
+      shifts.push({
+        guardId: assignment.guardId,
+        stationId: assignment.stationId,
+        positionId: assignment.positionId,
+        guardAssignmentId: assignment.id,
+        postSiteId,
+        startTime,
+        endTime,
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
     }
 
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  if (shifts.length === 0) return;
-
-  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
-  const postSiteId = station?.postSiteId || null;
-  shifts.forEach(s => { s.postSiteId = postSiteId; });
-
-  await database.shift.bulkCreate(shifts);
-  console.log(`[shiftGen] Created ${shifts.length} shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
+  if (shifts.length > 0) {
+    await database.shift.bulkCreate(shifts);
+    console.log(`[shiftGen] Created ${shifts.length} FIJO shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
+  }
 }
 
 /**
- * Generate relief shifts: only on days when the main guards at the same station are resting.
- * Finds all non-relief assignments for the station, calculates their rest days,
- * and generates shifts for the sacafranco on those rest days.
+ * Generate sacafranco shifts.
+ * Sacafrancos work on days when any fijo guard at their station is resting,
+ * but they also follow their own rotation cycle for rest days.
  */
-async function generateReliefShifts(
+async function generateSacafrancoShifts(
   database: any,
   assignment: AssignmentData,
   position: any,
@@ -163,14 +176,17 @@ async function generateReliefShifts(
   tenantId: string,
   userId: string,
 ): Promise<any[]> {
-  // Find all active non-relief assignments for this station
-  const mainAssignments = await database.guardAssignment.findAll({
+  const { dayShifts, nightShifts, restDays } = rotationStyle;
+
+  // Find all active fijo assignments for this station
+  const fijoAssignments = await database.guardAssignment.findAll({
     where: {
       stationId: assignment.stationId,
       tenantId,
       status: 'active',
       deletedAt: null,
       id: { [database.Sequelize.Op.ne]: assignment.id },
+      isRelief: false,
     },
     include: [
       { model: database.stationPosition, as: 'position', attributes: ['type'] },
@@ -178,59 +194,86 @@ async function generateReliefShifts(
     ],
   });
 
-  // Filter to only main (non-relief) assignments
-  const nonReliefAssignments = mainAssignments.filter((a: any) => {
+  // Filter to only fijo positions
+  const mainAssignments = fijoAssignments.filter((a: any) => {
     const pos = a.position || a.get?.('position');
-    return pos && pos.type !== 'relief';
+    return pos && pos.type === 'fijo';
   });
 
-  if (nonReliefAssignments.length === 0) {
-    // No main guards assigned yet — nothing to cover
-    console.log(`[shiftGen] No main guards to cover for relief assignment ${assignment.id}`);
+  if (mainAssignments.length === 0) {
+    console.log(`[shiftGen] No fijo guards to cover for sacafranco assignment ${assignment.id}`);
     return [];
   }
 
-  // For each day in the window, check if ANY main guard is resting
   const shifts: any[] = [];
   const cursor = new Date(genStart);
+  const assignmentStart = new Date(assignment.startDate);
 
   while (cursor <= genEnd) {
     const dateStr = cursor.toISOString().slice(0, 10);
+    const daysSinceSfStart = Math.floor((cursor.getTime() - assignmentStart.getTime()) / (24 * 60 * 60 * 1000));
 
-    // Check each main assignment - if ANY has a rest day, the sacafranco covers
-    for (const mainAssign of nonReliefAssignments) {
+    // Check sacafranco's own rotation: if they're on rest, skip
+    const sfStatus = getRotationStatus(daysSinceSfStart, assignment.platoonOffset, dayShifts, nightShifts, restDays);
+    if (sfStatus === 'rest') {
+      cursor.setDate(cursor.getDate() + 1);
+      continue;
+    }
+
+    // Check if ANY fijo guard at this station is resting today
+    let someoneResting = false;
+
+    for (const mainAssign of mainAssignments) {
       const mainRot = mainAssign.rotationStyle || mainAssign.get?.('rotationStyle');
       if (!mainRot) continue;
 
-      const mainCycle = mainRot.dayShifts + mainRot.nightShifts + mainRot.restDays;
       const mainStart = new Date(mainAssign.startDate);
       const daysSinceMainStart = Math.floor((cursor.getTime() - mainStart.getTime()) / (24 * 60 * 60 * 1000));
-      const mainAdjustedDay = ((daysSinceMainStart - (mainAssign.platoonOffset || 0)) % mainCycle + mainCycle) % mainCycle;
+      if (daysSinceMainStart < 0) continue;
 
-      // This main guard is resting today
-      const isRestDay = mainAdjustedDay >= (mainRot.dayShifts + mainRot.nightShifts);
+      const mainStatus = getRotationStatus(
+        daysSinceMainStart,
+        mainAssign.platoonOffset || 0,
+        mainRot.dayShifts,
+        mainRot.nightShifts,
+        mainRot.restDays,
+      );
 
-      if (isRestDay) {
-        // Determine which position type the main guard would have worked
-        // Use the relief position's time window
-        const startTime = new Date(`${dateStr}T${position.startTime}:00`);
-        const endTime = new Date(`${dateStr}T${position.endTime}:00`);
-        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-
-        shifts.push({
-          guardId: assignment.guardId,
-          stationId: assignment.stationId,
-          positionId: assignment.positionId,
-          guardAssignmentId: assignment.id,
-          postSiteId: null,
-          startTime,
-          endTime,
-          tenantId,
-          createdById: userId,
-          updatedById: userId,
-        });
-        break; // Only one shift per day for the relief guard
+      if (mainStatus === 'rest') {
+        someoneResting = true;
+        break;
       }
+    }
+
+    if (someoneResting) {
+      // Sacafranco covers with shift type based on their own rotation status
+      let startTime: Date;
+      let endTime: Date;
+
+      if (sfStatus === 'night') {
+        const nightStart = position.endTime || '19:00';
+        const nightEnd = position.startTime || '07:00';
+        startTime = new Date(`${dateStr}T${nightStart}:00`);
+        endTime = new Date(`${dateStr}T${nightEnd}:00`);
+        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+      } else {
+        startTime = new Date(`${dateStr}T${position.startTime}:00`);
+        endTime = new Date(`${dateStr}T${position.endTime}:00`);
+        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+      }
+
+      shifts.push({
+        guardId: assignment.guardId,
+        stationId: assignment.stationId,
+        positionId: assignment.positionId,
+        guardAssignmentId: assignment.id,
+        postSiteId: null,
+        startTime,
+        endTime,
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
     }
 
     cursor.setDate(cursor.getDate() + 1);
@@ -240,10 +283,11 @@ async function generateReliefShifts(
 }
 
 /**
- * Regenerate shifts for all active assignments of a station.
- * Used when the rotation style or positions change.
+ * Generate the full year schedule for ALL positions at a station.
+ * Called when a station is configured with a rotation style.
+ * Processes assignments in batches for async performance.
  */
-export async function regenerateStationShifts(
+export async function generateYearlyScheduleForStation(
   database: any,
   stationId: string,
   tenantId: string,
@@ -253,9 +297,63 @@ export async function regenerateStationShifts(
     where: { stationId, tenantId, status: 'active', deletedAt: null },
   });
 
-  for (const assignment of assignments) {
-    await generateShiftsForAssignment(database, assignment.get({ plain: true }), tenantId, userId);
+  const batchSize = 5;
+  for (let i = 0; i < assignments.length; i += batchSize) {
+    const batch = assignments.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map((assignment: any) =>
+        generateShiftsForAssignment(database, assignment.get({ plain: true }), tenantId, userId),
+      ),
+    );
   }
 
-  console.log(`[shiftGen] Regenerated shifts for ${assignments.length} assignments on station ${stationId}`);
+  console.log(`[shiftGen] Generated yearly schedule for station ${stationId} (${assignments.length} assignments)`);
+  return { assignmentsProcessed: assignments.length };
+}
+
+/**
+ * Regenerate shifts for all active assignments of a station.
+ */
+export async function regenerateStationShifts(
+  database: any,
+  stationId: string,
+  tenantId: string,
+  userId: string,
+) {
+  return generateYearlyScheduleForStation(database, stationId, tenantId, userId);
+}
+
+/**
+ * Optimize sacafranco assignments across all stations.
+ * Regenerates all sacafranco shifts to ensure optimal coverage.
+ */
+export async function optimizeSacafrancos(
+  database: any,
+  tenantId: string,
+  userId: string,
+): Promise<{ message: string; details: any }> {
+  const { Op } = database.Sequelize;
+
+  const stations = await database.station.findAll({
+    where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
+    attributes: ['id', 'stationName'],
+  });
+
+  const sacafrancoAssignments = await database.guardAssignment.findAll({
+    where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
+  });
+
+  let regenerated = 0;
+  for (const asgn of sacafrancoAssignments) {
+    await generateShiftsForAssignment(database, asgn.get({ plain: true }), tenantId, userId);
+    regenerated++;
+  }
+
+  return {
+    message: `Sacafrancos optimized: ${regenerated} assignments regenerated`,
+    details: {
+      totalStations: stations.length,
+      sacafrancosProcessed: regenerated,
+    },
+  };
 }

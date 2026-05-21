@@ -12,23 +12,23 @@ export default function (sequelize) {
       name: {
         type: DataTypes.STRING(100),
         allowNull: false,
-        comment: 'e.g. Diurno, Nocturno, Sacafranco',
+        comment: 'e.g. Fijo 1, Fijo 2, Sacafranco',
       },
       type: {
-        type: DataTypes.ENUM('day', 'night', 'relief'),
+        type: DataTypes.STRING(20),
         allowNull: false,
-        defaultValue: 'day',
-        comment: 'day=Diurno, night=Nocturno, relief=Sacafranco',
+        defaultValue: 'fijo',
+        comment: 'fijo=fixed rotating position, sacafranco=relief',
       },
       startTime: {
         type: DataTypes.STRING(5),
         allowNull: false,
-        comment: 'HH:mm format e.g. 07:00',
+        comment: 'Day shift start HH:mm e.g. 07:00',
       },
       endTime: {
         type: DataTypes.STRING(5),
         allowNull: false,
-        comment: 'HH:mm format e.g. 19:00',
+        comment: 'Day shift end HH:mm e.g. 19:00',
       },
       guardsNeeded: {
         type: DataTypes.INTEGER,
