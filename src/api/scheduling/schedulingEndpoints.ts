@@ -168,7 +168,7 @@ export async function guardAssignmentCreate(req, res) {
     }
 
     // Check position type to determine if fijo or sacafranco
-    const position = await req.database.stationPosition.findByPk(positionId, { attributes: ['type'] });
+    const position = await req.database.stationPosition.findByPk(positionId, { attributes: ['type', 'platoonOffset'] });
     const isSacafranco = !!isRelief || position?.type === 'sacafranco';
 
     // VALIDATION: Fijo guards can only be assigned to ONE station
@@ -202,6 +202,11 @@ export async function guardAssignmentCreate(req, res) {
       }
     }
 
+    // Use position's platoonOffset (station-defined), override only if explicitly provided
+    const effectiveOffset = platoonOffset !== undefined && platoonOffset !== null
+      ? parseInt(platoonOffset)
+      : (position?.platoonOffset || 0);
+
     const record = await req.database.guardAssignment.create({
       guardId,
       stationId,
@@ -209,7 +214,7 @@ export async function guardAssignmentCreate(req, res) {
       rotationStyleId,
       startDate,
       endDate: endDate || null,
-      platoonOffset: parseInt(platoonOffset) || 0,
+      platoonOffset: effectiveOffset,
       isRelief: isSacafranco,
       status: 'active',
       tenantId,
@@ -289,27 +294,36 @@ export async function stationAutoPositions(req, res) {
     const userId = req.currentUser.id;
     const now = new Date();
 
+    // Calculate optimal platoon offsets based on rotation
+    // For 24h: Fijo 1 offset=0, Fijo 2 offset=half-cycle (so they stagger rest days)
+    let cycleLength = 7; // default
+    if (rotationStyleId) {
+      const rot = await req.database.rotationStyle.findByPk(rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+      if (rot) cycleLength = rot.dayShifts + rot.nightShifts + rot.restDays;
+    }
+    const halfCycle = Math.floor(cycleLength / 2);
+
     if (scheduleType === '24h') {
-      // 24h station: 2 fijo positions (Fijo 1 rotates D/N/L, Fijo 2 offset covers gaps)
+      // 24h station: 2 fijo positions staggered by half-cycle
       positions.push(
-        { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'sacafranco', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 2, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: halfCycle, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Sacafranco', type: 'sacafranco', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 2, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     } else if (scheduleType === '12h-day' || scheduleType === '12h-night') {
       const start = scheduleType === '12h-day' ? '07:00' : '19:00';
       const end = scheduleType === '12h-day' ? '19:00' : '07:00';
       positions.push(
-        { name: 'Fijo 1', type: 'fijo', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'sacafranco', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 1', type: 'fijo', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 0, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Sacafranco', type: 'sacafranco', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 1, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     } else {
-      // Custom: create from provided times
+      // Custom
       const customStart = data.startTime || '07:00';
       const customEnd = data.endTime || '19:00';
       positions.push(
-        { name: 'Fijo 1', type: 'fijo', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Sacafranco', type: 'sacafranco', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 1, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 1', type: 'fijo', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Sacafranco', type: 'sacafranco', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 1, platoonOffset: 0, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     }
 
@@ -629,14 +643,17 @@ export async function stationGenerateYearly(req, res) {
 
 // POST /tenant/:tenantId/scheduler/optimize-sacafrancos
 // Optimize sacafranco coverage across all stations
+// Body: { rotationStyleId?: string } — optional, sets sacafranco rotation for all
 export async function schedulerOptimizeSacafrancos(req, res) {
   try {
     new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const tenantId = req.currentTenant.id;
     const userId = req.currentUser.id;
+    const data = req.body?.data || req.body || {};
+    const sacafrancoRotationStyleId = data.rotationStyleId || undefined;
 
     const { optimizeSacafrancos } = await import('../../services/shiftGenerationService');
-    const result = await optimizeSacafrancos(req.database, tenantId, userId);
+    const result = await optimizeSacafrancos(req.database, tenantId, userId, sacafrancoRotationStyleId);
 
     await ApiResponseHandler.success(req, res, result);
   } catch (error) {

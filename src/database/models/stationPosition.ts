@@ -40,6 +40,12 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: 0,
       },
+      platoonOffset: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: 'Auto-calculated stagger offset for this position within the station rotation cycle',
+      },
       stationId: {
         type: DataTypes.UUID,
         allowNull: false,

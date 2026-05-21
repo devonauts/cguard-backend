@@ -324,36 +324,167 @@ export async function regenerateStationShifts(
 }
 
 /**
- * Optimize sacafranco assignments across all stations.
- * Regenerates all sacafranco shifts to ensure optimal coverage.
+ * Optimize sacafranco assignments across ALL stations.
+ * 
+ * Algorithm:
+ * 1. Find all configured stations with fijo assignments
+ * 2. Compute rest-day demand per station (which days need coverage)
+ * 3. Find all sacafranco guards (by guardType or existing sacafranco assignments)
+ * 4. Auto-assign each sacafranco to cover multiple stations
+ * 5. Generate shifts: sacafranco's own rotation determines work/rest,
+ *    on work days they cover whichever station has a gap
+ * 6. Result: each sacafranco has a complete schedule showing where they go each day
  */
 export async function optimizeSacafrancos(
   database: any,
   tenantId: string,
   userId: string,
+  sacafrancoRotationStyleId?: string,
 ): Promise<{ message: string; details: any }> {
   const { Op } = database.Sequelize;
 
+  // 1. Get all stations with rotation configured
   const stations = await database.station.findAll({
     where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
-    attributes: ['id', 'stationName'],
+    attributes: ['id', 'stationName', 'rotationStyleId'],
   });
 
-  const sacafrancoAssignments = await database.guardAssignment.findAll({
+  if (stations.length === 0) {
+    return { message: 'No hay estaciones configuradas', details: { totalStations: 0 } };
+  }
+
+  // 2. Get all fijo assignments to compute rest days
+  const fijoAssignments = await database.guardAssignment.findAll({
+    where: { tenantId, status: 'active', deletedAt: null, isRelief: false },
+    include: [
+      { model: database.stationPosition, as: 'position', attributes: ['type', 'stationId'], where: { type: 'fijo' } },
+      { model: database.rotationStyle, as: 'rotationStyle', attributes: ['dayShifts', 'nightShifts', 'restDays'] },
+    ],
+  });
+
+  // 3. Find all sacafranco positions across stations
+  const sacafrancoPositions = await database.stationPosition.findAll({
+    where: { tenantId, deletedAt: null, type: 'sacafranco' },
+    attributes: ['id', 'stationId', 'startTime', 'endTime'],
+  });
+
+  // 4. Find sacafranco guards (from securityGuard table or existing relief assignments)
+  const existingSfAssignments = await database.guardAssignment.findAll({
+    where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
+    include: [{ model: database.user, as: 'guard', attributes: ['id', 'firstName', 'lastName'] }],
+  });
+
+  // Get a default sacafranco rotation style
+  let sfRotationStyleId = sacafrancoRotationStyleId;
+  if (!sfRotationStyleId && existingSfAssignments.length > 0) {
+    sfRotationStyleId = existingSfAssignments[0].rotationStyleId;
+  }
+  if (!sfRotationStyleId) {
+    // Default to 6-1 for sacafrancos (6 work, 1 rest)
+    const rot61 = await database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
+    sfRotationStyleId = rot61?.id;
+    if (!sfRotationStyleId) {
+      const anyRot = await database.rotationStyle.findOne({ where: { isSystem: true } });
+      sfRotationStyleId = anyRot?.id;
+    }
+  }
+
+  // 5. For each sacafranco assignment: ensure they're linked to ALL stations that need coverage
+  // First, compute which stations have rest gaps (have fijo assignments)
+  const stationsWithFijos = new Set(fijoAssignments.map((a: any) => a.position?.stationId || a.stationId));
+  const stationsNeedingCoverage = stations.filter((s: any) => stationsWithFijos.has(s.id));
+
+  // Ensure each station with fijos has a sacafranco position
+  for (const station of stationsNeedingCoverage) {
+    const hasSfPos = sacafrancoPositions.some((p: any) => p.stationId === station.id);
+    if (!hasSfPos) {
+      // Create sacafranco position for this station
+      await database.stationPosition.create({
+        name: 'Sacafranco',
+        type: 'sacafranco',
+        startTime: '07:00',
+        endTime: '19:00',
+        guardsNeeded: 1,
+        sortOrder: 99,
+        platoonOffset: 0,
+        stationId: station.id,
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
+    }
+  }
+
+  // Reload sacafranco positions after potential creation
+  const allSfPositions = await database.stationPosition.findAll({
+    where: { tenantId, deletedAt: null, type: 'sacafranco' },
+    attributes: ['id', 'stationId', 'startTime', 'endTime'],
+  });
+
+  // 6. For each existing sacafranco guard, ensure they have an assignment at each station needing coverage
+  const sfGuardIds = [...new Set(existingSfAssignments.map((a: any) => a.guardId))];
+  let assignmentsCreated = 0;
+
+  for (const guardId of sfGuardIds) {
+    const guardAssignments = existingSfAssignments.filter((a: any) => a.guardId === guardId);
+    const guardStations = new Set(guardAssignments.map((a: any) => a.stationId));
+
+    for (const station of stationsNeedingCoverage) {
+      if (guardStations.has(station.id)) continue; // Already assigned here
+
+      const sfPos = allSfPositions.find((p: any) => p.stationId === station.id);
+      if (!sfPos) continue;
+
+      // Create assignment for this sacafranco at this station
+      await database.guardAssignment.create({
+        guardId,
+        stationId: station.id,
+        positionId: sfPos.id,
+        rotationStyleId: sfRotationStyleId,
+        startDate: new Date().toISOString().slice(0, 10),
+        platoonOffset: 0,
+        isRelief: true,
+        status: 'active',
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
+      assignmentsCreated++;
+    }
+  }
+
+  // 7. Update all sacafranco assignments to use the specified rotation style
+  if (sfRotationStyleId) {
+    await database.guardAssignment.update(
+      { rotationStyleId: sfRotationStyleId },
+      { where: { tenantId, status: 'active', deletedAt: null, isRelief: true } },
+    );
+  }
+
+  // 8. Regenerate shifts for ALL sacafranco assignments
+  const allSfAssignments = await database.guardAssignment.findAll({
     where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
   });
 
   let regenerated = 0;
-  for (const asgn of sacafrancoAssignments) {
-    await generateShiftsForAssignment(database, asgn.get({ plain: true }), tenantId, userId);
-    regenerated++;
+  const batchSize = 5;
+  for (let i = 0; i < allSfAssignments.length; i += batchSize) {
+    const batch = allSfAssignments.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map((asgn: any) =>
+        generateShiftsForAssignment(database, asgn.get({ plain: true }), tenantId, userId),
+      ),
+    );
+    regenerated += batch.length;
   }
 
   return {
-    message: `Sacafrancos optimized: ${regenerated} assignments regenerated`,
+    message: `Sacafrancos optimizados: ${regenerated} asignaciones procesadas, ${assignmentsCreated} nuevas creadas`,
     details: {
-      totalStations: stations.length,
+      totalStations: stationsNeedingCoverage.length,
       sacafrancosProcessed: regenerated,
+      newAssignments: assignmentsCreated,
+      rotationStyleId: sfRotationStyleId,
     },
   };
 }
