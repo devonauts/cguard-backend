@@ -61,6 +61,14 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      scheduleType: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+      },
+      rotationStyleId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
     },
     {
       indexes: [
