@@ -14,6 +14,7 @@ import api from './api'
 import { databaseInit } from './database/databaseConnection';
 import TenantInvitationRepository from './database/repositories/tenantInvitationRepository';
 import { ensurePlatformEventsTable, cleanupOldPlatformEvents } from './lib/platformEventStore';
+import { syncGuardDutyStatus } from './services/dutySync';
 import { setInterval as nodeSetInterval } from 'timers';
 
 // const PORT = process.env.PORT || 8080
@@ -104,4 +105,12 @@ nodeSetInterval(() => {
   runExpiredInvitesCleanup();
   runPlatformEventsCleanup();
 }, 3 * 60 * 60 * 1000);
+
+// Sync guard duty status every 5 minutes based on active shifts
+nodeSetInterval(() => {
+  syncGuardDutyStatus();
+}, 5 * 60 * 1000);
+
+// Run once on startup after a short delay
+setTimeout(() => syncGuardDutyStatus(), 10000);
 
