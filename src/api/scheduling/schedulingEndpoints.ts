@@ -359,3 +359,131 @@ export async function schedulerOverview(req, res) {
     await ApiResponseHandler.error(req, res, error);
   }
 }
+
+// POST /tenant/:tenantId/scheduler/auto-assign
+export async function schedulerAutoAssign(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
+    const tenantId = req.currentTenant.id;
+    const userId = req.currentUser.id;
+    const { Op } = req.database.Sequelize;
+
+    const [stations, positions, existingAssignments, guards, rotationStyles] = await Promise.all([
+      req.database.station.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'stationName', 'latitud', 'longitud', 'scheduleType', 'rotationStyleId'] }),
+      req.database.stationPosition.findAll({ where: { tenantId, deletedAt: null }, order: [['stationId', 'ASC'], ['sortOrder', 'ASC']] }),
+      req.database.guardAssignment.findAll({ where: { tenantId, status: 'active', deletedAt: null } }),
+      req.database.securityGuard.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'fullName', 'address', 'guardType', 'guardId'] }),
+      req.database.rotationStyle.findAll({ where: { [Op.or]: [{ tenantId }, { tenantId: null, isSystem: true }] } }),
+    ]);
+
+    const assignedGuardIds = new Set(existingAssignments.map((a: any) => a.guardId));
+    const availableGuards = guards.filter((g: any) => !assignedGuardIds.has(g.guardId));
+    const titulares = availableGuards.filter((g: any) => g.guardType === 'titular');
+    const sacafrancos = availableGuards.filter((g: any) => g.guardType === 'sacafranco');
+
+    // Address-based proximity scoring
+    const getAddressScore = (guardAddress: string, stationLat: string, stationLng: string) => {
+      if (!guardAddress || !stationLat || !stationLng) return 50 + Math.random() * 50;
+      const addr = (guardAddress || '').toLowerCase();
+      const sLat = parseFloat(stationLat);
+      const sLng = parseFloat(stationLng);
+      let guardLat = -0.18, guardLng = -0.49;
+      if (addr.includes('norte') || addr.includes('calderón') || addr.includes('carapungo')) { guardLat = -0.13; guardLng = -0.49; }
+      else if (addr.includes('sur') || addr.includes('conocoto')) { guardLat = -0.27; guardLng = -0.52; }
+      else if (addr.includes('cumbayá') || addr.includes('cumbaya') || addr.includes('tumbaco')) { guardLat = -0.19; guardLng = -0.43; }
+      else if (addr.includes('valles') || addr.includes('chillos') || addr.includes('san rafael') || addr.includes('sangolquí')) { guardLat = -0.31; guardLng = -0.45; }
+      else if (addr.includes('centro')) { guardLat = -0.22; guardLng = -0.51; }
+      return Math.sqrt(Math.pow(sLat - guardLat, 2) + Math.pow(sLng - guardLng, 2));
+    };
+
+    // Group positions by station
+    const positionsByStation = new Map<string, any[]>();
+    positions.forEach((p: any) => { const list = positionsByStation.get(p.stationId) || []; list.push(p.get({ plain: true })); positionsByStation.set(p.stationId, list); });
+
+    // Auto-configure rotation styles for stations without one
+    for (const station of stations) {
+      const s: any = station.get({ plain: true });
+      if (!s.rotationStyleId) {
+        const sType = s.scheduleType || '24h';
+        const rotId = sType === '24h'
+          ? (rotationStyles.find((r: any) => r.name === '4-4-2')?.id || rotationStyles[0]?.id)
+          : (rotationStyles.find((r: any) => r.name === '5-2')?.id || rotationStyles[0]?.id);
+        await req.database.station.update({ rotationStyleId: rotId, scheduleType: sType }, { where: { id: s.id, tenantId } });
+        s.rotationStyleId = rotId;
+      }
+    }
+
+    const stationsPlain = stations.map((s: any) => s.get({ plain: true }));
+    const newAssignments: any[] = [];
+
+    // Build demand: unfilled non-relief positions
+    const demand: { stationId: string; positionId: string; type: string; station: any }[] = [];
+    for (const station of stationsPlain) {
+      const stPos = positionsByStation.get(station.id) || [];
+      for (const pos of stPos) {
+        if (pos.type === 'relief') continue;
+        if (!existingAssignments.some((a: any) => a.positionId === pos.id)) {
+          demand.push({ stationId: station.id, positionId: pos.id, type: pos.type, station });
+        }
+      }
+    }
+
+    // Assign titulares to nearest open positions
+    let guardsLeft = [...titulares];
+    let platoonCounter = 0;
+    for (const slot of demand) {
+      if (guardsLeft.length === 0) break;
+      guardsLeft.sort((a: any, b: any) => getAddressScore(a.address, slot.station.latitud, slot.station.longitud) - getAddressScore(b.address, slot.station.latitud, slot.station.longitud));
+      const best: any = guardsLeft.shift();
+      newAssignments.push({
+        guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,
+        rotationStyleId: slot.station.rotationStyleId, startDate: new Date().toISOString().slice(0, 10),
+        platoonOffset: platoonCounter % 3, isRelief: false, status: 'active', tenantId, createdById: userId, updatedById: userId,
+      });
+      platoonCounter++;
+    }
+
+    // Assign sacafrancos to relief positions (reuse across stations)
+    const reliefDemand: { stationId: string; positionId: string; station: any }[] = [];
+    for (const station of stationsPlain) {
+      const stPos = positionsByStation.get(station.id) || [];
+      for (const pos of stPos) {
+        if (pos.type !== 'relief') continue;
+        if (!existingAssignments.some((a: any) => a.positionId === pos.id)) {
+          reliefDemand.push({ stationId: station.id, positionId: pos.id, station });
+        }
+      }
+    }
+
+    let sacafLeft = [...sacafrancos];
+    for (const slot of reliefDemand) {
+      if (sacafLeft.length === 0) { sacafLeft = [...sacafrancos]; if (sacafLeft.length === 0) break; }
+      sacafLeft.sort((a: any, b: any) => getAddressScore(a.address, slot.station.latitud, slot.station.longitud) - getAddressScore(b.address, slot.station.latitud, slot.station.longitud));
+      const best: any = sacafLeft.shift();
+      newAssignments.push({
+        guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,
+        rotationStyleId: slot.station.rotationStyleId, startDate: new Date().toISOString().slice(0, 10),
+        platoonOffset: 0, isRelief: true, status: 'active', tenantId, createdById: userId, updatedById: userId,
+      });
+    }
+
+    // Bulk create and generate shifts
+    if (newAssignments.length > 0) {
+      const created = await req.database.guardAssignment.bulkCreate(newAssignments);
+      const { generateShiftsForAssignment } = await import('../../services/shiftGenerationService');
+      for (const record of created) {
+        try { await generateShiftsForAssignment(req.database, record.get({ plain: true }), tenantId, userId); }
+        catch (e) { console.error('[autoAssign] shift gen error:', record.id, e); }
+      }
+    }
+
+    await ApiResponseHandler.success(req, res, {
+      assignmentsCreated: newAssignments.length,
+      titularesAssigned: newAssignments.filter(a => !a.isRelief).length,
+      sacafrancosAssigned: newAssignments.filter(a => a.isRelief).length,
+      unassignedRemaining: guardsLeft.length,
+    });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}

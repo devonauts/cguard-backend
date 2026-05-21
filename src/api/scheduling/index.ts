@@ -10,6 +10,7 @@ import {
   guardAssignmentDelete,
   stationAutoPositions,
   schedulerOverview,
+  schedulerAutoAssign,
 } from './schedulingEndpoints';
 
 export default (app) => {
@@ -32,4 +33,5 @@ export default (app) => {
 
   // Scheduler overview (unified view)
   app.get('/tenant/:tenantId/scheduler/overview', schedulerOverview);
+  app.post('/tenant/:tenantId/scheduler/auto-assign', schedulerAutoAssign);
 };
