@@ -1,9 +1,9 @@
 /**
  * AI Scheduling Advisor Service
- * Uses xAI (Grok) to provide intelligent scheduling recommendations.
+ * Uses OpenAI to provide intelligent scheduling recommendations.
  */
 
-const XAI_BASE_URL = 'https://api.x.ai/v1';
+const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 
 interface StationContext {
   stationName: string;
@@ -24,19 +24,19 @@ interface SchedulingContext {
 }
 
 async function callGrok(systemPrompt: string, userMessage: string): Promise<string> {
-  const apiKey = process.env.XAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error('XAI_API_KEY not configured');
+    throw new Error('OPENAI_API_KEY not configured');
   }
 
-  const response = await fetch(`${XAI_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'grok-3-mini-fast',
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
@@ -48,7 +48,7 @@ async function callGrok(systemPrompt: string, userMessage: string): Promise<stri
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Grok API error: ${response.status} - ${err}`);
+    throw new Error(`OpenAI API error: ${response.status} - ${err}`);
   }
 
   const data: any = await response.json();
