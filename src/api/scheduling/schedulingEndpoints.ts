@@ -753,52 +753,102 @@ export async function schedulerAiRecommend(req, res) {
     new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const tenantId = req.currentTenant.id;
     const data = req.body?.data || req.body || {};
-    const { type, stationName, scheduleType } = data;
-    // type: 'station' (new station setup) or 'optimize' (full schedule optimization)
+    const { type, stationName, scheduleType, question } = data;
+    // type: 'station' | 'optimize' | 'analyze' (free-form question)
 
     const { Op } = req.database.Sequelize;
 
-    // Build context
+    // Build rich context with offsets and rotation details
     const stations = await req.database.station.findAll({
       where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
       attributes: ['id', 'stationName', 'scheduleType', 'rotationStyleId'],
+      order: [['stationName', 'ASC']],
     });
     const fijoPositions = await req.database.stationPosition.findAll({
       where: { tenantId, deletedAt: null, type: 'fijo' },
-      attributes: ['id', 'stationId'],
+      attributes: ['id', 'stationId', 'platoonOffset'],
     });
     const sfPositions = await req.database.stationPosition.findAll({
       where: { tenantId, deletedAt: null, type: 'sacafranco' },
-      attributes: ['id'],
+      attributes: ['id', 'platoonOffset'],
     });
     const activeAssignments = await req.database.guardAssignment.findAll({
       where: { tenantId, status: 'active', deletedAt: null },
-      attributes: ['id', 'guardId', 'stationId', 'isRelief'],
+      attributes: ['id', 'guardId', 'stationId', 'isRelief', 'positionId'],
     });
 
+    // Get rotation details for richer context
+    const rotationCache = new Map<string, any>();
+    for (const station of stations) {
+      if (!rotationCache.has(station.rotationStyleId)) {
+        const rot = await req.database.rotationStyle.findByPk(station.rotationStyleId, {
+          attributes: ['id', 'name', 'dayShifts', 'nightShifts', 'restDays'],
+        });
+        if (rot) rotationCache.set(station.rotationStyleId, rot);
+      }
+    }
+
+    // Calculate daily demand across a super-cycle
+    const cycle = 7; // Most common cycle
+    const dailyDemand: number[] = [];
+    for (let day = 0; day < cycle; day++) {
+      let stationsResting = 0;
+      for (const station of stations) {
+        const rot = rotationCache.get(station.rotationStyleId);
+        if (!rot) continue;
+        const stFijos = fijoPositions.filter((p: any) => p.stationId === station.id);
+        const stCycle = rot.dayShifts + rot.nightShifts + rot.restDays;
+        const anyResting = stFijos.some((f: any) => {
+          const adj = ((day - (f.platoonOffset || 0)) % stCycle + stCycle) % stCycle;
+          return adj >= rot.dayShifts + rot.nightShifts;
+        });
+        if (anyResting) stationsResting++;
+      }
+      dailyDemand.push(stationsResting);
+    }
+
+    const peakDemand = Math.max(...dailyDemand, 0);
     const currentFijoGuards = activeAssignments.filter((a: any) => !a.isRelief).length;
     const currentSfGuards = activeAssignments.filter((a: any) => a.isRelief).length;
+    const sfWorkCapacity = sfPositions.length * 6; // 6-1 rotation: 6 work days per SF per cycle
+    const totalRestSlots = dailyDemand.reduce((s, d) => s + d, 0);
+    const sfUtilization = sfWorkCapacity > 0 ? Math.round((totalRestSlots / sfWorkCapacity) * 100) : 0;
 
     const context = {
       totalStations: stations.length,
       totalFijos: fijoPositions.length,
       totalSacafrancos: sfPositions.length,
       currentGuards: currentFijoGuards + currentSfGuards,
-      peakDemand: Math.ceil(fijoPositions.length * 2 / 7), // rough estimate
+      peakDemand,
+      dailyDemand,
+      sfUtilization,
       laborRegulations: 'Ecuador: 8h/day max, 40h/week, rest mandatory',
-      stations: stations.map((s: any) => ({
-        stationName: s.stationName,
-        scheduleType: s.scheduleType || '12h-day',
-        fijoCount: fijoPositions.filter((p: any) => p.stationId === s.id).length,
-        currentGuards: activeAssignments.filter((a: any) => a.stationId === s.id && !a.isRelief).length,
-      })),
+      stations: stations.map((s: any) => {
+        const rot = rotationCache.get(s.rotationStyleId);
+        const stFijos = fijoPositions.filter((p: any) => p.stationId === s.id);
+        const offset = stFijos[0]?.platoonOffset ?? 0;
+        const workDays = rot ? rot.dayShifts + rot.nightShifts : 5;
+        const stCycle = rot ? rot.dayShifts + rot.nightShifts + rot.restDays : 7;
+        return {
+          stationName: s.stationName,
+          scheduleType: s.scheduleType || '12h-day',
+          currentRotation: rot?.name || undefined,
+          fijoCount: stFijos.length,
+          currentGuards: activeAssignments.filter((a: any) => a.stationId === s.id && !a.isRelief).length,
+          platoonOffset: offset,
+          restDaysStart: (offset + workDays) % stCycle,
+        };
+      }),
     };
 
-    const { getStationRecommendation, getScheduleOptimization } = await import('../../services/aiSchedulingService');
+    const { getStationRecommendation, getScheduleOptimization, analyzeScenario } = await import('../../services/aiSchedulingService');
 
     let result: any;
     if (type === 'station' && stationName) {
       result = await getStationRecommendation(stationName, scheduleType || '12h-day', context);
+    } else if (type === 'analyze' && question) {
+      const analysis = await analyzeScenario(question, context);
+      result = { recommendation: analysis };
     } else {
       const optimization = await getScheduleOptimization(context);
       result = { recommendation: optimization };
