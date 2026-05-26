@@ -14,6 +14,7 @@ import {
   schedulerStaffing,
   schedulerAutoAssign,
   schedulerOptimizeSacafrancos,
+  schedulerAiRecommend,
   scheduleOverrideList,
   scheduleOverrideCreate,
   scheduleOverrideDelete,
@@ -43,6 +44,9 @@ export default (app) => {
   app.get('/tenant/:tenantId/scheduler/staffing', schedulerStaffing);
   app.post('/tenant/:tenantId/scheduler/auto-assign', schedulerAutoAssign);
   app.post('/tenant/:tenantId/scheduler/optimize-sacafrancos', schedulerOptimizeSacafrancos);
+
+  // AI scheduling recommendations
+  app.post('/tenant/:tenantId/scheduler/ai-recommend', schedulerAiRecommend);
 
   // Schedule overrides (vacations, permissions, absences, manual shifts)
   app.get('/tenant/:tenantId/schedule-overrides', scheduleOverrideList);

@@ -745,3 +745,68 @@ export async function schedulerOptimizeSacafrancos(req, res) {
     await ApiResponseHandler.error(req, res, error);
   }
 }
+
+// POST /tenant/:tenantId/scheduler/ai-recommend
+// Get AI-powered scheduling recommendations
+export async function schedulerAiRecommend(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
+    const tenantId = req.currentTenant.id;
+    const data = req.body?.data || req.body || {};
+    const { type, stationName, scheduleType } = data;
+    // type: 'station' (new station setup) or 'optimize' (full schedule optimization)
+
+    const { Op } = req.database.Sequelize;
+
+    // Build context
+    const stations = await req.database.station.findAll({
+      where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
+      attributes: ['id', 'stationName', 'scheduleType', 'rotationStyleId'],
+    });
+    const fijoPositions = await req.database.stationPosition.findAll({
+      where: { tenantId, deletedAt: null, type: 'fijo' },
+      attributes: ['id', 'stationId'],
+    });
+    const sfPositions = await req.database.stationPosition.findAll({
+      where: { tenantId, deletedAt: null, type: 'sacafranco' },
+      attributes: ['id'],
+    });
+    const activeAssignments = await req.database.guardAssignment.findAll({
+      where: { tenantId, status: 'active', deletedAt: null },
+      attributes: ['id', 'guardId', 'stationId', 'isRelief'],
+    });
+
+    const currentFijoGuards = activeAssignments.filter((a: any) => !a.isRelief).length;
+    const currentSfGuards = activeAssignments.filter((a: any) => a.isRelief).length;
+
+    const context = {
+      totalStations: stations.length,
+      totalFijos: fijoPositions.length,
+      totalSacafrancos: sfPositions.length,
+      currentGuards: currentFijoGuards + currentSfGuards,
+      peakDemand: Math.ceil(fijoPositions.length * 2 / 7), // rough estimate
+      laborRegulations: 'Ecuador: 8h/day max, 40h/week, rest mandatory',
+      stations: stations.map((s: any) => ({
+        stationName: s.stationName,
+        scheduleType: s.scheduleType || '12h-day',
+        fijoCount: fijoPositions.filter((p: any) => p.stationId === s.id).length,
+        currentGuards: activeAssignments.filter((a: any) => a.stationId === s.id && !a.isRelief).length,
+      })),
+    };
+
+    const { getStationRecommendation, getScheduleOptimization } = await import('../../services/aiSchedulingService');
+
+    let result: any;
+    if (type === 'station' && stationName) {
+      result = await getStationRecommendation(stationName, scheduleType || '12h-day', context);
+    } else {
+      const optimization = await getScheduleOptimization(context);
+      result = { recommendation: optimization };
+    }
+
+    await ApiResponseHandler.success(req, res, result);
+  } catch (error) {
+    console.error('[schedulerAiRecommend]', error);
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
