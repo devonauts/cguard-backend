@@ -5,8 +5,9 @@
  * - "Fijo" positions rotate D/N/L: e.g., 4-4-2 means 4 day, 4 night, 2 rest
  * - "Sacafranco" positions cover rest gaps of Fijo guards + have own rotation
  * - Rotation belongs to the STATION, not the individual guard
- * - platoonOffset staggers guards so they don't all rest the same day
- * - Yearly schedule generation for performance
+ * - platoonOffset determines WHEN in the cycle rest days fall (relative to Jan 1 epoch)
+ * - Stations are sequenced so rest days form a chain: Station 1 rests Mon-Tue, Station 2 Wed-Thu, etc.
+ * - This allows sacafrancos to work consecutive days covering different stations
  */
 
 const GENERATION_DAYS = 365; // Generate 1 full year of shifts
@@ -24,18 +25,28 @@ interface AssignmentData {
 }
 
 /**
+ * Get the global epoch (Jan 1 of current year).
+ * All rotation calculations use this as day-zero so offsets are globally consistent.
+ */
+function getGlobalEpoch(referenceDate?: Date): Date {
+  const ref = referenceDate || new Date();
+  return new Date(ref.getFullYear(), 0, 1);
+}
+
+/**
  * Determine what a guard does on a given day based on rotation.
+ * Uses days since GLOBAL EPOCH (Jan 1) + platoonOffset for consistency across all stations.
  * Returns: 'day' | 'night' | 'rest'
  */
 function getRotationStatus(
-  daysSinceStart: number,
+  daysSinceEpoch: number,
   platoonOffset: number,
   dayShifts: number,
   nightShifts: number,
   restDays: number,
 ): 'day' | 'night' | 'rest' {
   const cycleLength = dayShifts + nightShifts + restDays;
-  const adjustedDay = ((daysSinceStart - platoonOffset) % cycleLength + cycleLength) % cycleLength;
+  const adjustedDay = ((daysSinceEpoch - platoonOffset) % cycleLength + cycleLength) % cycleLength;
   if (adjustedDay < dayShifts) return 'day';
   if (adjustedDay < dayShifts + nightShifts) return 'night';
   return 'rest';
@@ -108,9 +119,10 @@ export async function generateShiftsForAssignment(
 
   // ─── FIJO LOGIC ────────────────────────────────────────────────────────
   // Fijo positions rotate through D → N → L following the station's rotation style
+  // Uses GLOBAL EPOCH (Jan 1) for consistent offset alignment across all stations
   const shifts: any[] = [];
   const cursor = new Date(genStart);
-  const assignmentStart = new Date(assignment.startDate);
+  const epoch = getGlobalEpoch(genStart);
 
   // Time windows: day shift uses position startTime/endTime, night is the inverse
   const dayStartTime = position.startTime || '07:00';
@@ -119,8 +131,8 @@ export async function generateShiftsForAssignment(
   const nightEndTime = dayStartTime;
 
   while (cursor <= genEnd) {
-    const daysSinceStart = Math.floor((cursor.getTime() - assignmentStart.getTime()) / (24 * 60 * 60 * 1000));
-    const status = getRotationStatus(daysSinceStart, assignment.platoonOffset, dayShifts, nightShifts, restDays);
+    const daysSinceEpoch = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+    const status = getRotationStatus(daysSinceEpoch, assignment.platoonOffset, dayShifts, nightShifts, restDays);
 
     if (status !== 'rest') {
       const dateStr = cursor.toISOString().slice(0, 10);
@@ -183,7 +195,7 @@ async function generateSacafrancoShifts(
 
   const shifts: any[] = [];
   const cursor = new Date(genStart);
-  const assignmentStart = new Date(assignment.startDate);
+  const epoch = getGlobalEpoch(genStart);
 
   // Time windows
   const dayStartTime = position.startTime || '07:00';
@@ -193,40 +205,38 @@ async function generateSacafrancoShifts(
 
   while (cursor <= genEnd) {
     const dateStr = cursor.toISOString().slice(0, 10);
-    const daysSinceSfStart = Math.floor((cursor.getTime() - assignmentStart.getTime()) / (24 * 60 * 60 * 1000));
+    const daysSinceEpoch = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
 
-    if (daysSinceSfStart >= 0) {
-      // Check sacafranco's own rotation
-      const sfStatus = getRotationStatus(daysSinceSfStart, assignment.platoonOffset, dayShifts, nightShifts, restDays);
+    // Check sacafranco's own rotation using global epoch
+    const sfStatus = getRotationStatus(daysSinceEpoch, assignment.platoonOffset, dayShifts, nightShifts, restDays);
 
-      if (sfStatus !== 'rest') {
-        // Sacafranco works on this day — generate shift
-        let startTime: Date;
-        let endTime: Date;
+    if (sfStatus !== 'rest') {
+      // Sacafranco works on this day — generate shift
+      let startTime: Date;
+      let endTime: Date;
 
-        if (sfStatus === 'night') {
-          startTime = new Date(`${dateStr}T${nightStartTime}:00`);
-          endTime = new Date(`${dateStr}T${nightEndTime}:00`);
-          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-        } else {
-          startTime = new Date(`${dateStr}T${dayStartTime}:00`);
-          endTime = new Date(`${dateStr}T${dayEndTime}:00`);
-          if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
-        }
-
-        shifts.push({
-          guardId: assignment.guardId,
-          stationId: assignment.stationId,
-          positionId: assignment.positionId,
-          guardAssignmentId: assignment.id,
-          postSiteId: null,
-          startTime,
-          endTime,
-          tenantId,
-          createdById: userId,
-          updatedById: userId,
-        });
+      if (sfStatus === 'night') {
+        startTime = new Date(`${dateStr}T${nightStartTime}:00`);
+        endTime = new Date(`${dateStr}T${nightEndTime}:00`);
+        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+      } else {
+        startTime = new Date(`${dateStr}T${dayStartTime}:00`);
+        endTime = new Date(`${dateStr}T${dayEndTime}:00`);
+        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
       }
+
+      shifts.push({
+        guardId: assignment.guardId,
+        stationId: assignment.stationId,
+        positionId: assignment.positionId,
+        guardAssignmentId: assignment.id,
+        postSiteId: null,
+        startTime,
+        endTime,
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
     }
 
     cursor.setDate(cursor.getDate() + 1);
@@ -361,12 +371,20 @@ export function calculateStaffingNeeds(
 /**
  * Optimize sacafranco assignments across ALL stations.
  * 
- * New algorithm:
- * 1. Calculate how many SFs are needed (staffing calculator)
- * 2. Create numbered SF positions: "SF 1", "SF 2", etc.
- * 3. Each SF position is assigned to cover specific stations — rotated so each SF
- *    covers the minimum stations needed to fill their work days
- * 4. Generate shifts for each SF showing which station they cover each day
+ * Algorithm: SEQUENTIAL STATION REST DAYS
+ * 1. Group stations by cycle length (same rotation type)
+ * 2. Within each group, assign ALL fijos at the same station the SAME offset
+ * 3. Sequence stations so rest days form a chain:
+ *    - Station 0 rests days 0-1 (Mon-Tue)
+ *    - Station 1 rests days 2-3 (Wed-Thu)
+ *    - Station 2 rests days 4-5 (Fri-Sat)
+ *    - etc.
+ * 4. Sacafrancos then naturally cover consecutive stations in sequence
+ * 5. SF offsets are staggered so they don't all rest on the same day
+ * 
+ * Offset formula (relative to Jan 1 epoch):
+ *   stationOffset = (stationIndex * restDays - workDays + cycle) % cycle
+ *   This makes station `i` rest starting on day `i * restDays` of the cycle
  */
 export async function optimizeSacafrancos(
   database: any,
@@ -380,6 +398,7 @@ export async function optimizeSacafrancos(
   const stations = await database.station.findAll({
     where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
     attributes: ['id', 'stationName', 'rotationStyleId', 'scheduleType'],
+    order: [['stationName', 'ASC']], // Sort alphabetically for deterministic ordering
   });
 
   if (stations.length === 0) {
@@ -401,84 +420,84 @@ export async function optimizeSacafrancos(
     }
   }
 
-  // 4. OPTIMIZE: Reassign platoonOffsets to stagger rest days globally
-  // Group fijos by their cycle length, then spread offsets evenly within each group
+  // 4. SEQUENTIAL OFFSET OPTIMIZATION
+  // Group fijos by station
   const fijosByStation = new Map<string, any[]>();
   for (const fijo of fijoPositions) {
     if (!fijosByStation.has(fijo.stationId)) fijosByStation.set(fijo.stationId, []);
     fijosByStation.get(fijo.stationId)!.push(fijo);
   }
 
-  // For offset optimization: assign offsets so that across ALL stations with the same cycle,
-  // rest days are spread as evenly as possible
-  const byCycle = new Map<number, { fijo: any; stationId: string; rot: any }[]>();
+  // Group stations by cycle length, then assign sequential offsets within each group
+  const byCycle = new Map<number, { station: any; rot: any }[]>();
   for (const station of stations) {
     const rot = rotationCache.get(station.rotationStyleId);
     if (!rot) continue;
     const cycle = rot.dayShifts + rot.nightShifts + rot.restDays;
+    if (cycle === 0) continue;
     if (!byCycle.has(cycle)) byCycle.set(cycle, []);
-    const stationFijos = fijosByStation.get(station.id) || [];
-    for (const fijo of stationFijos) {
-      byCycle.get(cycle)!.push({ fijo, stationId: station.id, rot });
-    }
+    byCycle.get(cycle)!.push({ station, rot });
   }
 
-  // Assign optimal offsets: spread evenly within each cycle group
+  // Assign sequential offsets: each station gets a slot so rest days form a chain
   const offsetUpdates: { id: string; platoonOffset: number }[] = [];
-  for (const [cycle, fijos] of byCycle.entries()) {
-    // Spread offsets: assign 0, 1, 2, ... modulo cycle
-    // This ensures at most ceil(fijos.length / cycle) guards rest on any given day
-    for (let i = 0; i < fijos.length; i++) {
-      const newOffset = i % cycle;
-      if (fijos[i].fijo.platoonOffset !== newOffset) {
-        offsetUpdates.push({ id: fijos[i].fijo.id, platoonOffset: newOffset });
+  for (const [cycle, stationGroup] of byCycle.entries()) {
+    for (let i = 0; i < stationGroup.length; i++) {
+      const { station, rot } = stationGroup[i];
+      const workDays = rot.dayShifts + rot.nightShifts;
+      const restDays = rot.restDays;
+      
+      // Formula: station i rests starting on day (i * restDays) % cycle relative to epoch
+      // offset = (i * restDays - workDays + cycle) % cycle
+      const stationOffset = (i * restDays - workDays + cycle * 10) % cycle; // +cycle*10 to avoid negative
+
+      // ALL fijos at this station get the SAME offset
+      const stationFijos = fijosByStation.get(station.id) || [];
+      for (const fijo of stationFijos) {
+        if (fijo.platoonOffset !== stationOffset) {
+          offsetUpdates.push({ id: fijo.id, platoonOffset: stationOffset });
+        }
       }
     }
   }
 
-  // Apply offset updates
+  // Apply offset updates to positions and their active assignments
   for (const update of offsetUpdates) {
     await database.stationPosition.update(
       { platoonOffset: update.platoonOffset },
       { where: { id: update.id, tenantId } }
     );
-    // Also update any active assignment for this position
     await database.guardAssignment.update(
       { platoonOffset: update.platoonOffset },
       { where: { positionId: update.id, tenantId, status: 'active', deletedAt: null } }
     );
   }
 
-  // 5. Build station configs with NEW optimized offsets
+  // 5. Build station configs with optimized offsets for staffing calculation
   const stationConfigs: any[] = [];
-  for (const station of stations) {
-    const rot = rotationCache.get(station.rotationStyleId);
-    if (!rot) continue;
-    const stationFijos = fijosByStation.get(station.id) || [];
-    // Recalculate offsets from the byCycle assignment
-    const cycle = rot.dayShifts + rot.nightShifts + rot.restDays;
-    const cycleGroup = byCycle.get(cycle) || [];
-    const thisStationInGroup = cycleGroup.filter(f => f.stationId === station.id);
+  for (const [cycle, stationGroup] of byCycle.entries()) {
+    for (let i = 0; i < stationGroup.length; i++) {
+      const { station, rot } = stationGroup[i];
+      const workDays = rot.dayShifts + rot.nightShifts;
+      const stationOffset = (i * rot.restDays - workDays + cycle * 10) % cycle;
+      const stationFijos = fijosByStation.get(station.id) || [];
 
-    stationConfigs.push({
-      stationId: station.id,
-      stationName: station.stationName,
-      fijoPositions: thisStationInGroup.map((f, idx) => {
-        const groupIdx = cycleGroup.indexOf(f);
-        return {
-          platoonOffset: groupIdx % cycle,
+      stationConfigs.push({
+        stationId: station.id,
+        stationName: station.stationName,
+        fijoPositions: stationFijos.map(() => ({
+          platoonOffset: stationOffset,
           dayShifts: rot.dayShifts,
           nightShifts: rot.nightShifts,
           restDays: rot.restDays,
-        };
-      }),
-    });
+        })),
+      });
+    }
   }
 
   // 6. Get or determine SF rotation style — prefer 6-1 (best work ratio: 6/7 = 86%)
   let sfRotationStyleId = sacafrancoRotationStyleId;
   if (!sfRotationStyleId) {
-    // Prefer 6-1 for maximum coverage efficiency
     const rot61 = await database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
     sfRotationStyleId = rot61?.id;
     if (!sfRotationStyleId) {
@@ -514,7 +533,7 @@ export async function optimizeSacafrancos(
     await database.stationPosition.destroy({ where: { id: oldSfPosIds, tenantId }, force: true });
   }
 
-  // 9. Create SF positions (minimal count)
+  // 9. Create SF positions with staggered offsets
   const sfCycle = sfRotation.dayShifts + sfRotation.nightShifts + sfRotation.restDays;
   const stationsWithFijos = stationConfigs.filter(s => s.fijoPositions.length > 0);
 
@@ -526,8 +545,12 @@ export async function optimizeSacafrancos(
   }
 
   const primaryStationId = stationsWithFijos[0].stationId;
+  const sfWorkDays = sfRotation.dayShifts + sfRotation.nightShifts;
   const newSfPositions: any[] = [];
   for (let i = 0; i < numSfNeeded; i++) {
+    // SF offset: stagger so each SF rests on a different day
+    // Formula: SF i rests starting on day (i * sfRestDays) relative to epoch
+    const sfOffset = (i * sfRotation.restDays - sfWorkDays + sfCycle * 10) % sfCycle;
     newSfPositions.push({
       name: `SF ${i + 1}`,
       type: 'sacafranco',
@@ -535,7 +558,7 @@ export async function optimizeSacafrancos(
       endTime: '19:00',
       guardsNeeded: 1,
       sortOrder: 100 + i,
-      platoonOffset: i % sfCycle, // Stagger SF rest days
+      platoonOffset: sfOffset,
       stationId: primaryStationId,
       tenantId,
       createdById: userId,
@@ -544,8 +567,20 @@ export async function optimizeSacafrancos(
   }
   await database.stationPosition.bulkCreate(newSfPositions);
 
+  // 10. Regenerate shifts for all fijo assignments (with new offsets)
+  const allFijoAssignments = await database.guardAssignment.findAll({
+    where: { tenantId, status: 'active', deletedAt: null, positionId: fijoPositions.map((f: any) => f.id) },
+  });
+  const batchSize = 10;
+  for (let i = 0; i < allFijoAssignments.length; i += batchSize) {
+    const batch = allFijoAssignments.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map((a: any) => generateShiftsForAssignment(database, a.get({ plain: true }), tenantId, userId))
+    );
+  }
+
   return {
-    message: `Optimizado: ${numSfNeeded} sacafrancos para ${stationsWithFijos.length} estaciones (offsets ajustados: ${offsetUpdates.length})`,
+    message: `Optimizado: ${numSfNeeded} sacafrancos para ${stationsWithFijos.length} estaciones. Secuencia: cada estación descansa en días consecutivos distintos.`,
     details: {
       totalStations: stationsWithFijos.length,
       sacafrancosNeeded: numSfNeeded,
@@ -553,6 +588,7 @@ export async function optimizeSacafrancos(
       peakDemand: staffing.peakDemand,
       offsetsOptimized: offsetUpdates.length,
       rotationStyleId: sfRotationStyleId,
+      sequenceInfo: `Stations sequenced by rest day: each station's rest is offset by ${stationConfigs[0]?.fijoPositions[0]?.restDays || 2} days`,
     },
   };
 }
