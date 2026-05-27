@@ -376,65 +376,70 @@ export async function stationAutoPositions(req, res) {
       order: [['sortOrder', 'ASC']],
     });
 
-    // Async: generate schedule + optimize sequence + assign available sacafrancos
-    setImmediate(async () => {
-      try {
-        const { generateYearlyScheduleForStation, optimizeSacafrancos, generateShiftsForAssignment } = await import('../../services/shiftGenerationService');
-        await generateYearlyScheduleForStation(req.database, stationId, tenantId, userId);
-        // Auto-optimize: ensures sequence across ALL stations
-        await optimizeSacafrancos(req.database, tenantId, userId);
+    let sfAvailableAtExecution = 0;
+    let sfAssignedNow = 0;
+    let sfOpenRemaining = 0;
 
-        // Auto-assign available SF guards to unfilled sacafranco positions (if any)
-        const [sfPositions, activeAssignments, sfGuards, stationMap] = await Promise.all([
-          req.database.stationPosition.findAll({ where: { tenantId, deletedAt: null, type: 'sacafranco' } }),
-          req.database.guardAssignment.findAll({ where: { tenantId, status: 'active', deletedAt: null }, attributes: ['guardId', 'positionId'] }),
-          req.database.securityGuard.findAll({ where: { tenantId, deletedAt: null }, attributes: ['guardId', 'guardType'] }),
-          req.database.station.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'rotationStyleId'] }),
-        ]);
+    try {
+      const { generateYearlyScheduleForStation, optimizeSacafrancos, generateShiftsForAssignment } = await import('../../services/shiftGenerationService');
+      await generateYearlyScheduleForStation(req.database, stationId, tenantId, userId);
+      // Auto-optimize: ensures sequence across ALL stations
+      await optimizeSacafrancos(req.database, tenantId, userId);
 
-        const assignedGuardIds = new Set(activeAssignments.map((a: any) => a.guardId));
-        const assignedSfPositionIds = new Set(activeAssignments.map((a: any) => a.positionId));
-        const availableSfGuards = sfGuards.filter((g: any) =>
-          g.guardId &&
-          !assignedGuardIds.has(g.guardId) &&
-          String(g.guardType || '').toLowerCase() === 'sacafranco'
-        );
+      // Auto-assign available SF guards to unfilled sacafranco positions (if any)
+      const [sfPositions, activeAssignments, sfGuards, stationMap] = await Promise.all([
+        req.database.stationPosition.findAll({ where: { tenantId, deletedAt: null, type: 'sacafranco' } }),
+        req.database.guardAssignment.findAll({ where: { tenantId, status: 'active', deletedAt: null }, attributes: ['guardId', 'positionId'] }),
+        req.database.securityGuard.findAll({ where: { tenantId, deletedAt: null }, attributes: ['guardId', 'guardType'] }),
+        req.database.station.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'rotationStyleId'] }),
+      ]);
 
-        const openSfPositions = sfPositions.filter((p: any) => !assignedSfPositionIds.has(p.id));
+      const assignedGuardIds = new Set(activeAssignments.map((a: any) => a.guardId));
+      const assignedSfPositionIds = new Set(activeAssignments.map((a: any) => a.positionId));
+      const availableSfGuards = sfGuards.filter((g: any) =>
+        g.guardId &&
+        !assignedGuardIds.has(g.guardId) &&
+        String(g.guardType || '').toLowerCase() === 'sacafranco'
+      );
 
-        if (availableSfGuards.length > 0 && openSfPositions.length > 0) {
-          const byStation = new Map<string, any>();
-          stationMap.forEach((s: any) => byStation.set(s.id, s));
-          const sfRot = await req.database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
-          const startDate = new Date().toISOString().slice(0, 10);
+      const openSfPositions = sfPositions.filter((p: any) => !assignedSfPositionIds.has(p.id));
+      sfAvailableAtExecution = availableSfGuards.length;
 
-          const createCount = Math.min(availableSfGuards.length, openSfPositions.length);
-          for (let i = 0; i < createCount; i++) {
-            const guard = availableSfGuards[i];
-            const pos = openSfPositions[i];
-            const station = byStation.get(pos.stationId);
-            const assignment = await req.database.guardAssignment.create({
-              guardId: guard.guardId,
-              stationId: pos.stationId,
-              positionId: pos.id,
-              rotationStyleId: sfRot?.id || station?.rotationStyleId,
-              startDate,
-              endDate: null,
-              platoonOffset: pos.platoonOffset || 0,
-              isRelief: true,
-              status: 'active',
-              tenantId,
-              createdById: userId,
-              updatedById: userId,
-            });
+      if (availableSfGuards.length > 0 && openSfPositions.length > 0) {
+        const byStation = new Map<string, any>();
+        stationMap.forEach((s: any) => byStation.set(s.id, s));
+        const sfRot = await req.database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
+        const startDate = new Date().toISOString().slice(0, 10);
 
-            await generateShiftsForAssignment(req.database, assignment.get({ plain: true }), tenantId, userId);
-          }
+        const createCount = Math.min(availableSfGuards.length, openSfPositions.length);
+        for (let i = 0; i < createCount; i++) {
+          const guard = availableSfGuards[i];
+          const pos = openSfPositions[i];
+          const station = byStation.get(pos.stationId);
+          const assignment = await req.database.guardAssignment.create({
+            guardId: guard.guardId,
+            stationId: pos.stationId,
+            positionId: pos.id,
+            rotationStyleId: sfRot?.id || station?.rotationStyleId,
+            startDate,
+            endDate: null,
+            platoonOffset: pos.platoonOffset || 0,
+            isRelief: true,
+            status: 'active',
+            tenantId,
+            createdById: userId,
+            updatedById: userId,
+          });
+
+          await generateShiftsForAssignment(req.database, assignment.get({ plain: true }), tenantId, userId);
+          sfAssignedNow++;
         }
-      } catch (e) {
-        console.error('[stationAutoPositions] Yearly generation / sacafranco optimization error:', e);
       }
-    });
+
+      sfOpenRemaining = Math.max(0, openSfPositions.length - sfAssignedNow);
+    } catch (e) {
+      console.error('[stationAutoPositions] Yearly generation / sacafranco optimization error:', e);
+    }
 
     await ApiResponseHandler.success(req, res, {
       rows: created,
@@ -442,6 +447,9 @@ export async function stationAutoPositions(req, res) {
       rotationStyleId,
       recommendedPlatoonOffset: recommendedStationOffset,
       sequenceRule: 'offset = (stationIndex * restDays - workDays) mod cycle',
+      sfAvailableAtExecution,
+      sfAssignedNow,
+      sfOpenRemaining,
     });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
