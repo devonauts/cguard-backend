@@ -9,7 +9,8 @@
  *  - Loads .env (if present)
  *  - Optionally creates a mysqldump backup (if mysqldump present and DB vars set)
  *  - Runs `npm run migrate:all`
- *  - Verifies that `commercialName` column exists and reports counts
+ *  - Runs SQL migrations (`npm run migrate:sql`)
+ *  - Verifies DB schema against Sequelize models (`npm run db:verify`)
  *  - Attempts to reload PM2 app `cguard-backend` (or reload ecosystem.config.js)
  *
  * This script is conservative and logs outputs for diagnostics.
@@ -19,7 +20,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { spawnSync } from 'child_process';
-import mysql from 'mysql2/promise';
 
 dotenv.config();
 
@@ -88,44 +88,16 @@ async function runMigrations() {
   }
 }
 
-async function verifyCommercialName() {
-  const { DATABASE_HOST, DATABASE_PORT, DATABASE_USERNAME, DATABASE_PASSWORD, DATABASE_DATABASE } = process.env;
-  if (!DATABASE_DATABASE) {
-    console.warn('=> DATABASE_DATABASE not set - cannot verify commercialName');
-    return;
-  }
+async function runSqlMigrations() {
+  console.log('=> Running SQL migrations: npm run migrate:sql');
+  runSync('npm', ['run', 'migrate:sql'], { cwd: REPO_DIR });
+  console.log('=> migrate:sql finished successfully');
+}
 
-  console.log('=> Verifying commercialName column in DB...');
-  const conn = await mysql.createConnection({
-    host: DATABASE_HOST || '127.0.0.1',
-    port: Number(DATABASE_PORT || 3306),
-    user: DATABASE_USERNAME || 'root',
-    password: DATABASE_PASSWORD || '',
-    database: DATABASE_DATABASE,
-  });
-
-  try {
-    const [rows] = await conn.query(
-      `SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'clientAccounts' AND COLUMN_NAME = 'commercialName'`,
-      [DATABASE_DATABASE]
-    );
-
-    if ((rows as any).length === 0) {
-      console.warn('=> Column commercialName NOT FOUND in clientAccounts');
-    } else {
-      console.log('=> Column commercialName FOUND:', (rows as any)[0]);
-    }
-
-    // report counts
-    try {
-      const [countRows] = await conn.query(`SELECT COUNT(*) AS total, SUM(CASE WHEN commercialName IS NULL OR commercialName = '' THEN 1 ELSE 0 END) AS missingCommercial FROM clientAccounts`);
-      console.log('=> clientAccounts counts:', (countRows as any)[0]);
-    } catch (e) {
-      console.warn('=> Could not fetch counts (maybe column missing):', e && (e as Error).message);
-    }
-  } finally {
-    await conn.end();
-  }
+async function verifySchema() {
+  console.log('=> Verifying schema: npm run db:verify');
+  runSync('npm', ['run', 'db:verify'], { cwd: REPO_DIR });
+  console.log('=> db:verify finished successfully');
 }
 
 async function reloadPm2() {
@@ -160,7 +132,8 @@ async function main() {
 
     await backupDatabaseIfPossible();
     await runMigrations();
-    await verifyCommercialName();
+    await runSqlMigrations();
+    await verifySchema();
     await reloadPm2();
 
     console.log('--- deployMigrateAndVerify completed ---');

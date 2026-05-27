@@ -15,6 +15,7 @@ import { databaseInit } from './database/databaseConnection';
 import TenantInvitationRepository from './database/repositories/tenantInvitationRepository';
 import { ensurePlatformEventsTable, cleanupOldPlatformEvents } from './lib/platformEventStore';
 import { syncGuardDutyStatus } from './services/dutySync';
+import { verifySchemaConsistency } from './database/migrations/verify-schema';
 import { setInterval as nodeSetInterval } from 'timers';
 
 // const PORT = process.env.PORT || 8080
@@ -55,7 +56,21 @@ function startServer(port: number, attemptsLeft = 5) {
   return server;
 }
 
-startServer(PORT, 5);
+async function boot() {
+  // Optional startup schema guard: set SCHEMA_VERIFY_ON_BOOT=true to fail fast
+  // when DB schema is out of sync with Sequelize models.
+  if (String(process.env.SCHEMA_VERIFY_ON_BOOT || '').toLowerCase() === 'true') {
+    await verifySchemaConsistency();
+    console.log('[SchemaGuard] Schema verification passed');
+  }
+
+  startServer(PORT, 5);
+}
+
+boot().catch((err) => {
+  console.error('[Startup] Boot failed:', err instanceof Error ? err.message : err);
+  process.exit(1);
+});
 
 // Periodic cleanup: remove expired tenant invitations every 3 hours
 async function runExpiredInvitesCleanup() {

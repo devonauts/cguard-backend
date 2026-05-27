@@ -51,11 +51,16 @@ class ClientAccountRepository {
       // if DB check failed unexpectedly, continue and let create surface the error
     }
 
+    const normalizedData = {
+      ...data,
+      name: data?.name || data?.commercialName,
+    };
+
     const record = await options.database.clientAccount.create(
       {
         // Allow caller to force the id when needed (e.g., keep same id as user)
         id: data && data.id ? data.id : undefined,
-        ...lodash.pick(data, [
+        ...lodash.pick(normalizedData, [
           'name',
           'lastName',
           'email',
@@ -77,8 +82,6 @@ class ClientAccountRepository {
           'importHash',
           'categoryIds',
           'active',
-          'commercialName',
-          'contractDate',
         ]),
         tenantId: tenant.id,
         createdById: currentUser.id,
@@ -153,8 +156,13 @@ class ClientAccountRepository {
     console.log('📤 Data recibida del controlador:', data);
     console.log('📤 Data recibida (active):', data.active);
 
+    const normalizedData = {
+      ...data,
+      name: data?.name || data?.commercialName,
+    };
+
     const updateData = {
-      ...lodash.pick(data, [
+      ...lodash.pick(normalizedData, [
         'name',
         'lastName',
         'userId',
@@ -176,8 +184,6 @@ class ClientAccountRepository {
         'importHash',
         'categoryIds',
         'active',
-        'commercialName',
-        'contractDate',
       ]),
       updatedById: currentUser.id,
     };

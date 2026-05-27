@@ -146,15 +146,16 @@ export default function (sequelize) {
         defaultValue: true,
       },
       commercialName: {
-        type: DataTypes.STRING(200),
-        allowNull: true,
-        validate: {
-          len: [0, 200],
+        type: DataTypes.VIRTUAL,
+        get(this: any) {
+          return this.getDataValue('name');
         },
-      },
-      contractDate: {
-        type: DataTypes.DATEONLY,
-        allowNull: true,
+        set(this: any, value: any) {
+          // Backward compatibility: older clients may still send commercialName.
+          if (value && !this.getDataValue('name')) {
+            this.setDataValue('name', value);
+          }
+        },
       },
       onboardingStatus: {
         type: DataTypes.STRING(20),
