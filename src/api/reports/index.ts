@@ -79,6 +79,7 @@ export default (app) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.reportRead);
       const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const typeQ = String(req.query.type || '').trim();
       const startQ = String(req.query.start || '').trim();
       const endQ = String(req.query.end || '').trim();
       let start = new Date();
@@ -91,7 +92,8 @@ export default (app) => {
       if (end.getTime() === start.getTime()) end.setUTCDate(end.getUTCDate() + 1);
 
       const { fn, col, Op } = require('sequelize');
-      const where = { createdAt: { [Op.gte]: start, [Op.lt]: end }, ...(tenantId ? { tenantId } : {}) };
+      const where: any = { createdAt: { [Op.gte]: start, [Op.lt]: end }, ...(tenantId ? { tenantId } : {}) };
+      if (typeQ) where.type = typeQ;
 
       const rows = await req.database.report.findAll({
         attributes: [[col('type'), 'type'], [fn('COUNT', col('id')), 'count']],
@@ -113,6 +115,7 @@ export default (app) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.reportRead);
       const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const typeQ = String(req.query.type || '').trim();
       const dateQ = String(req.query.date || '').trim();
       const limit = Number(req.query.limit || 10);
       const { Op } = require('sequelize');
@@ -128,6 +131,7 @@ export default (app) => {
         }
       }
       if (tenantId) where.tenantId = tenantId;
+      if (typeQ) where.type = typeQ;
 
       const rows = await req.database.report.findAll({ where, order: [['createdAt', 'DESC']], limit, include: [{ model: req.database.station, as: 'station' }] });
       const out = rows.map((r: any) => ({ id: r.id, title: r.title, site: r.station ? r.station.name : null, time: r.createdAt, author: r.officerName || r.officer || null }));
@@ -177,13 +181,65 @@ export default (app) => {
   app.get('/reports/formats', async (req, res) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.reportRead);
-      // The report model doesn't currently track export formats; return sample distribution
-      const out = [
-        { format: 'PDF', pct: 0.56 },
-        { format: 'Excel', pct: 0.28 },
-        { format: 'CSV', pct: 0.10 },
-        { format: 'Otros', pct: 0.06 },
-      ];
+      // Try to compute formats distribution from reportJob entries (falls back to static sample)
+      const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const startQ = String(req.query.start || '').trim();
+      const endQ = String(req.query.end || '').trim();
+      const typeQ = String(req.query.type || '').trim();
+      let start = new Date();
+      start.setUTCHours(0, 0, 0, 0);
+      if (startQ && startQ.length >= 10) {
+        const p = startQ.split('-');
+        if (p.length === 3) start = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 0, 0, 0));
+      }
+      let end = endQ && endQ.length >= 10 ? new Date(Date.UTC(Number(endQ.split('-')[0]), Number(endQ.split('-')[1]) - 1, Number(endQ.split('-')[2]), 0, 0, 0)) : new Date(start.getTime());
+      if (end.getTime() === start.getTime()) end.setUTCDate(end.getUTCDate() + 1);
+
+      const { Op } = require('sequelize');
+      const db = req.database;
+      const where: any = { createdAt: { [Op.gte]: start, [Op.lt]: end }, ...(tenantId ? { tenantId } : {}) };
+
+      const jobs = await db.reportJob.findAll({ where, limit: 1000 });
+      // allow filtering by report type stored in job.params (some jobs may store params.type or params.reportType)
+      const filtered = jobs.filter((j: any) => {
+        if (!typeQ) return true;
+        try {
+          const p = j.params || {};
+          const cand = (String(p.type || p.reportType || j.type || '')).toLowerCase();
+          return cand === typeQ.toLowerCase();
+        } catch (_) {
+          return false;
+        }
+      });
+
+      const counts: any = {};
+      for (const j of filtered) {
+        const fmtRaw = (j.type || (j.params && j.params.format) || '').toString();
+        const fmt = fmtRaw ? fmtRaw.toLowerCase() : 'other';
+        counts[fmt] = (counts[fmt] || 0) + 1;
+      }
+      const total = Object.values(counts).reduce((s: number, v: any) => s + Number(v), 0);
+      if (total === 0) {
+        // fallback static
+        const out = [
+          { format: 'PDF', pct: 0.56 },
+          { format: 'Excel', pct: 0.28 },
+          { format: 'CSV', pct: 0.10 },
+          { format: 'Otros', pct: 0.06 },
+        ];
+        return ApiResponseHandler.success(req, res, out);
+      }
+
+      const normalize = (s: string) => {
+        if (!s) return 'Otros';
+        const v = s.toLowerCase();
+        if (v === 'pdf') return 'PDF';
+        if (v === 'xlsx' || v === 'excel') return 'Excel';
+        if (v === 'csv') return 'CSV';
+        return s;
+      };
+
+      const out = Object.keys(counts).map((k) => ({ format: normalize(k), pct: total ? Number(counts[k]) / total : 0 }));
       return ApiResponseHandler.success(req, res, out);
     } catch (err) {
       return ApiResponseHandler.error(req, res, err);
@@ -310,6 +366,43 @@ export default (app) => {
         await cfg.update({ defaultFormat: body.defaultFormat || cfg.defaultFormat, options: body.options || cfg.options });
       }
       return ApiResponseHandler.success(req, res, cfg);
+    } catch (err) {
+      return ApiResponseHandler.error(req, res, err);
+    }
+  });
+
+  // Get report job status by id
+  app.get('/reports/job/:id', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.reportRead);
+      const id = String(req.params.id || '').trim();
+      if (!id) {
+        return ApiResponseHandler.error(req, res, new Error('Id requerido'));
+      }
+
+      const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const db = req.database;
+
+      const where: any = { id };
+      if (tenantId) where.tenantId = tenantId;
+
+      const job = await db.reportJob.findOne({ where });
+      if (!job) {
+        const err: any = new Error('No encontrado'); err.code = 404; throw err;
+      }
+
+      const out = {
+        id: job.id,
+        type: job.type,
+        status: job.status,
+        params: job.params,
+        resultUrl: job.resultUrl,
+        startedAt: job.startedAt,
+        finishedAt: job.finishedAt,
+        createdAt: job.createdAt,
+      };
+
+      return ApiResponseHandler.success(req, res, out);
     } catch (err) {
       return ApiResponseHandler.error(req, res, err);
     }
