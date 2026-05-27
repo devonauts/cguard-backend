@@ -29,7 +29,7 @@ export default async (req, res) => {
         {
           model: db.clientAccount,
           as: 'clientAccount',
-          attributes: ['id', 'name', 'lastName', 'commercialName'],
+          attributes: ['id', 'name', 'lastName'],
           required: false,
         },
       ],
