@@ -42,6 +42,9 @@ npm run build
 - `npm run build`: Compila el código TypeScript y copia la documentación
 - `npm test`: Ejecuta los tests con mocha
 - `npm run db:create`: Ejecuta migraciones de base de datos
+- `npm run db:verify`: Verifica que el esquema de DB coincida con los modelos Sequelize
+- `npm run db:fresh`: Flujo completo para reconstrucción desde cero (create + migrations + verify)
+- `npm run deploy:safe`: Build + migraciones + verify (falla si hay drift de esquema)
 - `npm run stripe:login`: Inicia sesión en Stripe CLI
 - `npm run stripe:start`: Inicia Stripe webhook listener
 
@@ -68,6 +71,8 @@ JWT_SECRET=...
 ## Documentación
 
 La documentación de la API se encuentra en `documentation/openapi.json`.
+
+Runbook de reset destructivo: `documentation/destructive-reset.md`.
 
 ## Licencia
 

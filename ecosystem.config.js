@@ -90,7 +90,7 @@ module.exports = {
       repo: 'git@github.com:your-org/cguard-backend.git',
       path: '/home/cguardpro/cguard-backend',
       'pre-deploy-local': '',
-      'post-deploy': 'npm install && npm run build && pm2 reload ecosystem.config.js --env production',
+      'post-deploy': 'npm install && npm run build && npm run migrate:all && npm run migrate:sql && npm run db:verify && pm2 reload ecosystem.config.js --env production',
       'pre-setup': '',
       env: {
         NODE_ENV: 'production',
