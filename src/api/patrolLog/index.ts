@@ -1,3 +1,7 @@
+/**
+ * @deprecated Superseded by tagScan (site-tour/tag-scan / site-tour/tag-scans).
+ * Kept for backward compatibility until legacy data is migrated.
+ */
 export default (app) => {
   app.post(
     `/tenant/:tenantId/patrol-log`,

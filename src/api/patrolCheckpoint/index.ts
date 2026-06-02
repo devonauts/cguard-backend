@@ -1,3 +1,7 @@
+/**
+ * @deprecated Superseded by siteTourTag (site-tour/:id/tag). Kept for backward
+ * compatibility until legacy data is migrated. Do not build new features here.
+ */
 export default (app) => {
   app.post(
     `/tenant/:tenantId/patrol-checkpoint`,
