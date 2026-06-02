@@ -55,7 +55,7 @@ export default async (req: any, res: any) => {
       postSiteId = station ? station.postSiteId : null;
     }
 
-    let record = null;
+    let record: any = null;
     if (postSiteId) {
       record = await db.rondaSettings.findOne({ where: { tenantId, postSiteId } });
     }
