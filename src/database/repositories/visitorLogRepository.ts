@@ -29,6 +29,15 @@ class VisitorLogRepository {
         'stationId',
         'stationName',
         'placeType',
+        'idType',
+        'personVisited',
+        'company',
+        'vehiclePlate',
+        'vehicleType',
+        'phone',
+        'birthDate',
+        'idExpiry',
+        'tagNumber',
       ]),
     };
 
@@ -99,6 +108,15 @@ class VisitorLogRepository {
         'stationId',
         'stationName',
         'placeType',
+        'idType',
+        'personVisited',
+        'company',
+        'vehiclePlate',
+        'vehicleType',
+        'phone',
+        'birthDate',
+        'idExpiry',
+        'tagNumber',
       ]),
     };
 

@@ -4,6 +4,11 @@ export default (app) => {
     `/tenant/:tenantId/security-guard/:id/on-duty`,
     require('./securityGuardOnDutyGet').default,
   );
+  // Performance score + breakdown for a specific guard (supervisor view)
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/performance`,
+    require('./securityGuardPerformance').default,
+  );
   app.get(
     `/security-guard/public`,
     require('./securityGuardPublicFind').default,

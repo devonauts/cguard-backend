@@ -15,6 +15,12 @@ export default (app) => {
     require('./guardMeSchedule').default,
   );
 
+  // My performance score + breakdown
+  app.get(
+    `/tenant/:tenantId/guard/me/performance`,
+    require('./guardMePerformance').default,
+  );
+
   // Clock in (geofence validated)
   app.post(
     `/tenant/:tenantId/guard/me/clock-in`,
@@ -25,6 +31,12 @@ export default (app) => {
   app.post(
     `/tenant/:tenantId/guard/me/clock-out`,
     require('./guardMeClockOut').default,
+  );
+
+  // Report an incident about my post (panic / events) — no admin perm needed
+  app.post(
+    `/tenant/:tenantId/guard/me/incident`,
+    require('./guardMeIncidentCreate').default,
   );
 
   // My time-off requests

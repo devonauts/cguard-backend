@@ -45,6 +45,11 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      // The station this QR/checkpoint is physically assigned to.
+      stationId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       tenantId: {
         type: DataTypes.UUID,
         allowNull: false,
@@ -63,6 +68,11 @@ export default function (sequelize) {
   siteTourTag.associate = (models) => {
     siteTourTag.belongsTo(models.siteTour, { as: 'siteTour', foreignKey: 'siteTourId' });
     siteTourTag.hasMany(models.tagScan, { as: 'scans', foreignKey: 'siteTourTagId' });
+    siteTourTag.belongsTo(models.station, {
+      as: 'station',
+      foreignKey: 'stationId',
+      constraints: false,
+    });
   };
 
   return siteTourTag;

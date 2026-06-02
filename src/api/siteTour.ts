@@ -208,6 +208,8 @@ export default function (router) {
         showGeoFence: req.body.showGeoFence,
         siteTourId: tourId,
         postSiteId: tour.postSiteId || null,
+        // Assign the QR/checkpoint to a station (explicit, or inherit the tour's).
+        stationId: req.body.stationId || tour.stationId || null,
         tenantId: tenant.id,
         createdById: currentUser && currentUser.id,
         updatedById: currentUser && currentUser.id,

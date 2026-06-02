@@ -80,6 +80,43 @@ export default function (sequelize) {
           len: [0, 255],
         },
       },
+      // --- Additional legal / important visit data ---
+      idType: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      },
+      personVisited: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      company: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      vehiclePlate: {
+        type: DataTypes.STRING(30),
+        allowNull: true,
+      },
+      vehicleType: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      },
+      tagNumber: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      },
+      phone: {
+        type: DataTypes.STRING(30),
+        allowNull: true,
+      },
+      birthDate: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
+      idExpiry: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
     },
     {
       indexes: [
