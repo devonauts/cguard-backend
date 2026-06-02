@@ -464,7 +464,20 @@ export default function (router) {
       // Allow guards to report scans (they must be authenticated)
       const service = new SiteTourService(req);
       const { tagIdentifier, latitude, longitude, scannedData, stationId } = req.body;
-      const securityGuardId = req.body.securityGuardId || (req as any).currentUser && (req as any).currentUser.id;
+      // Resolve the guard's securityGuard record id (the tagScans FK target).
+      // The auth'd user id is NOT the securityGuard id, so look it up.
+      let securityGuardId = req.body.securityGuardId || null;
+      if (!securityGuardId && (req as any).currentUser) {
+        const sg = await req.database.securityGuard.findOne({
+          where: {
+            guardId: (req as any).currentUser.id,
+            tenantId: req.currentTenant && req.currentTenant.id,
+            deletedAt: null,
+          },
+          attributes: ['id'],
+        });
+        securityGuardId = sg ? sg.id : null;
+      }
       const payload = await service.recordTagScan({ tagIdentifier, securityGuardId, latitude, longitude, scannedData, stationId });
       await ApiResponseHandler.success(req, res, payload);
     } catch (error: any) {

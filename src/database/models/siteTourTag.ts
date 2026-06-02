@@ -68,11 +68,6 @@ export default function (sequelize) {
   siteTourTag.associate = (models) => {
     siteTourTag.belongsTo(models.siteTour, { as: 'siteTour', foreignKey: 'siteTourId' });
     siteTourTag.hasMany(models.tagScan, { as: 'scans', foreignKey: 'siteTourTagId' });
-    siteTourTag.belongsTo(models.station, {
-      as: 'station',
-      foreignKey: 'stationId',
-      constraints: false,
-    });
   };
 
   return siteTourTag;

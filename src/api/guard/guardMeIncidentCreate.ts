@@ -66,6 +66,8 @@ export default async (req: any, res: any) => {
       priority: data.priority || 'medium',
       status: data.status || 'abierto',
       location: data.location || null,
+      // `date` is NOT NULL on the incident model.
+      date: data.incidentAt ? new Date(data.incidentAt) : new Date(),
       incidentAt: data.incidentAt || new Date(),
       dateTime: data.incidentAt || new Date(),
       incidentTypeId: data.incidentTypeId || null,
