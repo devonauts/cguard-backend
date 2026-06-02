@@ -15,6 +15,18 @@ export default (app) => {
     require('./guardMeSchedule').default,
   );
 
+  // Effective patrol (ronda) settings for my post site
+  app.get(
+    `/tenant/:tenantId/guard/me/ronda-settings`,
+    require('./guardMeRondaSettings').default,
+  );
+
+  // My patrol history (tour assignments)
+  app.get(
+    `/tenant/:tenantId/guard/me/patrols`,
+    require('./guardMePatrols').default,
+  );
+
   // My performance score + breakdown
   app.get(
     `/tenant/:tenantId/guard/me/performance`,
