@@ -15,15 +15,24 @@ function getAdmin(): any {
   if (_initialized) return _admin;
   _initialized = true;
   try {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-    if (!raw) {
-      console.warn('[push] FIREBASE_SERVICE_ACCOUNT not set — push disabled (in-app notifications only)');
+    // Accept the service account inline (FIREBASE_SERVICE_ACCOUNT = JSON string)
+    // or as a path to the JSON file (FIREBASE_SERVICE_ACCOUNT_FILE).
+    let cred: any = null;
+    const inline = process.env.FIREBASE_SERVICE_ACCOUNT;
+    const filePath = process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
+    if (inline) {
+      cred = typeof inline === 'string' ? JSON.parse(inline) : inline;
+    } else if (filePath) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require('fs');
+      cred = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } else {
+      console.warn('[push] no FIREBASE_SERVICE_ACCOUNT(_FILE) set — push disabled (in-app notifications only)');
       return null;
     }
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const admin = require('firebase-admin');
     if (!admin.apps || !admin.apps.length) {
-      const cred = typeof raw === 'string' ? JSON.parse(raw) : raw;
       admin.initializeApp({ credential: admin.credential.cert(cred) });
     }
     _admin = admin;

@@ -36,6 +36,7 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.20.0",
+    "firebase-admin": "^12.7.0",
     "express-rate-limit": "^7.4.0",
     "formidable": "^3.5.1",
     "formidable-serverless": "^1.1.1",
