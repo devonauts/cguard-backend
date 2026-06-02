@@ -699,8 +699,35 @@ class StationRepository {
       ? output.tasks.length
       : 0;
 
-    // Backwards-compatible alias used by frontend
-    output.guardsCount = output.assignedGuardsCount;
+    // Guards that actually work this station: the explicit assignment junction
+    // PLUS distinct guards scheduled via shifts (the operational source of truth
+    // shown in Horario). Previously only the (usually empty) junction was counted,
+    // so stations with scheduled guards showed "Sin guardias".
+    const guardIds = new Set<string>(
+      (Array.isArray(output.assignedGuards) ? output.assignedGuards : [])
+        .map((g: any) => g && g.id)
+        .filter(Boolean),
+    );
+    try {
+      const tenant = SequelizeRepository.getCurrentTenant(options);
+      const scheduled = await options.database.shift.findAll({
+        where: {
+          stationId: record.id,
+          ...(tenant && tenant.id ? { tenantId: tenant.id } : {}),
+          guardId: { [Op.ne]: null },
+        },
+        attributes: ['guardId'],
+        group: ['guardId'],
+        transaction: SequelizeRepository.getTransaction(options),
+      });
+      output.scheduledGuardsCount = (scheduled || []).length;
+      (scheduled || []).forEach((s: any) => s.guardId && guardIds.add(s.guardId));
+    } catch (e) {
+      output.scheduledGuardsCount = 0;
+    }
+
+    // Total distinct guards working this station (assigned ∪ scheduled).
+    output.guardsCount = guardIds.size;
 
     return output;
   }
