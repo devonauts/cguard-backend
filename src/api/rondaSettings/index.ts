@@ -41,7 +41,7 @@ export default (app) => {
       const postSiteId = req.query.postSiteId || null;
 
       // Per-post override first, else the tenant default (postSiteId null).
-      let record = null;
+      let record: any = null;
       if (postSiteId) {
         record = await db.rondaSettings.findOne({ where: { tenantId, postSiteId } });
       }
