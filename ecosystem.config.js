@@ -61,7 +61,9 @@ module.exports = {
         API_DOCUMENTATION_ENABLED: 'true',
         PORT: 8080,
         TENANT_MODE: 'multi',
-        
+        // Firebase service-account for push (file lives outside the repo on the server)
+        FIREBASE_SERVICE_ACCOUNT_FILE: '/home/cguardpro/firebase-service-account.json',
+
         // Database pool for production
         DATABASE_POOL_MAX: '50',
         DATABASE_POOL_MIN: '10',

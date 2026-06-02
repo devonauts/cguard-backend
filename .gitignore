@@ -11,4 +11,6 @@ dist/
 .env
 .env.*
 *.env
+*firebase-adminsdk*.json
+firebase-service-account*.json
 uploads/
