@@ -208,6 +208,7 @@ require('./vehicle').default(routes);
 require('./route').default(routes);
 require('./geocode').default(routes);
 require('./siteTour').default(routes);
+require('./rondaSettings').default(routes);
 require('./kpi').default(routes);
 require('./operations').default(routes);
 require('./insurance').default(routes);
