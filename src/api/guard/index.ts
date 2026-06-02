@@ -27,6 +27,18 @@ export default (app) => {
     require('./guardMePatrols').default,
   );
 
+  // Start a patrol (stamps startAt + notifies tenant/client per settings)
+  app.post(
+    `/tenant/:tenantId/guard/me/patrol/start`,
+    require('./guardMePatrolStart').default,
+  );
+
+  // Register my FCM device token for push
+  app.post(
+    `/tenant/:tenantId/guard/me/device-token`,
+    require('./guardMeDeviceToken').default,
+  );
+
   // My performance score + breakdown
   app.get(
     `/tenant/:tenantId/guard/me/performance`,

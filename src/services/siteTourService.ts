@@ -110,6 +110,7 @@ export default class SiteTourService {
       }, { transaction });
 
       // If assignment exists, increment scansCompleted and mark completed when reaching total tags
+      let justCompleted = false;
       if (assignment) {
         // increment atomically
         await assignment.increment('scansCompleted', { by: 1, transaction });
@@ -120,12 +121,44 @@ export default class SiteTourService {
         // count total tags for the tour
         const totalTags = await this.options.database.siteTourTag.count({ where: { siteTourId: tag.siteTourId }, transaction });
 
-        if ((assignment as any).scansCompleted >= totalTags) {
+        if ((assignment as any).scansCompleted >= totalTags && (assignment as any).status !== 'completed') {
           await assignment.update({ status: 'completed', completedAt: new Date() }, { transaction });
+          justCompleted = true;
         }
       }
 
       await SequelizeRepository.commitTransaction(transaction);
+
+      // After commit: on completion, notify tenant/client per ronda settings (best-effort).
+      if (justCompleted) {
+        try {
+          const db = this.options.database;
+          const tenantId = this.options.currentTenant && this.options.currentTenant.id;
+          const tour = await db.siteTour.findByPk(tag.siteTourId);
+          if (tenantId && tour) {
+            const { notifyPatrol, resolveRondaSettings } = require('./rondaNotify');
+            const settings = await resolveRondaSettings(db, tenantId, tour.postSiteId);
+            let guardName: string | undefined;
+            try {
+              if (securityGuardId) {
+                const sg = await db.securityGuard.findByPk(securityGuardId);
+                guardName = sg ? sg.fullName : undefined;
+              }
+            } catch { /* ignore */ }
+            await notifyPatrol(db, {
+              tenantId,
+              postSiteId: tour.postSiteId,
+              event: 'complete',
+              routeName: tour.name,
+              guardName,
+              settings,
+            });
+          }
+        } catch (e: any) {
+          console.warn('[ronda] completion notify failed:', e?.message || e);
+        }
+      }
+
       return { tag, assignment, scan };
     } catch (err) {
       await SequelizeRepository.rollbackTransaction(transaction);
