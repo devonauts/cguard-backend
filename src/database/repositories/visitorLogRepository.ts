@@ -311,6 +311,33 @@ class VisitorLogRepository {
       assignedStationIds = (stationRows || []).map((row) => row && row.station_id).filter(Boolean);
     }
 
+    // Security guards are assigned to stations via the station<->user junction
+    // (`station.assignedGuards`), not via tenant_user_post_sites. Recognize those
+    // direct station assignments so guards can manage their station's visitor logs.
+    try {
+      const guardStations = await options.database.station.findAll({
+        where: { tenantId: currentTenant.id, deletedAt: null },
+        attributes: ['id', 'postSiteId'],
+        include: [{
+          model: options.database.user,
+          as: 'assignedGuards',
+          where: { id: currentUser.id },
+          attributes: [],
+          through: { attributes: [] },
+          required: true,
+        }],
+        transaction,
+      });
+      for (const st of (guardStations || [])) {
+        if (st && st.id) assignedStationIds.push(st.id);
+        if (st && st.postSiteId) assignedPostSiteIds.push(st.postSiteId);
+      }
+      assignedStationIds = Array.from(new Set(assignedStationIds));
+      assignedPostSiteIds = Array.from(new Set(assignedPostSiteIds));
+    } catch (e) {
+      // association may not exist in some schemas — ignore and fall through
+    }
+
     if (!assignedPostSiteIds.length && !assignedStationIds.length) {
       // If user has clientAccountId (customer), allow posts belonging to that client
       try {
