@@ -232,7 +232,9 @@ class Permissions {
       // === VISITOR LOGS / BITÁCORA DE VISITANTES ===
       visitorLogImport: createPermission('visitorLogImport', SUPERVISOR_ROLES),
       visitorLogCreate: createPermission('visitorLogCreate', GUARD_ROLES),
-      visitorLogEdit: createPermission('visitorLogEdit', SUPERVISOR_ROLES),
+      // Guards check visitors in/out at their post; the assigned-station ACL scopes
+      // edits to their own station's visitor logs.
+      visitorLogEdit: createPermission('visitorLogEdit', GUARD_ROLES),
       visitorLogDestroy: createPermission('visitorLogDestroy', SUPERVISOR_ROLES),
       visitorLogRead: createPermission('visitorLogRead', [...ALL_STAFF_ROLES, roles.customer]),
       visitorLogAutocomplete: createPermission('visitorLogAutocomplete', ALL_STAFF_ROLES),
