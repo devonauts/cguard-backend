@@ -54,8 +54,18 @@ export default (app) => {
         const p = startQ.split('-');
         if (p.length === 3) start = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 0, 0, 0));
       }
-      let end = endQ && endQ.length >= 10 ? new Date(Date.UTC(Number(endQ.split('-')[0]), Number(endQ.split('-')[1]) - 1, Number(endQ.split('-')[2]), 0, 0, 0)) : new Date(start.getTime());
-      if (end.getTime() === start.getTime()) end.setUTCDate(end.getUTCDate() + 1);
+      let end = endQ && endQ.length >= 10
+        ? new Date(Date.UTC(
+            Number(endQ.split('-')[0]),
+            Number(endQ.split('-')[1]) - 1,
+            Number(endQ.split('-')[2]),
+            0,
+            0,
+            0,
+          ))
+        : new Date(start.getTime());
+      // Interpret `end` as inclusive date in API queries
+      end.setUTCDate(end.getUTCDate() + 1);
 
       const { fn, col, Op } = require('sequelize');
       const where = { createdAt: { [Op.gte]: start, [Op.lt]: end }, ...(tenantId ? { tenantId } : {}) };
@@ -212,11 +222,22 @@ export default (app) => {
         }
       });
 
+      const normalize = (s: string) => {
+        if (!s) return 'Otros';
+        const v = s.toLowerCase();
+        if (v === 'pdf') return 'PDF';
+        if (v === 'xlsx' || v === 'excel') return 'Excel';
+        if (v === 'csv') return 'CSV';
+        return 'Otros';
+      };
+
       const counts: any = {};
       for (const j of filtered) {
-        const fmtRaw = (j.type || (j.params && j.params.format) || '').toString();
-        const fmt = fmtRaw ? fmtRaw.toLowerCase() : 'other';
-        counts[fmt] = (counts[fmt] || 0) + 1;
+        const p = (j && j.params) || {};
+        // Prefer explicit params.format; fallback to job.type
+        const raw = String(p.format || j.type || '').trim();
+        const key = normalize(raw);
+        counts[key] = (counts[key] || 0) + 1;
       }
       const total = Object.values(counts).reduce((s: number, v: any) => s + Number(v), 0);
       if (total === 0) {
@@ -230,16 +251,7 @@ export default (app) => {
         return ApiResponseHandler.success(req, res, out);
       }
 
-      const normalize = (s: string) => {
-        if (!s) return 'Otros';
-        const v = s.toLowerCase();
-        if (v === 'pdf') return 'PDF';
-        if (v === 'xlsx' || v === 'excel') return 'Excel';
-        if (v === 'csv') return 'CSV';
-        return s;
-      };
-
-      const out = Object.keys(counts).map((k) => ({ format: normalize(k), pct: total ? Number(counts[k]) / total : 0 }));
+      const out = Object.keys(counts).map((k) => ({ format: k, pct: total ? Number(counts[k]) / total : 0 }));
       return ApiResponseHandler.success(req, res, out);
     } catch (err) {
       return ApiResponseHandler.error(req, res, err);
