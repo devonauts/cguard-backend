@@ -265,7 +265,14 @@ export default class Storage {
         publicRead: false,
       },
 
-
+      // Geo-stamped clock-in/out selfie taken by the guard at their post.
+      guardShiftSelfie: {
+        id: 'guardShiftSelfie',
+        folder: 'tenant/:tenantId/guardShift/selfie',
+        maxSizeInBytes: 10 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
 
 
 

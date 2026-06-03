@@ -21,6 +21,24 @@ export default function (sequelize) {
         type: DataTypes.DOUBLE,
         allowNull: true,
       },
+      // Geo-stamped clock-in selfie + the resolved address, battery, and the
+      // start-shift checklist captured by the guard at their post.
+      punchInPhoto: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      punchInAddress: {
+        type: DataTypes.STRING(512),
+        allowNull: true,
+      },
+      punchInBattery: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      punchInChecklist: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
       shiftSchedule: {
         type: DataTypes.TEXT,
         allowNull: false,
