@@ -43,8 +43,8 @@ export default async (req, res) => {
       FROM shifts s
       -- stationId on shifts references stations
       LEFT JOIN stations biStation ON biStation.id = s.stationId
-      LEFT JOIN businessInfos biPost ON biPost.id = s.postSiteId
-      LEFT JOIN clientAccounts ca ON ca.id = COALESCE(biPost.clientAccountId, biStation.clientAccountId)
+      LEFT JOIN businessInfos biPost ON biPost.id = COALESCE(s.postSiteId, biStation.postSiteId)
+      LEFT JOIN clientAccounts ca ON ca.id = biPost.clientAccountId
       LEFT JOIN users u ON u.id = s.guardId
       LEFT JOIN securityGuards sg ON sg.guardId = s.guardId AND sg.tenantId = :tenantId
       WHERE (
@@ -90,7 +90,8 @@ export default async (req, res) => {
       FROM guardShifts gs
       -- stationNameId references the stations table
       LEFT JOIN stations bi ON bi.id = gs.stationNameId
-      LEFT JOIN clientAccounts ca ON ca.id = bi.clientAccountId
+      LEFT JOIN businessInfos biPost ON biPost.id = bi.postSiteId
+      LEFT JOIN clientAccounts ca ON ca.id = biPost.clientAccountId
       LEFT JOIN securityGuards sg ON sg.id = gs.guardNameId
       LEFT JOIN users gu ON gu.id = sg.guardId
       WHERE (
