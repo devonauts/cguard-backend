@@ -274,6 +274,15 @@ export default class Storage {
         publicRead: false,
       },
 
+      // Evidence (photo / video / audio voice-note) for a completed consigna.
+      guardConsignaMedia: {
+        id: 'guardConsignaMedia',
+        folder: 'tenant/:tenantId/consigna/media',
+        maxSizeInBytes: 60 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
+
 
 
 

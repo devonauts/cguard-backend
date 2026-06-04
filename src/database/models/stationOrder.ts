@@ -69,6 +69,23 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: true,
       },
+      // Push-notification settings (per consigna, configured at station level).
+      notifyEnabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      // Minutes before `time` to alert the guard (0 = exactly at the time).
+      notifyMinutesBefore: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      // Last occurrence the scheduler pushed for (dedupe so it fires once/occurrence).
+      lastNotifiedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       timestamps: true,

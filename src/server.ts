@@ -13,7 +13,7 @@ if (process.env.MAIL_DEFAULT_SENDER_NAME && !process.env.SENDGRID_EMAIL_FROM_NAM
 import api from './api'
 import { databaseInit } from './database/databaseConnection';
 import TenantInvitationRepository from './database/repositories/tenantInvitationRepository';
-import { ensurePlatformEventsTable, cleanupOldPlatformEvents } from './lib/platformEventStore';
+import { ensurePlatformEventsTable, cleanupOldPlatformEvents, storePlatformEvent } from './lib/platformEventStore';
 import { syncGuardDutyStatus } from './services/dutySync';
 import { verifySchemaConsistency } from './database/migrations/verify-schema';
 import { setInterval as nodeSetInterval } from 'timers';
@@ -128,4 +128,68 @@ nodeSetInterval(() => {
 
 // Run once on startup after a short delay
 setTimeout(() => syncGuardDutyStatus(), 10000);
+
+/**
+ * Consigna scheduler — every minute, find active station consignas whose
+ * notify-moment (time − notifyMinutesBefore) has just arrived for today and that
+ * haven't been pushed yet for this occurrence, then push to the station's guards
+ * and record a platform event. `lastNotifiedAt` dedupes per occurrence.
+ */
+async function runConsignaScheduler() {
+  try {
+    const database = await databaseInit();
+    const { isDueOn, dueAt } = require('./services/consignaRecurrence');
+    const { sendToTokens } = require('./services/pushService');
+    const { Op } = require('sequelize');
+    const now = new Date();
+
+    const orders = await database.stationOrder.findAll({
+      where: { active: true, notifyEnabled: true, deletedAt: null },
+    });
+    for (const o of orders) {
+      const order = o.get({ plain: true });
+      if (!isDueOn(order, now)) continue;
+      const due = dueAt(order, now);
+      const notifyMoment = new Date(due.getTime() - (Number(order.notifyMinutesBefore) || 0) * 60000);
+      // fire only inside a 15-min window after the notify moment
+      if (now < notifyMoment || now.getTime() - notifyMoment.getTime() > 15 * 60000) continue;
+      // already pushed for this occurrence?
+      if (order.lastNotifiedAt && new Date(order.lastNotifiedAt) >= notifyMoment) continue;
+
+      // resolve the station's assigned guards → their device tokens
+      const station = await database.station.findOne({
+        where: { id: order.stationId },
+        attributes: ['id', 'stationName'],
+        include: [{ model: database.user, as: 'assignedGuards', attributes: ['id'], through: { attributes: [] } }],
+      });
+      const userIds = (station?.assignedGuards || []).map((u: any) => u.id);
+      let tokens: string[] = [];
+      if (userIds.length) {
+        const devices = await database.deviceIdInformation.findAll({ where: { tenantId: order.tenantId, createdById: { [Op.in]: userIds } } });
+        tokens = devices.map((d: any) => d.deviceId).filter(Boolean);
+      }
+      const title = `Consigna: ${order.title}`;
+      const body = order.time ? `Programada para las ${order.time}${station?.stationName ? ' · ' + station.stationName : ''}` : (station?.stationName || '');
+      if (tokens.length) {
+        await sendToTokens(tokens, { title, body, data: { type: 'consigna.due', orderId: order.id, stationId: order.stationId } });
+      }
+      try {
+        await storePlatformEvent(database, {
+          tenantId: order.tenantId, eventType: 'consigna.due', title, body,
+          payload: { orderId: order.id, stationId: order.stationId, time: order.time },
+          targetRoles: 'securityGuard,securitySupervisor,admin',
+          sourceEntityType: 'stationOrder', sourceEntityId: order.id,
+        });
+      } catch { /* ignore */ }
+      await o.update({ lastNotifiedAt: now });
+      console.log(`[Consigna] notified "${order.title}" -> ${tokens.length} device(s)`);
+    }
+  } catch (err) {
+    console.error('[Consigna] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+// Check due consignas every minute
+nodeSetInterval(() => { runConsignaScheduler(); }, 60 * 1000);
+setTimeout(() => runConsignaScheduler(), 20000);
 

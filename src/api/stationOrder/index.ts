@@ -2,7 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 
-const FIELDS = ['title', 'description', 'time', 'recurrence', 'days', 'dayOfMonth', 'date', 'priority', 'active'];
+const FIELDS = ['title', 'description', 'time', 'recurrence', 'days', 'dayOfMonth', 'date', 'priority', 'active', 'notifyEnabled', 'notifyMinutesBefore'];
 const pick = (src: any = {}) =>
   FIELDS.reduce((acc: any, k) => {
     if (typeof src[k] !== 'undefined') acc[k] = src[k];
@@ -64,6 +64,31 @@ export default (app) => {
       const data = (req.body && req.body.data) || req.body || {};
       await record.update({ ...pick(data), updatedById: req.currentUser.id });
       await ApiResponseHandler.success(req, res, record.get({ plain: true }));
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // Activity log: completions of this station's consignas (with evidence).
+  app.get('/tenant/:tenantId/station/:stationId/order-completions', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.stationRead);
+      const db = req.database;
+      const rows = await db.stationOrderCompletion.findAll({
+        where: { tenantId: req.currentTenant.id, stationId: req.params.stationId },
+        include: [{ model: db.stationOrder, as: 'order', attributes: ['id', 'title', 'time', 'priority'] }],
+        order: [['completedAt', 'DESC']],
+        limit: Number(req.query.limit) || 100,
+      });
+      await ApiResponseHandler.success(req, res, {
+        rows: rows.map((r: any) => {
+          const p = r.get({ plain: true });
+          let photos = p.photos;
+          if (typeof photos === 'string') { try { photos = JSON.parse(photos); } catch { photos = []; } }
+          return { ...p, photos: photos || [] };
+        }),
+        count: rows.length,
+      });
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }
