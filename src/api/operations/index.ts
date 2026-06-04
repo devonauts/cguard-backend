@@ -128,21 +128,38 @@ export default (app) => {
       const { Op } = require('sequelize');
       const whereTenant = tenantId ? { tenantId } : {};
 
-      const stations = await req.database.station.findAll({ where: whereTenant, attributes: ['id', 'name', 'latitude', 'longitude'], limit: 500 });
-      const guards = await req.database.securityGuard.findAll({ where: whereTenant, attributes: ['id', 'firstName', 'lastName', 'lastLatitude', 'lastLongitude'], limit: 500 });
-      const incidents = await req.database.incident.findAll({ where: { ...(tenantId ? { tenantId } : {}), createdAt: { [Op.gte]: new Date(Date.now() - 24 * 3600 * 1000) } }, attributes: ['id', 'title', 'latitude', 'longitude', 'createdAt'], limit: 200 });
+      // Use the actual model attribute names in this codebase
+      const stations = await req.database.station.findAll({ where: whereTenant, attributes: ['id', 'stationName', 'latitud', 'longitud'], limit: 500 });
+      // Security guard model doesn't store latitude/longitude fields directly here; fetch id/full name
+      const guards = await req.database.securityGuard.findAll({ where: whereTenant, attributes: ['id', 'fullName'], limit: 500 });
+      // Attempt to get latest known position per guard from tagScan.scannedData if available
+      const recentScans = await req.database.tagScan.findAll({ where: { ...(tenantId ? { tenantId } : {}), securityGuardId: { [Op.ne]: null }, scannedAt: { [Op.gte]: new Date(Date.now() - 7 * 24 * 3600 * 1000) } }, order: [['scannedAt', 'DESC']], limit: 1000 });
+      const guardPositions: any = {};
+      recentScans.forEach((s: any) => {
+        const gid = s.securityGuardId;
+        if (!gid) return;
+        if (guardPositions[gid]) return; // keep the most recent
+        const sd = s.scannedData || {};
+        const lat = sd.latitude ?? sd.lat ?? null;
+        const lng = sd.longitude ?? sd.lng ?? sd.long ?? null;
+        if (lat != null && lng != null) guardPositions[gid] = { latitude: lat, longitude: lng, time: s.scannedAt };
+      });
+      // Incidents in this schema may not have latitude/longitude fields; fetch available attributes
+      const incidents = await req.database.incident.findAll({ where: { ...(tenantId ? { tenantId } : {}), createdAt: { [Op.gte]: new Date(Date.now() - 24 * 3600 * 1000) } }, attributes: ['id', 'title', 'createdAt'], limit: 200 });
 
       const out: any[] = [];
       stations.forEach((s: any) => {
-        if (s.latitude != null && s.longitude != null) out.push({ id: `station-${s.id}`, type: 'station', title: s.name || 'Estación', latitude: s.latitude, longitude: s.longitude });
+        const lat = s.latitud ?? null;
+        const lng = s.longitud ?? null;
+        if (lat != null && lng != null) out.push({ id: `station-${s.id}`, type: 'station', title: s.stationName || 'Estación', latitude: lat, longitude: lng });
       });
+      // Guards: use latest tagScan position where available
       guards.forEach((g: any) => {
-        const lat = g.lastLatitude ?? g.latitude ?? null;
-        const lng = g.lastLongitude ?? g.longitude ?? null;
-        if (lat != null && lng != null) out.push({ id: `guard-${g.id}`, type: 'guard', title: `${g.firstName ?? ''} ${g.lastName ?? ''}`.trim(), latitude: lat, longitude: lng });
+        const pos = guardPositions[g.id];
+        if (pos) out.push({ id: `guard-${g.id}`, type: 'guard', title: g.fullName || 'Guardia', latitude: pos.latitude, longitude: pos.longitude, time: pos.time });
       });
       incidents.forEach((i: any) => {
-        if (i.latitude != null && i.longitude != null) out.push({ id: `incident-${i.id}`, type: 'incident', title: i.title || 'Incidente', latitude: i.latitude, longitude: i.longitude, createdAt: i.createdAt });
+        // incidents table in this schema doesn't include lat/long columns; skip coordinate mapping
       });
 
       return ApiResponseHandler.success(req, res, out);
