@@ -178,6 +178,7 @@ require('./patrolLog').default(routes);
 require('./patrol').default(routes);
 require('./visitorLog').default(routes);
 require('./station').default(routes);
+require('./stationOrder').default(routes);
 require('./billing').default(routes);
 require('./tax').default(routes);
 require('./invoice').default(routes);
