@@ -85,7 +85,14 @@ export default (app) => {
           const p = r.get({ plain: true });
           let photos = p.photos;
           if (typeof photos === 'string') { try { photos = JSON.parse(photos); } catch { photos = []; } }
-          return { ...p, photos: photos || [] };
+          const { encryptPrivateUrl } = require('../../utils/privateUrlEncryption');
+          const dl = (pu: any) => pu ? `/file/download?fileToken=${encodeURIComponent(encryptPrivateUrl(String(pu)))}` : null;
+          return {
+            ...p,
+            photos: (photos || []).map((ph: any) => ({ ...ph, downloadUrl: dl(ph.privateUrl || ph) })),
+            videoDownloadUrl: dl(p.videoUrl),
+            audioDownloadUrl: dl(p.audioUrl),
+          };
         }),
         count: rows.length,
       });
