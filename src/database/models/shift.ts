@@ -75,7 +75,14 @@ export default function (sequelize) {
             deletedAt: null,
           },
         },
-
+        {
+          // One shift per (guard, station, start, end) — blocks duplicate
+          // generation. Generation hard-deletes (force) before recreating, so
+          // soft-deleted rows never linger to block a re-create.
+          unique: true,
+          name: 'uniq_shift_slot',
+          fields: ['tenantId', 'guardId', 'stationId', 'startTime', 'endTime'],
+        },
       ],
       timestamps: true,
       paranoid: true,

@@ -111,7 +111,7 @@ export async function generateShiftsForAssignment(
     );
     if (shifts.length > 0) {
       shifts.forEach(s => { s.postSiteId = postSiteId; });
-      await database.shift.bulkCreate(shifts);
+      await database.shift.bulkCreate(shifts, { ignoreDuplicates: true });
       console.log(`[shiftGen] Created ${shifts.length} SACAFRANCO shifts for assignment ${assignment.id}`);
     }
     return;
@@ -168,7 +168,7 @@ export async function generateShiftsForAssignment(
   }
 
   if (shifts.length > 0) {
-    await database.shift.bulkCreate(shifts);
+    await database.shift.bulkCreate(shifts, { ignoreDuplicates: true });
     console.log(`[shiftGen] Created ${shifts.length} FIJO shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
   }
 }
