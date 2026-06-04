@@ -27,6 +27,17 @@ export default (app) => {
     require('./guardMePatrols').default,
   );
 
+  // Today's due consignas for my station(s) + their completion status
+  app.get(
+    `/tenant/:tenantId/guard/me/orders`,
+    require('./guardMeOrders').default,
+  );
+  // Complete today's occurrence of a consigna (note + photo/video/audio)
+  app.post(
+    `/tenant/:tenantId/guard/me/orders/:id/complete`,
+    require('./guardMeOrderComplete').default,
+  );
+
   // Start a patrol (stamps startAt + notifies tenant/client per settings)
   app.post(
     `/tenant/:tenantId/guard/me/patrol/start`,

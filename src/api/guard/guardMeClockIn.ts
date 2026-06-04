@@ -31,7 +31,8 @@ export default async (req: any, res: any) => {
     const userId = currentUser.id;
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
 
-    const { stationId, latitude, longitude, shiftSchedule, observations } = req.body.data || req.body;
+    const { stationId, latitude, longitude, shiftSchedule, observations,
+      selfiePhoto, address, battery, checklist } = req.body.data || req.body;
 
     if (!stationId) throw new Error400(req.language, 'guard.stationRequired');
     if (latitude == null || longitude == null) throw new Error400(req.language, 'guard.locationRequired');
@@ -106,6 +107,12 @@ export default async (req: any, res: any) => {
       numberOfPatrolsDuringShift: 0,
       numberOfIncidentsDurindShift: 0,
       observations: observations || 'Entrada registrada',
+      punchInPhoto: selfiePhoto || null,
+      punchInAddress: address ? String(address).slice(0, 512) : null,
+      punchInBattery: battery != null && !isNaN(Number(battery)) ? Math.round(Number(battery)) : null,
+      punchInChecklist: checklist
+        ? (typeof checklist === 'string' ? checklist : JSON.stringify(checklist))
+        : null,
       stationNameId: stationId,
       guardNameId: securityGuard.id,
       postSiteId: station.postSiteId || null,

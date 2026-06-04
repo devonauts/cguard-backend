@@ -96,46 +96,39 @@ export default class DashboardService {
   }
 
   async getClientPortfolioStats() {
-    const database = this.options.database;
-    const tenant = SequelizeRepository.getCurrentTenant(this.options);
-
-    // Get client accounts with their services
-    const clientsWithServices = await database.clientAccount.findAll({
-      where: {
-        tenantId: tenant.id
-      },
-      include: [{
-        model: database.service,
-        as: 'purchasedServices',
-        attributes: ['id', 'title']
-      }]
-    });
-
-    // Categorize clients by service type
-    const categories = {
-      residential: 0,
-      commercial: 0,
-      industrial: 0,
-      government: 0
-    };
-
-    clientsWithServices.forEach(client => {
-      const services = client.purchasedServices || [];
-      if (services.some(s => s.title?.toLowerCase().includes('residential'))) {
-        categories.residential++;
-      } else if (services.some(s => s.title?.toLowerCase().includes('commercial'))) {
-        categories.commercial++;
-      } else if (services.some(s => s.title?.toLowerCase().includes('industrial'))) {
-        categories.industrial++;
-      } else {
-        categories.government++;
-      }
-    });
-
-    return Object.entries(categories).map(([type, count]) => ({
-      type: type.charAt(0).toUpperCase() + type.slice(1),
-      count
-    }));
+    // NOTE: clientAccount has no `service`/`purchasedServices` association, so the
+    // previous eager-load threw SequelizeEagerLoadingError and 500'd the whole
+    // dashboard. Categorize from businessInfo.serviceType linked to each client.
+    try {
+      const database = this.options.database;
+      const tenant = SequelizeRepository.getCurrentTenant(this.options);
+      const categories: Record<string, number> = {
+        residential: 0, commercial: 0, industrial: 0, government: 0,
+      };
+      const posts = await database.businessInfo.findAll({
+        where: { tenantId: tenant.id },
+        attributes: ['clientAccountId', 'serviceType'],
+      });
+      const seen = new Set<string>();
+      posts.forEach((p: any) => {
+        const cid = p.clientAccountId;
+        if (!cid || seen.has(cid)) return;
+        seen.add(cid);
+        const ty = String(p.serviceType || '').toLowerCase();
+        if (ty.includes('resid')) categories.residential++;
+        else if (ty.includes('indust')) categories.industrial++;
+        else if (ty.includes('gov') || ty.includes('public')) categories.government++;
+        else categories.commercial++;
+      });
+      return Object.entries(categories).map(([type, count]) => ({
+        type: type.charAt(0).toUpperCase() + type.slice(1), count,
+      }));
+    } catch {
+      return [
+        { type: 'Residential', count: 0 }, { type: 'Commercial', count: 0 },
+        { type: 'Industrial', count: 0 }, { type: 'Government', count: 0 },
+      ];
+    }
   }
 
   async getServiceRevenueStats() {
@@ -302,14 +295,15 @@ export default class DashboardService {
       securityPerformance,
       customerSatisfaction
     ] = await Promise.all([
-      this.getClientAcquisitionStats(),
-      this.getIncidentTypeStats(),
-      this.getRevenueStats(),
-      this.getClientPortfolioStats(),
-      this.getServiceRevenueStats(),
-      this.getGuardPerformanceStats(),
-      this.getSecurityPerformanceStats(),
-      this.getCustomerSatisfactionStats()
+      // each sub-stat is isolated: a single failure returns [] instead of 500'ing the panel
+      this.getClientAcquisitionStats().catch(() => []),
+      this.getIncidentTypeStats().catch(() => []),
+      this.getRevenueStats().catch(() => []),
+      this.getClientPortfolioStats().catch(() => []),
+      this.getServiceRevenueStats().catch(() => []),
+      this.getGuardPerformanceStats().catch(() => ({})),
+      this.getSecurityPerformanceStats().catch(() => []),
+      this.getCustomerSatisfactionStats().catch(() => [])
     ]);
 
     return {

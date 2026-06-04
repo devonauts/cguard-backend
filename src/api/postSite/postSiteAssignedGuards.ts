@@ -26,7 +26,7 @@ export default async (req, res) => {
         s.endTime,
         s.stationId as stationId,
         s.postSiteId as postSiteId,
-        biStation.companyName as stationName,
+        biStation.stationName as stationName,
         biPost.companyName as postSiteName,
         ca.name as clientName,
         s.guardId as guardId,
@@ -43,8 +43,8 @@ export default async (req, res) => {
       FROM shifts s
       -- stationId on shifts references stations
       LEFT JOIN stations biStation ON biStation.id = s.stationId
-      LEFT JOIN businessInfos biPost ON biPost.id = s.postSiteId
-      LEFT JOIN clientAccounts ca ON ca.id = COALESCE(biPost.clientAccountId, biStation.clientAccountId)
+      LEFT JOIN businessInfos biPost ON biPost.id = COALESCE(s.postSiteId, biStation.postSiteId)
+      LEFT JOIN clientAccounts ca ON ca.id = biPost.clientAccountId
       LEFT JOIN users u ON u.id = s.guardId
       LEFT JOIN securityGuards sg ON sg.guardId = s.guardId AND sg.tenantId = :tenantId
       WHERE (
@@ -74,7 +74,7 @@ export default async (req, res) => {
         gs.punchOutTime,
         gs.shiftSchedule,
         gs.stationNameId as businessInfoId,
-        bi.companyName as postSiteName,
+        bi.stationName as postSiteName,
         ca.name as clientName,
         gs.guardNameId as securityGuardRecordId,
         sg.guardId as guardId,
@@ -90,7 +90,8 @@ export default async (req, res) => {
       FROM guardShifts gs
       -- stationNameId references the stations table
       LEFT JOIN stations bi ON bi.id = gs.stationNameId
-      LEFT JOIN clientAccounts ca ON ca.id = bi.clientAccountId
+      LEFT JOIN businessInfos biPost ON biPost.id = bi.postSiteId
+      LEFT JOIN clientAccounts ca ON ca.id = biPost.clientAccountId
       LEFT JOIN securityGuards sg ON sg.id = gs.guardNameId
       LEFT JOIN users gu ON gu.id = sg.guardId
       WHERE (
@@ -150,6 +151,10 @@ export default async (req, res) => {
             tenantUserId: tenantUserId || null,
             guardIdCanonical: guardIdCanonical || null,
             fullName,
+            firstName: r.firstName || null,
+            lastName: r.lastName || null,
+            email: r.email || null,
+            phoneNumber: r.phoneNumber || null,
             stationId: stationId ? String(stationId) : null,
             stationIdCanonical: stationIdCanonical || null,
             stationName: stationName || null,
