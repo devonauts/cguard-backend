@@ -2,6 +2,27 @@ import ApiResponseHandler from '../apiResponseHandler';
 import KpiService from '../../services/kpiService';
 
 export default (app) => {
+    // List of upcoming services
+    app.get('/operations/upcoming-services', async (req, res) => {
+      try {
+        const tenantId = req.currentTenant ? req.currentTenant.id : null;
+        const { Op } = require('sequelize');
+        const now = new Date();
+        const where = tenantId ? { tenantId, startDate: { [Op.gte]: now } } : { startDate: { [Op.gte]: now } };
+        const services = await req.database.station.findAll({ where, order: [['startDate', 'ASC']], limit: 20 });
+        // Map fields to include title, type, startTime/date
+        const out = services.map((s: any) => ({
+          id: s.id,
+          title: s.stationName || s.name || 'Servicio próximo',
+          type: s.type || '',
+          startTime: s.startDate || s.date || null,
+          location: s.location || s.address || null,
+        }));
+        return ApiResponseHandler.success(req, res, out);
+      } catch (err) {
+        return ApiResponseHandler.error(req, res, err);
+      }
+    });
   // Returns a short list of KPIs for the frontend operations dashboard.
   app.get('/operations/kpis', async (req, res, next) => {
     try {
@@ -25,11 +46,20 @@ export default (app) => {
 
       const db = req.database;
 
+
       // Stations count (Servicios activos)
       let stationsCount = 0;
       try {
         stationsCount = await db.station.count({ where: tenantId ? { tenantId } : undefined });
       } catch (_) { stationsCount = 0; }
+
+      // Upcoming services count
+      let upcomingServicesCount = 0;
+      try {
+        const now = new Date();
+        const futureWhere = tenantId ? { tenantId, startDate: { [require('sequelize').Op.gte]: now } } : { startDate: { [require('sequelize').Op.gte]: now } };
+        upcomingServicesCount = await db.station.count({ where: futureWhere });
+      } catch (_) { upcomingServicesCount = 0; }
 
       // Guards on duty
       let guardsOnDuty = 0;
@@ -59,8 +89,10 @@ export default (app) => {
         scansToday = await db.tagScan.count({ where: whereOp });
       } catch (_) { scansToday = 0; }
 
+
       const out = [
         { id: 'stations', title: 'Servicios activos', value: String(stationsCount), trend: null },
+        { id: 'upcoming_services', title: 'Próximos servicios', value: String(upcomingServicesCount), trend: null },
         { id: 'guards', title: 'Guardias en servicio', value: String(guardsOnDuty), trend: null },
         { id: 'incidents', title: 'Incidentes hoy', value: String(incidentsToday), trend: null },
         { id: 'rondas', title: 'Rondas completadas', value: String(scansToday), trend: null },
