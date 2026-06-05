@@ -31,7 +31,8 @@ export default async (req: any, res: any) => {
     if (!assigned) throw new Error400(req.language, 'guard.notAssignedToStation');
 
     const securityGuard = await db.securityGuard.findOne({ where: { guardId: userId, tenantId, deletedAt: null } });
-    const occ = data.occurrenceDate || ymd(new Date());
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    const occ = data.occurrenceDate || ymd(new Date(), tenant?.timezone || 'UTC');
 
     const payload = {
       note: data.note || null,

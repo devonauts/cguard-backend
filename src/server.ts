@@ -146,10 +146,17 @@ async function runConsignaScheduler() {
     const orders = await database.stationOrder.findAll({
       where: { active: true, notifyEnabled: true, deletedAt: null },
     });
+    const tzCache: Record<string, string> = {};
+    const tzFor = async (tenantId: string) => {
+      if (tzCache[tenantId]) return tzCache[tenantId];
+      const tn = await database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+      return (tzCache[tenantId] = tn?.timezone || 'UTC');
+    };
     for (const o of orders) {
       const order = o.get({ plain: true });
-      if (!isDueOn(order, now)) continue;
-      const due = dueAt(order, now);
+      const tz = await tzFor(order.tenantId);
+      if (!isDueOn(order, now, tz)) continue;
+      const due = dueAt(order, now, tz);
       const notifyMoment = new Date(due.getTime() - (Number(order.notifyMinutesBefore) || 0) * 60000);
       // fire only inside a 15-min window after the notify moment
       if (now < notifyMoment || now.getTime() - notifyMoment.getTime() > 15 * 60000) continue;
