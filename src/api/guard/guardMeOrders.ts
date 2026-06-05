@@ -31,15 +31,18 @@ export default async (req: any, res: any) => {
     stations.forEach((s: any) => { stationName[s.id] = s.stationName; });
     if (!stationIds.length) return ApiResponseHandler.success(req, res, { rows: [], count: 0 });
 
+    // consigna times are interpreted in the tenant's timezone
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    const tz = tenant?.timezone || 'UTC';
     const today = new Date();
-    const occ = ymd(today);
+    const occ = ymd(today, tz);
 
     const orders = await db.stationOrder.findAll({
       where: { tenantId, stationId: stationIds, active: true, deletedAt: null },
       order: [['time', 'ASC']],
     });
 
-    const due = orders.map((o: any) => o.get({ plain: true })).filter((o: any) => isDueOn(o, today));
+    const due = orders.map((o: any) => o.get({ plain: true })).filter((o: any) => isDueOn(o, today, tz));
 
     // completions for today
     const completions = await db.stationOrderCompletion.findAll({
@@ -57,7 +60,7 @@ export default async (req: any, res: any) => {
       recurrence: o.recurrence,
       stationId: o.stationId,
       stationName: stationName[o.stationId] || null,
-      dueAt: dueAt(o, today).toISOString(),
+      dueAt: dueAt(o, today, tz).toISOString(),
       occurrenceDate: occ,
       done: !!doneByOrder[o.id],
       completion: doneByOrder[o.id] || null,
