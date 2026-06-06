@@ -4,6 +4,7 @@ import Permissions from '../../security/permissions';
 import Error400 from '../../errors/Error400';
 import { getConfig } from '../../config';
 import { tenantSubdomain } from '../../services/tenantSubdomain';
+import { getStripeClient } from '../../services/stripe/stripeConfigService';
 import {
   getAccount,
   provisionSubaccount,
@@ -93,10 +94,6 @@ export default (app) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.settingsEdit);
 
-      if (!getConfig().PLAN_STRIPE_SECRET_KEY) {
-        throw new Error400(req.language, 'Stripe no está configurado en la plataforma.');
-      }
-
       const currentTenant = req.currentTenant;
       const currentUser = req.currentUser;
       const data = (req.body && req.body.data) || req.body || {};
@@ -107,7 +104,10 @@ export default (app) => {
         throw new Error400(req.language, 'Monto inválido. Debe estar entre $5 y $1000.');
       }
 
-      const stripe = require('stripe')(getConfig().PLAN_STRIPE_SECRET_KEY);
+      const stripe = await getStripeClient(req.database);
+      if (!stripe) {
+        throw new Error400(req.language, 'Stripe no está configurado en la plataforma.');
+      }
       const returnUrl = `${tenantSubdomain.frontendUrl(currentTenant)}/setting/sms`;
 
       const session = await stripe.checkout.sessions.create({

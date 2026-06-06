@@ -6,6 +6,7 @@ import { getConfig } from '../../config';
 import { tenantSubdomain } from '../../services/tenantSubdomain';
 import TenantService from '../../services/tenantService';
 import { getSummary, countBillableSeats } from '../../services/subscriptionService';
+import { getStripeClient } from '../../services/stripe/stripeConfigService';
 import {
   grossPerUserCents,
   platformFeeCents,
@@ -33,13 +34,13 @@ export default (app) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.settingsEdit);
 
-      if (!getConfig().PLAN_STRIPE_SECRET_KEY) {
-        throw new Error400(req.language, 'Stripe no está configurado en la plataforma.');
-      }
-
       const currentTenant = req.currentTenant;
       const currentUser = req.currentUser;
-      const stripe = require('stripe')(getConfig().PLAN_STRIPE_SECRET_KEY);
+      // Stripe keys come from the superadmin panel config (db) with env fallback.
+      const stripe = await getStripeClient(req.database);
+      if (!stripe) {
+        throw new Error400(req.language, 'Stripe no está configurado en la plataforma.');
+      }
 
       // Reuse or create the tenant's Stripe customer.
       let customerId = currentTenant.planStripeCustomerId;

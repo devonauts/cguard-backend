@@ -121,8 +121,8 @@ export async function billingTenants(req: Request): Promise<any> {
   if (billingStatus) where.billingStatus = billingStatus;
   if (search) {
     where[Op.or] = [
-      { name: { [Op.iLike]: `%${search}%` } },
-      { email: { [Op.iLike]: `%${search}%` } },
+      { name: { [Op.like]: `%${search}%` } },
+      { email: { [Op.like]: `%${search}%` } },
     ];
   }
 
@@ -225,7 +225,7 @@ export async function billingInvoices(req: Request): Promise<any> {
   if (tenantId) where.tenantId = tenantId;
   if (search) {
     where[Op.or] = [
-      { invoiceNumber: { [Op.iLike]: `%${search}%` } },
+      { invoiceNumber: { [Op.like]: `%${search}%` } },
     ];
   }
 

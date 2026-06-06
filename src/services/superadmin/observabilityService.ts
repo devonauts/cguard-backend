@@ -95,9 +95,11 @@ export async function dashboard(req: Request): Promise<any> {
     database.tenant.count({ where: { createdAt: { [Op.gte]: monthAgo } } }),
   ]);
 
-  // ── User counts. One billable seat = one tenantUser row; "staff" is the
-  // same headcount, guards are the securityGuard rows. ────────────────────
-  const [userTotal, guards] = await Promise.all([
+  // ── User counts. `total` = every platform account (incl. tenant-less &
+  // superadmins); `staff` = tenant memberships (one billable seat each);
+  // guards = securityGuard rows. ──────────────────────────────────────────
+  const [userTotal, staff, guards] = await Promise.all([
+    database.user.count(),
     database.tenantUser.count(),
     database.securityGuard.count(),
   ]);
@@ -154,7 +156,7 @@ export async function dashboard(req: Request): Promise<any> {
     users: {
       total: userTotal,
       guards,
-      staff: userTotal,
+      staff,
     },
     billing: {
       mrrCents,

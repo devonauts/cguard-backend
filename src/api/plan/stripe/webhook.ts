@@ -4,19 +4,20 @@ import Plans from '../../../security/plans';
 import ApiResponseHandler from '../../apiResponseHandler';
 import lodash from 'lodash';
 import { credit as creditSmsWallet } from '../../../services/smsAccountService';
+import { resolveStripe } from '../../../services/stripe/stripeConfigService';
 
 export default async (req, res) => {
   try {
     /** @openapi { "summary": "Stripe webhook receiver", "description": "Receives raw Stripe webhook payloads. Expects raw body and `stripe-signature` header.", "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }, "responses": { "200": { "description": "Received" }, "400": { "description": "Error" } } } */
 
-    const stripe = require('stripe')(
-      getConfig().PLAN_STRIPE_SECRET_KEY,
-    );
+    // Keys from the superadmin panel config (db) with env fallback.
+    const { secretKey, webhookSecret } = await resolveStripe(req.database);
+    const stripe = require('stripe')(secretKey);
 
     const event = stripe.webhooks.constructEvent(
       req.rawBody,
       req.headers['stripe-signature'],
-      getConfig().PLAN_STRIPE_WEBHOOK_SIGNING_SECRET,
+      webhookSecret,
     );
 
     // SMS wallet top-up — one-time payment, identified by session metadata.

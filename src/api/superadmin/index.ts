@@ -23,6 +23,7 @@ export default (app) => {
   require('./billing').default(router);
   require('./users').default(router);
   require('./observability').default(router);
+  require('./settings').default(router);
 
   app.use('/superadmin', router);
 };

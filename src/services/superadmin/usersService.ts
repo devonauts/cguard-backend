@@ -49,6 +49,34 @@ interface GuardRow {
   createdAt: any;
 }
 
+interface CompanyMembership {
+  tenantId: string;
+  tenantName: string;
+  roles: string[];
+  status: string;
+  billingStatus: string;
+  billPaid: boolean;
+  suspended: boolean;
+}
+
+interface PlatformUserRow {
+  id: string;
+  email: string;
+  fullName: string;
+  isSuperadmin: boolean;
+  emailVerified: boolean;
+  createdAt: any;
+  companies: CompanyMembership[];
+  companyCount: number;
+  /** First company's name, or null when the user belongs to none. */
+  primaryCompany: string | null;
+  /** Primary company billing status (active|trialing|past_due|…) or null. */
+  billingStatus: string | null;
+  /** true = a company they belong to has an active (paid) subscription;
+   *  false = has companies but none paid; null = no company. */
+  billPaid: boolean | null;
+}
+
 function paginate<T>(rows: T[], count: number, page: number, limit: number): Paginated<T> {
   return {
     rows,
@@ -320,4 +348,117 @@ export async function listGuards(req: Request): Promise<Paginated<GuardRow>> {
     const mapped = await Promise.all(rows.map((g: any) => toGuardRow(database, g)));
     return paginate(mapped, count, page, limit);
   }
+}
+
+/** A tenant's bill counts as "paid" once its subscription is active. */
+function isBillPaid(billingStatus: string | null | undefined): boolean {
+  return String(billingStatus || '').toLowerCase() === 'active';
+}
+
+/**
+ * GET /platform-users — EVERY platform user (not just tenant members), with the
+ * company/companies they belong to and whether that company's bill is paid.
+ * This is what makes tenant-less accounts (e.g. just-registered users or
+ * superadmins) visible in the panel. Filters: search (email/name),
+ * hasCompany ('yes'|'no'), billing (active|trialing|past_due|…).
+ */
+export async function listPlatformUsers(req: Request): Promise<Paginated<PlatformUserRow>> {
+  const database = db(req);
+  const Op = database.Sequelize.Op;
+  const { page, limit, offset, search } = listParams(req.query);
+  const hasCompany = (req.query as any)?.hasCompany; // 'yes' | 'no'
+  const billingFilter = (req.query as any)?.billing;
+
+  const where: any = {};
+  if (search) {
+    where[Op.or] = [
+      { email: { [Op.like]: `%${search}%` } },
+      { firstName: { [Op.like]: `%${search}%` } },
+      { lastName: { [Op.like]: `%${search}%` } },
+      { fullName: { [Op.like]: `%${search}%` } },
+    ];
+  }
+
+  const { rows, count } = await database.user.findAndCountAll({
+    where,
+    attributes: ['id', 'email', 'fullName', 'firstName', 'lastName', 'isSuperadmin', 'emailVerified', 'createdAt'],
+    order: [['createdAt', 'DESC']],
+    limit,
+    offset,
+  });
+
+  const userIds = rows.map((u: any) => u.id);
+
+  // One query for all memberships of the page's users, with tenant billing.
+  const membershipsByUser: Record<string, CompanyMembership[]> = {};
+  if (userIds.length) {
+    let memberships: any[] = [];
+    try {
+      memberships = await database.tenantUser.findAll({
+        where: { userId: { [Op.in]: userIds } },
+        attributes: ['id', 'userId', 'tenantId', 'roles', 'status'],
+        include: [
+          {
+            model: database.tenant,
+            required: false,
+            attributes: ['id', 'name', 'billingStatus', 'suspendedAt'],
+          },
+        ],
+      });
+    } catch (err: any) {
+      console.warn('superadmin listPlatformUsers membership include failed, falling back:', err?.message || err);
+      memberships = await database.tenantUser.findAll({
+        where: { userId: { [Op.in]: userIds } },
+        attributes: ['id', 'userId', 'tenantId', 'roles', 'status'],
+      });
+    }
+    for (const m of memberships) {
+      let tenant = m.tenant;
+      if (!tenant) {
+        try {
+          tenant = await database.tenant.findByPk(m.tenantId, {
+            attributes: ['id', 'name', 'billingStatus', 'suspendedAt'],
+          });
+        } catch {
+          tenant = null;
+        }
+      }
+      const billingStatus = (tenant && tenant.billingStatus) || 'trialing';
+      const membership: CompanyMembership = {
+        tenantId: m.tenantId,
+        tenantName: (tenant && tenant.name) || '(unknown)',
+        roles: normalizeRoles(m.roles),
+        status: m.status,
+        billingStatus,
+        billPaid: isBillPaid(billingStatus),
+        suspended: !!(tenant && tenant.suspendedAt),
+      };
+      (membershipsByUser[m.userId] ||= []).push(membership);
+    }
+  }
+
+  let mapped: PlatformUserRow[] = rows.map((u: any) => {
+    const companies = membershipsByUser[u.id] || [];
+    const primary = companies[0] || null;
+    return {
+      id: u.id,
+      email: u.email || '',
+      fullName: deriveFullName(u),
+      isSuperadmin: !!u.isSuperadmin,
+      emailVerified: !!u.emailVerified,
+      createdAt: u.createdAt,
+      companies,
+      companyCount: companies.length,
+      primaryCompany: primary ? primary.tenantName : null,
+      billingStatus: primary ? primary.billingStatus : null,
+      billPaid: companies.length ? companies.some((c) => c.billPaid) : null,
+    };
+  });
+
+  // Optional in-memory filters (applied after mapping; counts reflect the page).
+  if (hasCompany === 'yes') mapped = mapped.filter((u) => u.companyCount > 0);
+  if (hasCompany === 'no') mapped = mapped.filter((u) => u.companyCount === 0);
+  if (billingFilter) mapped = mapped.filter((u) => u.companies.some((c) => c.billingStatus === billingFilter));
+
+  return paginate(mapped, count, page, limit);
 }

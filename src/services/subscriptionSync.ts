@@ -7,11 +7,11 @@
  * unit_amount — the $5.15 seat line vs the $0.31 processing line) and cached on
  * tenant.stripeSeatItemId.
  */
-import { getConfig } from '../config';
 import { countBillableSeats } from './subscriptionService';
+import { getStripeSecretKey } from './stripe/stripeConfigService';
 
 export async function syncSeatsForTenant(db: any, tenant: any): Promise<any> {
-  const secret = getConfig().PLAN_STRIPE_SECRET_KEY;
+  const secret = await getStripeSecretKey(db);
   if (!secret || !tenant?.stripeSubscriptionId) return { skipped: true, reason: 'not_configured' };
 
   const stripe = require('stripe')(secret);

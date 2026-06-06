@@ -11,9 +11,21 @@ import {
   getUser,
   setUserStatus,
   listGuards,
+  listPlatformUsers,
 } from '../../services/superadmin/usersService';
 
 export default (router) => {
+  // GET /platform-users — EVERY user (incl. tenant-less), with company + bill.
+  // Registered before /users/:tenantUserId so the param route can't shadow it.
+  router.get('/platform-users', async (req, res) => {
+    try {
+      const payload = await listPlatformUsers(req);
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
   // GET /users — paginated cross-tenant tenantUser list.
   router.get('/users', async (req, res) => {
     try {

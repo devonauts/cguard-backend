@@ -5,19 +5,17 @@ import ApiResponseHandler from '../../apiResponseHandler';
 import Error403 from '../../../errors/Error403';
 import Error400 from '../../../errors/Error400';
 import { tenantSubdomain } from '../../../services/tenantSubdomain';
+import { getStripeClient } from '../../../services/stripe/stripeConfigService';
 
 export default async (req, res) => {
   try {
-    if (!getConfig().PLAN_STRIPE_SECRET_KEY) {
+    const stripe = await getStripeClient(req.database);
+    if (!stripe) {
       throw new Error400(
         req.language,
         'tenant.stripeNotConfigured',
       );
     }
-
-    const stripe = require('stripe')(
-      getConfig().PLAN_STRIPE_SECRET_KEY,
-    );
 
     const currentTenant = req.currentTenant;
     const currentUser = req.currentUser;
