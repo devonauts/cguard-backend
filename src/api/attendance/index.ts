@@ -49,6 +49,18 @@ export default (app) => {
     handler(P.attendanceApprove, (s, req) => s.applyCorrection(req.params.id, req.body.data || req.body)),
   );
 
+  // Early clock-out approval requests (guard requests to leave before shift end)
+  app.get(
+    `${base}/clock-out-requests`,
+    handler(P.attendanceRead, (s, req) => s.listClockOutRequests(req.query)),
+  );
+  app.patch(
+    `${base}/clock-out-requests/:id`,
+    handler(P.attendanceApprove, (s, req) =>
+      s.decideClockOutRequest(req.params.id, req.body.data || req.body),
+    ),
+  );
+
   // Close (lock) a payroll period
   app.post(
     `${base}/close-period`,

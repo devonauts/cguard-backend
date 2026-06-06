@@ -34,6 +34,9 @@ export type EventType =
   | 'attendance.approval_required'
   | 'attendance.approved'
   | 'attendance.rejected'
+  | 'attendance.clockout_requested'
+  | 'attendance.clockout_approved'
+  | 'attendance.clockout_rejected'
   | 'device.mismatch';
 
 // Role sets for targetRoles field (comma-separated, used with FIND_IN_SET)
@@ -398,6 +401,44 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     body: (d) => `${d.guardName || 'Guardia'}${d.reason ? `: ${d.reason}` : ''}`,
     targetRoles: TARGET_ROLES.SPECIFIC,
     sendEmail: false,
+  },
+  // Guard asks to clock out early → notify supervisors.
+  'attendance.clockout_requested': {
+    title: (d) => `⏱️ Salida anticipada: ${d.guardName || 'Guardia'}`,
+    body: (d) =>
+      `${d.guardName || 'Guardia'} solicita salir antes de tiempo` +
+      `${d.stationName ? ` en ${d.stationName}` : ''}${d.reason ? `. Motivo: ${d.reason}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  // Decision → notify the specific guard (in-app + email; push sent separately).
+  'attendance.clockout_approved': {
+    title: (d) => `✅ Salida anticipada aprobada`,
+    body: (d) =>
+      `Tu solicitud de salida anticipada fue aprobada${d.stationName ? ` (${d.stationName})` : ''}. ` +
+      `Ya puedes marcar tu salida.`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
+    sendEmail: true,
+    emailSubject: () => `[CGuard] Salida anticipada aprobada`,
+    emailHtml: (d) => `
+      <h2>✅ Salida anticipada aprobada</h2>
+      <p>Tu solicitud de salida anticipada fue aprobada${d.stationName ? ` en <strong>${esc(d.stationName)}</strong>` : ''}.</p>
+      ${d.reason ? `<p><strong>Nota:</strong> ${esc(d.reason)}</p>` : ''}
+      <p>Ya puedes marcar tu salida desde la app.</p>`,
+  },
+  'attendance.clockout_rejected': {
+    title: (d) => `❌ Salida anticipada rechazada`,
+    body: (d) =>
+      `Tu solicitud de salida anticipada fue rechazada${d.reason ? `: ${d.reason}` : ''}. ` +
+      `Debes permanecer en tu puesto.`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
+    sendEmail: true,
+    emailSubject: () => `[CGuard] Salida anticipada rechazada`,
+    emailHtml: (d) => `
+      <h2>❌ Salida anticipada rechazada</h2>
+      <p>Tu solicitud de salida anticipada fue rechazada.</p>
+      ${d.reason ? `<p><strong>Motivo:</strong> ${esc(d.reason)}</p>` : ''}
+      <p>Por favor permanece en tu puesto hasta el fin de tu turno.</p>`,
   },
   'device.mismatch': {
     title: (d) => `📱 Dispositivo no reconocido: ${d.guardName || 'Guardia'}`,

@@ -16,6 +16,7 @@ import Error400 from '../errors/Error400';
 import Error404 from '../errors/Error404';
 import { getNominaSettings, mergeNominaSettings } from '../lib/nominaSettings';
 import { dispatch } from '../lib/notificationDispatcher';
+import { pushToUser } from './pushService';
 import { ymd } from './consignaRecurrence';
 import { wallClockToUtc } from '../lib/tenantTime';
 
@@ -199,6 +200,101 @@ export default class AttendanceAdminService {
     }
 
     return record;
+  }
+
+  // ── Early clock-out approval requests ────────────────────────────────────────
+  /** List clock-out approval requests (default: pending), ACL not narrowed. */
+  async listClockOutRequests(query: any = {}) {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const where: any = { tenantId, deletedAt: null };
+    const status = query.status || 'pending';
+    if (status && status !== 'all') where.status = String(status).split(',');
+    const rows = await db.clockOutRequest.findAll({
+      where,
+      include: [
+        { model: db.securityGuard, as: 'guard', attributes: ['id', 'fullName'] },
+        { model: db.station, as: 'station', attributes: ['id', 'stationName'] },
+        {
+          model: db.guardShift,
+          as: 'guardShift',
+          attributes: ['id', 'punchInTime', 'scheduledEnd'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: Math.min(Number(query.limit) || 100, 200),
+    });
+    return { rows: rows.map((r: any) => r.get({ plain: true })), count: rows.length };
+  }
+
+  /** Approve/reject a clock-out request; notify the guard (in-app + email + push). */
+  async decideClockOutRequest(
+    id: string,
+    data: { status: 'approved' | 'rejected'; notes?: string },
+  ) {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const currentUser = SequelizeRepository.getCurrentUser(this.options);
+    const decision = data?.status === 'approved' ? 'approved' : 'rejected';
+
+    const reqRow = await db.clockOutRequest.findOne({
+      where: { id, tenantId, deletedAt: null },
+    });
+    if (!reqRow) throw new Error404();
+
+    await reqRow.update({
+      status: decision,
+      decidedById: currentUser.id,
+      decidedAt: new Date(),
+      decisionNotes: data?.notes ?? reqRow.decisionNotes,
+      updatedById: currentUser.id,
+    });
+    await this.audit('clockOutRequest', reqRow.id, AuditLogRepository.UPDATE, reqRow);
+
+    // Notify the requesting guard: in-app + email (dispatch) AND a push.
+    try {
+      const sg = reqRow.securityGuardId
+        ? await db.securityGuard.findByPk(reqRow.securityGuardId, {
+            attributes: ['fullName', 'guardId'],
+          })
+        : null;
+      const station = reqRow.stationId
+        ? await db.station.findByPk(reqRow.stationId, { attributes: ['stationName'] })
+        : null;
+      const event =
+        decision === 'approved'
+          ? 'attendance.clockout_approved'
+          : 'attendance.clockout_rejected';
+      const tData = {
+        guardName: sg?.fullName || 'Guardia',
+        stationName: station?.stationName || null,
+        reason: data?.notes || null,
+      };
+      await dispatch(event, tData, {
+        database: db,
+        tenantId,
+        recipientUserId: reqRow.guardId,
+        sourceEntityType: 'clockOutRequest',
+        sourceEntityId: reqRow.id,
+      });
+      await pushToUser(db, tenantId, reqRow.guardId, {
+        title:
+          decision === 'approved'
+            ? '✅ Salida anticipada aprobada'
+            : '❌ Salida anticipada rechazada',
+        body:
+          decision === 'approved'
+            ? 'Ya puedes marcar tu salida.'
+            : data?.notes
+              ? `Rechazada: ${data.notes}`
+              : 'Tu solicitud fue rechazada.',
+        data: { type: event, clockOutRequestId: reqRow.id },
+      });
+    } catch (e) {
+      console.error('[clockOutRequest] decision notify failed:', (e as any)?.message || e);
+    }
+
+    return reqRow.get({ plain: true });
   }
 
   // ── Manual corrections ───────────────────────────────────────────────────────
