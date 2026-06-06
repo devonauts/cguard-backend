@@ -77,3 +77,16 @@ export async function pushToTenant(db: any, tenantId: string, payload: PushPaylo
     return { sent: 0, error: true };
   }
 }
+
+/** Resolve a single user's registered device tokens and push to them. */
+export async function pushToUser(db: any, tenantId: string, userId: string, payload: PushPayload) {
+  try {
+    if (!userId) return { sent: 0, skipped: true };
+    const rows = await db.deviceIdInformation.findAll({ where: { tenantId, createdById: userId } });
+    const tokens = (rows || []).map((r: any) => r.deviceId).filter(Boolean);
+    return sendToTokens(tokens, payload);
+  } catch (e: any) {
+    console.warn('[push] pushToUser failed:', e?.message || e);
+    return { sent: 0, error: true };
+  }
+}

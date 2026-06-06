@@ -106,6 +106,23 @@ class Permissions {
       securityGuardRead: createPermission('securityGuardRead', [...ALL_STAFF_ROLES, roles.customer]),
       securityGuardAutocomplete: createPermission('securityGuardAutocomplete', ALL_STAFF_ROLES),
 
+      // === PERFORMANCE (8-factor score) ===
+      // Supervisors rate uniforms; everyone can read their own inspections.
+      uniformInspectionCreate: createPermission('uniformInspectionCreate', SUPERVISOR_ROLES),
+      uniformInspectionRead: createPermission('uniformInspectionRead', GUARD_ROLES),
+      // Station security-test bank — supervisors manage, staff read/attempt.
+      quizBankManage: createPermission('quizBankManage', SUPERVISOR_ROLES),
+      quizBankRead: createPermission('quizBankRead', ALL_STAFF_ROLES),
+      quizAttemptCreate: createPermission('quizAttemptCreate', GUARD_ROLES),
+      quizAttemptRead: createPermission('quizAttemptRead', GUARD_ROLES),
+      // Backup pool — guards volunteer, supervisors confirm coverage.
+      backupEventRead: createPermission('backupEventRead', GUARD_ROLES),
+      backupVolunteer: createPermission('backupVolunteer', GUARD_ROLES),
+      backupConfirm: createPermission('backupConfirm', SUPERVISOR_ROLES),
+      // Per-tenant scoring knobs.
+      performanceSettingsRead: createPermission('performanceSettingsRead', SUPERVISOR_ROLES),
+      performanceSettingsEdit: createPermission('performanceSettingsEdit', MANAGEMENT_ROLES),
+
       // === CLIENT ACCOUNTS ===
       clientAccountImport: createPermission('clientAccountImport', CLIENT_MANAGEMENT_ROLES),
       clientAccountCreate: createPermission('clientAccountCreate', CLIENT_MANAGEMENT_ROLES),

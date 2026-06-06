@@ -118,7 +118,12 @@ export default class EmailSender {
         // Normalize some common keys across callers
         const has = (keys: string[]) => keys.some((k) => typeof v[k] !== 'undefined' && v[k] !== null);
 
-        // Client portal invitation — use dedicated Mi Seguridad template
+        // App invitation — "download & use Mi Seguridad" template
+        if (has(['appInvite'])) {
+          return 'invitation-app.html';
+        }
+
+        // Client portal invitation — use dedicated Mi Seguridad welcome template
         if (has(['clientInvitation'])) {
           return 'invitation-client.html';
         }
@@ -166,8 +171,11 @@ export default class EmailSender {
       };
 
       let templateFile = chooseTemplate();
-      // Force client invitation template when flag is set
-      if (this.variables && this.variables.clientInvitation) {
+      // Force app-invitation template when flag is set
+      if (this.variables && this.variables.appInvite) {
+        templateFile = 'invitation-app.html';
+      } else if (this.variables && this.variables.clientInvitation) {
+        // Force client welcome template when flag is set
         templateFile = 'invitation-client.html';
       } else if (this.variables && (this.variables.invitation || this.variables.guard)) {
         // Force guard/staff invitation template
@@ -191,9 +199,12 @@ export default class EmailSender {
         }
 
         // Determine subject default per template
-        if (templateFile === 'invitation-client.html') {
+        if (templateFile === 'invitation-app.html') {
           const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
-          subject = tName ? `Tu acceso a Mi Seguridad — ${tName}` : 'Tu acceso a Mi Seguridad';
+          subject = tName ? `Descarga Mi Seguridad — ${tName}` : 'Descarga la app Mi Seguridad';
+        } else if (templateFile === 'invitation-client.html') {
+          const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
+          subject = tName ? `¡Te damos la bienvenida a ${tName}!` : '¡Te damos la bienvenida!';
         } else if (templateFile === 'invitation.html') {
           const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
           subject = tName ? `Invitación de ${tName}` : 'Invitación al sistema';

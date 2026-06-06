@@ -367,7 +367,9 @@ const es = {
     errors: {
       unique: {
 
-      }
+      },
+      guardOverlap:
+        'Este guardia ya tiene un turno que se cruza con el horario seleccionado.',
     }
   },
 };

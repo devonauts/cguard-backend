@@ -1535,6 +1535,7 @@ export default class UserRepository {
       return userOrUsers.map((user) =>
         lodash.pick(user, [
           'id',
+          'fullName',
           'firstName',
           'lastName',
           'email',
@@ -1547,6 +1548,7 @@ export default class UserRepository {
 
     return lodash.pick(userOrUsers, [
       'id',
+      'fullName',
       'firstName',
       'lastName',
       'email',

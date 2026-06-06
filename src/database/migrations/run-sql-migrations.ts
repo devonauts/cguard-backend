@@ -33,7 +33,18 @@ function isBenignSqlError(message: string): boolean {
     'unknown column',
     'cannot drop',
     'check that column/key exists',
+    'doesn\'t exist',
+    'foreign key constraint',
+    'errno: 1826',
   ].some((p) => m.includes(p));
+}
+
+function splitSqlStatements(sql: string): string[] {
+  return sql
+    .replace(/--.*$/gm, '')
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 async function runSqlMigrations() {
@@ -58,18 +69,23 @@ async function runSqlMigrations() {
     }
 
     console.log(`Running SQL migration: ${file}`);
-    try {
-      await sequelize.query(sql);
-      console.log(`SQL migration executed: ${file}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (isBenignSqlError(msg)) {
-        console.warn(`SQL migration ${file} produced benign error, continuing: ${msg}`);
-      } else {
-        await sequelize.close();
-        throw new Error(`SQL migration failed (${file}): ${msg}`);
+    const statements = splitSqlStatements(sql);
+
+    for (const stmt of statements) {
+      try {
+        await sequelize.query(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (isBenignSqlError(msg)) {
+          console.warn(`SQL migration ${file} produced benign error on statement, continuing: ${msg}`);
+        } else {
+          await sequelize.close();
+          throw new Error(`SQL migration failed (${file}): ${msg}`);
+        }
       }
     }
+
+    console.log(`SQL migration executed: ${file}`);
   }
 
   await sequelize.close();

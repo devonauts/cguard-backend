@@ -1,6 +1,7 @@
 import TenantService from '../services/tenantService';
 import { isUserInTenant } from '../database/utils/userTenantUtils';
 import Error403 from '../errors/Error403';
+import { enforcePaywall } from './paywall';
 
 export async function tenantFromHeaderMiddleware(req, res, next) {
   try {
@@ -24,6 +25,7 @@ export async function tenantFromHeaderMiddleware(req, res, next) {
     }
 
     req.currentTenant = tenant;
+    if (enforcePaywall(req, res)) return;
     return next();
   } catch (err) {
     return next(err);

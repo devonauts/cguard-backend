@@ -1,3 +1,3 @@
--- Migration: add callerName to incidents table
+-- Migration: add callerName to incidents table (idempotent via benign error handling)
 ALTER TABLE `incidents`
-  ADD COLUMN IF NOT EXISTS `callerName` VARCHAR(255) NULL AFTER `description`;
+  ADD COLUMN `callerName` VARCHAR(255) NULL AFTER `description`;

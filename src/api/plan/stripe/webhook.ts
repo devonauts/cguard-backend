@@ -3,6 +3,7 @@ import TenantService from '../../../services/tenantService';
 import Plans from '../../../security/plans';
 import ApiResponseHandler from '../../apiResponseHandler';
 import lodash from 'lodash';
+import { credit as creditSmsWallet } from '../../../services/smsAccountService';
 
 export default async (req, res) => {
   try {
@@ -17,6 +18,73 @@ export default async (req, res) => {
       req.headers['stripe-signature'],
       getConfig().PLAN_STRIPE_WEBHOOK_SIGNING_SECRET,
     );
+
+    // SMS wallet top-up — one-time payment, identified by session metadata.
+    // Handle before the plan logic (it has price_data, not a plan price id).
+    if (
+      event.type === 'checkout.session.completed' &&
+      lodash.get(event, 'data.object.metadata.purpose') === 'sms_recharge'
+    ) {
+      const session = event.data.object;
+      const tenantId = lodash.get(session, 'metadata.tenantId');
+      const amountCents =
+        Number(lodash.get(session, 'metadata.amountCents')) ||
+        Number(lodash.get(session, 'amount_total')) ||
+        0;
+
+      if (tenantId && amountCents > 0 && lodash.get(session, 'payment_status') !== 'unpaid') {
+        await creditSmsWallet(req.database, tenantId, amountCents, {
+          reference: session.id,
+          description: 'Recarga de saldo SMS (Stripe)',
+          currency: (session.currency || 'usd').toUpperCase(),
+        });
+      }
+
+      return ApiResponseHandler.success(req, res, { received: true });
+    }
+
+    // Per-user subscription activation — first successful checkout after trial.
+    if (
+      event.type === 'checkout.session.completed' &&
+      lodash.get(event, 'data.object.metadata.purpose') === 'subscription_activation'
+    ) {
+      const session = event.data.object;
+      const tenantId = lodash.get(session, 'metadata.tenantId');
+      if (tenantId) {
+        await req.database.tenant.update(
+          {
+            billingStatus: 'active',
+            stripeSubscriptionId: session.subscription || null,
+            implementationPaidAt: new Date(),
+            ...(session.customer ? { planStripeCustomerId: session.customer } : {}),
+          },
+          { where: { id: tenantId } },
+        );
+      }
+      return ApiResponseHandler.success(req, res, { received: true });
+    }
+
+    // Recurring invoice outcomes flip the per-user billing status.
+    if (event.type === 'invoice.payment_failed') {
+      const customerId = lodash.get(event, 'data.object.customer');
+      if (customerId) {
+        await req.database.tenant.update(
+          { billingStatus: 'past_due' },
+          { where: { planStripeCustomerId: customerId } },
+        );
+      }
+      return ApiResponseHandler.success(req, res, { received: true });
+    }
+    if (event.type === 'invoice.paid' || event.type === 'invoice.payment_succeeded') {
+      const customerId = lodash.get(event, 'data.object.customer');
+      if (customerId) {
+        await req.database.tenant.update(
+          { billingStatus: 'active' },
+          { where: { planStripeCustomerId: customerId } },
+        );
+      }
+      return ApiResponseHandler.success(req, res, { received: true });
+    }
 
     if (event.type === 'checkout.session.completed') {
       let data = event.data.object;
@@ -81,6 +149,13 @@ export default async (req, res) => {
       await new TenantService(req).updatePlanToFree(
         planStripeCustomerId,
       );
+
+      if (planStripeCustomerId) {
+        await req.database.tenant.update(
+          { billingStatus: 'canceled', stripeSubscriptionId: null },
+          { where: { planStripeCustomerId } },
+        );
+      }
     }
 
     return ApiResponseHandler.success(req, res, {

@@ -10,18 +10,33 @@
  * - This allows sacafrancos to work consecutive days covering different stations
  */
 
+import { wallClockToUtc } from '../lib/tenantTime';
+
 const GENERATION_DAYS = 365; // Generate 1 full year of shifts
+
+/** Load the tenant's timezone (single source of truth for wall-clock times). */
+async function tenantTz(database: any, tenantId: string): Promise<string> {
+  try {
+    const t = await database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    return (t && t.timezone) || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
 
 interface AssignmentData {
   id: string;
   guardId: string;
   stationId: string;
-  positionId: string;
-  rotationStyleId: string;
+  positionId: string | null;
+  rotationStyleId: string | null;
   startDate: string;
   endDate?: string | null;
   platoonOffset: number;
   isRelief: boolean;
+  kind?: 'rotation' | 'adhoc';
+  startTime?: string | null; // HH:mm, adhoc only
+  endTime?: string | null;   // HH:mm, adhoc only
 }
 
 /**
@@ -64,6 +79,15 @@ export async function generateShiftsForAssignment(
   userId: string,
 ) {
   const { Op } = database.Sequelize;
+
+  // ─── AD-HOC (manual, non-rotation) ─────────────────────────────────────────
+  // One-off assignments from the post-site / guard-profile screens. No position
+  // or rotation style — just an explicit day range + HH:mm window. This is the
+  // single generator for manual assignments too, so they show everywhere.
+  if (assignment.kind === 'adhoc') {
+    await generateAdhocShifts(database, assignment, tenantId, userId);
+    return;
+  }
 
   // Load rotation style (from station)
   const rotationStyle = await database.rotationStyle.findByPk(assignment.rotationStyleId);
@@ -130,6 +154,9 @@ export async function generateShiftsForAssignment(
   const nightStartTime = dayEndTime;
   const nightEndTime = dayStartTime;
 
+  // Wall-clock times are interpreted in the tenant timezone → stored as true UTC.
+  const tz = await tenantTz(database, tenantId);
+
   while (cursor <= genEnd) {
     const daysSinceEpoch = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
     const status = getRotationStatus(daysSinceEpoch, assignment.platoonOffset, dayShifts, nightShifts, restDays);
@@ -140,14 +167,14 @@ export async function generateShiftsForAssignment(
       let endTime: Date;
 
       if (status === 'day') {
-        startTime = new Date(`${dateStr}T${dayStartTime}:00`);
-        endTime = new Date(`${dateStr}T${dayEndTime}:00`);
-        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+        startTime = wallClockToUtc(dateStr, dayStartTime, tz);
+        endTime = wallClockToUtc(dateStr, dayEndTime, tz);
+        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
       } else {
         // night
-        startTime = new Date(`${dateStr}T${nightStartTime}:00`);
-        endTime = new Date(`${dateStr}T${nightEndTime}:00`);
-        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+        startTime = wallClockToUtc(dateStr, nightStartTime, tz);
+        endTime = wallClockToUtc(dateStr, nightEndTime, tz);
+        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
       }
 
       shifts.push({
@@ -170,6 +197,67 @@ export async function generateShiftsForAssignment(
   if (shifts.length > 0) {
     await database.shift.bulkCreate(shifts, { ignoreDuplicates: true });
     console.log(`[shiftGen] Created ${shifts.length} FIJO shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
+  }
+}
+
+/**
+ * Generate concrete shifts for an AD-HOC (manual) assignment.
+ * Creates one shift per day in [startDate, endDate] using the assignment's
+ * HH:mm window. endDate null ⇒ single day (never the 365-day rotation fill).
+ */
+async function generateAdhocShifts(
+  database: any,
+  assignment: AssignmentData,
+  tenantId: string,
+  userId: string,
+) {
+  const { Op } = database.Sequelize;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startDate = new Date(assignment.startDate);
+  const genStart = startDate > today ? startDate : today;
+  // Ad-hoc never fills a year: default to a single day when no endDate.
+  const genEnd = assignment.endDate ? new Date(assignment.endDate) : new Date(genStart);
+
+  // Replace any previously generated shifts for this assignment (idempotent).
+  await database.shift.destroy({
+    where: { guardAssignmentId: assignment.id, tenantId, startTime: { [Op.gte]: genStart } },
+    force: true,
+  });
+
+  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
+  const postSiteId = station?.postSiteId || null;
+
+  const startHHmm = assignment.startTime || '07:00';
+  const endHHmm = assignment.endTime || '19:00';
+  const tz = await tenantTz(database, tenantId);
+
+  const shifts: any[] = [];
+  const cursor = new Date(genStart);
+  while (cursor <= genEnd) {
+    const dateStr = cursor.toISOString().slice(0, 10);
+    const startTime = wallClockToUtc(dateStr, startHHmm, tz);
+    let endTime = wallClockToUtc(dateStr, endHHmm, tz);
+    if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000); // overnight
+    shifts.push({
+      guardId: assignment.guardId,
+      stationId: assignment.stationId,
+      positionId: null,
+      guardAssignmentId: assignment.id,
+      postSiteId,
+      startTime,
+      endTime,
+      tenantId,
+      createdById: userId,
+      updatedById: userId,
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  if (shifts.length > 0) {
+    await database.shift.bulkCreate(shifts, { ignoreDuplicates: true });
+    console.log(`[shiftGen] Created ${shifts.length} ADHOC shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
   }
 }
 
@@ -202,6 +290,7 @@ async function generateSacafrancoShifts(
   const dayEndTime = position.endTime || '19:00';
   const nightStartTime = dayEndTime;
   const nightEndTime = dayStartTime;
+  const tz = await tenantTz(database, tenantId);
 
   while (cursor <= genEnd) {
     const dateStr = cursor.toISOString().slice(0, 10);
@@ -216,13 +305,13 @@ async function generateSacafrancoShifts(
       let endTime: Date;
 
       if (sfStatus === 'night') {
-        startTime = new Date(`${dateStr}T${nightStartTime}:00`);
-        endTime = new Date(`${dateStr}T${nightEndTime}:00`);
-        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+        startTime = wallClockToUtc(dateStr, nightStartTime, tz);
+        endTime = wallClockToUtc(dateStr, nightEndTime, tz);
+        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
       } else {
-        startTime = new Date(`${dateStr}T${dayStartTime}:00`);
-        endTime = new Date(`${dateStr}T${dayEndTime}:00`);
-        if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+        startTime = wallClockToUtc(dateStr, dayStartTime, tz);
+        endTime = wallClockToUtc(dateStr, dayEndTime, tz);
+        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
       }
 
       shifts.push({
@@ -520,74 +609,179 @@ export async function optimizeSacafrancos(
 
   const numSfNeeded = staffing.sacafrancosNeeded;
 
-  // 8. Remove old sacafranco positions and their assignments/shifts
-  const oldSfPositions = await database.stationPosition.findAll({
-    where: { tenantId, deletedAt: null, type: 'sacafranco' },
-    attributes: ['id'],
-  });
-  const oldSfPosIds = oldSfPositions.map((p: any) => p.id);
-
-  if (oldSfPosIds.length > 0) {
-    await database.shift.destroy({ where: { positionId: oldSfPosIds, tenantId }, force: true });
-    await database.guardAssignment.destroy({ where: { positionId: oldSfPosIds, tenantId }, force: true });
-    await database.stationPosition.destroy({ where: { id: oldSfPosIds, tenantId }, force: true });
-  }
-
-  // 9. Create SF positions with staggered offsets
+  // 8. Preserve SF guards/assignments and rebalance SF positions by sequential coverage
   const sfCycle = sfRotation.dayShifts + sfRotation.nightShifts + sfRotation.restDays;
   const stationsWithFijos = stationConfigs.filter(s => s.fijoPositions.length > 0);
+  const sfWorkDays = sfRotation.dayShifts + sfRotation.nightShifts;
 
-  if (stationsWithFijos.length === 0 || numSfNeeded === 0) {
+  const existingSfAssignments = await database.guardAssignment.findAll({
+    where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
+    attributes: ['id', 'guardId', 'stationId', 'positionId', 'startDate', 'createdAt'],
+    order: [['createdAt', 'ASC']],
+  });
+
+  // Keep at least enough SF slots for currently assigned SF guards.
+  const targetSfCount = Math.max(numSfNeeded, existingSfAssignments.length);
+
+  if (stationsWithFijos.length === 0 || targetSfCount === 0) {
     return {
       message: `No se necesitan sacafrancos (${stationsWithFijos.length} estaciones sin gaps)`,
-      details: { totalStations: stations.length, sacafrancosNeeded: 0, fijosNeeded: staffing.fijosNeeded, offsetsOptimized: offsetUpdates.length },
+      details: {
+        totalStations: stations.length,
+        sacafrancosNeeded: 0,
+        fijosNeeded: staffing.fijosNeeded,
+        offsetsOptimized: offsetUpdates.length,
+        sfAssignmentsPreserved: existingSfAssignments.length,
+      },
     };
   }
 
-  const primaryStationId = stationsWithFijos[0].stationId;
-  const sfWorkDays = sfRotation.dayShifts + sfRotation.nightShifts;
-  const newSfPositions: any[] = [];
-  for (let i = 0; i < numSfNeeded; i++) {
-    // SF offset: stagger so each SF rests on a different day
-    // Formula: SF i rests starting on day (i * sfRestDays) relative to epoch
+  const stationScheduleById = new Map<string, string>();
+  stations.forEach((st: any) => stationScheduleById.set(st.id, st.scheduleType || '24h'));
+
+  type TargetSfSlot = {
+    index: number;
+    stationId: string;
+    startTime: string;
+    endTime: string;
+    platoonOffset: number;
+    sortOrder: number;
+    name: string;
+  };
+
+  const targetSlots: TargetSfSlot[] = [];
+  for (let i = 0; i < targetSfCount; i++) {
+    // SF i rests on sequential days (for 6-1 => M,T,W,T,F,S,D)
     const sfOffset = (i * sfRotation.restDays - sfWorkDays + sfCycle * 10) % sfCycle;
-    newSfPositions.push({
-      name: `SF ${i + 1}`,
-      type: 'sacafranco',
-      startTime: '07:00',
-      endTime: '19:00',
-      guardsNeeded: 1,
-      sortOrder: 100 + i,
+    const stationId = stationsWithFijos[i % stationsWithFijos.length].stationId;
+    const scheduleType = stationScheduleById.get(stationId) || '24h';
+    const isNightStation = scheduleType === '12h-night';
+    targetSlots.push({
+      index: i,
+      stationId,
+      startTime: isNightStation ? '19:00' : '07:00',
+      endTime: isNightStation ? '07:00' : '19:00',
       platoonOffset: sfOffset,
-      stationId: primaryStationId,
+      sortOrder: 100 + i,
+      name: `SF ${i + 1}`,
+    });
+  }
+
+  const existingSfPositions = await database.stationPosition.findAll({
+    where: { tenantId, deletedAt: null, type: 'sacafranco' },
+    attributes: ['id', 'stationId', 'sortOrder', 'platoonOffset'],
+    order: [['sortOrder', 'ASC'], ['createdAt', 'ASC']],
+  });
+
+  const assignedSfPositionIds = new Set(existingSfAssignments.map((a: any) => a.positionId).filter(Boolean));
+  const pinnedPositions = existingSfPositions.filter((p: any) => assignedSfPositionIds.has(p.id));
+  const freePositions = existingSfPositions.filter((p: any) => !assignedSfPositionIds.has(p.id));
+  const reusablePositions = [...pinnedPositions, ...freePositions];
+
+  const selectedPositionIds: string[] = [];
+
+  // Update/reuse existing positions for target slots.
+  const reuseCount = Math.min(reusablePositions.length, targetSlots.length);
+  for (let i = 0; i < reuseCount; i++) {
+    const slot = targetSlots[i];
+    const pos = reusablePositions[i];
+    await database.stationPosition.update(
+      {
+        name: slot.name,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        sortOrder: slot.sortOrder,
+        platoonOffset: slot.platoonOffset,
+        stationId: slot.stationId,
+        updatedById: userId,
+      },
+      { where: { id: pos.id, tenantId } },
+    );
+    selectedPositionIds.push(pos.id);
+  }
+
+  // Create missing positions if target requires more than existing pool.
+  for (let i = reuseCount; i < targetSlots.length; i++) {
+    const slot = targetSlots[i];
+    const created = await database.stationPosition.create({
+      name: slot.name,
+      type: 'sacafranco',
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      guardsNeeded: 1,
+      sortOrder: slot.sortOrder,
+      platoonOffset: slot.platoonOffset,
+      stationId: slot.stationId,
       tenantId,
       createdById: userId,
       updatedById: userId,
     });
+    selectedPositionIds.push(created.id);
   }
-  await database.stationPosition.bulkCreate(newSfPositions);
 
-  // 10. Regenerate shifts for all fijo assignments (with new offsets)
+  // Delete only unassigned extra SF positions (never drop positions still tied to active SF guards).
+  const selectedSet = new Set(selectedPositionIds);
+  const extraUnusedPosIds = existingSfPositions
+    .filter((p: any) => !selectedSet.has(p.id) && !assignedSfPositionIds.has(p.id))
+    .map((p: any) => p.id);
+
+  if (extraUnusedPosIds.length > 0) {
+    await database.shift.destroy({ where: { positionId: extraUnusedPosIds, tenantId }, force: true });
+    await database.stationPosition.destroy({ where: { id: extraUnusedPosIds, tenantId }, force: true });
+  }
+
+  // Rebind existing SF assignments onto target positions to preserve SF guards after optimization.
+  const selectedPositions = await database.stationPosition.findAll({
+    where: { id: selectedPositionIds, tenantId },
+    attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder'],
+    order: [['sortOrder', 'ASC']],
+  });
+
+  for (let i = 0; i < existingSfAssignments.length; i++) {
+    const a = existingSfAssignments[i];
+    const targetPos = selectedPositions[i];
+    if (!targetPos) break;
+    await database.guardAssignment.update(
+      {
+        positionId: targetPos.id,
+        stationId: targetPos.stationId,
+        rotationStyleId: sfRotationStyleId,
+        platoonOffset: targetPos.platoonOffset || 0,
+        isRelief: true,
+        updatedById: userId,
+      },
+      { where: { id: a.id, tenantId } },
+    );
+  }
+
+  // 9. Regenerate shifts for all fixed + active SF assignments after offset/position rebalance
   const allFijoAssignments = await database.guardAssignment.findAll({
     where: { tenantId, status: 'active', deletedAt: null, positionId: fijoPositions.map((f: any) => f.id) },
   });
+  const allSfAssignments = await database.guardAssignment.findAll({
+    where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
+  });
+
+  const regenAssignments = [...allFijoAssignments, ...allSfAssignments];
   const batchSize = 10;
-  for (let i = 0; i < allFijoAssignments.length; i += batchSize) {
-    const batch = allFijoAssignments.slice(i, i + batchSize);
+  for (let i = 0; i < regenAssignments.length; i += batchSize) {
+    const batch = regenAssignments.slice(i, i + batchSize);
     await Promise.all(
       batch.map((a: any) => generateShiftsForAssignment(database, a.get({ plain: true }), tenantId, userId))
     );
   }
 
   return {
-    message: `Optimizado: ${numSfNeeded} sacafrancos para ${stationsWithFijos.length} estaciones. Secuencia: cada estación descansa en días consecutivos distintos.`,
+    message: `Optimizado: ${targetSfCount} sacafrancos para ${stationsWithFijos.length} estaciones. Secuencia: L se cubre en cadena por estación sin perder SF asignados.`,
     details: {
       totalStations: stationsWithFijos.length,
       sacafrancosNeeded: numSfNeeded,
+      sacafrancosConfigured: targetSfCount,
       fijosNeeded: staffing.fijosNeeded,
       peakDemand: staffing.peakDemand,
       offsetsOptimized: offsetUpdates.length,
       rotationStyleId: sfRotationStyleId,
+      sfAssignmentsPreserved: existingSfAssignments.length,
       sequenceInfo: `Stations sequenced by rest day: each station's rest is offset by ${stationConfigs[0]?.fijoPositions[0]?.restDays || 2} days`,
     },
   };

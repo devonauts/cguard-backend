@@ -1,5 +1,6 @@
 import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
+import { isEmailEnabled } from '../lib/emailPrefs';
 import Sequelize from 'sequelize';
 import { getConfig } from '../config';
 import { IServiceOptions } from './IServiceOptions';
@@ -194,7 +195,14 @@ export default class EstimateService {
       const to = client && (client.email || client.contactEmail || client.contact_email);
       emailedTo = to || null;
 
-      if (to && getConfig().SENDGRID_KEY && getConfig().SENDGRID_EMAIL_FROM) {
+      // Honour the tenant's "Envío de cotizaciones" email preference.
+      const emailAllowed = !!to && await isEmailEnabled(
+        this.options.database,
+        SequelizeRepository.getCurrentTenant(this.options) && SequelizeRepository.getCurrentTenant(this.options).id,
+        'estimate',
+      );
+
+      if (emailAllowed && getConfig().SENDGRID_KEY && getConfig().SENDGRID_EMAIL_FROM) {
         sendgridMail.setApiKey(getConfig().SENDGRID_KEY);
 
         const msg: any = {
@@ -220,7 +228,7 @@ export default class EstimateService {
       }
 
       // Fallback with EmailSender local template
-      if (to && !emailSent) {
+      if (emailAllowed && !emailSent) {
         try {
           const tenant = SequelizeRepository.getCurrentTenant(this.options) || null;
           const vars: any = {

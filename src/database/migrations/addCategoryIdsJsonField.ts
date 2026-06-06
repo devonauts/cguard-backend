@@ -35,16 +35,21 @@ async function migrate() {
       console.log('✅ Column added');
     }
 
-    // Migrate existing categoryId data to categoryIds array
-    console.log('Migrating existing categoryId data...');
-    await sequelize.query(`
-      UPDATE clientAccounts 
-      SET categoryIds = JSON_ARRAY(categoryId)
-      WHERE categoryId IS NOT NULL 
-      AND deletedAt IS NULL
-      AND (categoryIds IS NULL OR JSON_LENGTH(categoryIds) = 0)
-    `);
-    console.log('✅ Data migrated');
+    // Migrate existing categoryId data to categoryIds array only when legacy column exists
+    const tableDesc = await queryInterface.describeTable('clientAccounts').catch(() => ({} as any));
+    if (tableDesc && tableDesc['categoryId']) {
+      console.log('Migrating existing categoryId data...');
+      await sequelize.query(`
+        UPDATE clientAccounts
+        SET categoryIds = JSON_ARRAY(categoryId)
+        WHERE categoryId IS NOT NULL
+        AND deletedAt IS NULL
+        AND (categoryIds IS NULL OR JSON_LENGTH(categoryIds) = 0)
+      `);
+      console.log('✅ Data migrated');
+    } else {
+      console.log('Legacy column categoryId not found; skipping data migration step.');
+    }
 
     console.log('\n✅ Migration completed successfully!');
     console.log('   The categoryIds field has been added and populated.');

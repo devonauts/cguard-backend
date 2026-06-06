@@ -96,4 +96,8 @@ export default (app) => {
     `/tenant/:tenantId/client-account/:id/send-portal-invitation`,
     require('./clientAccountSendPortalInvitation').default,
   );
+  app.post(
+    `/tenant/:tenantId/client-account/:id/send-app-invitation`,
+    require('./clientAccountSendAppInvitation').default,
+  );
 };

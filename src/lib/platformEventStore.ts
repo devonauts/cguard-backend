@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { emitPlatformEvent } from './realtime';
 
 export interface PlatformEvent {
   id: string;
@@ -80,6 +81,11 @@ export async function storePlatformEvent(
       ],
     },
   );
+
+  // Push instantly over websockets (best-effort; persistence above is the
+  // source of truth for history/unread and never depends on this).
+  emitPlatformEvent({ id, createdAt: new Date().toISOString(), ...event });
+
   return id;
 }
 

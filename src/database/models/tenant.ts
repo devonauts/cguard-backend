@@ -59,6 +59,39 @@ export default function (sequelize, DataTypes) {
       planUserId: {
         type: DataTypes.UUID,
       },
+      // ── Per-user subscription / trial billing ──────────────────────────────
+      // When the free trial ends (set on creation to createdAt + trial days).
+      trialEndsAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      // trialing | active | past_due | trial_expired | canceled
+      billingStatus: {
+        type: DataTypes.STRING(32),
+        allowNull: false,
+        defaultValue: 'trialing',
+      },
+      // Active Stripe subscription id once the tenant activates a paid plan.
+      stripeSubscriptionId: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      // The per-seat subscription item id, so seat quantity can be reconciled.
+      stripeSeatItemId: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      // Set once the one-time implementation fee has been paid.
+      implementationPaidAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      // Highest trial-reminder stage already emailed (dedupe). 0 = none.
+      trialReminderStage: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
       // Contact / Business fields added to support invoices/presupuestos
       address: {
         type: DataTypes.TEXT,
@@ -188,6 +221,18 @@ export default function (sequelize, DataTypes) {
       paranoid: true,
     },
   );
+
+  // Start the free trial when a tenant is created.
+  tenant.beforeCreate((record: any) => {
+    if (!record.trialEndsAt) {
+      const days = parseInt(process.env.BILLING_TRIAL_DAYS || '', 10);
+      const trialDays = Number.isFinite(days) ? days : 14;
+      record.trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
+    }
+    if (!record.billingStatus) {
+      record.billingStatus = 'trialing';
+    }
+  });
 
   tenant.associate = (models) => {
     models.tenant.hasMany(models.settings, {

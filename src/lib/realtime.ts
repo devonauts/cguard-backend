@@ -1,0 +1,186 @@
+/**
+ * Realtime (websocket) transport — socket.io.
+ *
+ * Pushes platform events to connected browsers instantly, replacing the SSE
+ * poll for live delivery (events are still persisted in `platform_events` for
+ * history/unread). Under PM2 cluster mode a single browser is connected to one
+ * worker, so cross-worker broadcast requires a shared Redis adapter; when
+ * `REDIS_URL` is set we attach it, otherwise we fall back to single-worker mode
+ * (fine for local dev / a single instance).
+ *
+ * Transport is forced to websocket-only so the HTTP long-poll handshake can't
+ * bounce between cluster workers (which would otherwise need sticky sessions).
+ *
+ * The socket is served under `/api/socket.io` so it travels through the same
+ * reverse-proxy / dev rule that already routes `/api` to this backend.
+ */
+
+import { Server as IOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
+import { databaseInit } from '../database/databaseConnection';
+import AuthService from '../services/auth/authService';
+
+export const SOCKET_PATH = '/api/socket.io';
+
+let io: IOServer | null = null;
+
+/** All roles a user holds for a given tenant (from the user.tenants membership array). */
+function rolesForTenant(user: any, tenantId: string): string[] {
+  if (!user || !Array.isArray(user.tenants)) return [];
+  const tu = user.tenants.find(
+    (t: any) =>
+      t && (t.id === tenantId || t.tenantId === tenantId || (t.tenant && t.tenant.id === tenantId)),
+  );
+  const roles = tu?.roles || tu?.tenantUser?.roles || [];
+  return Array.isArray(roles)
+    ? roles
+    : String(roles || '')
+        .split(',')
+        .map((r) => r.trim())
+        .filter(Boolean);
+}
+
+function belongsToTenant(user: any, tenantId: string): boolean {
+  if (!user || !Array.isArray(user.tenants)) return false;
+  return user.tenants.some(
+    (t: any) =>
+      t && (t.id === tenantId || t.tenantId === tenantId || (t.tenant && t.tenant.id === tenantId)),
+  );
+}
+
+/**
+ * Initialize the socket.io server on the given HTTP server. Safe to call once
+ * at startup; subsequent calls return the existing instance.
+ */
+export async function initRealtime(httpServer: any): Promise<IOServer> {
+  if (io) return io;
+
+  io = new IOServer(httpServer, {
+    path: SOCKET_PATH,
+    cors: { origin: true, credentials: true },
+    transports: ['websocket'],
+  });
+
+  // Cluster-wide broadcast via Redis (optional). Without it, an event emitted on
+  // one worker only reaches clients connected to that same worker.
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    try {
+      const pubClient = createClient({ url: redisUrl });
+      const subClient = pubClient.duplicate();
+      pubClient.on('error', (e) => console.error('[realtime] redis pub error:', e?.message || e));
+      subClient.on('error', (e) => console.error('[realtime] redis sub error:', e?.message || e));
+      await Promise.all([pubClient.connect(), subClient.connect()]);
+      io.adapter(createAdapter(pubClient, subClient));
+      console.log('[realtime] socket.io Redis adapter attached (cluster broadcast enabled)');
+    } catch (e: any) {
+      console.error(
+        '[realtime] Redis adapter failed — running single-worker:',
+        e?.message || e,
+      );
+    }
+  } else {
+    console.warn(
+      '[realtime] REDIS_URL not set — socket.io running single-worker (no cross-cluster broadcast)',
+    );
+  }
+
+  // Handshake auth: verify JWT, confirm tenant membership, stash identity.
+  io.use(async (socket, next) => {
+    try {
+      const token =
+        (socket.handshake.auth as any)?.token || (socket.handshake.query as any)?.token;
+      const tenantId =
+        (socket.handshake.auth as any)?.tenantId || (socket.handshake.query as any)?.tenantId;
+      if (!token || !tenantId) return next(new Error('unauthorized'));
+
+      const database = await databaseInit();
+      const user: any = await AuthService.findByToken(String(token), { database });
+      if (!user || !user.id) return next(new Error('unauthorized'));
+      if (!belongsToTenant(user, String(tenantId))) return next(new Error('forbidden'));
+
+      (socket.data as any) = {
+        userId: user.id,
+        tenantId: String(tenantId),
+        roles: rolesForTenant(user, String(tenantId)),
+      };
+      next();
+    } catch {
+      next(new Error('unauthorized'));
+    }
+  });
+
+  io.on('connection', (socket) => {
+    const { userId, tenantId, roles } = (socket.data as any) || {};
+    if (!tenantId || !userId) return;
+    socket.join(`tenant:${tenantId}`);
+    socket.join(`tenant:${tenantId}:user:${userId}`);
+    (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
+  });
+
+  console.log(`[realtime] socket.io listening on ${SOCKET_PATH}`);
+  return io;
+}
+
+function safeParse(value: any): any {
+  if (value == null || typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Emit a stored platform event to the browsers entitled to it. Mirrors the SSE
+ * targeting in api/events.ts: a specific recipient → that user's room; otherwise
+ * fan out to the targetRoles role rooms (or the whole tenant when unscoped).
+ * No-op if the socket server isn't initialized.
+ */
+export function emitPlatformEvent(event: {
+  id: string;
+  tenantId: string;
+  eventType: string;
+  title: string;
+  body: string;
+  payload?: any;
+  recipientUserId?: string | null;
+  targetRoles?: string | null;
+  sourceEntityType?: string | null;
+  sourceEntityId?: string | null;
+  createdAt?: Date | string;
+}): void {
+  if (!io) return;
+  try {
+    const payload = {
+      id: event.id,
+      eventType: event.eventType,
+      title: event.title,
+      body: event.body,
+      payload: safeParse(event.payload),
+      sourceEntityType: event.sourceEntityType,
+      sourceEntityId: event.sourceEntityId,
+      createdAt: event.createdAt || new Date().toISOString(),
+    };
+    const t = event.tenantId;
+
+    if (event.recipientUserId) {
+      io.to(`tenant:${t}:user:${event.recipientUserId}`).emit('notification', payload);
+      return;
+    }
+    if (event.targetRoles) {
+      const roles = String(event.targetRoles)
+        .split(',')
+        .map((r) => r.trim())
+        .filter(Boolean);
+      roles.forEach((r) => io!.to(`tenant:${t}:role:${r}`).emit('notification', payload));
+    } else {
+      io.to(`tenant:${t}`).emit('notification', payload);
+    }
+  } catch (e: any) {
+    console.error('[realtime] emit failed:', e?.message || e);
+  }
+}
+
+export default { initRealtime, emitPlatformEvent, SOCKET_PATH };

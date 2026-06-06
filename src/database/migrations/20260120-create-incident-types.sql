@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS `incidentTypes` (
   UNIQUE KEY `incidentTypes_importHash_tenant_unique` (`importHash`, `tenantId`)
 );
 
--- Add foreign-key-like references for informational integrity (may be optional depending on DB privileges)
+-- Add foreign-key reference (idempotency handled by SQL runner tolerating duplicate errors)
 ALTER TABLE `incidentTypes`
-  ADD CONSTRAINT IF NOT EXISTS `fk_incidentTypes_tenant` FOREIGN KEY (`tenantId`) REFERENCES `tenants`(`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `fk_incidentTypes_tenant` FOREIGN KEY (`tenantId`) REFERENCES `tenants`(`id`) ON DELETE CASCADE;

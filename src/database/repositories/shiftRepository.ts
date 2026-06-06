@@ -58,13 +58,9 @@ class ShiftRepository {
       },
     );
 
-    // Also add the guard to the station's assignedGuards junction table
-    if (record.stationId && record.guardId) {
-      const station = await options.database.station.findByPk(record.stationId, { transaction });
-      if (station) {
-        await station.addAssignedGuards(record.guardId, { transaction });
-      }
-    }
+    // NOTE: the redundant `stationAssignedGuardsUser` junction write was removed.
+    // Assignment membership is now derived from `guardAssignment` / generated
+    // shifts (the single source of truth), not from this junction.
 
     await this._createAuditLog(
       AuditLogRepository.CREATE,

@@ -38,6 +38,16 @@ export default (app) => {
     require('./guardMeOrderComplete').default,
   );
 
+  // Memos addressed to me + acknowledgment
+  app.get(
+    `/tenant/:tenantId/guard/me/memos`,
+    require('./guardMeMemos').default,
+  );
+  app.post(
+    `/tenant/:tenantId/guard/me/memos/:id/accept`,
+    require('./guardMeMemoAccept').default,
+  );
+
   // Start a patrol (stamps startAt + notifies tenant/client per settings)
   app.post(
     `/tenant/:tenantId/guard/me/patrol/start`,
@@ -54,6 +64,26 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/guard/me/performance`,
     require('./guardMePerformance').default,
+  );
+
+  // My station security test (sanitized random N questions) + submit
+  app.get(
+    `/tenant/:tenantId/guard/me/quiz`,
+    require('./guardMeQuiz').default,
+  );
+  app.post(
+    `/tenant/:tenantId/guard/me/quiz/submit`,
+    require('./guardMeQuizSubmit').default,
+  );
+
+  // Backup pool: open (at-risk) shifts I can cover + volunteering
+  app.get(
+    `/tenant/:tenantId/guard/me/backup/open`,
+    require('./guardMeBackupOpen').default,
+  );
+  app.post(
+    `/tenant/:tenantId/guard/me/backup/volunteer`,
+    require('./guardMeBackupVolunteer').default,
   );
 
   // Clock in (geofence validated)

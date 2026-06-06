@@ -8,6 +8,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import Roles from '../../security/roles';
 import { Op } from 'sequelize';
+import { timeLabelInTz } from '../../lib/tenantTime';
 
 export default async (req: any, res: any) => {
   try {
@@ -80,7 +81,17 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // Tenant timezone is the single source of truth for shift time display.
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    const tz = (tenant && tenant.timezone) || 'UTC';
+    const withLabels = (s: any) => {
+      if (!s) return null;
+      const p = s.get({ plain: true });
+      return { ...p, startTimeLabel: timeLabelInTz(p.startTime, tz), endTimeLabel: timeLabelInTz(p.endTime, tz) };
+    };
+
     const response = {
+      timezone: tz,
       guard: securityGuard ? {
         id: securityGuard.id,
         fullName: securityGuard.fullName,
@@ -89,8 +100,8 @@ export default async (req: any, res: any) => {
         guardId: securityGuard.guardId,
       } : null,
       stations: stations.map((s: any) => s.get({ plain: true })),
-      currentShift: currentShift ? currentShift.get({ plain: true }) : null,
-      nextShift: nextShift ? nextShift.get({ plain: true }) : null,
+      currentShift: withLabels(currentShift),
+      nextShift: withLabels(nextShift),
       activeClockIn,
       isClockedIn: !!activeClockIn,
     };

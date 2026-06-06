@@ -38,8 +38,12 @@ export default class CustomerIdentityService {
    *
    * @param clientAccount  Plain object (or Sequelize instance) with id, email, name, tenantId
    */
-  async provisionAndInvite(clientAccount: any): Promise<{ sent: boolean; recipient: string }> {
+  async provisionAndInvite(
+    clientAccount: any,
+    opts: { variant?: 'welcome' | 'app' } = {},
+  ): Promise<{ sent: boolean; recipient: string }> {
     const { database, currentTenant, language } = this.options;
+    const variant = opts.variant === 'app' ? 'app' : 'welcome';
 
     const recipientEmail = (clientAccount.email || '').toString().trim().toLowerCase();
     if (!recipientEmail) {
@@ -127,10 +131,14 @@ export default class CustomerIdentityService {
       await (tenantUser as any).save({ transaction });
 
       // ── Step 5: Update onboardingStatus on the clientAccount record ──────────
-      await database.clientAccount.update(
-        { onboardingStatus: 'invited' },
-        { where: { id: clientAccount.id }, transaction },
-      );
+      // For the app-invite variant, do NOT downgrade an already-active client
+      // back to "invited" — it's a re-engagement nudge, not initial onboarding.
+      if (variant === 'welcome') {
+        await database.clientAccount.update(
+          { onboardingStatus: 'invited' },
+          { where: { id: clientAccount.id }, transaction },
+        );
+      }
 
       // ── Step 6: Commit ALL DB changes before sending email ───────────────────
       await SequelizeRepository.commitTransaction(transaction);
@@ -149,7 +157,7 @@ export default class CustomerIdentityService {
 
       const tenantWithLogo = { ...((currentTenant.get ? currentTenant.get({ plain: true }) : currentTenant)), logoUrl: tenantLogoUrl };
 
-      const sender = new EmailSender(EmailSender.TEMPLATES.INVITATION, {
+      const baseVars: any = {
         tenant: tenantWithLogo,
         link,
         invitationLink: link,
@@ -157,9 +165,12 @@ export default class CustomerIdentityService {
         registrationLink: link,
         firstName: (clientAccount as any).name || '',
         lastName: '',
-        invitation: true,
-        clientInvitation: true,
-      });
+      };
+      const vars = variant === 'app'
+        ? { ...baseVars, appInvite: true }
+        : { ...baseVars, invitation: true, clientInvitation: true };
+
+      const sender = new EmailSender(EmailSender.TEMPLATES.INVITATION, vars);
 
       await sender.sendTo(recipientEmail);
 

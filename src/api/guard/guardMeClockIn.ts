@@ -7,6 +7,9 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
+import { Op } from 'sequelize';
+import { dispatch } from '../../lib/notificationDispatcher';
+import { gatherClockInContext } from '../../lib/clockInContext';
 
 /** Haversine distance in meters between two coordinates */
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -37,20 +40,37 @@ export default async (req: any, res: any) => {
     if (!stationId) throw new Error400(req.language, 'guard.stationRequired');
     if (latitude == null || longitude == null) throw new Error400(req.language, 'guard.locationRequired');
 
-    // Validate station exists and guard is assigned
+    // Validate station exists
     const station = await db.station.findOne({
       where: { id: stationId, tenantId, deletedAt: null },
-      include: [{
-        model: db.user,
-        as: 'assignedGuards',
-        where: { id: userId },
-        attributes: ['id'],
-        through: { attributes: [] },
-        required: true,
-      }],
     });
 
     if (!station) {
+      throw new Error400(req.language, 'guard.notAssignedToStation');
+    }
+
+    // Validate the guard is assigned to this station via the SINGLE SOURCE OF
+    // TRUTH: an active guardAssignment, or a generated shift covering today.
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+
+    const hasAssignment = await db.guardAssignment.findOne({
+      where: { guardId: userId, stationId, tenantId, status: 'active', deletedAt: null },
+      attributes: ['id'],
+    });
+    let isAssigned = !!hasAssignment;
+    if (!isAssigned) {
+      const shiftToday = await db.shift.findOne({
+        where: {
+          guardId: userId, stationId, tenantId,
+          startTime: { [Op.lte]: endOfDay },
+          endTime: { [Op.gte]: startOfDay },
+        },
+        attributes: ['id'],
+      });
+      isAssigned = !!shiftToday;
+    }
+    if (!isAssigned) {
       throw new Error400(req.language, 'guard.notAssignedToStation');
     }
 
@@ -123,6 +143,28 @@ export default async (req: any, res: any) => {
 
     // Update isOnDuty
     await securityGuard.update({ isOnDuty: true });
+
+    // Notify the platform (websocket + in-app) and email the client/tenant/
+    // supervisors that the guard started the shift, passing along any open
+    // incidents and pending updates. Best-effort: never block the clock-in.
+    try {
+      const { data, extraEmails } = await gatherClockInContext(db, {
+        tenantId,
+        station,
+        securityGuard,
+        observations: guardShiftRecord.observations,
+        clockInTime: guardShiftRecord.punchInTime,
+      });
+      await dispatch('guard.checkin', data, {
+        database: db,
+        tenantId,
+        sourceEntityType: 'guardShift',
+        sourceEntityId: guardShiftRecord.id,
+        extraEmails,
+      });
+    } catch (notifyErr) {
+      console.error('[clockIn] notification dispatch failed:', (notifyErr as any)?.message || notifyErr);
+    }
 
     return ApiResponseHandler.success(req, res, {
       success: true,

@@ -49,9 +49,11 @@ export default class SchedulerService {
       scheduleRequirements = [];
     }
 
-    // 2. Get assigned guards (titulares) for this station
+    // 2. Get assigned guards (titulares) for this station — derived from the
+    //    single source of truth (guardAssignment), not the old junction table.
     const assignedGuardIds = await database.sequelize.query(
-      `SELECT userId FROM stationAssignedGuardsUser WHERE stationId = :stationId`,
+      `SELECT DISTINCT guardId AS userId FROM guardAssignments
+         WHERE stationId = :stationId AND status = 'active' AND deletedAt IS NULL`,
       { replacements: { stationId }, type: database.sequelize.QueryTypes.SELECT }
     );
     const guardUserIds = assignedGuardIds.map((r: any) => r.userId);
@@ -185,10 +187,8 @@ export default class SchedulerService {
           { transaction },
         );
 
-        // Also update the station's assignedGuards junction
-        if (shift.guardId) {
-          await station.addAssignedGuards(shift.guardId, { transaction });
-        }
+        // (Removed the redundant stationAssignedGuardsUser junction write —
+        //  guardAssignment is the single source of truth.)
 
         createdShifts.push(record.get({ plain: true }));
       }

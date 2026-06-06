@@ -17,6 +17,13 @@ export default function (sequelize) {
         type: DataTypes.DATE,
         allowNull: false,
       },
+      // True once startTime/endTime are stored as true UTC (tenant-tz aware).
+      // New shifts are created correct; the one-time backfill flips legacy rows.
+      tzFixed: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    
@@ -62,6 +69,19 @@ export default function (sequelize) {
         allowNull: true,
       },
       stationId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      // Link back to the source guardAssignment + position. These columns exist
+      // in the DB (added by the scheduling migration) but were never declared on
+      // the model, so Sequelize silently dropped them on insert — leaving shifts
+      // unlinked from their assignment. Declaring them makes the linkage persist
+      // (required for idempotent regeneration and cascade delete).
+      guardAssignmentId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      positionId: {
         type: DataTypes.UUID,
         allowNull: true,
       },

@@ -66,55 +66,12 @@ export default async (req, res) => {
       shiftRows = [];
     }
 
-    // Include guardShift records that reference this station
-    const sqlGuardShifts = `
-      SELECT
-        gs.id as id,
-        gs.punchInTime,
-        gs.punchOutTime,
-        gs.shiftSchedule,
-        gs.stationNameId as businessInfoId,
-        bi.stationName as postSiteName,
-        ca.name as clientName,
-        gs.guardNameId as securityGuardRecordId,
-        sg.guardId as guardId,
-        sg.guardId as guardUserId,
-        gu.id as userId,
-        gu.firstName as firstName,
-        gu.lastName as lastName,
-        gu.email as email,
-        gu.phoneNumber as phoneNumber,
-        'guardShift' as source,
-        gs.createdAt,
-        gs.updatedAt
-      FROM guardShifts gs
-      -- stationNameId references the stations table
-      LEFT JOIN stations bi ON bi.id = gs.stationNameId
-      LEFT JOIN businessInfos biPost ON biPost.id = bi.postSiteId
-      LEFT JOIN clientAccounts ca ON ca.id = biPost.clientAccountId
-      LEFT JOIN securityGuards sg ON sg.id = gs.guardNameId
-      LEFT JOIN users gu ON gu.id = sg.guardId
-      WHERE (
-        gs.stationNameId = :locationId
-        OR bi.id = :locationId
-        OR bi.postSiteId = :locationId
-      )
-        AND gs.tenantId = :tenantId
-      ORDER BY gs.createdAt DESC
-    `;
-
-    let guardShiftRows: any[] = [];
-    try {
-        console.debug('[postSiteAssignedGuards] running guardShifts query', { tenantId, locationId });
-        guardShiftRows = await req.database.sequelize.query(sqlGuardShifts, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
-    } catch (err) {
-      console.error('[postSiteAssignedGuards] guardShifts query failed', (err && (err as any).message) || err);
-      guardShiftRows = [];
-    }
-
+    // NOTE: clock-in `guardShifts` (actuals) are NO LONGER unioned in here.
+    // Assignment views read the single source of truth (guardAssignment →
+    // generated shifts) only; live on-duty status comes from the dedicated
+    // active-locations endpoint instead.
     const combined = [
       ...(shiftRows || []),
-      ...(guardShiftRows || []),
     ];
 
     console.debug(`[postSiteAssignedGuards] found ${combined.length} combined rows for location ${locationId}`);

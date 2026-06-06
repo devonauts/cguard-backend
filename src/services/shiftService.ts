@@ -14,6 +14,47 @@ export default class ShiftService {
     this.options = options;
   }
 
+  /**
+   * Guard against double-booking: a guard cannot hold two shifts whose time
+   * ranges overlap. Two ranges [aStart,aEnd) and [bStart,bEnd) overlap iff
+   * aStart < bEnd && bStart < aEnd. Throws Error400 when an overlap exists.
+   * `excludeId` lets update() ignore the record being edited.
+   */
+  async _assertNoGuardOverlap(data, transaction, excludeId?) {
+    const Sequelize = this.options.database.Sequelize;
+    const Op = Sequelize.Op;
+
+    const guardId = data.guard;
+    if (!guardId || !data.startTime || !data.endTime) {
+      return;
+    }
+
+    const tenant = SequelizeRepository.getCurrentTenant(this.options);
+
+    const where: any = {
+      tenantId: tenant.id,
+      guardId,
+      // existing.startTime < new.endTime  AND  existing.endTime > new.startTime
+      startTime: { [Op.lt]: data.endTime },
+      endTime: { [Op.gt]: data.startTime },
+    };
+    if (excludeId) {
+      where.id = { [Op.ne]: excludeId };
+    }
+
+    const conflict = await this.options.database.shift.findOne({
+      where,
+      transaction,
+    });
+
+    if (conflict) {
+      throw new Error400(
+        this.options.language,
+        'entities.shift.errors.guardOverlap',
+      );
+    }
+  }
+
   async create(data) {
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
@@ -23,6 +64,8 @@ export default class ShiftService {
       data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
       data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
       data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
+
+      await this._assertNoGuardOverlap(data, transaction);
       // tenantUser may be provided as tenantUserId — attempt to filter/validate when possible
       try {
         data.tenantUserId = data.tenantUserId || data.tenantUser || null;
@@ -37,120 +80,9 @@ export default class ShiftService {
         transaction,
       });
 
-      // Attempt to create/update tenant_user_post_sites pivot within same transaction
-      try {
-        const sequelize = this.options.database.sequelize;
-        const tenantId = SequelizeRepository.getCurrentTenant(this.options).id;
-
-        // Normalize helper for JSON fields
-        const normalizeJsonField = (value) => {
-          if (value === undefined || value === null) return null;
-          if (typeof value === 'string') {
-            const trimmed = value.trim();
-            if (!trimmed) return null;
-            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-              try { JSON.parse(trimmed); return trimmed; } catch (e) { /* fallthrough */ }
-            }
-            return JSON.stringify(trimmed);
-          }
-          if (Array.isArray(value) || typeof value === 'object') {
-            try { return JSON.stringify(value); } catch (e) { return null; }
-          }
-          return JSON.stringify(value);
-        };
-
-        const postSiteId = data.postSite || data.postSiteId || record.postSiteId || null;
-        // Resolve tenantUserId: prefer provided tenantUserId, else try to resolve from guard (user)
-        let tenantUserId = data.tenantUserId || data.tenant_user_id || null;
-        if (!tenantUserId && data.guard) {
-          try {
-            const tenantUser = await TenantUserRepository.findByTenantAndUser(tenantId, data.guard, { ...this.options, transaction });
-            if (tenantUser && tenantUser.id) tenantUserId = tenantUser.id;
-          } catch (e) {
-            // ignore
-          }
-        }
-
-        // Resolve security_guard_id: try to find securityGuard record by guard user id
-        let resolvedSecurityGuardId = null;
-        try {
-          if (data.guard) {
-            const byGuard = await this.options.database.securityGuard.findOne({ where: { guardId: data.guard, tenantId }, transaction });
-            if (byGuard && byGuard.id) resolvedSecurityGuardId = byGuard.id;
-          }
-        } catch (e) {
-          // ignore
-        }
-
-        if (tenantUserId && postSiteId) {
-          // Check if station_id column exists
-          let hasStationColumn = false;
-          try {
-            const desc = await sequelize.getQueryInterface().describeTable('tenant_user_post_sites');
-            hasStationColumn = !!desc && Object.prototype.hasOwnProperty.call(desc, 'station_id');
-          } catch (e) {
-            hasStationColumn = false;
-          }
-
-          // Check existing assignment
-          const existing = await sequelize.query(
-            `SELECT id FROM tenant_user_post_sites WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId LIMIT 1`,
-            { replacements: { tenantUserId, businessInfoId: postSiteId }, type: sequelize.QueryTypes.SELECT, transaction },
-          );
-
-          const now = new Date();
-
-          if (existing && existing.length > 0) {
-            // update
-            const updateData: any = {
-              security_guard_id: resolvedSecurityGuardId || null,
-              site_tours: normalizeJsonField(data.siteTours || data.site_tours),
-              tasks: normalizeJsonField(data.tasks),
-              post_orders: normalizeJsonField(data.postOrders || data.post_orders),
-              checklists: normalizeJsonField(data.checklists),
-              skill_set: normalizeJsonField(data.skillSet || data.skill_set),
-              department: normalizeJsonField(data.department),
-              updatedAt: now,
-            };
-
-            if (hasStationColumn) {
-              updateData.station_id = data.station || data.stationId || null;
-            }
-
-            const updateFields = Object.keys(updateData).map(key => `${key} = :${key}`).join(', ');
-            await sequelize.query(
-              `UPDATE tenant_user_post_sites SET ${updateFields} WHERE tenantUserId = :tenantUserId AND businessInfoId = :businessInfoId`,
-              { replacements: { ...updateData, tenantUserId, businessInfoId: postSiteId }, transaction },
-            );
-          } else {
-            // insert
-            const { randomUUID } = await import('crypto');
-            const row: any = {
-              id: randomUUID(),
-              tenantUserId,
-              businessInfoId: postSiteId,
-              security_guard_id: resolvedSecurityGuardId || null,
-              site_tours: normalizeJsonField(data.siteTours || data.site_tours),
-              tasks: normalizeJsonField(data.tasks),
-              post_orders: normalizeJsonField(data.postOrders || data.post_orders),
-              checklists: normalizeJsonField(data.checklists),
-              skill_set: normalizeJsonField(data.skillSet || data.skill_set),
-              department: normalizeJsonField(data.department),
-              createdAt: now,
-              updatedAt: now,
-            };
-
-            if (hasStationColumn) {
-              row.station_id = data.station || data.stationId || null;
-            }
-
-            await sequelize.getQueryInterface().bulkInsert('tenant_user_post_sites', [row], { transaction });
-          }
-        }
-      } catch (e) {
-        // If pivot creation fails, log but do not block shift creation
-        console.warn('ShiftService.create: failed to create/update tenant_user_post_sites pivot', e && (e as any).message || e);
-      }
+      // NOTE: the redundant `tenant_user_post_sites` side-write was removed.
+      // `guardAssignment` is now the single source of truth for assignments and
+      // `shifts` are derived from it — no pivot bookkeeping needed here.
 
       await SequelizeRepository.commitTransaction(
         transaction,
@@ -186,6 +118,8 @@ export default class ShiftService {
       } catch (e) {
         // ignore
       }
+
+      await this._assertNoGuardOverlap(data, transaction, id);
 
       const record = await ShiftRepository.update(
         id,

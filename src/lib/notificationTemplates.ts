@@ -43,6 +43,37 @@ export interface NotificationTemplate {
   emailHtml?: (data: any) => string;
 }
 
+/** Minimal HTML-escape for values interpolated into email markup. */
+function esc(v: any): string {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/** Render a titled <ul> from a list of strings, or '' when the list is empty. */
+function listSection(label: string, items: any): string {
+  const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!arr.length) return '';
+  const lis = arr.map((i) => `<li>${esc(i)}</li>`).join('');
+  return `<p style="margin:16px 0 4px"><strong>${esc(label)}</strong></p><ul style="margin:0 0 8px">${lis}</ul>`;
+}
+
+/** Email body for a guard clock-in, including incidents / note / pending items. */
+function checkinEmailHtml(d: any): string {
+  return `
+    <h2>✅ Guardia inició turno</h2>
+    ${d.guardName ? `<p><strong>Guardia:</strong> ${esc(d.guardName)}</p>` : ''}
+    ${d.siteName ? `<p><strong>Sitio:</strong> ${esc(d.siteName)}</p>` : ''}
+    ${d.stationName ? `<p><strong>Puesto:</strong> ${esc(d.stationName)}</p>` : ''}
+    ${d.clockInTime ? `<p><strong>Hora de entrada:</strong> ${esc(d.clockInTime)}</p>` : ''}
+    ${d.observations ? `<p><strong>Nota del guardia:</strong> ${esc(d.observations)}</p>` : ''}
+    ${listSection('Incidentes abiertos en el sitio', d.incidents)}
+    ${listSection('Memos pendientes', d.pendingMemos)}
+    ${listSection('Consignas pendientes', d.pendingOrders)}
+  `;
+}
+
 export const TEMPLATES: Record<EventType, NotificationTemplate> = {
   'incident.created': {
     title: (d) =>
@@ -76,10 +107,16 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
   },
   'guard.checkin': {
     title: (d) => `✅ Check-in: ${d.guardName || 'Guardia'}`,
-    body: (d) =>
-      `${d.guardName || 'Guardia'} inició turno${d.siteName ? ` en ${d.siteName}` : ''}${d.stationName ? ` — ${d.stationName}` : ''}`,
+    body: (d) => {
+      const base = `${d.guardName || 'Guardia'} inició turno${d.siteName ? ` en ${d.siteName}` : ''}${d.stationName ? ` — ${d.stationName}` : ''}`;
+      const n = Array.isArray(d.incidents) ? d.incidents.length : 0;
+      return n > 0 ? `${base} · ${n} incidente(s) abierto(s)` : base;
+    },
     targetRoles: TARGET_ROLES.SUPERVISORS,
     sendEmail: false,
+    emailSubject: (d) =>
+      `[CGuard] ${d.guardName || 'Guardia'} inició turno${d.stationName ? ` — ${d.stationName}` : ''}`,
+    emailHtml: (d) => checkinEmailHtml(d),
   },
   'guard.checkout': {
     title: (d) => `🔚 Check-out: ${d.guardName || 'Guardia'}`,
@@ -87,6 +124,15 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
       `${d.guardName || 'Guardia'} finalizó turno${d.siteName ? ` en ${d.siteName}` : ''}`,
     targetRoles: TARGET_ROLES.SUPERVISORS,
     sendEmail: false,
+    emailSubject: (d) =>
+      `[CGuard] ${d.guardName || 'Guardia'} finalizó turno${d.stationName ? ` — ${d.stationName}` : ''}`,
+    emailHtml: (d) => `
+      <h2>🔚 Turno finalizado</h2>
+      ${d.guardName ? `<p><strong>Guardia:</strong> ${esc(d.guardName)}</p>` : ''}
+      ${d.siteName ? `<p><strong>Sitio:</strong> ${esc(d.siteName)}</p>` : ''}
+      ${d.stationName ? `<p><strong>Puesto:</strong> ${esc(d.stationName)}</p>` : ''}
+      ${d.clockOutTime ? `<p><strong>Hora:</strong> ${esc(d.clockOutTime)}</p>` : ''}
+    `,
   },
   'guard.late': {
     title: (d) => `⚠️ Guardia sin presentarse: ${d.guardName || 'Guardia'}`,
@@ -175,17 +221,18 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
   },
   'memo.created': {
     title: (d) =>
-      `📢 Comunicado: ${d.memoTitle || d.title || 'Nuevo comunicado'}`,
+      `📢 Memo: ${d.memoTitle || d.title || 'Nuevo memo'}`,
     body: (d) =>
       d.body
         ? d.body.slice(0, 150)
-        : 'Nuevo comunicado publicado para el personal',
-    targetRoles: TARGET_ROLES.ALL_STAFF,
+        : 'Has recibido un nuevo memo',
+    // Memos are addressed to a single guard — deliver only to them, not all staff.
+    targetRoles: TARGET_ROLES.SPECIFIC,
     sendEmail: true,
     emailSubject: (d) =>
-      `[CGuard] Nuevo comunicado: ${d.memoTitle || d.title || ''}`,
+      `[CGuard] Nuevo memo: ${d.memoTitle || d.title || ''}`,
     emailHtml: (d) => `
-      <h2>Nuevo comunicado</h2>
+      <h2>Nuevo memo</h2>
       ${d.memoTitle || d.title ? `<h3>${d.memoTitle || d.title}</h3>` : ''}
       ${d.body ? `<p>${d.body}</p>` : ''}
     `,

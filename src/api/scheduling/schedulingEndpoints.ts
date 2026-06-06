@@ -154,83 +154,35 @@ export async function guardAssignmentList(req, res) {
 }
 
 // POST /tenant/:tenantId/guard-assignment
+// Single write path for ALL guard↔station assignments (rotation + ad-hoc).
 export async function guardAssignmentCreate(req, res) {
   try {
     new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const tenantId = req.currentTenant.id;
     const data = req.body?.data || req.body || {};
-    const { guardId, stationId, positionId, startDate, endDate, platoonOffset, isRelief } = data;
-    let rotationStyleId = data.rotationStyleId;
 
-    if (!guardId || !stationId || !positionId || !startDate) {
-      res.status(400).send({ message: 'guardId, stationId, positionId, and startDate are required' });
-      return;
-    }
-
-    // Check position type to determine if fijo or sacafranco
-    const position = await req.database.stationPosition.findByPk(positionId, { attributes: ['type', 'platoonOffset'] });
-    const isSacafranco = !!isRelief || position?.type === 'sacafranco';
-
-    // VALIDATION: Fijo guards can only be assigned to ONE station
-    if (!isSacafranco) {
-      const existingFijo = await req.database.guardAssignment.findOne({
-        where: {
-          guardId,
-          tenantId,
-          status: 'active',
-          isRelief: false,
-          deletedAt: null,
-        },
-        include: [{ model: req.database.stationPosition, as: 'position', attributes: ['type'], where: { type: 'fijo' } }],
-      });
-      if (existingFijo) {
-        const existingStation = await req.database.station.findByPk(existingFijo.stationId, { attributes: ['stationName'] });
-        res.status(400).send({
-          message: `Este guardia ya está asignado como Fijo en "${existingStation?.stationName || 'otra estación'}". Los guardias Fijo solo pueden estar en una estación.`,
-        });
-        return;
-      }
-    }
-
-    // Rotation style: sacafrancos can have their own, fijos use station's
-    if (!rotationStyleId) {
-      const station = await req.database.station.findByPk(stationId, { attributes: ['rotationStyleId'] });
-      rotationStyleId = station?.rotationStyleId;
-      if (!rotationStyleId) {
-        res.status(400).send({ message: 'La estación no tiene un estilo de rotación configurado. Configúrela primero.' });
-        return;
-      }
-    }
-
-    // Use position's platoonOffset (station-defined), override only if explicitly provided
-    const effectiveOffset = platoonOffset !== undefined && platoonOffset !== null
-      ? parseInt(platoonOffset)
-      : (position?.platoonOffset || 0);
-
-    const record = await req.database.guardAssignment.create({
-      guardId,
-      stationId,
-      positionId,
-      rotationStyleId,
-      startDate,
-      endDate: endDate || null,
-      platoonOffset: effectiveOffset,
-      isRelief: isSacafranco,
-      status: 'active',
-      tenantId,
-      createdById: req.currentUser.id,
-      updatedById: req.currentUser.id,
-    });
-
-    // Auto-generate shifts for this assignment
+    const { createAssignment, AssignmentValidationError } = await import('../../services/assignmentService');
     try {
-      const { generateShiftsForAssignment } = await import('../../services/shiftGenerationService');
-      await generateShiftsForAssignment(req.database, record, tenantId, req.currentUser.id);
-    } catch (genErr) {
-      console.error('[guardAssignmentCreate] Shift generation error:', genErr);
+      const record = await createAssignment(req.database, tenantId, req.currentUser.id, {
+        guardId: data.guardId,
+        stationId: data.stationId,
+        positionId: data.positionId || null,
+        rotationStyleId: data.rotationStyleId || null,
+        startDate: data.startDate,
+        endDate: data.endDate || null,
+        startTime: data.startTime || null,
+        endTime: data.endTime || null,
+        platoonOffset: data.platoonOffset,
+        isRelief: data.isRelief,
+      });
+      await ApiResponseHandler.success(req, res, record);
+    } catch (e: any) {
+      if (e instanceof AssignmentValidationError) {
+        res.status(400).send({ message: e.message });
+        return;
+      }
+      throw e;
     }
-
-    await ApiResponseHandler.success(req, res, record);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
@@ -535,6 +487,7 @@ export async function schedulerStaffing(req, res) {
     const stations = await req.database.station.findAll({
       where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
       attributes: ['id', 'stationName', 'rotationStyleId'],
+      order: [['stationName', 'ASC']],
     });
 
     // Get all fijo positions
@@ -585,12 +538,123 @@ export async function schedulerStaffing(req, res) {
     const fijoGuards = new Set(currentAssignments.filter((a: any) => !a.isRelief && a.guardId).map((a: any) => a.guardId));
     const sfGuards = new Set(currentAssignments.filter((a: any) => a.isRelief && a.guardId).map((a: any) => a.guardId));
 
+    // Build station-level alerts for the requested month (default: current month)
+    const now = new Date();
+    const year = Math.max(2000, parseInt(String(req.query?.year || ''), 10) || now.getFullYear());
+    const month = Math.min(12, Math.max(1, parseInt(String(req.query?.month || ''), 10) || (now.getMonth() + 1)));
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0);
+    const monthDays: Date[] = [];
+    for (let d = 1; d <= monthEnd.getDate(); d++) {
+      monthDays.push(new Date(year, month - 1, d));
+    }
+
+    const activeAssignments = await req.database.guardAssignment.findAll({
+      where: { tenantId, status: 'active', deletedAt: null },
+      attributes: ['id', 'stationId', 'positionId', 'isRelief', 'platoonOffset', 'rotationStyleId'],
+      include: [
+        { model: req.database.stationPosition, as: 'position', attributes: ['id', 'type'] },
+        { model: req.database.rotationStyle, as: 'rotationStyle', attributes: ['id', 'dayShifts', 'nightShifts', 'restDays'] },
+      ],
+    });
+
+    const assignmentStatusForDay = (assignment: any, day: Date): 'work' | 'rest' => {
+      const rot = assignment?.rotationStyle;
+      if (!rot) return 'work';
+      const dayShifts = Number(rot.dayShifts || 0);
+      const nightShifts = Number(rot.nightShifts || 0);
+      const restDays = Number(rot.restDays || 0);
+      const workDays = dayShifts + nightShifts;
+      const cycleLength = workDays + restDays;
+      if (cycleLength <= 0) return 'work';
+
+      // Use global epoch so all stations remain in sequence.
+      const epoch = new Date(2024, 0, 1);
+      const dayMid = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+      const daysSince = Math.floor((dayMid.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+      const offset = Number(assignment?.platoonOffset || 0);
+      const adj = ((daysSince - offset) % cycleLength + cycleLength) % cycleLength;
+      return adj < workDays ? 'work' : 'rest';
+    };
+
+    const stationMeta = stations.map((s: any) => ({ id: s.id, stationName: s.stationName }));
+
+    const fijoAssignments = activeAssignments.filter((a: any) => !a.isRelief && a.position?.type === 'fijo');
+    const sfAssignments = activeAssignments.filter((a: any) => !!a.isRelief);
+
+    const fijoAssignmentsByStation = new Map<string, any[]>();
+    for (const a of fijoAssignments) {
+      const list = fijoAssignmentsByStation.get(a.stationId) || [];
+      list.push(a);
+      fijoAssignmentsByStation.set(a.stationId, list);
+    }
+
+    const stationsNeedingSfByDate = new Map<string, string[]>();
+    for (const day of monthDays) {
+      const dateStr = day.toISOString().slice(0, 10);
+      const stationsNeeding: string[] = [];
+      for (const st of stationMeta) {
+        const stAssigns = fijoAssignmentsByStation.get(st.id) || [];
+        if (stAssigns.length === 0) continue;
+        const anyResting = stAssigns.some((a: any) => assignmentStatusForDay(a, day) === 'rest');
+        if (anyResting) stationsNeeding.push(st.id);
+      }
+      stationsNeedingSfByDate.set(dateStr, stationsNeeding);
+    }
+
+    const sfCoverageByStationDate = new Map<string, number>();
+    for (const day of monthDays) {
+      const dateStr = day.toISOString().slice(0, 10);
+      const stationsNeeding = stationsNeedingSfByDate.get(dateStr) || [];
+      if (stationsNeeding.length === 0) continue;
+
+      const workingSf = sfAssignments.filter((a: any) => assignmentStatusForDay(a, day) === 'work');
+      if (workingSf.length === 0) continue;
+
+      for (let i = 0; i < stationsNeeding.length; i++) {
+        const stId = stationsNeeding[i];
+        if (i >= workingSf.length) break;
+        const key = `${stId}-${dateStr}`;
+        sfCoverageByStationDate.set(key, (sfCoverageByStationDate.get(key) || 0) + 1);
+      }
+    }
+
+    const stationAlerts = stationMeta
+      .map((st: any) => {
+        const stFijoPositions = fijoPositions.filter((p: any) => p.stationId === st.id);
+        const stFijoAssignments = fijoAssignmentsByStation.get(st.id) || [];
+        const assignedPosIds = new Set(stFijoAssignments.map((a: any) => a.positionId));
+        const missingFijoCount = stFijoPositions.filter((p: any) => !assignedPosIds.has(p.id)).length;
+
+        let sfUncoveredDays = 0;
+        for (const day of monthDays) {
+          const dateStr = day.toISOString().slice(0, 10);
+          const anyResting = stFijoAssignments.some((a: any) => assignmentStatusForDay(a, day) === 'rest');
+          if (!anyResting) continue;
+          const key = `${st.id}-${dateStr}`;
+          const coveredCount = sfCoverageByStationDate.get(key) || 0;
+          if (coveredCount <= 0) sfUncoveredDays++;
+        }
+
+        return {
+          stationId: st.id,
+          stationName: st.stationName,
+          missingFijoCount,
+          sfUncoveredDays,
+          severityScore: (missingFijoCount * 10) + sfUncoveredDays,
+        };
+      })
+      .filter((a: any) => a.missingFijoCount > 0 || a.sfUncoveredDays > 0)
+      .sort((a: any, b: any) => b.severityScore - a.severityScore);
+
     await ApiResponseHandler.success(req, res, {
       ...staffing,
       sfRotation: { id: sfRot.id, name: sfRot.name, dayShifts: sfRot.dayShifts, nightShifts: sfRot.nightShifts, restDays: sfRot.restDays },
       currentFijoGuards: fijoGuards.size,
       currentSfGuards: sfGuards.size,
       totalGuardsNeeded: staffing.fijosNeeded + staffing.sacafrancosNeeded,
+      alertPeriod: { year, month, from: monthStart.toISOString().slice(0, 10), to: monthEnd.toISOString().slice(0, 10) },
+      stationAlerts,
     });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

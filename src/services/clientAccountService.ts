@@ -6,6 +6,7 @@ import ClientAccountRepository from '../database/repositories/clientAccountRepos
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
 import crypto from 'crypto';
 import CustomerIdentityService from './customerIdentityService';
+import { isEmailEnabled } from '../lib/emailPrefs';
 
 export default class ClientAccountService {
   options: IServiceOptions;
@@ -121,15 +122,28 @@ export default class ClientAccountService {
       // If it fails, the clientAccount record is safely committed and the admin
       // can retry by clicking "Enviar acceso a la app".
       if (data && data.email) {
-        try {
-          await new CustomerIdentityService(this.options).provisionAndInvite(record);
-          (record as any).onboardingStatus = 'invited';
-        } catch (err) {
-          console.error(
-            '[ClientAccountService] Identity provisioning failed — client was created but invitation was not sent:',
-            err && (err as any).message ? (err as any).message : err,
-          );
-          // onboardingStatus stays 'not_invited'. Admin can retry via "Enviar acceso".
+        // Tenant preference: skip the automatic welcome/invitation email when
+        // disabled. The admin can still send it manually via "Enviar acceso".
+        const tenantId = this.options.currentTenant && this.options.currentTenant.id;
+        const welcomeEmailEnabled = await isEmailEnabled(
+          this.options.database,
+          tenantId,
+          'clientWelcome',
+        );
+
+        if (!welcomeEmailEnabled) {
+          console.info('[ClientAccountService] Client welcome email disabled by tenant settings — skipping auto-invite.');
+        } else {
+          try {
+            await new CustomerIdentityService(this.options).provisionAndInvite(record);
+            (record as any).onboardingStatus = 'invited';
+          } catch (err) {
+            console.error(
+              '[ClientAccountService] Identity provisioning failed — client was created but invitation was not sent:',
+              err && (err as any).message ? (err as any).message : err,
+            );
+            // onboardingStatus stays 'not_invited'. Admin can retry via "Enviar acceso".
+          }
         }
       }
 

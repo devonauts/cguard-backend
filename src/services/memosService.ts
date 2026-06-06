@@ -29,16 +29,8 @@ export default class MemosService {
         transaction,
       );
 
-      // Notify all staff of new memo
-      dispatch('memo.created', {
-        memoTitle: record.title || record.subject || null,
-        body: record.body || record.content || record.message || null,
-      }, {
-        database: this.options.database,
-        tenantId: this.options.currentTenant?.id,
-        sourceEntityType: 'memos',
-        sourceEntityId: record.id,
-      }).catch(() => {});
+      // Notify the addressed guard only (memos are per-employee, not broadcast).
+      this._notifyGuard(record).catch(() => {});
 
       return record;
     } catch (error) {
@@ -54,6 +46,53 @@ export default class MemosService {
 
       throw error;
     }
+  }
+
+  /**
+   * Deliver a freshly created memo to the single guard it is addressed to:
+   * a platform event (web SSE) + email targeted at that user, plus an FCM
+   * push to their mobile device(s). Best-effort — never throws to the caller.
+   */
+  async _notifyGuard(record: any) {
+    const db = this.options.database;
+    const tenantId = this.options.currentTenant?.id;
+    const guardSgId = record.guardNameId || record.guardName;
+    if (!db || !tenantId || !guardSgId) return;
+
+    // securityGuard.id -> guardId (the user id) -> user email
+    const sg = await db.securityGuard.findOne({
+      where: { id: guardSgId, tenantId },
+      attributes: ['guardId', 'fullName'],
+    });
+    const guardUserId = sg?.guardId || null;
+    if (!guardUserId) return;
+
+    let recipientEmail: string | undefined;
+    try {
+      const user = await db.user.findByPk(guardUserId, { attributes: ['email'] });
+      recipientEmail = user?.email || undefined;
+    } catch { /* ignore */ }
+
+    const memoTitle = record.subject || null;
+    const body = record.content || null;
+
+    await dispatch('memo.created', { memoTitle, body }, {
+      database: db,
+      tenantId,
+      recipientUserId: guardUserId,
+      recipientEmail,
+      sourceEntityType: 'memos',
+      sourceEntityId: record.id,
+    }).catch(() => {});
+
+    try {
+      const { pushToUser } = require('../services/pushService');
+      await pushToUser(db, tenantId, guardUserId, {
+        title: `📢 Memo: ${memoTitle || 'Nuevo memo'}`,
+        body: body ? String(body).slice(0, 150) : 'Has recibido un nuevo memo',
+        data: { type: 'memo.created', memoId: String(record.id) },
+      });
+    } catch { /* ignore */ }
   }
 
   async update(id, data) {

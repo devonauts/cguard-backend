@@ -18,14 +18,34 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: false,
       },
+      // 'rotation' = driven by a station position + rotation style (Horario).
+      // 'adhoc'    = a manual one-off assignment with an explicit time window
+      //              (post-site / guard-profile screens). Both are the single
+      //              source of truth — shifts are always generated from here.
+      kind: {
+        type: DataTypes.ENUM('rotation', 'adhoc'),
+        allowNull: false,
+        defaultValue: 'rotation',
+      },
       positionId: {
         type: DataTypes.UUID,
-        allowNull: false,
-        comment: 'The station position this guard fills',
+        allowNull: true, // null for kind='adhoc'
+        comment: 'The station position this guard fills (rotation only)',
       },
       rotationStyleId: {
         type: DataTypes.UUID,
-        allowNull: false,
+        allowNull: true, // null for kind='adhoc'
+      },
+      // Explicit HH:mm window for ad-hoc assignments (no position to inherit from).
+      startTime: {
+        type: DataTypes.STRING(5),
+        allowNull: true,
+        comment: "HH:mm shift start for kind='adhoc'",
+      },
+      endTime: {
+        type: DataTypes.STRING(5),
+        allowNull: true,
+        comment: "HH:mm shift end for kind='adhoc'",
       },
       startDate: {
         type: DataTypes.DATEONLY,

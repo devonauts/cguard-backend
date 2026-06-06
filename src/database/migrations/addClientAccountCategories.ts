@@ -66,6 +66,21 @@ async function migrate() {
         allowNull: true,
       },
       });
+    } else {
+      // Ensure required columns exist on pre-existing table
+      const desc = await queryInterface.describeTable('clientAccountCategories');
+      if (!desc['id']) {
+        await sequelize.query(`ALTER TABLE \`clientAccountCategories\` ADD COLUMN \`id\` CHAR(36) NOT NULL PRIMARY KEY FIRST`).catch(() => {});
+      }
+      if (!desc['deletedAt']) {
+        await queryInterface.addColumn('clientAccountCategories', 'deletedAt', { type: DataTypes.DATE, allowNull: true }).catch(() => {});
+      }
+      if (!desc['createdAt']) {
+        await queryInterface.addColumn('clientAccountCategories', 'createdAt', { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }).catch(() => {});
+      }
+      if (!desc['updatedAt']) {
+        await queryInterface.addColumn('clientAccountCategories', 'updatedAt', { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }).catch(() => {});
+      }
     }
 
     console.log('✅ Table created successfully');
@@ -73,10 +88,19 @@ async function migrate() {
     // Step 2: Create indexes
     console.log('Creating indexes...');
     const existingIndexesRaw = await queryInterface.showIndex('clientAccountCategories').catch(() => []);
-    const existingIndexes = Array.isArray(existingIndexesRaw) ? existingIndexesRaw as any[] : [];
-    const indexNames = existingIndexes.map((i: any) => i.name || i.constraintName).filter(Boolean);
+    const existingIndexes = Array.isArray(existingIndexesRaw) ? (existingIndexesRaw as any[]) : [];
 
-    if (!indexNames.includes('client_account_categories_unique')) {
+    const hasIndex = (fields: string[], unique?: boolean) => {
+      return existingIndexes.some((idx: any) => {
+        const idxFields = (idx.fields || []).map((f: any) => f.attribute || f.name).filter(Boolean);
+        const sameFields = idxFields.length === fields.length && idxFields.every((f: string, i: number) => f === fields[i]);
+        if (!sameFields) return false;
+        if (typeof unique === 'boolean') return !!idx.unique === unique;
+        return true;
+      });
+    };
+
+    if (!hasIndex(['clientAccountId', 'categoryId'], true)) {
       await queryInterface.addIndex('clientAccountCategories', ['clientAccountId', 'categoryId'], {
         unique: true,
         name: 'client_account_categories_unique',
@@ -85,14 +109,18 @@ async function migrate() {
       console.log('Index client_account_categories_unique already exists, skipping');
     }
 
-    if (!indexNames.includes('client_account_categories_clientAccountId')) {
-      await queryInterface.addIndex('clientAccountCategories', ['clientAccountId']);
+    if (!hasIndex(['clientAccountId'])) {
+      await queryInterface.addIndex('clientAccountCategories', ['clientAccountId'], {
+        name: 'client_account_categories_clientAccountId',
+      });
     } else {
       console.log('Index client_account_categories_clientAccountId already exists, skipping');
     }
 
-    if (!indexNames.includes('client_account_categories_categoryId')) {
-      await queryInterface.addIndex('clientAccountCategories', ['categoryId']);
+    if (!hasIndex(['categoryId'])) {
+      await queryInterface.addIndex('clientAccountCategories', ['categoryId'], {
+        name: 'client_account_categories_categoryId',
+      });
     } else {
       console.log('Index client_account_categories_categoryId already exists, skipping');
     }

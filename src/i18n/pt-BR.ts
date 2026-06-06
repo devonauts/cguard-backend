@@ -340,7 +340,9 @@ const ptBR = {
       errors: {
         unique: {
 
-        }
+        },
+        guardOverlap:
+          'Este guarda já possui um turno que se sobrepõe ao horário selecionado.',
       }
     },
   }

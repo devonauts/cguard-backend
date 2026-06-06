@@ -6,6 +6,7 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import { Op } from 'sequelize';
+import { timeLabelInTz } from '../../lib/tenantTime';
 
 export default async (req: any, res: any) => {
   try {
@@ -69,8 +70,20 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // Tenant timezone is the single source of truth for displaying shift times.
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    const tz = (tenant && tenant.timezone) || 'UTC';
+
     return ApiResponseHandler.success(req, res, {
-      shifts: shifts.map((s: any) => s.get({ plain: true })),
+      timezone: tz,
+      shifts: shifts.map((s: any) => {
+        const p = s.get({ plain: true });
+        return {
+          ...p,
+          startTimeLabel: timeLabelInTz(p.startTime, tz),
+          endTimeLabel: timeLabelInTz(p.endTime, tz),
+        };
+      }),
       timeOff,
       freeDays: [...new Set(freeDays)],
     });

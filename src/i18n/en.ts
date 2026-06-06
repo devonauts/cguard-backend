@@ -368,7 +368,9 @@ const en = {
       errors: {
         unique: {
 
-        }
+        },
+        guardOverlap:
+          'This guard already has a shift that overlaps the selected time range.',
       }
     },
   }

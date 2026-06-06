@@ -1,6 +1,7 @@
 import Error400 from '../errors/Error400';
 import Error404 from '../errors/Error404';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
+import { isEmailEnabled } from '../lib/emailPrefs';
 import { IServiceOptions } from './IServiceOptions';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
 import MemosRepository from '../database/repositories/memosRepository';
@@ -492,8 +493,17 @@ export default class SecurityGuardService {
                 // Build invitation link
                 const link = `${tenantSubdomain.frontendUrl(currentTenant)}/auth/invitation?token=${encodeURIComponent(tenantUser.invitationToken)}&securityGuardId=${encodeURIComponent(String(record.id))}&inviteType=guard`;
 
-                // Send invitation email
+                // Send invitation email (honour the "Invitación a personal y
+                // guardias" tenant email preference).
                 try {
+                  const staffInviteEnabled = await isEmailEnabled(
+                    this.options.database,
+                    currentTenant && currentTenant.id,
+                    'staffInvite',
+                  );
+                  if (!staffInviteEnabled) {
+                    console.log('[SecurityGuardService.create] staff invite email disabled by tenant settings — skipping for', guardEmail);
+                  } else {
                   await new EmailSender(
                     EmailSender.TEMPLATES.INVITATION,
                     {
@@ -512,6 +522,7 @@ export default class SecurityGuardService {
                     },
                   ).sendTo(guardEmail);
                   console.log('[SecurityGuardService.create] sent invitation email to', guardEmail, 'for guard to complete registration');
+                  }
                 } catch (emailErr) {
                   console.warn('[SecurityGuardService.create] failed to send invitation email', emailErr && (emailErr as any).message ? (emailErr as any).message : emailErr);
                 }
