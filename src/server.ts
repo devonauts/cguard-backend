@@ -436,3 +436,69 @@ async function runAttendanceDetectionScheduler() {
 nodeSetInterval(() => { runAttendanceDetectionScheduler(); }, 5 * 60 * 1000);
 setTimeout(() => runAttendanceDetectionScheduler(), 45000);
 
+/**
+ * Repeated-lateness (Nómina) — hourly, flag guards with 3+ late punches in the
+ * last 7 days and notify supervisors. Deduped to at most once / guard / 24h via
+ * a marker exception (reason contains "3+ tardanzas").
+ */
+async function runRepeatedLatenessScheduler() {
+  try {
+    const database = await databaseInit();
+    const { Op } = require('sequelize');
+    const { dispatch } = require('./lib/notificationDispatcher');
+
+    const [groups]: any = await database.sequelize.query(
+      `SELECT tenantId, guardNameId, COUNT(*) c
+       FROM guardShifts
+       WHERE deletedAt IS NULL
+         AND punchInTime > (NOW() - INTERVAL 7 DAY)
+         AND (status = 'late' OR lateMinutes > 0)
+       GROUP BY tenantId, guardNameId
+       HAVING c >= 3
+       LIMIT 1000`,
+    );
+
+    for (const g of groups || []) {
+      const since = new Date(Date.now() - 24 * 3600 * 1000);
+      const dupe = await database.attendanceException.findOne({
+        where: {
+          tenantId: g.tenantId,
+          guardId: g.guardNameId,
+          type: 'late_arrival',
+          reason: { [Op.like]: '%3+ tardanzas%' },
+          detectedAt: { [Op.gte]: since },
+        },
+        attributes: ['id'],
+      });
+      if (dupe) continue;
+
+      const sg = await database.securityGuard.findByPk(g.guardNameId, { attributes: ['id', 'fullName'] });
+      const reason = `${g.c} tardanzas en 7 días (3+ tardanzas)`;
+      const row = await database.attendanceException.create({
+        type: 'late_arrival',
+        severity: 'high',
+        status: 'open',
+        reason,
+        meta: JSON.stringify({ repeated: true, count: g.c }),
+        detectedAt: new Date(),
+        guardId: g.guardNameId,
+        tenantId: g.tenantId,
+      });
+      try {
+        await dispatch('attendance.late', {
+          guardName: sg?.fullName || 'Guardia',
+          reason,
+          type: 'late_arrival',
+        }, { database, tenantId: g.tenantId, sourceEntityType: 'attendanceException', sourceEntityId: row.id });
+      } catch { /* best-effort */ }
+    }
+    if ((groups || []).length) console.log(`[attendance] repeated-lateness checked ${groups.length} guard(s)`);
+  } catch (err) {
+    console.error('[attendance] repeated-lateness scheduler error:', (err as any)?.message || err);
+  }
+}
+
+// Repeated-lateness check hourly.
+nodeSetInterval(() => { runRepeatedLatenessScheduler(); }, 60 * 60 * 1000);
+setTimeout(() => runRepeatedLatenessScheduler(), 90000);
+

@@ -311,6 +311,129 @@ export default class AttendanceAdminService {
     return merged;
   }
 
+  // ── Payroll summary ─────────────────────────────────────────────────────────
+  /**
+   * Payroll-ready per-guard aggregate over a date range. Reuses
+   * GuardShiftRepository's ACL (supervisors see only assigned post-sites). Does
+   * NOT compute pay — only hours/counts. Range defaults to the last 14 days.
+   */
+  async payrollSummary(query: any) {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const to = query.to ? new Date(query.to) : new Date();
+    const from = query.from
+      ? new Date(query.from)
+      : new Date(to.getTime() - 14 * 24 * 3600 * 1000);
+
+    // ACL-scoped punches in range.
+    const { rows } = await GuardShiftRepository.findAndCountAll(
+      { filter: { punchInTimeRange: [from.toISOString(), to.toISOString()] }, limit: 100000, offset: 0 },
+      this.options,
+    );
+
+    type Agg = {
+      guardId: string;
+      guardName: string;
+      shifts: number;
+      regularHours: number;
+      overtimeHours: number;
+      totalHours: number;
+      lateCount: number;
+      missedClockouts: number;
+      noShows: number;
+      approvedCorrections: number;
+      payableHours: number;
+    };
+    const byGuard = new Map<string, Agg>();
+    const shiftIds: string[] = [];
+
+    for (const r of rows as any[]) {
+      const gid = r.guardName?.id || r.guardNameId || 'unknown';
+      shiftIds.push(r.id);
+      const a =
+        byGuard.get(gid) ||
+        {
+          guardId: gid,
+          guardName: r.guardName?.fullName || '—',
+          shifts: 0,
+          regularHours: 0,
+          overtimeHours: 0,
+          totalHours: 0,
+          lateCount: 0,
+          missedClockouts: 0,
+          noShows: 0,
+          approvedCorrections: 0,
+          payableHours: 0,
+        };
+      const total = Number(r.hoursWorked || 0);
+      const ot = Number(r.overtimeMinutes || 0) / 60;
+      a.shifts += 1;
+      a.totalHours += total;
+      a.overtimeHours += ot;
+      a.regularHours += Math.max(0, total - ot);
+      if (r.status === 'late' || Number(r.lateMinutes || 0) > 0) a.lateCount += 1;
+      if (r.status === 'missed_clockout') a.missedClockouts += 1;
+      byGuard.set(gid, a);
+    }
+
+    // No-shows (no punch → only in the exception table), keyed by securityGuard id.
+    try {
+      const Sequelize = db.Sequelize;
+      const noShows = await db.attendanceException.findAll({
+        where: { tenantId, type: 'no_call_no_show', detectedAt: { [Op.between]: [from, to] } },
+        attributes: ['guardId', [Sequelize.fn('COUNT', Sequelize.col('id')), 'c']],
+        group: ['guardId'],
+        raw: true,
+      });
+      for (const ns of noShows as any[]) {
+        const a = byGuard.get(ns.guardId);
+        if (a) a.noShows = Number(ns.c || 0);
+      }
+    } catch { /* best-effort */ }
+
+    // Applied corrections in range, mapped to their guard via the punch.
+    try {
+      if (shiftIds.length) {
+        const idToGuard = new Map<string, string>();
+        for (const r of rows as any[]) idToGuard.set(r.id, r.guardName?.id || r.guardNameId);
+        const corr = await db.attendanceCorrection.findAll({
+          where: { tenantId, status: 'applied', guardShiftId: { [Op.in]: shiftIds } },
+          attributes: ['guardShiftId'],
+          raw: true,
+        });
+        for (const c of corr as any[]) {
+          const gid = idToGuard.get(c.guardShiftId);
+          const a = gid && byGuard.get(gid);
+          if (a) a.approvedCorrections += 1;
+        }
+      }
+    } catch { /* best-effort */ }
+
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const result = Array.from(byGuard.values()).map((a) => ({
+      ...a,
+      regularHours: round(a.regularHours),
+      overtimeHours: round(a.overtimeHours),
+      totalHours: round(a.totalHours),
+      payableHours: round(a.totalHours), // approved hours; pay not computed (no rates)
+    }));
+    result.sort((x, y) => x.guardName.localeCompare(y.guardName));
+
+    const totals = result.reduce(
+      (t, a) => ({
+        shifts: t.shifts + a.shifts,
+        regularHours: round(t.regularHours + a.regularHours),
+        overtimeHours: round(t.overtimeHours + a.overtimeHours),
+        totalHours: round(t.totalHours + a.totalHours),
+        lateCount: t.lateCount + a.lateCount,
+        noShows: t.noShows + a.noShows,
+      }),
+      { shifts: 0, regularHours: 0, overtimeHours: 0, totalHours: 0, lateCount: 0, noShows: 0 },
+    );
+
+    return { from: from.toISOString(), to: to.toISOString(), rows: result, totals };
+  }
+
   private async audit(entityName: string, entityId: string, action: string, record: any) {
     try {
       await AuditLogRepository.log(

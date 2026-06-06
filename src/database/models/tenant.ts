@@ -203,6 +203,19 @@ export default function (sequelize, DataTypes) {
         allowNull: false,
         validate: {
           notEmpty: true,
+          // Reject non-IANA values (e.g. "GMT-5", a display name). A bad
+          // timezone silently corrupts every wall-clock computation (shift
+          // generation, consignas) and crashes unguarded Intl calls in the app.
+          isValidTimezone(value: any) {
+            if (value == null || value === '') return; // notEmpty handles empties
+            try {
+              new Intl.DateTimeFormat('en-US', { timeZone: String(value) });
+            } catch {
+              throw new Error(
+                'timezone must be a valid IANA time zone (e.g. America/Guayaquil)',
+              );
+            }
+          },
         },
         defaultValue: 'UTC',
       },

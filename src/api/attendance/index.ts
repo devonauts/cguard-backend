@@ -32,6 +32,9 @@ export default (app) => {
   // Dashboard summary
   app.get(`${base}/dashboard`, handler(P.attendanceRead, (s, req) => s.dashboard(req.query)));
 
+  // Payroll-ready per-guard summary (date range)
+  app.get(`${base}/payroll-summary`, handler(P.attendanceRead, (s, req) => s.payrollSummary(req.query)));
+
   // Exceptions queue
   app.get(`${base}/exceptions`, handler(P.attendanceRead, (s, req) => s.listExceptions(req.query)));
   app.patch(
