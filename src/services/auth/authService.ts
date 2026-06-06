@@ -25,6 +25,7 @@ import dayjs from 'dayjs';
 import Roles from '../../security/roles';
 import RoleRepository from '../../database/repositories/roleRepository';
 import SettingsService from '../settingsService';
+import { ensureBuiltInRolesForTenant } from '../roleSync';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -839,6 +840,11 @@ class AuthService {
       ...scopedOptions,
       currentTenant: record,
     });
+
+    // Seed the built-in tenant roles for this tenant BEFORE linking the admin,
+    // so the role rows exist and the C6 tenantUserRoles join can resolve the
+    // 'admin' role on link. Atomic with the signup transaction.
+    await ensureBuiltInRolesForTenant(options.database, record.id, { transaction });
 
     await TenantUserRepository.create(
       record,

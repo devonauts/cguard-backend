@@ -18,43 +18,71 @@ import Roles from '../security/roles';
  * left untouched. Roles are tenant-scoped (role.tenantId FK), so built-in
  * roles must exist per-tenant for the join + slug lookups to resolve.
  */
-export async function ensureBuiltInRoles(db: any): Promise<void> {
-  if (!db || !db.role || !db.tenant) return;
+// The tenant-assignable built-in roles. Two keys from Roles.values are
+// intentionally excluded:
+//   - 'superadmin' is a GLOBAL platform role (the user.isSuperadmin flag),
+//     never a per-tenant role, so seeding it per tenant is meaningless.
+//   - 'custom' is a PLACEHOLDER for user-defined roles, not a concrete role;
+//     a real custom role is created on demand with its own slug/permissions.
+// Seeding these produced noisy "Validation error" upsert warnings on boot.
+const NON_TENANT_ROLES = new Set(['superadmin', 'custom']);
 
-  const builtInKeys = Object.keys(Roles.values || {});
+function seedableRoleKeys(): string[] {
+  return Object.keys(Roles.values || {}).filter((k) => !NON_TENANT_ROLES.has(k));
+}
+
+/**
+ * Seed the tenant-assignable built-in roles for ONE tenant. Idempotent and
+ * race-safe (findOrCreate on the unique (slug, tenantId) index; a worker that
+ * loses the insert race gets a unique violation, treated as benign). Pass
+ * options.transaction to seed atomically as part of a larger transaction
+ * (e.g. tenant creation at signup).
+ */
+export async function ensureBuiltInRolesForTenant(
+  db: any,
+  tenantId: string,
+  options: { transaction?: any } = {},
+): Promise<void> {
+  if (!db || !db.role || !tenantId) return;
+  const builtInKeys = seedableRoleKeys();
   if (!builtInKeys.length) return;
-
-  const tenants = await db.tenant.findAll({ attributes: ['id'] });
-  if (!tenants || !tenants.length) return;
-
   const descriptions = (Roles as any).descriptions || {};
+  const txn = options.transaction ? { transaction: options.transaction } : {};
 
-  for (const tenant of tenants) {
-    const tenantId = tenant && tenant.id;
-    if (!tenantId) continue;
-
-    for (const key of builtInKeys) {
-      try {
-        // Look up by (slug, tenantId) — matches the unique index on roles.
-        const existing = await db.role.findOne({
-          where: { slug: key, tenantId },
-        });
-        if (existing) continue;
-
-        await db.role.create({
+  for (const key of builtInKeys) {
+    try {
+      await db.role.findOrCreate({
+        where: { slug: key, tenantId },
+        defaults: {
           name: key,
           slug: key,
           description: descriptions[key] || null,
           permissions: [],
           tenantId,
-        });
-      } catch (e) {
-        // Best-effort per role; never block startup.
-        console.warn(
-          '[roleSync] ensureBuiltInRoles: failed to upsert role',
-          { tenantId, slug: key, error: (e as any)?.message || e },
-        );
-      }
+        },
+        ...txn,
+      });
+    } catch (e) {
+      // A unique-constraint violation just means it already exists — benign.
+      if ((e as any)?.name === 'SequelizeUniqueConstraintError') continue;
+      console.warn(
+        '[roleSync] ensureBuiltInRolesForTenant: failed to upsert role',
+        { tenantId, slug: key, error: (e as any)?.message || e },
+      );
+    }
+  }
+}
+
+/**
+ * Seed built-in roles for EVERY existing tenant (run once at startup).
+ */
+export async function ensureBuiltInRoles(db: any): Promise<void> {
+  if (!db || !db.role || !db.tenant) return;
+  const tenants = await db.tenant.findAll({ attributes: ['id'] });
+  if (!tenants || !tenants.length) return;
+  for (const tenant of tenants) {
+    if (tenant && tenant.id) {
+      await ensureBuiltInRolesForTenant(db, tenant.id);
     }
   }
 }
