@@ -32,7 +32,8 @@ export type EventType =
   | 'attendance.correction_submitted'
   | 'attendance.approval_required'
   | 'attendance.approved'
-  | 'attendance.rejected';
+  | 'attendance.rejected'
+  | 'device.mismatch';
 
 // Role sets for targetRoles field (comma-separated, used with FIND_IN_SET)
 export const TARGET_ROLES = {
@@ -369,6 +370,23 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     body: (d) => `${d.guardName || 'Guardia'}${d.reason ? `: ${d.reason}` : ''}`,
     targetRoles: TARGET_ROLES.SPECIFIC,
     sendEmail: false,
+  },
+  'device.mismatch': {
+    title: (d) => `📱 Dispositivo no reconocido: ${d.guardName || 'Guardia'}`,
+    body: (d) =>
+      `${d.guardName || 'Guardia'} se conectó desde un dispositivo distinto al registrado` +
+      `${d.model ? ` (${d.model})` : ''}. Verifica si cambió de teléfono o si alguien más usó su cuenta.`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `Dispositivo no reconocido — ${d.guardName || 'Guardia'}`,
+    emailHtml: (d) => `
+      <h2>📱 Dispositivo no reconocido</h2>
+      <p><strong>Guardia:</strong> ${esc(d.guardName || 'Guardia')}</p>
+      <p><strong>Dispositivo:</strong> ${esc(d.model || 'desconocido')}</p>
+      <p>Este guardia inició sesión desde un dispositivo distinto al que tiene registrado.
+      Si cambió de teléfono, restablece su dispositivo en el panel. Si no, podría tratarse
+      del uso de su cuenta en otro equipo.</p>
+    `,
   },
 };
 

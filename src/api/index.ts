@@ -190,6 +190,7 @@ require('./customer').default(routes);
 require('./task').default(routes);
 require('./notification').default(routes);
 require('./deviceIdInformation').default(routes);
+require('./guardDevice').default(routes);
 require('./guardShift').default(routes);
 require('./attendance').default(routes);
 require('./memos').default(routes);

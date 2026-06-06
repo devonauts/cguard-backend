@@ -11,6 +11,7 @@ import { Op } from 'sequelize';
 import { dispatch } from '../../lib/notificationDispatcher';
 import { gatherClockInContext } from '../../lib/clockInContext';
 import { clockGate, applyClockIn } from '../../services/attendanceService';
+import { registerGuardDevice } from '../../services/guardDeviceService';
 
 /** Best-effort client IP from proxy headers / socket. */
 function clientIp(req: any): string | null {
@@ -29,7 +30,17 @@ export default async (req: any, res: any) => {
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
 
     const { stationId, latitude, longitude, shiftSchedule, observations,
-      selfiePhoto, address, battery, checklist } = req.body.data || req.body;
+      selfiePhoto, address, battery, checklist, device } = req.body.data || req.body;
+
+    // Anti-buddy-punching: if the app reports its device identity at clock-in,
+    // register it (bind on first use, flag a mismatch). Never blocks the punch.
+    if (device && device.deviceId) {
+      try {
+        await registerGuardDevice(db, tenantId, userId, device);
+      } catch (e) {
+        console.warn('[clockIn] device register failed:', (e as any)?.message || e);
+      }
+    }
 
     // Geofence enforcement is ON in production: location is required and the
     // distance is validated against the station radius. The only escape hatch is

@@ -15,12 +15,22 @@ export default function (sequelize) {
           len: [0, 200],
         }
       },
+      platform: { type: DataTypes.STRING(40), allowNull: true },
+      model: { type: DataTypes.STRING(120), allowNull: true },
+      manufacturer: { type: DataTypes.STRING(120), allowNull: true },
+      osVersion: { type: DataTypes.STRING(60), allowNull: true },
+      appVersion: { type: DataTypes.STRING(40), allowNull: true },
+      pushToken: { type: DataTypes.TEXT, allowNull: true },
+      isBound: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      flagged: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      lastSeenAt: { type: DataTypes.DATE, allowNull: true },
+      lastMismatchAt: { type: DataTypes.DATE, allowNull: true },
       importHash: {
         type: DataTypes.STRING(255),
-        allowNull: true,    
+        allowNull: true,
         validate: {
           len: [0, 255],
-        },    
+        },
       },
     },
     {
@@ -49,6 +59,12 @@ export default function (sequelize) {
       foreignKey: {
         allowNull: false,
       },
+    });
+
+    // The guard who owns / uses this device.
+    models.deviceIdInformation.belongsTo(models.user, {
+      as: 'guard',
+      foreignKey: 'userId',
     });
 
     models.deviceIdInformation.belongsTo(models.user, {

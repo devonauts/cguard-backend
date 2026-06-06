@@ -157,6 +157,34 @@ export async function markEventRead(
 }
 
 /**
+ * Marks ALL of a user's currently-unread (pending/sent) events as read — the
+ * "clear all" action in the notification panel. Same visibility scope as the
+ * list/unread-count queries.
+ */
+export async function markAllEventsReadForUser(
+  database: any,
+  tenantId: string,
+  userId: string,
+  userRole: string,
+): Promise<void> {
+  await database.sequelize.query(
+    `UPDATE platform_events
+     SET deliveryStatus = 'read'
+     WHERE tenantId = ?
+       AND deliveryStatus IN ('pending', 'sent')
+       AND (
+         recipientUserId = ?
+         OR (
+           recipientUserId IS NULL
+           AND (targetRoles IS NULL OR FIND_IN_SET(?, targetRoles) > 0)
+         )
+       )
+       AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
+    { replacements: [tenantId, userId, userRole] },
+  );
+}
+
+/**
  * Returns up to `limit` recent events for a user (for the notification panel list).
  */
 export async function getRecentEventsForUser(

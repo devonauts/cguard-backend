@@ -54,6 +54,12 @@ export default (app) => {
     require('./guardMePatrolStart').default,
   );
 
+  // Register my device identity (deviceId + model/OS/app version) — bind/flag
+  app.post(
+    `/tenant/:tenantId/guard/me/device`,
+    require('./guardMeDevice').default,
+  );
+
   // Register my FCM device token for push
   app.post(
     `/tenant/:tenantId/guard/me/device-token`,

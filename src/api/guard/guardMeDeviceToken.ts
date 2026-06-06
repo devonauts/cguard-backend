@@ -16,16 +16,34 @@ export default async (req: any, res: any) => {
     const token = (req.body.data || req.body || {}).token;
     if (!token) throw new Error400(req.language, 'device.tokenRequired');
 
-    const existing = await db.deviceIdInformation.findOne({
-      where: { deviceId: String(token), tenantId },
+    // Prefer attaching the FCM token to the guard's actual device record (set up
+    // via /guard/me/device). Fall back to the guard's most recent device, then to
+    // a token-keyed placeholder so push keeps working before device registration.
+    let device = await db.deviceIdInformation.findOne({
+      where: { tenantId, userId: currentUser.id, isBound: true },
     });
-    if (!existing) {
-      await db.deviceIdInformation.create({
-        deviceId: String(token),
-        tenantId,
-        createdById: currentUser.id,
-        updatedById: currentUser.id,
+    if (!device) {
+      device = await db.deviceIdInformation.findOne({
+        where: { tenantId, userId: currentUser.id },
+        order: [['lastSeenAt', 'DESC']],
       });
+    }
+    if (device) {
+      await device.update({ pushToken: String(token), updatedById: currentUser.id });
+    } else {
+      const existing = await db.deviceIdInformation.findOne({
+        where: { deviceId: String(token), tenantId },
+      });
+      if (!existing) {
+        await db.deviceIdInformation.create({
+          deviceId: String(token),
+          pushToken: String(token),
+          tenantId,
+          userId: currentUser.id,
+          createdById: currentUser.id,
+          updatedById: currentUser.id,
+        });
+      }
     }
     return ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) {

@@ -20,6 +20,7 @@ import {
   getRecentEventsForUser,
   countUnreadEventsForUser,
   markEventRead,
+  markAllEventsReadForUser,
   markEventsSent,
 } from '../lib/platformEventStore';
 
@@ -204,6 +205,33 @@ export default (routes: Router) => {
         );
 
         return res.json({ count });
+      } catch (err) {
+        return next(err);
+      }
+    },
+  );
+
+  // ─── Clear all (mark every visible unread event as read) ──────────────────
+  routes.post(
+    '/:tenantId/events/read-all',
+    async (req: any, res: any, next: any) => {
+      try {
+        const currentUser = req.currentUser;
+        const currentTenant = req.currentTenant;
+        const database = req.database;
+
+        if (!currentUser) return res.status(401).json({ message: 'Unauthorized' });
+        if (!currentTenant) return res.status(403).json({ message: 'Tenant not found' });
+
+        const userRole = getUserRoleForTenant(currentUser, currentTenant.id);
+        await markAllEventsReadForUser(
+          database,
+          currentTenant.id,
+          currentUser.id,
+          userRole,
+        );
+
+        return res.json({ success: true });
       } catch (err) {
         return next(err);
       }
