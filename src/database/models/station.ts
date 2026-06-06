@@ -57,6 +57,24 @@ export default function (sequelize) {
         defaultValue: 100,
         comment: 'Radius in meters for clock-in geofence validation',
       },
+      // Optional polygon geofence: JSON array of {lat,lng}. When ≥3 points are
+      // present it takes precedence over the radius for clock-in validation.
+      geofencePolygon: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get(this: any) {
+          const raw = this.getDataValue('geofencePolygon');
+          if (!raw) return null;
+          if (typeof raw !== 'string') return raw;
+          try { return JSON.parse(raw); } catch { return null; }
+        },
+        set(this: any, val: any) {
+          this.setDataValue(
+            'geofencePolygon',
+            val == null ? null : typeof val === 'string' ? val : JSON.stringify(val),
+          );
+        },
+      },
       postSiteId: {
         type: DataTypes.UUID,
         allowNull: true,
