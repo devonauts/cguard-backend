@@ -31,6 +31,9 @@ export interface NominaSettings {
     supervisorRecipients: boolean;
     adminRecipients: boolean;
     customEmails: string[];
+    // When true, attendance-exception emails go ONLY to supervisors assigned to
+    // the guard's post-site (admins/managers still always notified).
+    assignedSupervisorsOnly: boolean;
   };
   approval: {
     autoApproveNormal: boolean;
@@ -48,6 +51,9 @@ export interface NominaSettings {
     defaultHourlyRate: number;
     overtimeMultiplier: number;
     lastPeriodClose: string | null; // ISO date of the last closed (locked) cutoff
+    // Per-guard hourly rate overrides, keyed by securityGuard id. Falls back to
+    // defaultHourlyRate when a guard has no override.
+    guardRates: Record<string, number>;
   };
 }
 
@@ -74,6 +80,7 @@ export const DEFAULT_NOMINA_SETTINGS: NominaSettings = {
     supervisorRecipients: true,
     adminRecipients: true,
     customEmails: [],
+    assignedSupervisorsOnly: false,
   },
   approval: {
     autoApproveNormal: true,
@@ -90,6 +97,7 @@ export const DEFAULT_NOMINA_SETTINGS: NominaSettings = {
     defaultHourlyRate: 0,
     overtimeMultiplier: 1.5,
     lastPeriodClose: null,
+    guardRates: {},
   },
 };
 

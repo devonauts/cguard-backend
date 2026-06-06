@@ -422,6 +422,10 @@ async function runAttendanceDetectionScheduler() {
             sourceEntityType: 'attendanceException',
             sourceEntityId: row.id,
             extraEmails: settings.notifications?.customEmails || [],
+            assignedPostSiteId:
+              settings.notifications?.assignedSupervisorsOnly && shift.postSiteId
+                ? shift.postSiteId
+                : undefined,
           });
         } catch { /* best-effort */ }
       }

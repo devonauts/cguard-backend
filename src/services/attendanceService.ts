@@ -152,6 +152,11 @@ async function notifyException(
       sourceEntityType: 'attendanceException',
       sourceEntityId: exceptionRow.id,
       extraEmails: settings.notifications.customEmails || [],
+      // Narrow to the post-site's assigned supervisors when enabled.
+      assignedPostSiteId:
+        settings.notifications.assignedSupervisorsOnly && exceptionRow.postSiteId
+          ? exceptionRow.postSiteId
+          : undefined,
     });
   } catch (e) {
     console.error('[attendance] notifyException failed:', (e as any)?.message || e);

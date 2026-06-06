@@ -42,6 +42,12 @@ export interface DispatchOptions {
    * the event's email channel is enabled.
    */
   extraEmails?: string[];
+  /**
+   * Narrow role-targeted recipients to users assigned to this post-site
+   * (businessInfo id) — see resolveRecipients. Used by attendance exceptions
+   * when "assigned supervisors only" is enabled.
+   */
+  assignedPostSiteId?: string;
 }
 
 /**
@@ -103,6 +109,7 @@ export async function dispatch(
             recipientUserId: opts.recipientUserId,
             recipientEmail: opts.recipientEmail,
             recipientPhone: opts.recipientPhone,
+            assignedPostSiteId: opts.assignedPostSiteId,
           },
         );
 

@@ -314,6 +314,28 @@ export default class AttendanceAdminService {
     return merged;
   }
 
+  /** Merge per-guard hourly-rate overrides into settings (keyed by guard id). */
+  async saveGuardRates(data: { rates: Record<string, number> }) {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const currentUser = SequelizeRepository.getCurrentUser(this.options);
+    const current = await getNominaSettings(db, tenantId);
+    const rates = { ...(current.payroll.guardRates || {}) };
+    for (const [k, v] of Object.entries(data?.rates || {})) {
+      const n = Number(v);
+      if (!isNaN(n) && n > 0) rates[k] = n;
+      else delete rates[k]; // 0 / invalid clears the override
+    }
+    const merged = mergeNominaSettings({ ...current, payroll: { ...current.payroll, guardRates: rates } });
+    const [row] = await db.settings.findOrCreate({
+      where: { id: tenantId },
+      defaults: { id: tenantId, theme: 'light', tenantId },
+    });
+    await row.update({ nominaSettings: merged, updatedById: currentUser.id });
+    await this.audit('settings', tenantId, AuditLogRepository.UPDATE, { guardRates: rates });
+    return merged.payroll.guardRates;
+  }
+
   // ── Payroll summary ─────────────────────────────────────────────────────────
   /**
    * Payroll-ready per-guard aggregate over a date range. Reuses
@@ -412,26 +434,32 @@ export default class AttendanceAdminService {
       }
     } catch { /* best-effort */ }
 
-    // Optional pay calculation — only when a rate is configured.
+    // Optional pay calculation — uses a per-guard rate override when present,
+    // else the tenant default. Computed only when an effective rate > 0 exists.
     const settings = await getNominaSettings(db, tenantId);
-    const rate = Number(settings.payroll.defaultHourlyRate || 0);
+    const defaultRate = Number(settings.payroll.defaultHourlyRate || 0);
     const otMult = Number(settings.payroll.overtimeMultiplier || 1.5);
-    const ratesEnabled = rate > 0;
+    const guardRates = settings.payroll.guardRates || {};
+    const rateFor = (gid: string) => {
+      const r = Number(guardRates[gid]);
+      return r > 0 ? r : defaultRate;
+    };
+    const ratesEnabled = defaultRate > 0 || Object.values(guardRates).some((r) => Number(r) > 0);
 
     const round = (n: number) => Math.round(n * 100) / 100;
     const result = Array.from(byGuard.values()).map((a) => {
       const regularHours = round(a.regularHours);
       const overtimeHours = round(a.overtimeHours);
       const totalHours = round(a.totalHours);
+      const rate = rateFor(a.guardId);
       return {
         ...a,
         regularHours,
         overtimeHours,
         totalHours,
         payableHours: totalHours, // approved hours
-        grossPay: ratesEnabled
-          ? round(regularHours * rate + overtimeHours * rate * otMult)
-          : null,
+        hourlyRate: rate || null,
+        grossPay: rate > 0 ? round(regularHours * rate + overtimeHours * rate * otMult) : null,
       };
     });
     result.sort((x, y) => x.guardName.localeCompare(y.guardName));

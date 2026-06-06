@@ -10,11 +10,26 @@ export interface ResolvedRecipients {
   phones: string[];
 }
 
+/** Roles that always receive role-targeted notifications, regardless of any
+ *  post-site assignment scoping (they oversee the whole tenant). */
+const SEE_ALL_ROLES = ['admin', 'superadmin', 'operationsManager'];
+
 export async function resolveRecipients(
   db: any,
   tenantId: string,
   template: any,
-  opts: { recipientUserId?: string; recipientEmail?: string; recipientPhone?: string },
+  opts: {
+    recipientUserId?: string;
+    recipientEmail?: string;
+    recipientPhone?: string;
+    /**
+     * When set, role-targeted recipients are narrowed to users assigned to this
+     * post-site (businessInfo id) — except SEE_ALL roles and users with no
+     * post-site assignment (treated as tenant-wide). Used to send attendance
+     * exceptions only to the assigned supervisor(s).
+     */
+    assignedPostSiteId?: string;
+  },
 ): Promise<ResolvedRecipients> {
   const emails = new Set<string>();
   const phones = new Set<string>();
@@ -44,10 +59,21 @@ export async function resolveRecipients(
       .map((r) => r.trim())
       .filter(Boolean);
 
-    const tenantUsers = await db.tenantUser.findAll({
-      where: { tenantId },
-      include: [{ model: db.user, as: 'user', attributes: ['email', 'phoneNumber'] }],
-    });
+    const narrow = !!opts.assignedPostSiteId;
+    const include: any[] = [
+      { model: db.user, as: 'user', attributes: ['email', 'phoneNumber'] },
+    ];
+    if (narrow) {
+      include.push({
+        model: db.businessInfo,
+        as: 'assignedPostSites',
+        attributes: ['id'],
+        through: { attributes: [] },
+        required: false,
+      });
+    }
+
+    const tenantUsers = await db.tenantUser.findAll({ where: { tenantId }, include });
 
     for (const tu of tenantUsers || []) {
       const roles = Array.isArray(tu.roles)
@@ -56,6 +82,15 @@ export async function resolveRecipients(
           ? tu.roles.split(',').map((r: string) => r.trim())
           : [];
       if (!roles.some((r: string) => targetRoles.includes(r))) continue;
+
+      // Narrow to assigned post-site (except see-all roles + unassigned users).
+      if (narrow && !roles.some((r: string) => SEE_ALL_ROLES.includes(r))) {
+        const assigned = tu.assignedPostSites || [];
+        if (assigned.length > 0 && !assigned.some((p: any) => p.id === opts.assignedPostSiteId)) {
+          continue;
+        }
+      }
+
       const u = tu.user;
       if (u?.email) emails.add(u.email);
       if (u?.phoneNumber) phones.add(u.phoneNumber);

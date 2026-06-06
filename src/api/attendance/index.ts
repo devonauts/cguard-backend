@@ -55,6 +55,12 @@ export default (app) => {
     handler(P.attendanceSettingsEdit, (s, req) => s.closePeriod(req.body.data || req.body)),
   );
 
+  // Per-guard pay-rate overrides
+  app.put(
+    `${base}/guard-rates`,
+    handler(P.attendanceSettingsEdit, (s, req) => s.saveGuardRates(req.body.data || req.body)),
+  );
+
   // Settings (also reachable from the global Settings area)
   app.get(`${base}/settings`, handler(P.attendanceSettingsRead, (s) => s.getSettings()));
   app.put(
