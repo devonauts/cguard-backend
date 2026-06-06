@@ -81,6 +81,10 @@ export async function registerGuardDevice(
 
   let isBound = false;
   let mismatch = false;
+  // Only the FIRST report that flags a device alerts supervisors. registerGuardDevice
+  // runs on every login / app resume / clock-in, so without this a guard on a
+  // non-bound device would re-notify on every app open.
+  let newlyFlagged = false;
 
   if (!bound) {
     // First device for this guard → bind it.
@@ -91,12 +95,15 @@ export async function registerGuardDevice(
     if (record.flagged) await record.update({ flagged: false });
     isBound = true;
   } else {
-    // A device other than the bound one → flag it.
+    // A device other than the bound one → flag it. Notify only on the transition
+    // into the flagged state; later reports just refresh lastMismatchAt. The flag
+    // persists until an admin resets the binding, which re-arms the alert.
+    newlyFlagged = !record.flagged;
     await record.update({ flagged: true, lastMismatchAt: now });
     mismatch = true;
   }
 
-  if (mismatch) {
+  if (mismatch && newlyFlagged) {
     // Best-effort alert to supervisors; never break registration.
     try {
       const guard = await db.user.findByPk(userId, { attributes: ['fullName'] });
