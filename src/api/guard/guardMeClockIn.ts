@@ -31,11 +31,16 @@ export default async (req: any, res: any) => {
     const { stationId, latitude, longitude, shiftSchedule, observations,
       selfiePhoto, address, battery, checklist } = req.body.data || req.body;
 
-    // TESTING ESCAPE HATCH: GUARD_GEOFENCE_BYPASS=true lets a guard clock in
-    // from anywhere — and without a GPS fix at all. Off (default) → enforced.
-    const geofenceBypass = ['1', 'true', 'yes', 'on'].includes(
-      String(process.env.GUARD_GEOFENCE_BYPASS || '').trim().toLowerCase(),
-    );
+    // Geofence enforcement is ON in production: location is required and the
+    // distance is validated against the station radius. The only escape hatch is
+    // the GUARD_GEOFENCE_BYPASS env var (off by default). To clock in from far
+    // away without bypassing, set a large station/tenant geofence radius instead.
+    const TESTING_FORCE_BYPASS = false;
+    const geofenceBypass =
+      TESTING_FORCE_BYPASS ||
+      ['1', 'true', 'yes', 'on'].includes(
+        String(process.env.GUARD_GEOFENCE_BYPASS || '').trim().toLowerCase(),
+      );
 
     if (!stationId) throw new Error400(req.language, 'guard.stationRequired');
     if (!geofenceBypass && (latitude == null || longitude == null)) {
@@ -180,6 +185,12 @@ export default async (req: any, res: any) => {
         observations: guardShiftRecord.observations,
         clockInTime: guardShiftRecord.punchInTime,
       });
+      // Carry the clock-in selfie + ids in the event payload so the panel
+      // notification and the Actividad feed can show the photo and link back.
+      (data as any).photoUrl = guardShiftRecord.punchInPhoto || null;
+      (data as any).guardId = securityGuard.id;
+      (data as any).guardShiftId = guardShiftRecord.id;
+      (data as any).stationId = stationId;
       await dispatch('guard.checkin', data, {
         database: db,
         tenantId,

@@ -106,15 +106,41 @@ export default async (req, res) => {
     //    positionId it becomes a 'rotation' assignment that the Horario renders;
     //    only falls back to ad-hoc when the station has no positions configured.
     const today = new Date().toISOString().slice(0, 10);
+
+    // Station ↔ turno are strictly linked: an assigned guard inherits the
+    // station's schedule. Derive the window from the station's jornada so an
+    // ad-hoc assignment covers the station's hours (for a rotation/position
+    // assignment the position's own times remain authoritative).
+    let schedStart = incoming.startTime || null;
+    let schedEnd = incoming.endTime || null;
+    try {
+      const station = await req.database.station.findByPk(stationId, {
+        attributes: ['startingTimeInDay', 'finishTimeInDay', 'stationSchedule'],
+      });
+      const raw = station?.stationSchedule;
+      const arr = Array.isArray(raw)
+        ? raw
+        : (typeof raw === 'string' && raw.trim().startsWith('[') ? JSON.parse(raw) : null);
+      const jornada = arr && arr.length ? arr[0] : null;
+      schedStart = schedStart || jornada?.startTime || station?.startingTimeInDay || '07:00';
+      schedEnd = schedEnd || jornada?.endTime || station?.finishTimeInDay || '19:00';
+    } catch { /* fall back to defaults below */ }
+
+    // Ad-hoc assignments default to a one-year horizon so the guard covers the
+    // schedule going forward (not just a single day).
+    const oneYear = new Date();
+    oneYear.setFullYear(oneYear.getFullYear() + 1);
+    const horizonEnd = oneYear.toISOString().slice(0, 10);
+
     try {
       const record = await createAssignment(req.database, tenantId, req.currentUser.id, {
         guardId: guardUserId,
         stationId,
         positionId,
         startDate: incoming.startDate || today,
-        endDate: incoming.endDate || null,
-        startTime: incoming.startTime || '07:00',
-        endTime: incoming.endTime || '19:00',
+        endDate: incoming.endDate || (positionId ? null : horizonEnd),
+        startTime: schedStart || '07:00',
+        endTime: schedEnd || '19:00',
       });
       await ApiResponseHandler.success(req, res, record);
     } catch (e: any) {
