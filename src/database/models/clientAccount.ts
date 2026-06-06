@@ -9,6 +9,11 @@ export default function (sequelize) {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
       },
+      // DENORMALIZED CACHE, synced from user (user is the single source of
+      // identity) — do not edit directly. name/lastName/email/phoneNumber are
+      // written exclusively FROM the linked user (clientAccount.userId ->
+      // user.id) via identitySync / clientAccountRepository. Before a user is
+      // provisioned these act as staging values (see CustomerIdentityService).
       name: {
         type: DataTypes.STRING(200),
         allowNull: false,
@@ -17,6 +22,7 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
+      // DENORMALIZED CACHE, synced from user — do not edit directly.
       lastName: {
         type: DataTypes.STRING(200),
         allowNull: true,
@@ -24,6 +30,7 @@ export default function (sequelize) {
           len: [0, 200],
         }
       },
+      // DENORMALIZED CACHE, synced from user — do not edit directly.
       email: {
         type: DataTypes.STRING(150),
         allowNull: true,
@@ -46,6 +53,7 @@ export default function (sequelize) {
           len: [0, 50],
         }
       },
+      // DENORMALIZED CACHE, synced from user — do not edit directly.
       phoneNumber: {
         type: DataTypes.STRING(20),
         allowNull: true,

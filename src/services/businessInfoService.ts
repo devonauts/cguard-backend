@@ -72,6 +72,7 @@ export default class BusinessInfoService {
                     tenantUserId: providedTenantUserId,
                     businessInfoId: record.id,
                     securityGuardId: data && data.securityGuardId ? data.securityGuardId : null, // Add securityGuardId if provided
+                    tenantId: currentTenant.id, // C11: scope pivot rows to the tenant
                     createdAt: now,
                     updatedAt: now,
                   };
@@ -90,6 +91,7 @@ export default class BusinessInfoService {
                       tenantUserId: providedTenantUserId,
                       clientAccountId: data.clientAccountId,
                       securityGuardId: data && data.securityGuardId ? data.securityGuardId : null, // Add securityGuardId if provided
+                      tenantId: currentTenant.id, // C11: scope pivot rows to the tenant
                       createdAt: now,
                       updatedAt: now,
                     };

@@ -56,6 +56,35 @@ class ClientAccountRepository {
       name: data?.name || data?.commercialName,
     };
 
+    // clientAccount.name/lastName/email/phoneNumber are a DENORMALIZED CACHE
+    // synced from the linked user (single source of identity) — do not edit them
+    // independently. If a user is already linked at creation, derive the cache
+    // FROM that user. Otherwise the provided values act as staging until the
+    // user is provisioned (CustomerIdentityService) and the cache is reconciled.
+    try {
+      if (normalizedData.userId) {
+        const linkedUser = await options.database.user.findByPk(
+          normalizedData.userId,
+          { transaction },
+        );
+        if (linkedUser) {
+          const firstName = (linkedUser.firstName || '').toString().trim();
+          const lastName = (linkedUser.lastName || '').toString().trim();
+          const email = (linkedUser.email || '').toString().trim();
+          const phoneNumber = (linkedUser.phoneNumber || '').toString().trim();
+          if (firstName) (normalizedData as any).name = firstName;
+          (normalizedData as any).lastName = lastName || null;
+          (normalizedData as any).email = email || null;
+          (normalizedData as any).phoneNumber = phoneNumber || null;
+        }
+      }
+    } catch (e) {
+      console.warn(
+        'clientAccountRepository.create: could not derive identity from user',
+        (e && (e as any).message) || e,
+      );
+    }
+
     const record = await options.database.clientAccount.create(
       {
         // Allow caller to force the id when needed (e.g., keep same id as user)
@@ -187,6 +216,37 @@ class ClientAccountRepository {
       ]),
       updatedById: currentUser.id,
     };
+
+    // clientAccount.name/lastName/email/phoneNumber are a DENORMALIZED CACHE
+    // synced from the linked user (single source of identity) — do not edit them
+    // independently. When a user is linked, derive these fields FROM that user
+    // and ignore any identity values sent in the request. When no user is linked
+    // yet, the request values act as staging and are reconciled when the user is
+    // provisioned (see CustomerIdentityService).
+    try {
+      const linkedUserId = (updateData as any).userId || record.userId;
+      if (linkedUserId) {
+        const linkedUser = await options.database.user.findByPk(linkedUserId, {
+          transaction,
+        });
+        if (linkedUser) {
+          const firstName = (linkedUser.firstName || '').toString().trim();
+          const lastName = (linkedUser.lastName || '').toString().trim();
+          const email = (linkedUser.email || '').toString().trim();
+          const phoneNumber = (linkedUser.phoneNumber || '').toString().trim();
+          // name is NOT NULL — only override when we actually have a value.
+          if (firstName) (updateData as any).name = firstName;
+          (updateData as any).lastName = lastName || null;
+          (updateData as any).email = email || null;
+          (updateData as any).phoneNumber = phoneNumber || null;
+        }
+      }
+    } catch (e) {
+      console.warn(
+        'clientAccountRepository.update: could not derive identity from user',
+        (e && (e as any).message) || e,
+      );
+    }
 
     // Validate uniqueness of email and phoneNumber within the tenant (exclude self)
     try {

@@ -45,6 +45,12 @@ export default async (req, res, next) => {
           req.currentUser = tenantUser.user;
           req.currentTenant = tenantUser.tenant;
           impersonatedTenantUser = tenantUser;
+          // SECURITY: allowSelfRoleUpdate and bypassPermission are set ONLY
+          // inside this branch, which is reached exclusively when
+          // findByInvitationToken resolved a (non-expired) tenantUser for the
+          // provided token. The token is therefore the trust anchor for these
+          // flags — they must never be set outside a verified-token path.
+          //
           // Allow repository calls during the invite impersonation to update
           // tenant_user roles even when the target user id equals the current
           // impersonated user id. This avoids the "prevented self role update"
@@ -391,6 +397,14 @@ export default async (req, res, next) => {
                   return await ApiResponseHandler.error(req, res, dupErr);
                 }
 
+                // TODO(guard-create atomicity): UserCreator now supports an
+                // `externalTransaction` option so the user + tenantUser + securityGuard
+                // could be created in a single transaction owned by SecurityGuardService.
+                // Threading that transaction here is invasive because this handler
+                // creates the user first, reads back its id, then calls the service
+                // (which opens its own transaction). Left as-is to avoid breaking the
+                // invite/impersonation flows; the redundant updateRoles work has been
+                // removed from SecurityGuardService.create.
                 const _uc2 = new UserCreator({
                   currentUser: originalCurrentUser || req.currentUser,
                   currentTenant: req.currentTenant,

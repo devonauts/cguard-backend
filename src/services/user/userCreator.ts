@@ -55,27 +55,44 @@ export default class UserCreator {
 
     await this._validate();
 
-    // Process each email in its own transaction to reduce lock contention
-    // across multiple tenant_user/pivot inserts. This changes behavior
-    // from a single shared transaction for all emails, but avoids long-lived
-    // locks that cause ER_LOCK_WAIT_TIMEOUT in high-concurrency scenarios.
-    for (const email of this._emails) {
-      // create a new transaction per email and call _addOrUpdate with it
-      const tx = await SequelizeRepository.createTransaction(this.options.database);
-      try {
+    // If a caller owns an outer transaction, run all _addOrUpdate calls on it
+    // and do NOT create/commit/rollback here — the caller is responsible for
+    // committing or rolling back. This lets the guard-create path make
+    // user + tenantUser creation atomic with the securityGuard row.
+    // Only an explicit `externalTransaction` opt-in changes behavior here. We do
+    // NOT read a generic `transaction` field, because the other callers construct
+    // UserCreator with the Express `req` object as options and a stray
+    // `req.transaction` must never silently switch off per-email transactions.
+    const externalTransaction = (this.options as any).externalTransaction;
+
+    if (externalTransaction) {
+      for (const email of this._emails) {
         // eslint-disable-next-line no-await-in-loop
-        await this._addOrUpdate(email, tx);
-        // commit per-email
-        // eslint-disable-next-line no-await-in-loop
-        await SequelizeRepository.commitTransaction(tx);
-      } catch (err) {
+        await this._addOrUpdate(email, externalTransaction);
+      }
+    } else {
+      // Process each email in its own transaction to reduce lock contention
+      // across multiple tenant_user/pivot inserts. This changes behavior
+      // from a single shared transaction for all emails, but avoids long-lived
+      // locks that cause ER_LOCK_WAIT_TIMEOUT in high-concurrency scenarios.
+      for (const email of this._emails) {
+        // create a new transaction per email and call _addOrUpdate with it
+        const tx = await SequelizeRepository.createTransaction(this.options.database);
         try {
           // eslint-disable-next-line no-await-in-loop
-          await SequelizeRepository.rollbackTransaction(tx);
-        } catch (rbErr) {
-          console.error('Failed to rollback per-email transaction in UserCreator:', rbErr);
+          await this._addOrUpdate(email, tx);
+          // commit per-email
+          // eslint-disable-next-line no-await-in-loop
+          await SequelizeRepository.commitTransaction(tx);
+        } catch (err) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await SequelizeRepository.rollbackTransaction(tx);
+          } catch (rbErr) {
+            console.error('Failed to rollback per-email transaction in UserCreator:', rbErr);
+          }
+          throw err;
         }
-        throw err;
       }
     }
 

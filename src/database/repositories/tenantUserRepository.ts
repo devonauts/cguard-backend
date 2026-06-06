@@ -684,6 +684,17 @@ export default class TenantUserRepository {
 
     await retryOnLock(() => tenantUser.save({ transaction }));
 
+    // C6: keep the FK-backed tenantUserRoles join in sync with the serialized
+    // `roles` string-array. The join is the FUTURE SOURCE OF TRUTH for roles;
+    // the READ path for authorization still uses `roles` (transitional), so
+    // this is additive and must never break the role update. Best-effort.
+    try {
+      const { syncTenantUserRoleRows } = require('../../services/roleSync');
+      await syncTenantUserRoleRows(options.database, tenantUser);
+    } catch (e) {
+      console.warn('tenantUserRepository.updateRoles: syncTenantUserRoleRows failed (non-fatal):', e && (e as any).message ? (e as any).message : e);
+    }
+
     // Persist assigned clients (many-to-many pivot)
     try {
       if (clientIds !== undefined) {
@@ -743,6 +754,7 @@ export default class TenantUserRepository {
             tenantUserId: tenantUser.id,
             clientAccountId: clientId,
             security_guard_id: securityGuardId || null,
+            tenantId: tenantUser.tenantId || null, // C11: scope pivot rows to the tenant
             createdAt: now,
             updatedAt: now,
           }));
@@ -866,6 +878,7 @@ export default class TenantUserRepository {
               tenantUserId: tenantUser.id,
               businessInfoId: postId,
               security_guard_id: securityGuardId || null,
+              tenantId: tenantUser.tenantId || null, // C11: scope pivot rows to the tenant
               createdAt: now,
               updatedAt: now,
             };

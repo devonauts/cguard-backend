@@ -98,6 +98,21 @@ export async function createAssignment(
     platoonOffset = input.platoonOffset != null
       ? parseInt(String(input.platoonOffset))
       : (position?.platoonOffset || 0);
+
+    // Idempotent: one active assignment per (guard, station, position). Re-assigning
+    // the same slot reuses the existing row (and refreshes its shifts) instead of
+    // creating a duplicate — this also makes the DB-level unique index safe.
+    const existing = await database.guardAssignment.findOne({
+      where: { guardId: guardUserId, stationId, positionId, tenantId, status: 'active', deletedAt: null },
+    });
+    if (existing) {
+      try {
+        await generateShiftsForAssignment(database, existing.get({ plain: true }), tenantId, userId);
+      } catch (genErr) {
+        console.error('[createAssignment] reuse regen error:', genErr);
+      }
+      return existing;
+    }
   }
 
   const record = await database.guardAssignment.create({

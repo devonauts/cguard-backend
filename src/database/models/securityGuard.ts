@@ -17,6 +17,10 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
+      // DENORMALIZED CACHE, synced from user (user is the single source of
+      // identity) — do not edit directly. Written exclusively FROM the linked
+      // user (securityGuard.guardId -> user.id) via identitySync /
+      // securityGuardRepository. 69+ read sites depend on this column.
       fullName: {
         type: DataTypes.STRING(200),
         allowNull: false,

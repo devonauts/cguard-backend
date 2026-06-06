@@ -6,6 +6,7 @@ import { tenantSubdomain } from './tenantSubdomain';
 import EmailSender from './emailSender';
 import Roles from '../security/roles';
 import Error400 from '../errors/Error400';
+import { syncIdentityFromUser } from './identitySync';
 
 export type CustomerOnboardingStatus = 'not_invited' | 'invited' | 'active' | 'suspended';
 
@@ -61,11 +62,16 @@ export default class CustomerIdentityService {
       });
 
       if (!user) {
+        // Seed the new authoritative user record FROM the clientAccount's
+        // staged identity (including phoneNumber) so the subsequent
+        // syncIdentityFromUser reconciliation does not blank values the admin
+        // just entered. From here on, the user is the single source of truth.
         user = await database.user.create(
           {
             email: recipientEmail,
             firstName: clientAccount.name || '',
             lastName: clientAccount.lastName || '',
+            phoneNumber: (clientAccount as any).phoneNumber || null,
           },
           { transaction },
         );
@@ -80,6 +86,16 @@ export default class CustomerIdentityService {
           { where: { id: clientAccount.id }, transaction },
         );
       }
+
+      // ── Step 2b: Reconcile the denormalized clientAccount identity cache ─────
+      // The user is the single source of identity. After linking, sync the
+      // clientAccount.name/lastName/email/phoneNumber cache FROM the user so the
+      // two never drift. Best-effort; runs inside this transaction.
+      await syncIdentityFromUser(database, userId, {
+        ...this.options,
+        currentTenant,
+        transaction,
+      });
 
       // ── Step 3: Ensure tenantUser with customer role ─────────────────────────
       let tenantUser = await TenantUserRepository.findByTenantAndUser(

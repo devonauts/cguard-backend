@@ -16,6 +16,7 @@ import os from 'os';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import FileStorage from '../../services/file/fileStorage';
+import { syncIdentityFromUser } from '../../services/identitySync';
 
 const Op = Sequelize.Op;
 
@@ -296,6 +297,9 @@ export default class UserRepository {
       options,
     );
 
+    // Single source of identity: propagate to denormalized caches. Best-effort.
+    await syncIdentityFromUser(options.database, user.id, options);
+
     return this.findById(user.id, options);
   }
 
@@ -516,6 +520,10 @@ export default class UserRepository {
       options,
     );
 
+    // The user row is the single source of identity. Propagate name/contact
+    // changes to the denormalized caches (securityGuard.fullName,
+    // clientAccount.name/...). Best-effort, tenant-scoped — never blocks update.
+    await syncIdentityFromUser(options.database, user.id, options);
 
     return this.findById(user.id, options);
   }
@@ -637,6 +645,9 @@ export default class UserRepository {
       },
       options,
     );
+
+    // Single source of identity: propagate to denormalized caches. Best-effort.
+    await syncIdentityFromUser(options.database, user.id, options);
 
     return this.findById(user.id, options);
   }

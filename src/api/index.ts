@@ -228,6 +228,7 @@ require('./scheduler').default(routes);
 require('./scheduling').default(routes);
 require('./guard').default(routes);
 require('./events').default(routes);
+require('./superadmin').default(routes);
 
 // CRUD endpoints for tenant_user_client_accounts
 app.get('/api/tenant-user-client-accounts', tenantUserClientAccounts.listTenantUserClientAccounts);

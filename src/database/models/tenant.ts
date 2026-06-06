@@ -92,6 +92,20 @@ export default function (sequelize, DataTypes) {
         allowNull: false,
         defaultValue: 0,
       },
+      // ── Platform admin lifecycle ───────────────────────────────────────────
+      // Set by a superadmin when a tenant is suspended (access blocked). Null =
+      // not suspended. Distinct from billingStatus (which Stripe drives) and
+      // deletedAt (paranoid soft-delete).
+      suspendedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: null,
+      },
+      suspensionReason: {
+        type: DataTypes.STRING(500),
+        allowNull: true,
+        defaultValue: null,
+      },
       // Contact / Business fields added to support invoices/presupuestos
       address: {
         type: DataTypes.TEXT,

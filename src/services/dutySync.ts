@@ -1,45 +1,43 @@
-import { Op } from 'sequelize';
 import { databaseInit } from '../database/databaseConnection';
 
 /**
- * Syncs the `isOnDuty` field on securityGuards based on active shift times.
- * 
- * Runs periodically (every 5 minutes from server.ts).
- * - If a guard has a shift where NOW is between startTime and endTime → isOnDuty = true
- * - If a guard has no active shift right now → isOnDuty = false
- * 
- * Only updates guards whose status actually changed (to avoid unnecessary writes).
+ * Reconciles the denormalized `securityGuard.isOnDuty` cache against the SINGLE
+ * SOURCE OF TRUTH: an open `guardShift` (a clock-in with no punch-out).
+ *
+ * Runs periodically (every 5 minutes from server.ts) as a SAFETY NET only —
+ * clock-in/clock-out are the authoritative writers and update the flag instantly
+ * inside their own handlers; this catches the rare case where one of those
+ * half-completes (crash/network) and leaves the flag stale.
+ *
+ * IMPORTANT: "on duty" means the guard is ACTUALLY CLOCKED IN, not merely
+ * scheduled. The previous version derived it from the shift schedule window,
+ * which fought clock-out — a guard who clocked out early but was still inside
+ * their scheduled window got flipped back on-duty every 5 minutes.
  */
 export async function syncGuardDutyStatus() {
   try {
     const database = await databaseInit();
-    const now = new Date();
 
-    // Find all guards with an active shift right now
-    const [activeGuardRows]: any = await database.sequelize.query(
-      `SELECT DISTINCT s.guardId
-       FROM shifts s
-       WHERE s.deletedAt IS NULL
-         AND s.guardId IS NOT NULL
-         AND s.startTime <= :now
-         AND s.endTime >= :now`,
-      { replacements: { now: now.toISOString() } }
+    // securityGuards that currently have an OPEN guardShift (punchOutTime IS NULL).
+    // guardShift.guardNameId references securityGuard.id.
+    const [openRows]: any = await database.sequelize.query(
+      `SELECT DISTINCT gs.guardNameId AS sgId
+         FROM guardShifts gs
+        WHERE gs.deletedAt IS NULL
+          AND gs.punchOutTime IS NULL
+          AND gs.guardNameId IS NOT NULL`,
     );
+    const onDutyIds = new Set((openRows || []).map((r: any) => r.sgId));
 
-    const activeGuardIds = new Set((activeGuardRows || []).map((r: any) => r.guardId));
-
-    // Get all securityGuards
     const allGuards = await database.securityGuard.findAll({
       where: { deletedAt: null },
-      attributes: ['id', 'guardId', 'isOnDuty'],
+      attributes: ['id', 'isOnDuty'],
     });
 
     let onCount = 0;
     let offCount = 0;
-
     for (const guard of allGuards) {
-      const shouldBeOnDuty = activeGuardIds.has(guard.guardId);
-
+      const shouldBeOnDuty = onDutyIds.has(guard.id);
       if (shouldBeOnDuty && !guard.isOnDuty) {
         await guard.update({ isOnDuty: true });
         onCount++;
@@ -50,7 +48,7 @@ export async function syncGuardDutyStatus() {
     }
 
     if (onCount > 0 || offCount > 0) {
-      console.log(`[DutySync] Updated: ${onCount} on-duty, ${offCount} off-duty`);
+      console.log(`[DutySync] Reconciled cache: ${onCount} on-duty, ${offCount} off-duty`);
     }
   } catch (err) {
     console.error('[DutySync] Error:', (err as any)?.message || err);

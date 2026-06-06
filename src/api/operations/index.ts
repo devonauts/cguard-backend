@@ -63,9 +63,17 @@ export default (app) => {
 
       // Guards on duty
       let guardsOnDuty = 0;
+      // Derived from the SINGLE SOURCE OF TRUTH (an open guardShift = clocked in,
+      // not punched out), not the denormalized isOnDuty flag.
       try {
-        const where = tenantId ? { tenantId, isOnDuty: true } : { isOnDuty: true };
-        guardsOnDuty = await db.securityGuard.count({ where });
+        const [rows]: any = await db.sequelize.query(
+          `SELECT COUNT(DISTINCT gs.guardNameId) AS n
+             FROM guardShifts gs
+            WHERE gs.deletedAt IS NULL AND gs.punchOutTime IS NULL
+              ${tenantId ? 'AND gs.tenantId = :tenantId' : ''}`,
+          { replacements: { tenantId } },
+        );
+        guardsOnDuty = Number(rows?.[0]?.n || 0);
       } catch (_) { guardsOnDuty = 0; }
 
       // Incidents today

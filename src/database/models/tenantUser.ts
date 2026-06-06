@@ -134,6 +134,17 @@ export default function (sequelize, DataTypes) {
       as: 'assignedPostSites',
       constraints: false,
     });
+
+    // C6: real role membership via the tenantUserRoles join table.
+    // FUTURE SOURCE OF TRUTH for roles — kept in sync from the serialized
+    // `roles` string-array (see roleSync.syncTenantUserRoleRows). The READ
+    // path for authorization still uses `roles` for now (transitional).
+    models.tenantUser.belongsToMany(models.role, {
+      through: models.tenantUserRole,
+      foreignKey: 'tenantUserId',
+      otherKey: 'roleId',
+      as: 'roleRows',
+    });
   };
 
   return tenantUser;

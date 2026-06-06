@@ -126,6 +126,21 @@ async function runPlatformEventsCleanup() {
 
 initPlatformEvents();
 
+// C6: seed built-in roles as rows in the `roles` table on startup if missing.
+// Additive + best-effort; the FK-backed tenantUserRoles join relies on these.
+async function initBuiltInRoles() {
+  try {
+    const database = await databaseInit();
+    const { ensureBuiltInRoles } = require('./services/roleSync');
+    await ensureBuiltInRoles(database);
+    console.log('[roleSync] Built-in roles ensured');
+  } catch (err) {
+    console.error('[roleSync] ensureBuiltInRoles failed:', (err as any)?.message || err);
+  }
+}
+
+initBuiltInRoles();
+
 // Schedule periodic cleanup every 3 hours
 nodeSetInterval(() => {
   runExpiredInvitesCleanup();

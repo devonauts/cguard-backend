@@ -86,6 +86,33 @@ class SecurityGuardRepository {
       }
     }
 
+    // securityGuard.fullName is a DENORMALIZED CACHE synced from the linked
+    // user (single source of identity) — do not edit it independently.
+    // When a real user is linked (non-draft, or a draft that already has a
+    // user), derive fullName FROM that user instead of trusting request data.
+    // Drafts without a usable user name keep the staged fullName as a
+    // placeholder and are reconciled on activation (see update()).
+    try {
+      if (createPayload.guardId) {
+        const guardUser = await options.database.user.findByPk(
+          createPayload.guardId,
+          { transaction },
+        );
+        const userFullName = guardUser
+          ? (guardUser.fullName ||
+              [guardUser.firstName, guardUser.lastName].filter(Boolean).join(' '))
+          : null;
+        if (userFullName && String(userFullName).trim()) {
+          createPayload.fullName = String(userFullName).trim();
+        }
+      }
+    } catch (e) {
+      console.warn(
+        'securityGuardRepository.create: could not derive fullName from user',
+        (e && (e as any).message) || e,
+      );
+    }
+
     const record = await options.database.securityGuard.create(
       createPayload,
       {
@@ -202,6 +229,31 @@ class SecurityGuardRepository {
         // data.guard may be a plain ID string or a full user object — extract just the ID
         payloadToUpdate.guardId = typeof data.guard === 'object' ? (data.guard?.id ?? null) : data.guard;
       }
+    }
+
+    // securityGuard.fullName is a DENORMALIZED CACHE synced from the linked user
+    // (single source of identity) — do not edit it independently. Reconcile it
+    // FROM the user here (also covers draft activation when a user is linked).
+    try {
+      const effectiveGuardId = payloadToUpdate.guardId || record.guardId;
+      if (effectiveGuardId) {
+        const guardUser = await options.database.user.findByPk(
+          effectiveGuardId,
+          { transaction },
+        );
+        const userFullName = guardUser
+          ? (guardUser.fullName ||
+              [guardUser.firstName, guardUser.lastName].filter(Boolean).join(' '))
+          : null;
+        if (userFullName && String(userFullName).trim()) {
+          payloadToUpdate.fullName = String(userFullName).trim();
+        }
+      }
+    } catch (e) {
+      console.warn(
+        'securityGuardRepository.update: could not derive fullName from user',
+        (e && (e as any).message) || e,
+      );
     }
 
     record = await record.update(payloadToUpdate, { transaction });
@@ -479,6 +531,31 @@ class SecurityGuardRepository {
 
     // Always set updatedById
     updatePayload.updatedById = currentUser.id;
+
+    // securityGuard.fullName is a DENORMALIZED CACHE synced from the linked user
+    // (single source of identity) — do not edit it independently. Reconcile it
+    // FROM the user here (also covers draft activation when a user is linked).
+    try {
+      const effectiveGuardId = updatePayload.guardId || record.guardId;
+      if (effectiveGuardId) {
+        const guardUser = await options.database.user.findByPk(
+          effectiveGuardId,
+          { transaction },
+        );
+        const userFullName = guardUser
+          ? (guardUser.fullName ||
+              [guardUser.firstName, guardUser.lastName].filter(Boolean).join(' '))
+          : null;
+        if (userFullName && String(userFullName).trim()) {
+          updatePayload.fullName = String(userFullName).trim();
+        }
+      }
+    } catch (e) {
+      console.warn(
+        'securityGuardRepository.patchUpdate: could not derive fullName from user',
+        (e && (e as any).message) || e,
+      );
+    }
 
     // Apply only provided scalar fields
     if (Object.keys(updatePayload).length) {

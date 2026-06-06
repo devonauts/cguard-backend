@@ -20,25 +20,10 @@ async function seedSuperadmin() {
         process.exit(0);
     }
 
-    // Busca o crea un tenant genérico (idempotente)
-    const tenantDefaults = {
-        name: 'Empresa Admin',
-        url: 'admin',
-        plan: 'free',
-        planStatus: 'active',
-        address: process.env.SEED_TENANT_ADDRESS || 'Sin dirección',
-        phone: process.env.SEED_TENANT_PHONE || '+0000000000',
-        email: process.env.SEED_TENANT_CONTACT_EMAIL || 'admin-tenant@cguard.com',
-        taxNumber: process.env.SEED_TENANT_TAX_NUMBER || 'N/A',
-        businessTitle: process.env.SEED_TENANT_BUSINESS_TITLE || 'Empresa Admin',
-    };
-
-    // Intentar buscar por `url` (clave única) primero, si no existe usar findOrCreate
-    let tenant = await db.tenant.findOne({ where: { url: tenantDefaults.url } });
-    if (!tenant) {
-        const [t, created] = await db.tenant.findOrCreate({ where: { url: tenantDefaults.url }, defaults: tenantDefaults });
-        tenant = t;
-    }
+    // NOTA: deliberadamente NO creamos ningún tenant "dummy" (antes se creaba
+    // "Empresa Admin"). El superadmin es una cuenta de PLATAFORMA global y no
+    // debe pertenecer a ninguna empresa; accede al panel de superadmin por una
+    // ruta aparte (/superadmin/tenants) y crea las empresas reales desde ahí.
 
     // Crea el usuario superadmin. Si la columna `isSuperadmin` aún no existe
     // en la BD, intentamos un fallback sin ese campo para no romper seeds.

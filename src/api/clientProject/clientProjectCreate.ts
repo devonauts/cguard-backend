@@ -1,10 +1,17 @@
 import { v4 as uuidv4 } from 'uuid';
+import PermissionChecker from '../../services/user/permissionChecker';
+import Permissions from '../../security/permissions';
 
 const PROJECT_TYPES = ['event', 'investigation', 'alarm_response', 'consulting', 'other'];
 const PROJECT_STATUSES = ['active', 'completed', 'cancelled', 'on_hold'];
 
 export default async (req, res) => {
   try {
+    // C10: this handler previously bypassed the permission check and never
+    // verified the clientAccount belonged to the caller's tenant — a tenant
+    // isolation gap. Gate it and validate ownership.
+    new PermissionChecker(req).validateHas(Permissions.values.clientAccountEdit);
+
     const { tenantId } = req.params;
     const body = req.body || {};
 
@@ -24,6 +31,27 @@ export default async (req, res) => {
     }
 
     const db = req.database;
+
+    // Tenant isolation: the clientAccount (and site, if given) MUST belong to
+    // this tenant — otherwise a user could attach a project to another tenant's
+    // client.
+    const client = await db.clientAccount.findOne({
+      where: { id: clientAccountId, tenantId, deletedAt: null },
+      attributes: ['id'],
+    });
+    if (!client) {
+      return res.status(404).json({ message: 'clientAccount not found in this tenant' });
+    }
+    const businessInfoId = body.businessInfoId || body.siteId || null;
+    if (businessInfoId) {
+      const site = await db.businessInfo.findOne({
+        where: { id: businessInfoId, tenantId, deletedAt: null },
+        attributes: ['id'],
+      });
+      if (!site) {
+        return res.status(404).json({ message: 'site (businessInfo) not found in this tenant' });
+      }
+    }
 
     const project = await db.clientProject.create({
       id: uuidv4(),

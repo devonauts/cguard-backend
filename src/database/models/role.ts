@@ -64,6 +64,14 @@ export default function (sequelize) {
     role.belongsTo(models.user, {
       as: 'updatedBy',
     });
+
+    // C6: real role membership via the tenantUserRoles join table.
+    role.belongsToMany(models.tenantUser, {
+      through: models.tenantUserRole,
+      foreignKey: 'roleId',
+      otherKey: 'tenantUserId',
+      as: 'tenantUsers',
+    });
   };
 
   return role;

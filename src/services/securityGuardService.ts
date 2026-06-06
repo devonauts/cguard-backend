@@ -47,44 +47,26 @@ export default class SecurityGuardService {
     );
 
     try {
+      const hasGuardField = Object.prototype.hasOwnProperty.call(data, 'guard');
+      // Normalize full user object to a plain id string before capturing the
+      // fallback id, so a null filter result is restored to an id (not an object).
+      if (hasGuardField && data.guard !== null && typeof data.guard === 'object') {
+        data.guard = data.guard.id ?? null;
+      }
       // Keep the original guard id provided by caller so we can fallback
       const originalGuardProvided = data.guard;
-      const hasGuardField = Object.prototype.hasOwnProperty.call(data, 'guard');
       const originalGuard = data.guard;
       if (hasGuardField) {
-        // Normalize full user object to a plain id string before filtering
-        if (data.guard !== null && typeof data.guard === 'object') {
-          data.guard = data.guard.id ?? null;
-        }
         data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
 
         // If client provided a guard id but it's not yet associated to tenant,
-        // try to create the tenantUser entry within this transaction so update can proceed.
+        // filterIdInTenant returns null. Restore the original id so the
+        // securityGuard record is created with the correct user id. The single
+        // authoritative TenantUserRepository.updateRoles call (after the record
+        // is created, below) will create the tenantUser membership and set the
+        // securityGuard role exactly once.
         if (!data.guard && originalGuard) {
-          try {
-            const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
-            const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
-            if (tenantId) {
-              console.log('🔧 [SecurityGuardService.update] ensuring tenantUser for guard in transaction', originalGuard, 'tenant', tenantId);
-              // Ensure securityGuard role is always included
-              let rolesToEnsure = Array.isArray(data.roles) ? [...data.roles] : (data.roles ? [data.roles] : []);
-              if (!rolesToEnsure.includes(Roles.values.securityGuard)) {
-                rolesToEnsure.push(Roles.values.securityGuard);
-              }
-              await TenantUserRepository.updateRoles(
-                  tenantId,
-                  originalGuard,
-                  rolesToEnsure,
-                  { ...this.options, transaction, addRoles: true, forcePendingStatus: true },
-                  data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
-                  data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
-                  originalGuard
-                );
-              data.guard = originalGuard;
-            }
-          } catch (e) {
-            console.warn('⚠️ [SecurityGuardService.update] failed to ensure tenantUser in-transaction for guard', originalGuard, e && (e as any).message ? (e as any).message : e);
-          }
+          data.guard = originalGuard;
         }
       } else {
         // Remove guard key so downstream repository.update won't treat it as provided
@@ -92,63 +74,11 @@ export default class SecurityGuardService {
       }
 
       // If a guard id was provided by the caller but the filter returned null
-      // (user not yet associated to tenant), attempt to create the tenantUser
-      // entry within the current transaction so the subsequent steps can use it.
+      // (user not yet associated to tenant), restore it so the record is created
+      // with the correct user id. Role/membership are set by the single
+      // authoritative updateRoles call after the record is created (below).
       if (!data.guard && originalGuardProvided) {
-        try {
-          const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
-          const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
-          if (tenantId) {
-            console.log('🔧 [SecurityGuardService.create] ensuring tenantUser for guard in transaction', originalGuardProvided, 'tenant', tenantId);
-            // Ensure securityGuard role is always included
-            let rolesToEnsure = Array.isArray(data.roles) ? [...data.roles] : (data.roles ? [data.roles] : []);
-            if (!rolesToEnsure.includes(Roles.values.securityGuard)) {
-              rolesToEnsure.push(Roles.values.securityGuard);
-            }
-            await TenantUserRepository.updateRoles(
-              tenantId,
-              originalGuardProvided,
-              rolesToEnsure,
-              { ...this.options, transaction, addRoles: true, forcePendingStatus: true },
-              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
-              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
-              originalGuardProvided
-            );
-            // After ensuring tenantUser, set guard back to original id so create proceeds
-            data.guard = originalGuardProvided;
-          }
-        } catch (e) {
-          console.warn('⚠️ [SecurityGuardService.create] failed to ensure tenantUser in-transaction for guard', originalGuardProvided, e && (e as any).message ? (e as any).message : e);
-        }
-      }
-      // Ensure tenantUser has `securityGuard` role when guard id is provided
-      if (data.guard) {
-        try {
-          const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
-          const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
-          if (tenantId) {
-            let rolesToAdd = Array.isArray(data.roles)
-              ? [...new Set(data.roles)]
-              : (data.roles ? [data.roles] : []);
-            // Ensure securityGuard role is always included
-            if (!rolesToAdd.includes(Roles.values.securityGuard)) {
-              rolesToAdd.push(Roles.values.securityGuard);
-            }
-            // Pass through client/postSite assignments when ensuring tenantUser roles
-            await TenantUserRepository.updateRoles(
-              tenantId,
-              data.guard,
-              rolesToAdd,
-              { ...this.options, transaction, addRoles: true, forcePendingStatus: true },
-              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
-              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
-              data.guard
-            );
-            console.log('🔔 [SecurityGuardService.create] ensured tenantUser roles include securityGuard for user:', data.guard);
-          }
-        } catch (e) {
-          console.warn('⚠️ [SecurityGuardService.create] failed to ensure tenantUser roles for guard:', (e && (e as any).message) ? (e as any).message : e);
-        }
+        data.guard = originalGuardProvided;
       }
       data.memos = await MemosRepository.filterIdsInTenant(data.memos, { ...this.options, transaction });
       // Ensure availability is allowed through when provided
@@ -211,32 +141,10 @@ export default class SecurityGuardService {
           }
           
 
-          const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
-          const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
-          if (!tenantId) {
-            console.warn('⚠️ [SecurityGuardService.create] no current tenant found in options; cannot create tenantUser automatically');
-          } else {
-            // Ensure securityGuard role is always included when creating a guard
-            let rolesToAdd = Array.isArray(data.roles)
-              ? [...new Set(data.roles)]
-              : (data.roles ? [data.roles] : []);
-            if (!rolesToAdd.includes(Roles.values.securityGuard)) {
-              rolesToAdd.push(Roles.values.securityGuard);
-              console.log('🔔 [SecurityGuardService.create] added securityGuard role to ensure invitation token generation');
-            }
-            // When creating tenantUser for imported guard, also persist client/postSite assignments
-            await TenantUserRepository.updateRoles(
-              tenantId,
-              user.id,
-              rolesToAdd,
-              { ...this.options, transaction, addRoles: true },
-              data.clientIds ?? (data.clientId ? [data.clientId] : undefined),
-              data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
-              user.id
-            );
-            console.log('🔔 [SecurityGuardService.create] tenantUser ensured/updated for imported user:', user.id, 'tenant:', tenantId);
-          }
-
+          // Note: the tenantUser membership + securityGuard role are created by
+          // the single authoritative TenantUserRepository.updateRoles call after
+          // the securityGuard record is created (below). We only resolve
+          // data.guard here so the record is created with the correct user id.
           data.guard = user.id;
         } catch (e) {
           console.warn('⚠️ [SecurityGuardService.create] import user/tenantUser creation failed:', (e && (e as any).message) ? (e as any).message : e);
@@ -427,9 +335,14 @@ export default class SecurityGuardService {
         console.warn('⚠️ [SecurityGuardService.create] post-create user sync encountered an error:', e && (e as any).message ? (e as any).message : e);
       }
 
-      // After creating the securityGuard record, update pivot tables with securityGuardId if clientIds or postSiteIds were provided
+      // SINGLE authoritative tenantUser role/membership write for the create flow.
+      // After creating the securityGuard record, ensure the tenantUser exists,
+      // carries the securityGuard role, and links to the created securityGuardId
+      // (plus any client/postSite assignments). This replaces the previously
+      // duplicated "ensure role" blocks that ran before the record existed —
+      // running it here lets us pass the real record.id exactly once.
       try {
-        if ((data.clientIds || data.clientId || data.postSiteIds || data.postSiteId) && data.guard && record && record.id) {
+        if (data.guard && record && record.id) {
           const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
           const tenantId = currentTenant && currentTenant.id ? currentTenant.id : null;
           if (tenantId) {
@@ -448,11 +361,11 @@ export default class SecurityGuardService {
               data.postSiteIds ?? (data.postSiteId ? [data.postSiteId] : undefined),
               record.id, // Pass the created securityGuardId
             );
-            console.log('🔔 [SecurityGuardService.create] updated pivot tables with securityGuardId:', record.id);
+            console.log('🔔 [SecurityGuardService.create] ensured tenantUser role/membership for guard:', data.guard, 'securityGuardId:', record.id);
           }
         }
       } catch (e) {
-        console.warn('⚠️ [SecurityGuardService.create] failed to update pivot tables with securityGuardId:', (e && (e as any).message) ? (e as any).message : e);
+        console.warn('⚠️ [SecurityGuardService.create] failed to ensure tenantUser role/membership:', (e && (e as any).message) ? (e as any).message : e);
       }
 
       await SequelizeRepository.commitTransaction(
