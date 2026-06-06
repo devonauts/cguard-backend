@@ -92,6 +92,13 @@ export default function (sequelize, DataTypes) {
         allowNull: false,
         defaultValue: 0,
       },
+      // Set to true once the tenant owner finishes the first-login business
+      // onboarding (business profile + logo). Drives the onboarding banner.
+      onboardingCompleted: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       // ── Platform admin lifecycle ───────────────────────────────────────────
       // Set by a superadmin when a tenant is suspended (access blocked). Null =
       // not suspended. Distinct from billingStatus (which Stripe drives) and
@@ -107,12 +114,12 @@ export default function (sequelize, DataTypes) {
         defaultValue: null,
       },
       // Contact / Business fields added to support invoices/presupuestos
+      // Nullable so a self-signup tenant can be created "incomplete" and filled
+      // in via the first-login onboarding wizard. The wizard enforces it at the UX layer.
       address: {
         type: DataTypes.TEXT,
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-        },
+        allowNull: true,
+        defaultValue: null,
       },
       // Complementary address fields (added 2026)
       addressLine2: {
@@ -147,10 +154,8 @@ export default function (sequelize, DataTypes) {
       },
       phone: {
         type: DataTypes.STRING(50),
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-        },
+        allowNull: true,
+        defaultValue: null,
       },
       // Teléfono fijo opcional
       landline: {
@@ -179,10 +184,8 @@ export default function (sequelize, DataTypes) {
       },
       taxNumber: {
         type: DataTypes.STRING(255),
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-        },
+        allowNull: true,
+        defaultValue: null,
       },
       businessTitle: {
         type: DataTypes.STRING(255),

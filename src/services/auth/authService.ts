@@ -24,6 +24,7 @@ import Error401 from '../../errors/Error401';
 import dayjs from 'dayjs';
 import Roles from '../../security/roles';
 import RoleRepository from '../../database/repositories/roleRepository';
+import SettingsService from '../settingsService';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -242,6 +243,14 @@ class AuthService {
             transaction,
           },
         );
+      } else {
+        // Fresh self-signup (no invitation token and no authenticated user):
+        // create a brand-new tenant for this user and link them as admin so a
+        // tenant exists for the new account in any TENANT_MODE (incl. 'multi').
+        await this.createTenantForSelfSignup(newUser, {
+          ...options,
+          transaction,
+        });
       }
 
       // Email may have been alreadyverified using the invitation token
@@ -358,6 +367,11 @@ class AuthService {
       )
 
       // token creation will occur after loading `fullUser` to determine tenant context
+
+      // Capture the previous lastLoginAt BEFORE marking the user logged in so we
+      // can tell the frontend whether this is the user's very first login.
+      const previousLastLoginAt =
+        (user && (user as any).lastLoginAt) ? (user as any).lastLoginAt : null;
 
       // Mark user last login timestamp
       try {
@@ -525,6 +539,10 @@ class AuthService {
               assignedClients: t.assignedClients || [],
               assignedPostSites: t.assignedPostSites || [],
               status: t.status || null,
+              // Trial / onboarding fields read from the loaded tenant relation.
+              trialEndsAt: (t.tenant && (t.tenant as any).trialEndsAt) ? (t.tenant as any).trialEndsAt : null,
+              billingStatus: (t.tenant && (t.tenant as any).billingStatus) ? (t.tenant as any).billingStatus : null,
+              onboardingCompleted: (t.tenant && typeof (t.tenant as any).onboardingCompleted !== 'undefined') ? Boolean((t.tenant as any).onboardingCompleted) : false,
             })),
           }
         : {
@@ -539,6 +557,14 @@ class AuthService {
         (safeUser as any).isSuperadmin = (fullUser && fullUser.isSuperadmin) ? true : ((user && (user as any).isSuperadmin) ? true : false);
       } catch (e) {
         try { (safeUser as any).isSuperadmin = false; } catch (ee) {}
+      }
+
+      // First login flag: true when the user had no prior lastLoginAt before
+      // this signin (captured before markLoggedIn above).
+      try {
+        (safeUser as any).isFirstLogin = !previousLastLoginAt;
+      } catch (e) {
+        try { (safeUser as any).isFirstLogin = false; } catch (ee) {}
       }
 
       // Transform `safeUser.tenants` (array) into single `tenant` object
@@ -653,6 +679,10 @@ class AuthService {
           assignedClients: tenantEntry.assignedClients || [],
           assignedPostSites: tenantEntry.assignedPostSites || [],
           status: tenantEntry.status || null,
+          // Trial / onboarding fields read from the loaded tenant relation.
+          trialEndsAt: (tenantEntry.tenant && tenantEntry.tenant.trialEndsAt) ? tenantEntry.tenant.trialEndsAt : null,
+          billingStatus: (tenantEntry.tenant && tenantEntry.tenant.billingStatus) ? tenantEntry.tenant.billingStatus : null,
+          onboardingCompleted: (tenantEntry.tenant && typeof tenantEntry.tenant.onboardingCompleted !== 'undefined') ? Boolean(tenantEntry.tenant.onboardingCompleted) : false,
         };
         delete (safeUser as any).tenants;
 
@@ -746,6 +776,78 @@ class AuthService {
         options.transaction,
       );
     }
+  }
+
+  /**
+   * Creates a brand-new tenant for a fresh self-signup user and links them as
+   * admin (status 'active'). Works in any TENANT_MODE (does not rely on
+   * findDefault / single-tenant mode). Runs inside the caller's transaction.
+   *
+   * NOT-NULL business fields are seeded with safe placeholders so creation
+   * succeeds; the user completes them later via the onboarding flow. The
+   * tenant model's beforeCreate hook sets trialEndsAt (+14d) and
+   * billingStatus='trialing' — do NOT override them here.
+   */
+  static async createTenantForSelfSignup(newUser, options) {
+    const transaction = options.transaction;
+
+    // Always pass the new user as currentUser so TenantRepository.create sets
+    // createdById / updatedById and TenantUserRepository.create links the
+    // correct user.
+    const scopedOptions = {
+      ...options,
+      currentUser: newUser,
+      transaction,
+      bypassPermissionValidation: true,
+    };
+
+    // Safe default business name. The email local-part isn't usually a
+    // meaningful business name, so we use a neutral default for both the
+    // tenant name and businessTitle.
+    const tenantName = 'Mi Empresa';
+
+    // Build a unique url slug from the email local-part plus a short random
+    // suffix to avoid collisions on the unique url index.
+    const emailLocalPart = String(newUser.email || 'tenant')
+      .split('@')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 30) || 'tenant';
+    const uniqueSuffix = Math.random().toString(36).slice(2, 8);
+    const tenantUrl = `${emailLocalPart}-${uniqueSuffix}`.slice(0, 50);
+
+    const tenantData = {
+      name: tenantName,
+      url: tenantUrl,
+      // Business fields left empty (now nullable) -> filled via the first-login
+      // onboarding wizard. email defaults to the user's email so it's pre-filled.
+      address: null,
+      phone: null,
+      email: newUser.email,
+      taxNumber: null,
+      businessTitle: tenantName,
+      // These have model defaults but we set them explicitly for clarity.
+      website: '',
+      licenseNumber: '',
+      extraLines: '',
+      timezone: 'America/Guayaquil',
+    };
+
+    const record = await TenantRepository.create(tenantData, scopedOptions);
+
+    await SettingsService.findOrCreateDefault({
+      ...scopedOptions,
+      currentTenant: record,
+    });
+
+    await TenantUserRepository.create(
+      record,
+      newUser,
+      [Roles.values.admin],
+      scopedOptions,
+    );
+
+    return record;
   }
 
   static async findByToken(token, options) {

@@ -50,6 +50,15 @@ export default async (req, res, next) => {
         } catch (e) {
           // non-fatal — keep whatever was already on the tenant entry
         }
+
+        // Expose trial / onboarding fields read from the loaded tenant relation.
+        try {
+          t.trialEndsAt = (t.tenant && t.tenant.trialEndsAt) ? t.tenant.trialEndsAt : null;
+          t.billingStatus = (t.tenant && t.tenant.billingStatus) ? t.tenant.billingStatus : null;
+          t.onboardingCompleted = (t.tenant && typeof t.tenant.onboardingCompleted !== 'undefined') ? Boolean(t.tenant.onboardingCompleted) : false;
+        } catch (e) {
+          // non-fatal
+        }
       }
     }
 
