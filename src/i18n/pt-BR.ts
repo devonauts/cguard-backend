@@ -345,6 +345,11 @@ const ptBR = {
           'Este guarda já possui um turno que se sobrepõe ao horário selecionado.',
       }
     },
+    attendance: {
+      errors: {
+        locked: 'Este registro de presença está bloqueado porque seu período de folha está fechado.',
+      },
+    },
   }
 };
 

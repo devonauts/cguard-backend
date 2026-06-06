@@ -43,6 +43,11 @@ export interface NominaSettings {
     startDayOfWeek: number; // 0=Sun..6=Sat
     overtimeThresholdHours: number; // hours/shift beyond which counts as overtime
     exportFormat: 'csv' | 'pdf' | 'xlsx';
+    // Optional pay rates. defaultHourlyRate = 0 → pay is NOT computed (only hours).
+    currency: string;
+    defaultHourlyRate: number;
+    overtimeMultiplier: number;
+    lastPeriodClose: string | null; // ISO date of the last closed (locked) cutoff
   };
 }
 
@@ -81,6 +86,10 @@ export const DEFAULT_NOMINA_SETTINGS: NominaSettings = {
     startDayOfWeek: 1,
     overtimeThresholdHours: 8,
     exportFormat: 'csv',
+    currency: 'USD',
+    defaultHourlyRate: 0,
+    overtimeMultiplier: 1.5,
+    lastPeriodClose: null,
   },
 };
 

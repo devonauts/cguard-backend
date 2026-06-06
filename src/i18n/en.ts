@@ -373,6 +373,11 @@ const en = {
           'This guard already has a shift that overlaps the selected time range.',
       }
     },
+    attendance: {
+      errors: {
+        locked: 'This attendance record is locked because its payroll period is closed.',
+      },
+    },
   }
 };
 

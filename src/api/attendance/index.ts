@@ -49,6 +49,12 @@ export default (app) => {
     handler(P.attendanceApprove, (s, req) => s.applyCorrection(req.params.id, req.body.data || req.body)),
   );
 
+  // Close (lock) a payroll period
+  app.post(
+    `${base}/close-period`,
+    handler(P.attendanceSettingsEdit, (s, req) => s.closePeriod(req.body.data || req.body)),
+  );
+
   // Settings (also reachable from the global Settings area)
   app.get(`${base}/settings`, handler(P.attendanceSettingsRead, (s) => s.getSettings()));
   app.put(

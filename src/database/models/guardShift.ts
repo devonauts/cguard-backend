@@ -134,6 +134,9 @@ export default function (sequelize) {
       },
       approvedAt: { type: DataTypes.DATE, allowNull: true },
       approvalNotes: { type: DataTypes.TEXT, allowNull: true },
+      // Payroll period lock: once a period is closed, the record is read-only.
+      locked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      lockedAt: { type: DataTypes.DATE, allowNull: true },
     },
     {
       indexes: [

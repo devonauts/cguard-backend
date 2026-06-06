@@ -163,6 +163,7 @@ export default class AttendanceAdminService {
     const currentUser = SequelizeRepository.getCurrentUser(this.options);
     const record = await db.guardShift.findOne({ where: { id, tenantId } });
     if (!record) throw new Error404();
+    await this.assertNotLocked(record);
 
     await record.update({
       approvalStatus: decision,
@@ -217,6 +218,7 @@ export default class AttendanceAdminService {
 
     const record = await db.guardShift.findOne({ where: { id: guardShiftId, tenantId } });
     if (!record) throw new Error404();
+    await this.assertNotLocked(record);
 
     const original = record.get(data.field);
     const correction = await db.attendanceCorrection.create({
@@ -278,6 +280,7 @@ export default class AttendanceAdminService {
     if (decision === 'approved') {
       const record = await db.guardShift.findOne({ where: { id: correction.guardShiftId, tenantId } });
       if (record) {
+        await this.assertNotLocked(record);
         const field = correction.field;
         let value: any = correction.correctedValue;
         if ((field === 'punchInTime' || field === 'punchOutTime') && value) value = new Date(value);
@@ -409,14 +412,28 @@ export default class AttendanceAdminService {
       }
     } catch { /* best-effort */ }
 
+    // Optional pay calculation — only when a rate is configured.
+    const settings = await getNominaSettings(db, tenantId);
+    const rate = Number(settings.payroll.defaultHourlyRate || 0);
+    const otMult = Number(settings.payroll.overtimeMultiplier || 1.5);
+    const ratesEnabled = rate > 0;
+
     const round = (n: number) => Math.round(n * 100) / 100;
-    const result = Array.from(byGuard.values()).map((a) => ({
-      ...a,
-      regularHours: round(a.regularHours),
-      overtimeHours: round(a.overtimeHours),
-      totalHours: round(a.totalHours),
-      payableHours: round(a.totalHours), // approved hours; pay not computed (no rates)
-    }));
+    const result = Array.from(byGuard.values()).map((a) => {
+      const regularHours = round(a.regularHours);
+      const overtimeHours = round(a.overtimeHours);
+      const totalHours = round(a.totalHours);
+      return {
+        ...a,
+        regularHours,
+        overtimeHours,
+        totalHours,
+        payableHours: totalHours, // approved hours
+        grossPay: ratesEnabled
+          ? round(regularHours * rate + overtimeHours * rate * otMult)
+          : null,
+      };
+    });
     result.sort((x, y) => x.guardName.localeCompare(y.guardName));
 
     const totals = result.reduce(
@@ -431,7 +448,67 @@ export default class AttendanceAdminService {
       { shifts: 0, regularHours: 0, overtimeHours: 0, totalHours: 0, lateCount: 0, noShows: 0 },
     );
 
-    return { from: from.toISOString(), to: to.toISOString(), rows: result, totals };
+    const grossPayTotal = ratesEnabled
+      ? round(result.reduce((sum, r) => sum + (r.grossPay || 0), 0))
+      : null;
+
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      rows: result,
+      totals: { ...totals, grossPay: grossPayTotal },
+      currency: settings.payroll.currency,
+      ratesEnabled,
+    };
+  }
+
+  /**
+   * Close (lock) a payroll period: mark every record with punchInTime <= cutoff
+   * as locked (read-only). Records edits/corrections/approvals are then rejected
+   * while `lockAfterPayrollClose` is on. Audited; stores the cutoff in settings.
+   */
+  async closePeriod(data: { cutoff?: string }) {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const currentUser = SequelizeRepository.getCurrentUser(this.options);
+    const cutoff = data?.cutoff ? new Date(data.cutoff) : new Date();
+
+    const [locked] = await db.guardShift.update(
+      { locked: true, lockedAt: new Date(), updatedById: currentUser.id },
+      { where: { tenantId, locked: false, punchInTime: { [Op.lte]: cutoff } } },
+    );
+
+    // Persist the cutoff in settings (payroll.lastPeriodClose).
+    try {
+      const current = await getNominaSettings(db, tenantId);
+      const merged = mergeNominaSettings({
+        ...current,
+        payroll: { ...current.payroll, lastPeriodClose: cutoff.toISOString() },
+      });
+      const [row] = await db.settings.findOrCreate({
+        where: { id: tenantId },
+        defaults: { id: tenantId, theme: 'light', tenantId },
+      });
+      await row.update({ nominaSettings: merged, updatedById: currentUser.id });
+    } catch (e) {
+      console.error('[attendance] closePeriod settings update failed:', (e as any)?.message || e);
+    }
+
+    await this.audit('guardShift', `period:${cutoff.toISOString()}`, AuditLogRepository.UPDATE, {
+      action: 'close_period',
+      cutoff: cutoff.toISOString(),
+      lockedCount: locked,
+    });
+    return { lockedCount: locked, cutoff: cutoff.toISOString() };
+  }
+
+  /** Throw if the record is payroll-locked (and locking is enforced). */
+  private async assertNotLocked(record: any) {
+    if (!record?.locked) return;
+    const settings = await getNominaSettings(this.db, this.tenantId);
+    if (settings.approval.lockAfterPayrollClose) {
+      throw new Error400(this.options.language, 'entities.attendance.errors.locked');
+    }
   }
 
   private async audit(entityName: string, entityId: string, action: string, record: any) {

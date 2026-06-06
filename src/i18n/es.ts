@@ -372,6 +372,11 @@ const es = {
         'Este guardia ya tiene un turno que se cruza con el horario seleccionado.',
     }
   },
+  attendance: {
+    errors: {
+      locked: 'Este registro de asistencia está bloqueado porque su periodo de nómina está cerrado.',
+    },
+  },
 };
 
 export default es;
