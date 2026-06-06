@@ -94,6 +94,17 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // Self-heal the denormalized securityGuard.isOnDuty flag against the source
+    // of truth (an open guardShift). If a prior clock-in/out half-completed and
+    // left the flag stale, this corrects it on the next dashboard load.
+    if (securityGuard && !!securityGuard.isOnDuty !== !!activeClockIn) {
+      const onDuty = !!activeClockIn;
+      securityGuard.isOnDuty = onDuty;
+      db.securityGuard
+        .update({ isOnDuty: onDuty }, { where: { id: securityGuard.id, tenantId } })
+        .catch(() => {});
+    }
+
     // Early-clockout threshold (minutes before scheduled end that requires
     // approval) so the app can decide whether to show "request" vs "clock out".
     let clockOutThresholdMin = 0;
@@ -114,6 +125,26 @@ export default async (req: any, res: any) => {
       return { ...p, startTimeLabel: timeLabelInTz(p.startTime, tz), endTimeLabel: timeLabelInTz(p.endTime, tz) };
     };
 
+    // ── Early-clock-out decision — derived from the TURNO (single source of
+    // truth) so the post stays covered until its scheduled end. The guard may
+    // clock out normally only once they're within `clockOutThresholdMin` of the
+    // turno's end; leaving earlier requires supervisor approval.
+    //   scheduledEnd = the attendance record's captured end (set at clock-in from
+    //   the matched shift) → else the currently-active turno's endTime.
+    const scheduledEndRaw =
+      (activeClockIn && activeClockIn.scheduledEnd) ||
+      (currentShift && currentShift.endTime) ||
+      null;
+    const scheduledEnd = scheduledEndRaw ? new Date(scheduledEndRaw) : null;
+    const minutesToScheduledEnd =
+      scheduledEnd != null ? (scheduledEnd.getTime() - now.getTime()) / 60000 : null;
+    // Early only when we KNOW the turno end and there's still more than the grace
+    // window left. With no turno end we can't enforce a desired time → not early.
+    const isEarlyClockOut =
+      !!activeClockIn &&
+      minutesToScheduledEnd != null &&
+      minutesToScheduledEnd > clockOutThresholdMin;
+
     const response = {
       timezone: tz,
       guard: securityGuard ? {
@@ -122,6 +153,12 @@ export default async (req: any, res: any) => {
         isOnDuty: securityGuard.isOnDuty,
         guardType: securityGuard.guardType,
         guardId: securityGuard.guardId,
+        // Profile fields (worker-app Profile screen).
+        employeeId: securityGuard.governmentId || null,
+        joinedAt: securityGuard.hiringContractDate || null,
+        address: securityGuard.address || null,
+        email: (req.currentUser && req.currentUser.email) || null,
+        phone: (req.currentUser && req.currentUser.phoneNumber) || null,
       } : null,
       stations: stations.map((s: any) => s.get({ plain: true })),
       currentShift: withLabels(currentShift),
@@ -130,6 +167,12 @@ export default async (req: any, res: any) => {
       isClockedIn: !!activeClockIn,
       clockOutRequest, // { status, scheduledEnd, … } or null — early-out approval
       clockOutThresholdMin,
+      // Turno-derived clock-out gating (single source of truth).
+      scheduledEnd: scheduledEnd ? scheduledEnd.toISOString() : null,
+      scheduledEndLabel: scheduledEnd ? timeLabelInTz(scheduledEnd, tz) : null,
+      minutesToScheduledEnd:
+        minutesToScheduledEnd != null ? Math.round(minutesToScheduledEnd) : null,
+      isEarlyClockOut,
     };
 
     return ApiResponseHandler.success(req, res, response);

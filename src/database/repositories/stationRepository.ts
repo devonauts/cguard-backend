@@ -67,9 +67,7 @@ class StationRepository {
     await record.setPatrol(data.patrol || [], {
       transaction,
     });
-    await record.setShift(data.shift || [], {
-      transaction,
-    });    
+    // (station↔shift M:N removed — Phase 1; shifts link via shift.stationId)
   
 
   
@@ -668,10 +666,7 @@ class StationRepository {
     output.patrol = await record.getPatrol({
       transaction,
     });
-
-    output.shift = await record.getShift({
-      transaction,
-    });
+    // (station.getShift removed — Phase 1; query shifts via shift.stationId)
 
     // Attach simplified postSite info if available
     if (output.postSite) {

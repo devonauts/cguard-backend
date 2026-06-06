@@ -46,11 +46,9 @@ class IncidentRepository {
           'wasRead',          
           'importHash',
         ]),
-        stationIncidentsId: data.stationIncidents || null,
-        stationId: data.stationId || null,
+        stationId: data.stationId || data.stationIncidents || null,
         incidentTypeId: data.incidentType || null,
-        siteId: data.siteId || null,
-        postSiteId: data.postSiteId || null,
+        postSiteId: data.postSiteId || data.siteId || null,
         clientId: data.clientId || null,
         guardNameId: data.guardNameId || null,
         tenantId: tenant.id,
@@ -135,11 +133,9 @@ class IncidentRepository {
           'wasRead',          
           'importHash',
         ]),
-        stationIncidentsId: data.stationIncidents || null,
-        stationId: data.stationId || null,
+        stationId: data.stationId || data.stationIncidents || null,
         incidentTypeId: data.incidentType || null,
-        siteId: data.siteId || null,
-        postSiteId: data.postSiteId || null,
+        postSiteId: data.postSiteId || data.siteId || null,
         clientId: data.clientId || null,
         guardNameId: data.guardNameId || null,
         updatedById: currentUser.id,
@@ -463,14 +459,15 @@ class IncidentRepository {
       }
 
       if (filter.stationIncidents) {
-        // Support single station id or an array of station ids
+        // Support single station id or an array of station ids. The incident→
+        // station link is the canonical `stationId` (stationIncidentsId merged in).
         if (Array.isArray(filter.stationIncidents)) {
           whereAnd.push({
-            stationIncidentsId: { [Op.in]: filter.stationIncidents.map((s) => SequelizeFilterUtils.uuid(s)) },
+            stationId: { [Op.in]: filter.stationIncidents.map((s) => SequelizeFilterUtils.uuid(s)) },
           });
         } else {
           whereAnd.push({
-            ['stationIncidentsId']: SequelizeFilterUtils.uuid(
+            ['stationId']: SequelizeFilterUtils.uuid(
               filter.stationIncidents,
             ),
           });
@@ -503,7 +500,7 @@ class IncidentRepository {
 
       if (filter.siteId) {
         whereAnd.push({
-          ['siteId']: SequelizeFilterUtils.uuid(
+          ['postSiteId']: SequelizeFilterUtils.uuid(
             filter.siteId,
           ),
         });

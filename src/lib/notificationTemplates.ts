@@ -37,7 +37,8 @@ export type EventType =
   | 'attendance.clockout_requested'
   | 'attendance.clockout_approved'
   | 'attendance.clockout_rejected'
-  | 'device.mismatch';
+  | 'device.mismatch'
+  | 'profile.updated';
 
 // Role sets for targetRoles field (comma-separated, used with FIND_IN_SET)
 export const TARGET_ROLES = {
@@ -456,6 +457,14 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
       Si cambió de teléfono, restablece su dispositivo en el panel. Si no, podría tratarse
       del uso de su cuenta en otro equipo.</p>
     `,
+  },
+  'profile.updated': {
+    title: (d) => `📝 Perfil actualizado: ${d.guardName || 'Guardia'}`,
+    body: (d) =>
+      `${d.guardName || 'Guardia'} actualizó sus datos de contacto` +
+      `${d.changed ? ` (${d.changed})` : ''}.`,
+    targetRoles: TARGET_ROLES.HR,
+    sendEmail: false,
   },
 };
 

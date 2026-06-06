@@ -38,6 +38,12 @@ export default (app) => {
     require('./guardMeOrderComplete').default,
   );
 
+  // Recent site activity (on-duty home feed)
+  app.get(
+    `/tenant/:tenantId/guard/me/activity`,
+    require('./guardMeActivity').default,
+  );
+
   // Memos addressed to me + acknowledgment
   app.get(
     `/tenant/:tenantId/guard/me/memos`,
@@ -52,6 +58,12 @@ export default (app) => {
   app.post(
     `/tenant/:tenantId/guard/me/patrol/start`,
     require('./guardMePatrolStart').default,
+  );
+
+  // Update my own contact details (phone/address) — notifies HR in the CRM
+  app.patch(
+    `/tenant/:tenantId/guard/me/profile`,
+    require('./guardMeProfileUpdate').default,
   );
 
   // Register my device identity (deviceId + model/OS/app version) — bind/flag
@@ -112,6 +124,10 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/guard/me/clock-out/request`,
     require('./guardMeClockOutRequestGet').default,
+  );
+  app.post(
+    `/tenant/:tenantId/guard/me/clock-out/request/cancel`,
+    require('./guardMeClockOutRequestCancel').default,
   );
 
   // Report an incident about my post (panic / events) — no admin perm needed

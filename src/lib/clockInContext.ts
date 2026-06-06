@@ -32,6 +32,8 @@ export async function gatherClockInContext(
     securityGuard: any; // securityGuard instance: { id, fullName }
     observations?: string | null;
     clockInTime?: Date;
+    // Pre-loaded tenant (email + timezone) from the caller — avoids re-fetching.
+    tenant?: { email?: string | null; timezone?: string | null } | null;
   },
 ): Promise<ClockInContext> {
   const { tenantId } = opts;
@@ -76,7 +78,9 @@ export async function gatherClockInContext(
   // ── Tenant email + timezone (timezone drives time display + consigna due) ──
   let tz = 'UTC';
   try {
-    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['email', 'timezone'] });
+    const tenant =
+      opts.tenant ||
+      (await db.tenant.findByPk(tenantId, { attributes: ['email', 'timezone'] }));
     if (tenant?.email) extraEmails.push(tenant.email);
     tz = tenant?.timezone || 'UTC';
   } catch {
@@ -96,7 +100,7 @@ export async function gatherClockInContext(
   try {
     const Op = db.Sequelize.Op;
     const or: any[] = [];
-    if (stationId) or.push({ stationIncidentsId: stationId });
+    if (stationId) or.push({ stationId });
     if (postSiteId) or.push({ postSiteId });
     if (or.length) {
       const incidents = await db.incident.findAll({
@@ -159,4 +163,94 @@ export async function gatherClockInContext(
   return { data, extraEmails };
 }
 
-export default { gatherClockInContext };
+export interface ClockOutContext {
+  data: {
+    guardName: string;
+    stationName: string | null;
+    siteName: string | null;
+    clockOutTime: string;
+    observations: string | null;
+  };
+  /** Extra email recipients beyond the role-targeted supervisors/admins. */
+  extraEmails: string[];
+}
+
+/**
+ * Gathers the data shown in a guard clock-out notification/email: the site &
+ * client (for recipients + display), the guard's end-of-shift note, and the
+ * tenant contact. Leaner than the clock-in gather — no incidents/memos/consignas
+ * are relevant when a shift ends. Best-effort: a clock-out must never fail
+ * because a related record or association is missing.
+ */
+export async function gatherClockOutContext(
+  db: any,
+  opts: {
+    tenantId: string;
+    station: any; // station model instance: { id, stationName, postSiteId }
+    securityGuard: any; // securityGuard instance: { id, fullName }
+    observations?: string | null;
+    clockOutTime?: Date;
+    // Pre-loaded tenant (email + timezone) from the caller — avoids re-fetching.
+    tenant?: { email?: string | null; timezone?: string | null } | null;
+  },
+): Promise<ClockOutContext> {
+  const { tenantId } = opts;
+  const station = opts.station || {};
+  const postSiteId = station.postSiteId || null;
+  const when = opts.clockOutTime || new Date();
+
+  const data: ClockOutContext['data'] = {
+    guardName: opts.securityGuard?.fullName || 'Guardia',
+    stationName: station.stationName || null,
+    siteName: null,
+    clockOutTime: when.toISOString(),
+    observations: opts.observations || null,
+  };
+  const extraEmails: string[] = [];
+
+  // ── Site name + client account email ──────────────────────────────────────
+  if (postSiteId) {
+    let postSite: any = null;
+    try {
+      postSite = await db.businessInfo.findByPk(postSiteId, {
+        attributes: ['id', 'companyName'],
+        include: [{ model: db.clientAccount, as: 'clientAccount', attributes: ['email'] }],
+      });
+    } catch {
+      try {
+        postSite = await db.businessInfo.findByPk(postSiteId, {
+          attributes: ['id', 'companyName'],
+        });
+      } catch {
+        postSite = null;
+      }
+    }
+    data.siteName = postSite?.companyName || null;
+    if (postSite?.clientAccount?.email) extraEmails.push(postSite.clientAccount.email);
+  }
+
+  // ── Tenant email + timezone (timezone drives the time display) ─────────────
+  let tz = 'UTC';
+  try {
+    const tenant =
+      opts.tenant ||
+      (await db.tenant.findByPk(tenantId, { attributes: ['email', 'timezone'] }));
+    if (tenant?.email) extraEmails.push(tenant.email);
+    tz = tenant?.timezone || 'UTC';
+  } catch {
+    /* ignore */
+  }
+  try {
+    data.clockOutTime = when.toLocaleString('es', {
+      timeZone: tz,
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  } catch {
+    data.clockOutTime = when.toISOString();
+  }
+
+  return { data, extraEmails };
+}
+
+export default { gatherClockInContext, gatherClockOutContext };

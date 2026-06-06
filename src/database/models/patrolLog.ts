@@ -14,18 +14,12 @@ export default function (sequelize) {
         allowNull: false,
       },
       latitude: {
-        type: DataTypes.TEXT,
+        type: DataTypes.DOUBLE,
         allowNull: false,
-        validate: {
-          notEmpty: true,
-        }
       },
       longitude: {
-        type: DataTypes.TEXT,
+        type: DataTypes.DOUBLE,
         allowNull: false,
-        validate: {
-          notEmpty: true,
-        }
       },
       validLocation: {
         type: DataTypes.BOOLEAN,

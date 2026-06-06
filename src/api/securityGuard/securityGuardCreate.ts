@@ -596,41 +596,10 @@ export default async (req, res, next) => {
             console.warn('🔔 [securityGuardCreate] post-create user persistence step failed', e && (e as any).message ? (e as any).message : e);
           }
 
-        // If frontend supplied a password while completing an invitation/registration,
-        // persist it to the users table, mark email as verified and accept the tenant invitation.
-        try {
-          if (entry.password) {
-            try {
-              const BCRYPT_SALT_ROUNDS = 12;
-              const hashed = await bcrypt.hash(entry.password, BCRYPT_SALT_ROUNDS);
-              await UserRepository.updatePassword(entry.guard, hashed, false, req);
-              console.log('🔧 [securityGuardCreate] persisted password for user', entry.guard);
-            } catch (pwErr) {
-              console.warn('🔔 [securityGuardCreate] failed to persist password for user', entry && entry.guard, pwErr && (pwErr as any).message ? (pwErr as any).message : pwErr);
-            }
-
-            try {
-              await UserRepository.markEmailVerified(entry.guard, req);
-              console.log('🔧 [securityGuardCreate] marked emailVerified for user', entry.guard);
-            } catch (evErr) {
-              console.warn('🔔 [securityGuardCreate] failed to mark emailVerified for user', entry && entry.guard, evErr && (evErr as any).message ? (evErr as any).message : evErr);
-            }
-          }
-
-          // If there's an invitation token associated with this entry, accept it now so tenant_user
-          // moves to active and invitationToken is cleared.
-          const tokenToAccept = entry._invitationToken || (item && item._invitationToken) || null;
-          if (tokenToAccept) {
-            try {
-              await TenantUserRepository.acceptInvitation(tokenToAccept, req);
-              console.log('✅ [securityGuardCreate] accepted invitation token for user', entry.guard);
-            } catch (accErr) {
-              console.warn('🔔 [securityGuardCreate] failed to accept invitation token', tokenToAccept, accErr && (accErr as any).message ? (accErr as any).message : accErr);
-            }
-          }
-        } catch (e) {
-          console.warn('🔔 [securityGuardCreate] post-create user persistence step failed', e && (e as any).message ? (e as any).message : e);
-        }
+        // (Removed a duplicate password/markEmailVerified/acceptInvitation block
+        //  here — Phase 0 cleanup. The block above already performs these steps,
+        //  with password-strength validation; running them twice re-hashed the
+        //  password and re-accepted the invitation needlessly.)
 
         // Invitation email is sent by SecurityGuardService.create to keep
         // notification logic centralized; skip sending here to avoid duplicates.

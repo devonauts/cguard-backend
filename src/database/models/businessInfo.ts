@@ -32,18 +32,12 @@ export default function (sequelize) {
         allowNull: true,
       },
       latitud: {
-        type: DataTypes.STRING(100),
+        type: DataTypes.DOUBLE,
         allowNull: true,
-        validate: {
-          len: [0, 100],
-        }
       },
       longitud: {
-        type: DataTypes.STRING(100),
+        type: DataTypes.DOUBLE,
         allowNull: true,
-        validate: {
-          len: [0, 100],
-        }
       },
       categoryIds: {
         type: DataTypes.JSON,

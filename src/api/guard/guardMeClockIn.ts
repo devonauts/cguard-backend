@@ -130,7 +130,9 @@ export default async (req: any, res: any) => {
     // ── One attendance record per shift/day (no duplicate rows) ──────────────
     const now = new Date();
     const distanceM = gate.geofence?.distanceM ?? null;
-    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    // Load the tenant once (tz for the day window + email for the notification);
+    // reused below by gatherClockInContext so it isn't re-fetched.
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['email', 'timezone'] });
     const tz = tenant?.timezone || 'UTC';
 
     // Match the scheduled shift so the attendance record is keyed by it; a
@@ -235,6 +237,7 @@ export default async (req: any, res: any) => {
           ip: clientIp(req),
           settings: gate.settings,
           geofence: gate.geofence,
+          sched: match, // reuse the match from above — no second 12h shift scan
         });
       } catch (attErr) {
         console.error('[clockIn] attendance evaluation failed:', (attErr as any)?.message || attErr);
@@ -251,6 +254,7 @@ export default async (req: any, res: any) => {
         securityGuard,
         observations: guardShiftRecord.observations,
         clockInTime: guardShiftRecord.punchInTime,
+        tenant, // reuse the tenant already loaded above (tz + email)
       });
       // Carry THIS punch's selfie + ids in the event payload so the panel
       // notification and the Actividad feed can show the photo and link back.

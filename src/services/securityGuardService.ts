@@ -370,8 +370,7 @@ export default class SecurityGuardService {
               ...(data.homeAddress !== undefined ? { homeAddress: data.homeAddress } : {}),
               ...(data.homeAddressLat !== undefined ? { homeAddressLat: data.homeAddressLat } : {}),
               ...(data.homeAddressLng !== undefined ? { homeAddressLng: data.homeAddressLng } : {}),
-              ...(data.bloodType !== undefined ? { bloodType: data.bloodType } : {}),
-              ...(data.identificationNumber !== undefined ? { identificationNumber: data.identificationNumber } : {}),
+              // bloodType + identificationNumber are owned by securityGuard, not the user account.
             },
             { ...this.options, transaction, bypassPermissionValidation: true },
           );

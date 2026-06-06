@@ -17,13 +17,10 @@ export default function (sequelize) {
         }
       },
       latitud: {
-        type: DataTypes.TEXT,
+        type: DataTypes.DOUBLE,
       },
       longitud: {
-        type: DataTypes.STRING(200),
-        validate: {
-          len: [0, 200],
-        }
+        type: DataTypes.DOUBLE,
       },
       importHash: {
         type: DataTypes.STRING(255),

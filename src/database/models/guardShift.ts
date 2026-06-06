@@ -169,7 +169,13 @@ export default function (sequelize) {
             deletedAt: null,
           },
         },
-
+        // Hot path: the "active record" lookup
+        // (guardNameId + punchOutTime IS NULL) used by guardMe (polled),
+        // clock-out, and the clock-out-request endpoints.
+        {
+          name: 'idx_guardshift_active',
+          fields: ['tenantId', 'guardNameId', 'punchOutTime'],
+        },
       ],
       timestamps: true,
       paranoid: true,

@@ -99,16 +99,8 @@ export default function (sequelize, DataTypes) {
         type: DataTypes.DOUBLE,
         allowNull: true,
       },
-      bloodType: {
-        type: DataTypes.STRING(10),
-        allowNull: true,
-        validate: { len: [0, 10] },
-      },
-      identificationNumber: {
-        type: DataTypes.STRING(40),
-        allowNull: true,
-        validate: { len: [0, 40] },
-      },
+      // bloodType + identificationNumber removed — owned by securityGuard (the
+      // authority). See migration 20260606-drop-user-guard-mirror-fields.
       phoneNumber: {
         type: DataTypes.STRING(24),
         allowNull: true,

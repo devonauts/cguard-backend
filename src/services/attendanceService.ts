@@ -103,16 +103,23 @@ async function recordExceptions(
   specs: ExceptionSpec[],
 ): Promise<any[]> {
   const created: any[] = [];
+  // Dedupe in ONE query: load the OPEN exception types for this shift up front,
+  // then skip in-memory (instead of a findOne per spec).
+  const openTypes = new Set<string>();
+  if (base.shiftId && specs.length) {
+    try {
+      const existing = await db.attendanceException.findAll({
+        where: { tenantId: base.tenantId, shiftId: base.shiftId, status: 'open' },
+        attributes: ['type'],
+      });
+      for (const e of existing) openTypes.add(e.type);
+    } catch (e) {
+      console.error('[attendance] exception dedupe load failed:', (e as any)?.message || e);
+    }
+  }
   for (const spec of specs) {
     try {
-      // Dedupe: skip if an OPEN exception already exists for this shift+type.
-      if (base.shiftId) {
-        const existing = await db.attendanceException.findOne({
-          where: { tenantId: base.tenantId, shiftId: base.shiftId, type: spec.type, status: 'open' },
-          attributes: ['id'],
-        });
-        if (existing) continue;
-      }
+      if (base.shiftId && openTypes.has(spec.type)) continue;
       const row = await db.attendanceException.create({
         type: spec.type,
         severity: spec.severity,
@@ -185,6 +192,8 @@ export async function applyClockIn(
     ip?: string | null;
     settings?: NominaSettings;
     geofence?: GeofenceResult;
+    // Pre-matched scheduled shift from the caller (avoids a second 12h scan).
+    sched?: { shiftId: string | null; scheduledStart: Date | null; scheduledEnd: Date | null };
   },
 ): Promise<string> {
   const now = opts.record.punchInTime ? new Date(opts.record.punchInTime) : new Date();
@@ -193,12 +202,14 @@ export async function applyClockIn(
     opts.geofence ||
     evaluateGeofence(opts.station, opts.latitude, opts.longitude, settings.geofence.defaultRadiusM);
 
-  const sched = await matchScheduledShift(db, {
-    guardUserId: opts.guardUserId,
-    stationId: opts.station.id,
-    tenantId: opts.tenantId,
-    at: now,
-  });
+  const sched =
+    opts.sched ||
+    (await matchScheduledShift(db, {
+      guardUserId: opts.guardUserId,
+      stationId: opts.station.id,
+      tenantId: opts.tenantId,
+      at: now,
+    }));
 
   const evalRes = evaluateClockIn(
     { now, scheduledStart: sched.scheduledStart, distanceM: geofence.distanceM, outsideGeofence: geofence.outside },

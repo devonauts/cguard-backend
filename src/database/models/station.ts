@@ -18,18 +18,12 @@ export default function (sequelize) {
         }
       },
       latitud: {
-        type: DataTypes.STRING(100),
+        type: DataTypes.DOUBLE,
         allowNull: true,
-        validate: {
-          len: [0, 100],
-        }
       },
       longitud: {
-        type: DataTypes.STRING(100),
+        type: DataTypes.DOUBLE,
         allowNull: true,
-        validate: {
-          len: [0, 100],
-        }
       },
       numberOfGuardsInStation: {
         type: DataTypes.TEXT,
@@ -131,7 +125,7 @@ export default function (sequelize) {
     models.station.hasMany(models.incident, {
       as: 'incidents',
       constraints: false,
-      foreignKey: 'stationIncidentsId',
+      foreignKey: 'stationId',
     });
 
     models.station.hasMany(models.patrolCheckpoint, {
@@ -146,11 +140,8 @@ export default function (sequelize) {
       foreignKey: 'stationId',
     });
 
-    models.station.belongsToMany(models.shift, {
-      as: 'shift',
-      constraints: false,
-      through: 'stationShiftShift',
-    });
+    // (Removed dead station↔shift M:N via `stationShiftShift` — Phase 1 cleanup.
+    //  The 1:N is already modelled by shift.stationId / station.hasMany(shift).)
 
     models.station.belongsTo(models.businessInfo, {
       as: 'postSite',

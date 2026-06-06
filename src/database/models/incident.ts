@@ -98,15 +98,7 @@ export default function (sequelize) {
           type: DataTypes.UUID,
           allowNull: true,
         },
-        stationIncidentsId: {
-          type: DataTypes.UUID,
-          allowNull: true,
-        },
         clientId: {
-          type: DataTypes.UUID,
-          allowNull: true,
-        },
-        siteId: {
           type: DataTypes.UUID,
           allowNull: true,
         },
@@ -152,8 +144,11 @@ export default function (sequelize) {
   );
 
   incident.associate = (models) => {
+    // Alias retained for existing includes/filters; now points at the canonical
+    // stationId (the separate stationIncidentsId column was consolidated away).
     models.incident.belongsTo(models.station, {
       as: 'stationIncidents',
+      foreignKey: 'stationId',
       constraints: false,
     });
 
@@ -175,9 +170,10 @@ export default function (sequelize) {
       constraints: false,
     });
 
+    // Alias retained; now points at the canonical postSiteId (siteId consolidated away).
     models.incident.belongsTo(models.businessInfo, {
       as: 'site',
-      foreignKey: 'siteId',
+      foreignKey: 'postSiteId',
       constraints: false,
     });
 

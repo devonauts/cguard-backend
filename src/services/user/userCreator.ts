@@ -180,8 +180,8 @@ export default class UserCreator {
       if (this.data.homeAddress !== undefined) createData.homeAddress = this.data.homeAddress;
       if (this.data.homeAddressLat !== undefined) createData.homeAddressLat = this.data.homeAddressLat;
       if (this.data.homeAddressLng !== undefined) createData.homeAddressLng = this.data.homeAddressLng;
-      if (this.data.bloodType !== undefined) createData.bloodType = this.data.bloodType;
-      if (this.data.identificationNumber !== undefined) createData.identificationNumber = this.data.identificationNumber;
+      // bloodType + identificationNumber are owned by securityGuard (the authority),
+      // not mirrored onto the user account.
 
       // fullName may be provided directly; if not, derive from nombre/apellido
       if (this.data.fullName) {
@@ -295,8 +295,8 @@ export default class UserCreator {
       if (this.data.homeAddress !== undefined) profileUpdate.homeAddress = this.data.homeAddress;
       if (this.data.homeAddressLat !== undefined) profileUpdate.homeAddressLat = this.data.homeAddressLat;
       if (this.data.homeAddressLng !== undefined) profileUpdate.homeAddressLng = this.data.homeAddressLng;
-      if (this.data.bloodType !== undefined) profileUpdate.bloodType = this.data.bloodType;
-      if (this.data.identificationNumber !== undefined) profileUpdate.identificationNumber = this.data.identificationNumber;
+      // bloodType + identificationNumber are owned by securityGuard (the authority),
+      // not mirrored onto the user account.
 
       const hasProfileUpdates = Object.keys(profileUpdate).length > 0;
       if (hasProfileUpdates) {

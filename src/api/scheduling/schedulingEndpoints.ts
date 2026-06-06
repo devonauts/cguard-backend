@@ -81,9 +81,27 @@ export async function stationPositionCreate(req, res) {
       createdById: req.currentUser.id,
       updatedById: req.currentUser.id,
     });
+    await regenerateStationShiftsSafe(req, stationId);
     await ApiResponseHandler.success(req, res, record);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
+  }
+}
+
+/**
+ * The turno (stationPosition) is the single source of truth for shift times, so
+ * any change to a station's positions must rebuild that station's future shifts.
+ * `generateShiftsForAssignment` force-deletes future shifts and recreates them
+ * from the CURRENT position hours, so this keeps generated shifts from drifting
+ * away from the turno. Best-effort: a regen failure never fails the mutation.
+ */
+async function regenerateStationShiftsSafe(req: any, stationId: string) {
+  if (!stationId) return;
+  try {
+    const { regenerateStationShifts } = await import('../../services/shiftGenerationService');
+    await regenerateStationShifts(req.database, stationId, req.currentTenant.id, req.currentUser.id);
+  } catch (e) {
+    console.error('[stationPosition] shift regeneration failed:', (e as any)?.message || e);
   }
 }
 
@@ -107,6 +125,8 @@ export async function stationPositionUpdate(req, res) {
       ...(data.sortOrder !== undefined && { sortOrder: parseInt(data.sortOrder) }),
       updatedById: req.currentUser.id,
     });
+    // Hours/type changed → rebuild this station's shifts from the new turno.
+    await regenerateStationShiftsSafe(req, record.stationId);
     await ApiResponseHandler.success(req, res, record);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
@@ -119,7 +139,13 @@ export async function stationPositionDelete(req, res) {
     new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const { positionId } = req.params;
     const tenantId = req.currentTenant.id;
+    // Capture the station BEFORE deleting so we can rebuild its shifts after.
+    const pos = await req.database.stationPosition.findOne({
+      where: { id: positionId, tenantId },
+      attributes: ['stationId'],
+    });
     await req.database.stationPosition.destroy({ where: { id: positionId, tenantId } });
+    if (pos?.stationId) await regenerateStationShiftsSafe(req, pos.stationId);
     await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

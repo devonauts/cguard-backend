@@ -4,6 +4,7 @@
  * Guard clocks out. Optionally validates GPS.
  * Body: { latitude?, longitude?, observations? }
  */
+import { Op } from 'sequelize';
 import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
@@ -13,6 +14,8 @@ import {
   getNominaSettings,
 } from '../../services/attendanceService';
 import { evaluateGeofence } from '../../lib/geofence';
+import { gatherClockOutContext } from '../../lib/clockInContext';
+import { dispatch } from '../../lib/notificationDispatcher';
 
 /** Best-effort client IP from proxy headers / socket. */
 function clientIp(req: any): string | null {
@@ -66,9 +69,23 @@ export default async (req: any, res: any) => {
     // clock-outs are immediate.
     const settings = await getNominaSettings(db, tenantId);
     const thresholdMin = Number(settings?.windows?.earlyClockoutThresholdMin ?? 0);
-    const scheduledEnd = activeClock.scheduledEnd
-      ? new Date(activeClock.scheduledEnd)
-      : null;
+    // Scheduled end comes from the TURNO (single source of truth): prefer the
+    // value captured at clock-in, else the currently-active scheduled shift for
+    // this guard, so the gate holds even when the record didn't capture it.
+    let scheduledEnd = activeClock.scheduledEnd ? new Date(activeClock.scheduledEnd) : null;
+    if (!scheduledEnd) {
+      const activeShift = await db.shift.findOne({
+        where: {
+          guardId: userId,
+          tenantId,
+          startTime: { [Op.lte]: now },
+          endTime: { [Op.gte]: now },
+        },
+        attributes: ['endTime'],
+        order: [['endTime', 'DESC']],
+      });
+      if (activeShift && activeShift.endTime) scheduledEnd = new Date(activeShift.endTime);
+    }
     const minutesEarly = scheduledEnd
       ? Math.round((scheduledEnd.getTime() - now.getTime()) / 60000)
       : 0;
@@ -144,6 +161,33 @@ export default async (req: any, res: any) => {
       });
     } catch (attErr) {
       console.error('[clockOut] attendance evaluation failed:', (attErr as any)?.message || attErr);
+    }
+
+    // Notify the platform (websocket + in-app CRM event) and email the client/
+    // tenant that the guard finished the shift — mirrors the clock-in dispatch.
+    // The `guard.checkout` row defaults its email channel ON (notificationChannels),
+    // so the tenant is emailed unless they turned it off. Best-effort: never block
+    // the clock-out.
+    try {
+      const { data, extraEmails } = await gatherClockOutContext(db, {
+        tenantId,
+        station,
+        securityGuard,
+        observations: activeClock.observations,
+        clockOutTime: now,
+      });
+      (data as any).guardId = securityGuard.id;
+      (data as any).guardShiftId = activeClock.id;
+      (data as any).stationId = activeClock.stationNameId;
+      await dispatch('guard.checkout', data, {
+        database: db,
+        tenantId,
+        sourceEntityType: 'guardShift',
+        sourceEntityId: activeClock.id,
+        extraEmails,
+      });
+    } catch (notifyErr) {
+      console.error('[clockOut] notification dispatch failed:', (notifyErr as any)?.message || notifyErr);
     }
 
     return ApiResponseHandler.success(req, res, {

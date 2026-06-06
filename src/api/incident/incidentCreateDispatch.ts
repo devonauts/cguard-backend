@@ -27,7 +27,7 @@ export default async (req, res, next) => {
 
     const payload: any = {
       clientId: override.clientId || incident.clientId || incident.clientAccountId || null,
-      siteId: override.siteId || incident.postSiteId || incident.siteId || null,
+      siteId: override.siteId || incident.postSiteId || null,
       stationId: override.stationId || incident.stationId || null,
       guardId: override.guardId || incident.guardId || null,
       incidentAt: override.incidentAt || incident.date || incident.createdAt || null,

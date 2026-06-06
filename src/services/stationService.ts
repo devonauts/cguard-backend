@@ -8,7 +8,6 @@ import ReportRepository from '../database/repositories/reportRepository';
 import IncidentRepository from '../database/repositories/incidentRepository';
 import PatrolCheckpointRepository from '../database/repositories/patrolCheckpointRepository';
 import PatrolRepository from '../database/repositories/patrolRepository';
-import ShiftRepository from '../database/repositories/shiftRepository';
 import UserRepository from '../database/repositories/userRepository';
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 
@@ -33,7 +32,6 @@ export default class StationService {
       data.incidents = await IncidentRepository.filterIdsInTenant(data.incidents, { ...this.options, transaction });
       data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });
       data.patrol = await PatrolRepository.filterIdsInTenant(data.patrol, { ...this.options, transaction });
-      data.shift = await ShiftRepository.filterIdsInTenant(data.shift, { ...this.options, transaction });
 
       const record = await StationRepository.create(data, {
         ...this.options,
@@ -74,7 +72,6 @@ export default class StationService {
       data.incidents = await IncidentRepository.filterIdsInTenant(data.incidents, { ...this.options, transaction });
       data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });
       data.patrol = await PatrolRepository.filterIdsInTenant(data.patrol, { ...this.options, transaction });
-      data.shift = await ShiftRepository.filterIdsInTenant(data.shift, { ...this.options, transaction });
 
       const record = await StationRepository.update(
         id,

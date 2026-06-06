@@ -1158,8 +1158,8 @@ class SecurityGuardRepository {
     const rawLastLoginAt = output.guard && output.guard.lastLoginAt ? output.guard.lastLoginAt : null;
     const rawMiddleName = output.guard && output.guard.middleName ? output.guard.middleName : null;
     const rawHomeAddress = output.guard && output.guard.homeAddress ? output.guard.homeAddress : null;
-    const rawBloodType = output.guard && output.guard.bloodType ? output.guard.bloodType : null;
-    const rawIdentificationNumber = output.guard && output.guard.identificationNumber ? output.guard.identificationNumber : null;
+    // bloodType + identificationNumber are owned by securityGuard (this record),
+    // no longer mirrored onto the user account.
 
     if (guardUserId && output.tenantId) {
       const tenantUser = await options.database.tenantUser.findOne({
@@ -1179,8 +1179,6 @@ class SecurityGuardRepository {
         // Extended profile fields stored on user record
         middleName: rawMiddleName,
         homeAddress: rawHomeAddress,
-        bloodType: rawBloodType,
-        identificationNumber: rawIdentificationNumber,
       };
     } else {
       output.guard = {
@@ -1189,8 +1187,6 @@ class SecurityGuardRepository {
         lastLoginAt: rawLastLoginAt || null,
         middleName: rawMiddleName,
         homeAddress: rawHomeAddress,
-        bloodType: rawBloodType,
-        identificationNumber: rawIdentificationNumber,
       };
     }
 
