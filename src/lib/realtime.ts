@@ -182,19 +182,24 @@ export function emitPlatformEvent(event: {
       io.to(`tenant:${t}:user:${event.recipientUserId}`).emit('notification', payload);
       return;
     }
-    // Role-targeted and tenant-wide events also go to the "see all" room so
-    // admins / managers / superadmins always receive them (a superadmin with no
-    // tenant role isn't in any role room otherwise).
-    io.to(`tenant:${t}:all`).emit('notification', payload);
+    // Build the union of target rooms and emit ONCE. socket.io delivers a single
+    // copy to a socket even if it belongs to several of these rooms — emitting to
+    // each room in a separate io.to().emit() call (as before) sent 2-3 duplicate
+    // copies to recipients who sit in `:all` AND hold multiple target roles.
+    // The "see all" room is always included so admins / managers / superadmins
+    // receive role- and tenant-targeted events (a superadmin with no tenant role
+    // isn't in any role room otherwise).
+    const rooms = [`tenant:${t}:all`];
     if (event.targetRoles) {
-      const roles = String(event.targetRoles)
+      String(event.targetRoles)
         .split(',')
         .map((r) => r.trim())
-        .filter(Boolean);
-      roles.forEach((r) => io!.to(`tenant:${t}:role:${r}`).emit('notification', payload));
+        .filter(Boolean)
+        .forEach((r) => rooms.push(`tenant:${t}:role:${r}`));
     } else {
-      io.to(`tenant:${t}`).emit('notification', payload);
+      rooms.push(`tenant:${t}`);
     }
+    io.to(rooms).emit('notification', payload);
   } catch (e: any) {
     console.error('[realtime] emit failed:', e?.message || e);
   }
