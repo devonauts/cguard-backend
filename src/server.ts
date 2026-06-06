@@ -330,3 +330,109 @@ async function runSeatReconcile() {
 nodeSetInterval(() => { runSeatReconcile(); }, 24 * 60 * 60 * 1000);
 setTimeout(() => runSeatReconcile(), 60000);
 
+/**
+ * Attendance detection (Nómina) — every 5 minutes, scan recently-started shifts
+ * and flag late / no-call-no-show / missed-clock-out exceptions by comparing the
+ * scheduled `shift` against the guard's `guardShift` punch (linked via shiftId).
+ * Idempotent: one open exception per (shiftId,type); dispatches notifications.
+ */
+async function runAttendanceDetectionScheduler() {
+  try {
+    const database = await databaseInit();
+    const { Op } = require('sequelize');
+    const { detectForShift, EXCEPTION_EVENT } = require('./lib/attendanceRules');
+    const { getNominaSettings } = require('./lib/nominaSettings');
+    const { dispatch } = require('./lib/notificationDispatcher');
+    const now = new Date();
+
+    // Shifts that have started within the last 24h (window where late/no-show/
+    // missed-clockout become detectable). Cap to keep each tick bounded.
+    const shifts = await database.shift.findAll({
+      where: {
+        startTime: { [Op.lte]: now, [Op.gte]: new Date(now.getTime() - 24 * 3600 * 1000) },
+      },
+      limit: 2000,
+    });
+
+    const settingsCache: Record<string, any> = {};
+    const settingsFor = async (tenantId: string) =>
+      settingsCache[tenantId] || (settingsCache[tenantId] = await getNominaSettings(database, tenantId));
+
+    let flagged = 0;
+    for (const sh of shifts) {
+      const shift = sh.get({ plain: true });
+      const settings = await settingsFor(shift.tenantId);
+      if (!settings.general.timeClockEnabled) continue;
+
+      const punch = await database.guardShift.findOne({
+        where: { shiftId: shift.id, tenantId: shift.tenantId },
+        attributes: ['id', 'punchOutTime'],
+      });
+      const spec = detectForShift(
+        {
+          now,
+          shiftStart: new Date(shift.startTime),
+          shiftEnd: new Date(shift.endTime),
+          hasClockIn: !!punch,
+          hasClockOut: !!(punch && punch.punchOutTime),
+        },
+        settings,
+      );
+      if (!spec) continue;
+
+      const existing = await database.attendanceException.findOne({
+        where: { tenantId: shift.tenantId, shiftId: shift.id, type: spec.type, status: 'open' },
+        attributes: ['id'],
+      });
+      if (existing) continue;
+
+      const sg = await database.securityGuard.findOne({
+        where: { guardId: shift.guardId, tenantId: shift.tenantId },
+        attributes: ['id', 'fullName'],
+      });
+      const station = await database.station.findByPk(shift.stationId, { attributes: ['stationName'] });
+
+      const row = await database.attendanceException.create({
+        type: spec.type,
+        severity: spec.severity,
+        status: 'open',
+        reason: spec.reason || null,
+        meta: spec.meta ? JSON.stringify(spec.meta) : null,
+        detectedAt: now,
+        guardShiftId: punch ? punch.id : null,
+        shiftId: shift.id,
+        guardId: sg?.id || null,
+        stationId: shift.stationId || null,
+        postSiteId: shift.postSiteId || null,
+        tenantId: shift.tenantId,
+      });
+      flagged++;
+
+      const eventType = EXCEPTION_EVENT[spec.type];
+      if (eventType) {
+        try {
+          await dispatch(eventType, {
+            guardName: sg?.fullName || 'Guardia',
+            stationName: station?.stationName || null,
+            reason: spec.reason || '',
+            type: spec.type,
+          }, {
+            database,
+            tenantId: shift.tenantId,
+            sourceEntityType: 'attendanceException',
+            sourceEntityId: row.id,
+            extraEmails: settings.notifications?.customEmails || [],
+          });
+        } catch { /* best-effort */ }
+      }
+    }
+    if (flagged) console.log(`[attendance] detection flagged ${flagged} exception(s)`);
+  } catch (err) {
+    console.error('[attendance] detection scheduler error:', (err as any)?.message || err);
+  }
+}
+
+// Detect attendance exceptions every 5 minutes.
+nodeSetInterval(() => { runAttendanceDetectionScheduler(); }, 5 * 60 * 1000);
+setTimeout(() => runAttendanceDetectionScheduler(), 45000);
+

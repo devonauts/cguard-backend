@@ -73,6 +73,29 @@ export default function (sequelize, DataTypes) {
           );
         },
       },
+      // Per-tenant Nómina / Time & Attendance configuration (general, time
+      // windows, geofence, notifications, approval rules, payroll). JSON text;
+      // defaults are merged in code (see lib/nominaSettings.ts). Missing = default.
+      nominaSettings: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get(this: any) {
+          const raw = this.getDataValue('nominaSettings');
+          if (!raw) return {};
+          if (typeof raw !== 'string') return raw;
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        },
+        set(this: any, val: any) {
+          this.setDataValue(
+            'nominaSettings',
+            val == null ? null : typeof val === 'string' ? val : JSON.stringify(val),
+          );
+        },
+      },
     },
     {
       timestamps: true,

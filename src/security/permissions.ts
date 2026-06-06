@@ -214,6 +214,19 @@ class Permissions {
       guardShiftRead: createPermission('guardShiftRead', [...ALL_STAFF_ROLES, roles.customer]),
       guardShiftAutocomplete: createPermission('guardShiftAutocomplete', ALL_STAFF_ROLES),
 
+      // === NÓMINA / TIME & ATTENDANCE ===
+      // Read: supervisors + HR (scoped to assigned post-sites by the repo ACL).
+      attendanceRead: createPermission('attendanceRead', [...SUPERVISOR_ROLES, roles.hrManager]),
+      attendanceEdit: createPermission('attendanceEdit', SUPERVISOR_ROLES),
+      attendanceDestroy: createPermission('attendanceDestroy', ADMIN_ROLES),
+      // Approve/reject exceptions, corrections and out-of-policy punches.
+      attendanceApprove: createPermission('attendanceApprove', SUPERVISOR_ROLES),
+      // Submit a manual correction (original value preserved + audited).
+      attendanceCorrect: createPermission('attendanceCorrect', SUPERVISOR_ROLES),
+      // Nómina settings (time windows, geofence, approval, payroll period).
+      attendanceSettingsRead: createPermission('attendanceSettingsRead', [...SUPERVISOR_ROLES, roles.hrManager]),
+      attendanceSettingsEdit: createPermission('attendanceSettingsEdit', HR_ROLES),
+
       // === PATROLS ===
       patrolImport: createPermission('patrolImport', SUPERVISOR_ROLES),
       patrolCreate: createPermission('patrolCreate', GUARD_ROLES),

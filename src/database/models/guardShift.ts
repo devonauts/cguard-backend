@@ -90,6 +90,50 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+
+      // ── Nómina / Time & Attendance ────────────────────────────────────────
+      // Link to the scheduled shift this punch fulfills (matched at clock-in by
+      // guard + station + time window). Null = unscheduled / walk-up punch.
+      shiftId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      // Snapshot of the scheduled window at punch time (immutable for payroll,
+      // even if the schedule later changes).
+      scheduledStart: { type: DataTypes.DATE, allowNull: true },
+      scheduledEnd: { type: DataTypes.DATE, allowNull: true },
+      // Attendance status (primary). Exceptions table holds granular flags.
+      status: {
+        type: DataTypes.STRING(32),
+        allowNull: false,
+        defaultValue: 'on_time',
+      },
+      // Computed on clock-out (overnight-safe). Hours + minute breakdowns.
+      hoursWorked: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+      overtimeMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      lateMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      earlyDepartureMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      // Geofence: distance from station center + outside-radius flags.
+      punchInDistanceM: { type: DataTypes.INTEGER, allowNull: true },
+      punchOutDistanceM: { type: DataTypes.INTEGER, allowNull: true },
+      punchInOutsideGeofence: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      punchOutOutsideGeofence: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      // Device/browser metadata (JSON text) + IP at each punch.
+      deviceInfo: { type: DataTypes.TEXT, allowNull: true },
+      punchInIp: { type: DataTypes.STRING(64), allowNull: true },
+      punchOutIp: { type: DataTypes.STRING(64), allowNull: true },
+      // Clock-out selfie symmetry (optional).
+      punchOutPhoto: { type: DataTypes.TEXT, allowNull: true },
+      punchOutAddress: { type: DataTypes.STRING(512), allowNull: true },
+      punchOutBattery: { type: DataTypes.INTEGER, allowNull: true },
+      // Approval workflow on the record itself.
+      approvalStatus: {
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'none', // none | pending | approved | rejected
+      },
+      approvedAt: { type: DataTypes.DATE, allowNull: true },
+      approvalNotes: { type: DataTypes.TEXT, allowNull: true },
     },
     {
       indexes: [
@@ -153,6 +197,20 @@ export default function (sequelize) {
     models.guardShift.belongsTo(models.businessInfo, {
       as: 'postSite',
       foreignKey: 'postSiteId',
+      constraints: false,
+    });
+
+    // Scheduled shift this punch fulfills (Nómina).
+    models.guardShift.belongsTo(models.shift, {
+      as: 'scheduledShift',
+      foreignKey: 'shiftId',
+      constraints: false,
+    });
+
+    // Who approved/rejected this attendance record (Nómina).
+    models.guardShift.belongsTo(models.user, {
+      as: 'approvedBy',
+      foreignKey: 'approvedById',
       constraints: false,
     });
 

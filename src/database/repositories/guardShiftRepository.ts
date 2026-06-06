@@ -465,6 +465,17 @@ class GuardShiftRepository {
         });
       }
 
+      // Nómina / attendance filters.
+      if (filter.status) {
+        whereAnd.push({ status: filter.status });
+      }
+      if (filter.approvalStatus) {
+        whereAnd.push({ approvalStatus: filter.approvalStatus });
+      }
+      if (filter.shiftId) {
+        whereAnd.push({ ['shiftId']: SequelizeFilterUtils.uuid(filter.shiftId) });
+      }
+
       if (filter.stationName) {
         whereAnd.push({
           ['stationNameId']: SequelizeFilterUtils.uuid(

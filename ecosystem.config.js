@@ -55,6 +55,9 @@ module.exports = {
         API_DOCUMENTATION_ENABLED: 'true',
         PORT: 8080,
         TENANT_MODE: 'multi',
+        // TESTING ONLY: lets a guard clock in from anywhere (geofence not
+        // enforced). Only set in dev — production/staging keep it off.
+        GUARD_GEOFENCE_BYPASS: 'true',
       },
       env_production: {
         NODE_ENV: 'production',

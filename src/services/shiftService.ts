@@ -6,6 +6,7 @@ import StationRepository from '../database/repositories/stationRepository';
 import UserRepository from '../database/repositories/userRepository';
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
+import { resolveGuardUserId } from './guardIdResolver';
 
 export default class ShiftService {
   options: IServiceOptions;
@@ -55,6 +56,28 @@ export default class ShiftService {
     }
   }
 
+  /**
+   * Resolve the UI's "guard" reference (user id, securityGuard id, or
+   * `sg:<id>`) to the underlying user id. Throws a clear 400 when a guard was
+   * provided but can't be matched — instead of silently saving the shift with
+   * `guardId = null`, which makes the turno invisible in the guard's worker-app.
+   */
+  private async _resolveGuard(rawGuard) {
+    const tenant = SequelizeRepository.getCurrentTenant(this.options);
+    const { provided, userId } = await resolveGuardUserId(
+      this.options.database,
+      tenant.id,
+      rawGuard,
+    );
+    if (provided && !userId) {
+      throw new Error400(
+        this.options.language,
+        'entities.shift.errors.guardNotFound',
+      );
+    }
+    return userId;
+  }
+
   async create(data) {
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
@@ -62,7 +85,7 @@ export default class ShiftService {
 
     try {
       data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
-      data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
+      data.guard = await this._resolveGuard(data.guard);
       data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
 
       await this._assertNoGuardOverlap(data, transaction);
@@ -111,7 +134,7 @@ export default class ShiftService {
 
     try {
       data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
-      data.guard = await UserRepository.filterIdInTenant(data.guard, { ...this.options, transaction });
+      data.guard = await this._resolveGuard(data.guard);
       data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
       try {
         data.tenantUserId = data.tenantUserId || data.tenantUser || null;

@@ -23,7 +23,16 @@ export type EventType =
   | 'timeoff.rejected'
   | 'task.completed'
   | 'task.overdue'
-  | 'dispatch.created';
+  | 'dispatch.created'
+  | 'attendance.late'
+  | 'attendance.no_show'
+  | 'attendance.outside_geofence'
+  | 'attendance.early_departure'
+  | 'attendance.missed_clockout'
+  | 'attendance.correction_submitted'
+  | 'attendance.approval_required'
+  | 'attendance.approved'
+  | 'attendance.rejected';
 
 // Role sets for targetRoles field (comma-separated, used with FIND_IN_SET)
 export const TARGET_ROLES = {
@@ -291,6 +300,74 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     body: (d) =>
       `${d.description ? d.description.slice(0, 120) : 'Nuevo despacho'}${d.priority ? ` — Prioridad: ${d.priority}` : ''}`,
     targetRoles: TARGET_ROLES.DISPATCHER,
+    sendEmail: false,
+  },
+
+  // ── Nómina / Time & Attendance ──────────────────────────────────────────────
+  'attendance.late': {
+    title: (d) => `⏰ Llegada tarde: ${d.guardName || 'Guardia'}`,
+    body: (d) => `${d.guardName || 'Guardia'}${d.stationName ? ` — ${d.stationName}` : ''}. ${d.reason || ''}`.trim(),
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Llegada tarde: ${d.guardName || 'Guardia'}`,
+    emailHtml: (d) =>
+      `<h2>⏰ Llegada tarde</h2><p><strong>Guardia:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.reason ? `<p>${d.reason}</p>` : ''}`,
+  },
+  'attendance.no_show': {
+    title: (d) => `🚨 Inasistencia: ${d.guardName || 'Guardia'}`,
+    body: (d) => `${d.guardName || 'Guardia'} no se presentó${d.stationName ? ` en ${d.stationName}` : ''}. ${d.reason || ''}`.trim(),
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Inasistencia (no-show): ${d.guardName || 'Guardia'}`,
+    emailHtml: (d) =>
+      `<h2>🚨 Inasistencia (no-call no-show)</h2><p><strong>Guardia:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.reason ? `<p>${d.reason}</p>` : ''}`,
+  },
+  'attendance.outside_geofence': {
+    title: (d) => `📍 Fuera de geocerca: ${d.guardName || 'Guardia'}`,
+    body: (d) => `${d.guardName || 'Guardia'} marcó fuera del área${d.distanceM != null ? ` (${d.distanceM} m)` : ''}${d.stationName ? ` — ${d.stationName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Marcación fuera de geocerca: ${d.guardName || 'Guardia'}`,
+    emailHtml: (d) =>
+      `<h2>📍 Marcación fuera de geocerca</h2><p><strong>Guardia:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.distanceM != null ? `<p><strong>Distancia:</strong> ${d.distanceM} m</p>` : ''}<p>Requiere revisión del supervisor.</p>`,
+  },
+  'attendance.early_departure': {
+    title: (d) => `🔚 Salida anticipada: ${d.guardName || 'Guardia'}`,
+    body: (d) => `${d.guardName || 'Guardia'} marcó salida antes de tiempo${d.stationName ? ` — ${d.stationName}` : ''}. ${d.reason || ''}`.trim(),
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'attendance.missed_clockout': {
+    title: (d) => `⚠️ Sin marcar salida: ${d.guardName || 'Guardia'}`,
+    body: (d) => `${d.guardName || 'Guardia'} no marcó salida${d.stationName ? ` en ${d.stationName}` : ''}. ${d.reason || ''}`.trim(),
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Sin marcar salida: ${d.guardName || 'Guardia'}`,
+    emailHtml: (d) =>
+      `<h2>⚠️ Salida no registrada</h2><p><strong>Guardia:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.reason ? `<p>${d.reason}</p>` : ''}`,
+  },
+  'attendance.correction_submitted': {
+    title: (d) => `✏️ Corrección de asistencia solicitada`,
+    body: (d) => `${d.guardName || 'Guardia'} — ${d.field || 'campo'}${d.reason ? `: ${d.reason}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'attendance.approval_required': {
+    title: (d) => `🕒 Aprobación de asistencia requerida`,
+    body: (d) => `${d.guardName || 'Guardia'}${d.stationName ? ` — ${d.stationName}` : ''}${d.reason ? `: ${d.reason}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'attendance.approved': {
+    title: (d) => `✅ Asistencia aprobada`,
+    body: (d) => `${d.guardName || 'Guardia'}${d.stationName ? ` — ${d.stationName}` : ''}`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
+    sendEmail: false,
+  },
+  'attendance.rejected': {
+    title: (d) => `❌ Asistencia rechazada`,
+    body: (d) => `${d.guardName || 'Guardia'}${d.reason ? `: ${d.reason}` : ''}`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
     sendEmail: false,
   },
 };

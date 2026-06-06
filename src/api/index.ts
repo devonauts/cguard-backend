@@ -191,6 +191,7 @@ require('./task').default(routes);
 require('./notification').default(routes);
 require('./deviceIdInformation').default(routes);
 require('./guardShift').default(routes);
+require('./attendance').default(routes);
 require('./memos').default(routes);
 require('./request').default(routes);
 // Comments endpoints (in-memory, replace with DB-backed implementation as needed)

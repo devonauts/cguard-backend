@@ -1,4 +1,5 @@
 import { generateShiftsForAssignment } from './shiftGenerationService';
+import { resolveGuardUserId } from './guardIdResolver';
 
 /**
  * THE single write path for guard ↔ station assignments.
@@ -46,6 +47,18 @@ export async function createAssignment(
     throw new AssignmentValidationError('guardId, stationId and startDate are required');
   }
 
+  // Resolve the incoming guard reference (a user id OR a securityGuard id from
+  // the autocomplete) to the underlying users.id. The assignment and every
+  // shift generated from it must key on the same id the guard's worker-app
+  // queries by (`shift.guardId = currentUser.id`); otherwise the turnos are
+  // silently orphaned and never appear. Fail loudly on an unmatched guard.
+  const { userId: guardUserId } = await resolveGuardUserId(database, tenantId, guardId);
+  if (!guardUserId) {
+    throw new AssignmentValidationError(
+      'El guardia seleccionado no es válido o no pertenece a este inquilino.',
+    );
+  }
+
   const isAdhoc = !input.positionId;
   const positionId: string | null = input.positionId || null;
   let rotationStyleId: string | null = input.rotationStyleId || null;
@@ -61,7 +74,7 @@ export async function createAssignment(
     // Fijo guards can only be assigned to ONE station.
     if (!isRelief) {
       const existingFijo = await database.guardAssignment.findOne({
-        where: { guardId, tenantId, status: 'active', isRelief: false, deletedAt: null, kind: 'rotation' },
+        where: { guardId: guardUserId, tenantId, status: 'active', isRelief: false, deletedAt: null, kind: 'rotation' },
         include: [{ model: database.stationPosition, as: 'position', attributes: ['type'], where: { type: 'fijo' } }],
       });
       if (existingFijo) {
@@ -88,7 +101,7 @@ export async function createAssignment(
   }
 
   const record = await database.guardAssignment.create({
-    guardId,
+    guardId: guardUserId,
     stationId,
     kind: isAdhoc ? 'adhoc' : 'rotation',
     positionId,
