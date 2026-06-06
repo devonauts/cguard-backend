@@ -23,6 +23,10 @@ import AuthService from '../services/auth/authService';
 
 export const SOCKET_PATH = '/api/socket.io';
 
+// Roles that receive every tenant notification regardless of an event's
+// targetRoles (matches the SEE_ALL set used for recipient resolution).
+const SEE_ALL_ROLES = ['admin', 'operationsManager', 'owner'];
+
 let io: IOServer | null = null;
 
 /** All roles a user holds for a given tenant (from the user.tenants membership array). */
@@ -98,12 +102,20 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
       const database = await databaseInit();
       const user: any = await AuthService.findByToken(String(token), { database });
       if (!user || !user.id) return next(new Error('unauthorized'));
-      if (!belongsToTenant(user, String(tenantId))) return next(new Error('forbidden'));
+      const superadmin = !!user.isSuperadmin;
+      // Superadmins can oversee any tenant even without a membership row.
+      if (!superadmin && !belongsToTenant(user, String(tenantId))) {
+        return next(new Error('forbidden'));
+      }
 
+      const roles = rolesForTenant(user, String(tenantId));
       (socket.data as any) = {
         userId: user.id,
         tenantId: String(tenantId),
-        roles: rolesForTenant(user, String(tenantId)),
+        roles,
+        // Admins / managers / superadmins receive every tenant notification,
+        // regardless of an event's targetRoles.
+        seeAll: superadmin || roles.some((r) => SEE_ALL_ROLES.includes(r)),
       };
       next();
     } catch {
@@ -112,11 +124,12 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
   });
 
   io.on('connection', (socket) => {
-    const { userId, tenantId, roles } = (socket.data as any) || {};
+    const { userId, tenantId, roles, seeAll } = (socket.data as any) || {};
     if (!tenantId || !userId) return;
     socket.join(`tenant:${tenantId}`);
     socket.join(`tenant:${tenantId}:user:${userId}`);
     (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
+    if (seeAll) socket.join(`tenant:${tenantId}:all`);
   });
 
   console.log(`[realtime] socket.io listening on ${SOCKET_PATH}`);
@@ -169,6 +182,10 @@ export function emitPlatformEvent(event: {
       io.to(`tenant:${t}:user:${event.recipientUserId}`).emit('notification', payload);
       return;
     }
+    // Role-targeted and tenant-wide events also go to the "see all" room so
+    // admins / managers / superadmins always receive them (a superadmin with no
+    // tenant role isn't in any role room otherwise).
+    io.to(`tenant:${t}:all`).emit('notification', payload);
     if (event.targetRoles) {
       const roles = String(event.targetRoles)
         .split(',')

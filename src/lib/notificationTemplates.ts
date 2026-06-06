@@ -6,6 +6,7 @@
 export type EventType =
   | 'incident.created'
   | 'incident.updated'
+  | 'panic.alert'
   | 'guard.checkin'
   | 'guard.checkout'
   | 'guard.late'
@@ -106,6 +107,33 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
       ${d.guardName ? `<p><strong>Guardia:</strong> ${d.guardName}</p>` : ''}
       ${d.siteName ? `<p><strong>Sitio:</strong> ${d.siteName}</p>` : ''}
       ${d.description ? `<p><strong>Descripción:</strong> ${d.description}</p>` : ''}
+    `,
+  },
+  'panic.alert': {
+    title: (d) => `🚨🚨 PÁNICO: ${d.stationName || 'Puesto'}`,
+    body: (d) =>
+      [
+        d.guardName && `Guardia: ${d.guardName}`,
+        d.address && `Ubicación: ${d.address}`,
+        d.phone && `Tel: ${d.phone}`,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    targetRoles: TARGET_ROLES.DISPATCHER,
+    sendEmail: true,
+    emailSubject: (d) =>
+      `[CGuard] 🚨 ALERTA DE PÁNICO — ${d.stationName || 'Puesto'}`,
+    emailHtml: (d) => `
+      <div style="border:3px solid #dc2626;border-radius:8px;padding:16px;font-family:sans-serif">
+        <h1 style="color:#dc2626;margin:0 0 8px">🚨 ALERTA DE PÁNICO</h1>
+        <p style="font-size:16px;margin:4px 0"><strong>Un guardia activó el botón de pánico.</strong></p>
+        ${d.guardName ? `<p><strong>Guardia:</strong> ${esc(d.guardName)}</p>` : ''}
+        ${d.stationName ? `<p><strong>Puesto:</strong> ${esc(d.stationName)}</p>` : ''}
+        ${d.address ? `<p><strong>Ubicación:</strong> ${esc(d.address)}</p>` : ''}
+        ${d.phone ? `<p><strong>Teléfono del sitio:</strong> ${esc(d.phone)}</p>` : ''}
+        ${d.mapsUrl ? `<p><a href="${esc(d.mapsUrl)}" style="color:#dc2626">Ver ubicación en el mapa</a></p>` : ''}
+        <p style="color:#dc2626;font-weight:bold;margin-top:12px">Contacte a la policía y despache un supervisor de inmediato.</p>
+      </div>
     `,
   },
   'incident.updated': {

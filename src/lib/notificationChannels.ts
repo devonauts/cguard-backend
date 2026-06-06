@@ -42,6 +42,7 @@ export const EVENT_TO_ROW: Record<string, string> = {
   'patrol.missed': 'site-tour-missed',
   'incident.created': 'dispatch-updates',
   'incident.updated': 'dispatch-updates',
+  'panic.alert': 'dispatch-updates',
   'dispatch.created': 'dispatch-updates',
   'shift.unassigned': 'shift-status',
   'shift.exchange_approved': 'shift-status',

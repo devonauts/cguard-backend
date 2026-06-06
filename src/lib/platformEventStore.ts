@@ -94,31 +94,55 @@ export async function storePlatformEvent(
  * Matches events either directly addressed to the user OR broadcast to their role.
  * `since` limits the lookback window (e.g., last 24 h on initial connect).
  */
+/**
+ * Builds the per-user visibility WHERE fragment + its replacements.
+ *  - seeAll (admins / managers / superadmins): every role-targeted or broadcast
+ *    event, plus their own directly-addressed ones.
+ *  - otherwise: directly-addressed events, or broadcasts whose targetRoles
+ *    intersect ANY of the user's roles (not just the first one).
+ */
+function visibilityClause(
+  userId: string,
+  roles: string[],
+  seeAll: boolean,
+): { sql: string; params: any[] } {
+  if (seeAll) {
+    return {
+      sql: `(recipientUserId IS NULL OR recipientUserId = ?)`,
+      params: [userId],
+    };
+  }
+  const roleConds = (roles || []).filter(Boolean);
+  const roleClause = roleConds.length
+    ? `(targetRoles IS NULL OR ${roleConds.map(() => 'FIND_IN_SET(?, targetRoles) > 0').join(' OR ')})`
+    : `(targetRoles IS NULL)`;
+  return {
+    sql: `(recipientUserId = ? OR (recipientUserId IS NULL AND ${roleClause}))`,
+    params: [userId, ...roleConds],
+  };
+}
+
 export async function fetchPendingEventsForUser(
   database: any,
   tenantId: string,
   userId: string,
-  userRole: string,
+  roles: string[],
+  seeAll: boolean,
   since: Date,
 ): Promise<PlatformEvent[]> {
   const sinceStr = since.toISOString().slice(0, 19).replace('T', ' ');
+  const v = visibilityClause(userId, roles, seeAll);
   const [rows] = await database.sequelize.query(
     `SELECT id, tenantId, eventType, title, body, payload, recipientUserId,
             targetRoles, sourceEntityType, sourceEntityId, deliveryStatus, createdAt
      FROM platform_events
      WHERE tenantId = ?
        AND deliveryStatus IN ('pending', 'sent')
-       AND (
-         recipientUserId = ?
-         OR (
-           recipientUserId IS NULL
-           AND (targetRoles IS NULL OR FIND_IN_SET(?, targetRoles) > 0)
-         )
-       )
+       AND ${v.sql}
        AND createdAt >= ?
      ORDER BY createdAt ASC
      LIMIT 50`,
-    { replacements: [tenantId, userId, userRole, sinceStr] },
+    { replacements: [tenantId, ...v.params, sinceStr] },
   );
   return rows as PlatformEvent[];
 }
@@ -165,22 +189,18 @@ export async function markAllEventsReadForUser(
   database: any,
   tenantId: string,
   userId: string,
-  userRole: string,
+  roles: string[],
+  seeAll: boolean,
 ): Promise<void> {
+  const v = visibilityClause(userId, roles, seeAll);
   await database.sequelize.query(
     `UPDATE platform_events
      SET deliveryStatus = 'read'
      WHERE tenantId = ?
        AND deliveryStatus IN ('pending', 'sent')
-       AND (
-         recipientUserId = ?
-         OR (
-           recipientUserId IS NULL
-           AND (targetRoles IS NULL OR FIND_IN_SET(?, targetRoles) > 0)
-         )
-       )
+       AND ${v.sql}
        AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
-    { replacements: [tenantId, userId, userRole] },
+    { replacements: [tenantId, ...v.params] },
   );
 }
 
@@ -191,25 +211,21 @@ export async function getRecentEventsForUser(
   database: any,
   tenantId: string,
   userId: string,
-  userRole: string,
+  roles: string[],
+  seeAll: boolean,
   limit = 30,
 ): Promise<PlatformEvent[]> {
+  const v = visibilityClause(userId, roles, seeAll);
   const [rows] = await database.sequelize.query(
     `SELECT id, tenantId, eventType, title, body, payload, recipientUserId,
             targetRoles, sourceEntityType, sourceEntityId, deliveryStatus, createdAt
      FROM platform_events
      WHERE tenantId = ?
-       AND (
-         recipientUserId = ?
-         OR (
-           recipientUserId IS NULL
-           AND (targetRoles IS NULL OR FIND_IN_SET(?, targetRoles) > 0)
-         )
-       )
+       AND ${v.sql}
        AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
      ORDER BY createdAt DESC
      LIMIT ?`,
-    { replacements: [tenantId, userId, userRole, limit] },
+    { replacements: [tenantId, ...v.params, limit] },
   );
   return rows as PlatformEvent[];
 }
@@ -221,22 +237,18 @@ export async function countUnreadEventsForUser(
   database: any,
   tenantId: string,
   userId: string,
-  userRole: string,
+  roles: string[],
+  seeAll: boolean,
 ): Promise<number> {
+  const v = visibilityClause(userId, roles, seeAll);
   const [rows] = await database.sequelize.query(
     `SELECT COUNT(*) AS cnt
      FROM platform_events
      WHERE tenantId = ?
        AND deliveryStatus IN ('pending', 'sent')
-       AND (
-         recipientUserId = ?
-         OR (
-           recipientUserId IS NULL
-           AND (targetRoles IS NULL OR FIND_IN_SET(?, targetRoles) > 0)
-         )
-       )
+       AND ${v.sql}
        AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
-    { replacements: [tenantId, userId, userRole] },
+    { replacements: [tenantId, ...v.params] },
   );
   return Number((rows as any)[0]?.cnt || 0);
 }

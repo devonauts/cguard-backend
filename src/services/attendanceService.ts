@@ -19,6 +19,8 @@ import {
   EXCEPTION_EVENT,
 } from '../lib/attendanceRules';
 import { dispatch } from '../lib/notificationDispatcher';
+import { ymd } from './consignaRecurrence';
+import { wallClockToUtc } from '../lib/tenantTime';
 
 export { getNominaSettings };
 
@@ -286,9 +288,17 @@ export async function applyClockOut(
   );
 
   const newStatus = evalRes.status || opts.record.status || 'on_time';
+  // Hours worked = SUM of each clock in/out session (excludes the gap between a
+  // clock-out and a later re-clock-in within the same shift). Falls back to the
+  // simple punch-in→out span when there are no sessions.
+  const sessionsHrs = sessionsHoursWorked(opts.record.sessions);
+  const hoursWorked =
+    Array.isArray(opts.record.sessions) && opts.record.sessions.length
+      ? sessionsHrs
+      : evalRes.hoursWorked;
   try {
     await opts.record.update({
-      hoursWorked: evalRes.hoursWorked,
+      hoursWorked,
       overtimeMinutes: evalRes.overtimeMinutes,
       earlyDepartureMinutes: evalRes.earlyDepartureMinutes,
       status: newStatus,
@@ -326,5 +336,134 @@ export async function applyClockOut(
     });
   }
 
-  return { hoursWorked: evalRes.hoursWorked, status: newStatus };
+  return { hoursWorked, status: newStatus };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Sessions — one attendance record per shift accumulates every in/out pair.  */
+/* ------------------------------------------------------------------------- */
+
+export interface PunchSession {
+  in: string;
+  inLat?: number | null;
+  inLng?: number | null;
+  inPhoto?: string | null;
+  inAddress?: string | null;
+  inBattery?: number | null;
+  inDistanceM?: number | null;
+  out?: string | null;
+  outLat?: number | null;
+  outLng?: number | null;
+  outDistanceM?: number | null;
+}
+
+/** True when the last session is still open (clocked in, not yet out). */
+export function hasOpenSession(record: any): boolean {
+  const s = record?.sessions;
+  return Array.isArray(s) && s.length > 0 && !s[s.length - 1].out;
+}
+
+/** Append a new open session (clock-in). Returns the new sessions array. */
+export function appendSession(
+  record: any,
+  punch: {
+    at: Date;
+    lat?: number | null;
+    lng?: number | null;
+    photo?: string | null;
+    address?: string | null;
+    battery?: number | null;
+    distanceM?: number | null;
+  },
+): PunchSession[] {
+  const sessions: PunchSession[] = Array.isArray(record?.sessions)
+    ? record.sessions.slice()
+    : [];
+  sessions.push({
+    in: punch.at.toISOString(),
+    inLat: punch.lat ?? null,
+    inLng: punch.lng ?? null,
+    inPhoto: punch.photo ?? null,
+    inAddress: punch.address ?? null,
+    inBattery: punch.battery ?? null,
+    inDistanceM: punch.distanceM ?? null,
+    out: null,
+  });
+  return sessions;
+}
+
+/** Close the last open session (clock-out). Returns the new sessions array. */
+export function closeSession(
+  record: any,
+  punch: { at: Date; lat?: number | null; lng?: number | null; distanceM?: number | null },
+): PunchSession[] {
+  const sessions: PunchSession[] = Array.isArray(record?.sessions)
+    ? record.sessions.slice()
+    : [];
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    if (!sessions[i].out) {
+      sessions[i] = {
+        ...sessions[i],
+        out: punch.at.toISOString(),
+        outLat: punch.lat ?? null,
+        outLng: punch.lng ?? null,
+        outDistanceM: punch.distanceM ?? null,
+      };
+      break;
+    }
+  }
+  return sessions;
+}
+
+/** Sum of (out − in) across closed sessions, in decimal hours. */
+export function sessionsHoursWorked(sessions: any): number {
+  if (!Array.isArray(sessions)) return 0;
+  let ms = 0;
+  for (const s of sessions) {
+    if (s?.in && s?.out) {
+      ms += Math.max(0, new Date(s.out).getTime() - new Date(s.in).getTime());
+    }
+  }
+  return Math.round((ms / 3_600_000) * 100) / 100;
+}
+
+/**
+ * Find the existing attendance record a clock-in should append to (so in→out→in
+ * within a shift reuses ONE row instead of creating duplicates). Keyed by the
+ * matched scheduled shift, else by station + tenant-local calendar day.
+ */
+export async function findOpenOrShiftRecord(
+  db: any,
+  opts: {
+    securityGuardId: string;
+    stationId: string;
+    shiftId: string | null;
+    tenantId: string;
+    tz: string;
+    at: Date;
+  },
+): Promise<any | null> {
+  const { securityGuardId, stationId, shiftId, tenantId, tz, at } = opts;
+  if (shiftId) {
+    const byShift = await db.guardShift.findOne({
+      where: { guardNameId: securityGuardId, shiftId, tenantId, deletedAt: null },
+      order: [['punchInTime', 'DESC']],
+    });
+    if (byShift) return byShift;
+  }
+  // Walk-up (no scheduled shift): one record per tenant-local day at the station.
+  const day = ymd(at, tz);
+  const start = wallClockToUtc(day, '00:00', tz);
+  const end = new Date(wallClockToUtc(day, '23:59', tz).getTime() + 59_000);
+  return db.guardShift.findOne({
+    where: {
+      guardNameId: securityGuardId,
+      stationNameId: stationId,
+      tenantId,
+      shiftId: null,
+      punchInTime: { [Op.gte]: start, [Op.lte]: end },
+      deletedAt: null,
+    },
+    order: [['punchInTime', 'DESC']],
+  });
 }

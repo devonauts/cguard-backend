@@ -12,6 +12,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
 import FileRepository from '../../database/repositories/fileRepository';
+import { dispatch } from '../../lib/notificationDispatcher';
 
 export default async (req: any, res: any) => {
   try {
@@ -97,6 +98,63 @@ export default async (req: any, res: any) => {
         const msg = e instanceof Error ? e.message : String(e);
         console.warn('guard incident photo link failed', msg);
       }
+    }
+
+    // Push a real-time event to the dashboard. A panic (explicit flag or a
+    // 'critical' priority) fires the dedicated `panic.alert` so the admin gets a
+    // full-screen red alarm with everything needed to call the police / dispatch
+    // a supervisor; everything else is a normal `incident.created`. Best-effort —
+    // never blocks the guard's report.
+    try {
+      const isPanic =
+        data.isPanic === true ||
+        String(data.priority || '').toLowerCase() === 'critical';
+
+      const station = stationId
+        ? await db.station.findByPk(stationId, {
+            attributes: ['id', 'stationName', 'latitud', 'longitud', 'postSiteId'],
+          })
+        : null;
+      const postSite = (postSiteId || station?.postSiteId)
+        ? await db.businessInfo.findByPk(postSiteId || station?.postSiteId, {
+            attributes: ['id', 'companyName', 'address', 'city', 'contactPhone', 'latitud', 'longitud'],
+          })
+        : null;
+
+      const lat = data.latitude ?? station?.latitud ?? postSite?.latitud ?? null;
+      const lng = data.longitude ?? station?.longitud ?? postSite?.longitud ?? null;
+      const stationName = station?.stationName || postSite?.companyName || 'Puesto';
+      const siteAddress =
+        postSite?.address || postSite?.city || data.location || null;
+
+      dispatch(
+        isPanic ? 'panic.alert' : 'incident.created',
+        {
+          incidentId: incident.id,
+          incidentTitle: title,
+          title,
+          description: data.content || data.description || null,
+          guardName: securityGuard ? securityGuard.fullName : null,
+          stationName,
+          siteName: postSite?.companyName || stationName,
+          address: siteAddress,
+          phone: postSite?.contactPhone || null,
+          latitude: lat,
+          longitude: lng,
+          mapsUrl: lat != null && lng != null ? `https://maps.google.com/?q=${lat},${lng}` : null,
+          location: data.location || null,
+          priority: data.priority || (isPanic ? 'critical' : 'medium'),
+          at: new Date().toISOString(),
+        },
+        {
+          database: db,
+          tenantId,
+          sourceEntityType: 'incident',
+          sourceEntityId: incident.id,
+        },
+      ).catch(() => {});
+    } catch (e) {
+      console.warn('[guardIncident] dispatch failed', (e as any)?.message || e);
     }
 
     return ApiResponseHandler.success(req, res, incident.get({ plain: true }));

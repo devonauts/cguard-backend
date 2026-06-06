@@ -137,6 +137,28 @@ export default function (sequelize) {
       // Payroll period lock: once a period is closed, the record is read-only.
       locked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       lockedAt: { type: DataTypes.DATE, allowNull: true },
+      // One record per shift/day that ACCUMULATES every clock in/out pair, so a
+      // guard who clocks out then back in doesn't create a duplicate row. Each
+      // session: { in, inLat, inLng, inPhoto, inAddress, inBattery, inDistanceM,
+      //            out, outLat, outLng, outDistanceM }. Top-level punchInTime =
+      // first session.in, punchOutTime = last session.out (null while open);
+      // hoursWorked = sum of (out-in) across sessions.
+      sessions: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get(this: any) {
+          const raw = this.getDataValue('sessions');
+          if (!raw) return [];
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return [];
+          }
+        },
+        set(this: any, val: any) {
+          this.setDataValue('sessions', val == null ? null : JSON.stringify(val));
+        },
+      },
     },
     {
       indexes: [

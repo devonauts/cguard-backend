@@ -10,7 +10,14 @@ import Error401 from '../../errors/Error401';
 import { Op } from 'sequelize';
 import { dispatch } from '../../lib/notificationDispatcher';
 import { gatherClockInContext } from '../../lib/clockInContext';
-import { clockGate, applyClockIn } from '../../services/attendanceService';
+import {
+  clockGate,
+  applyClockIn,
+  matchScheduledShift,
+  findOpenOrShiftRecord,
+  hasOpenSession,
+  appendSession,
+} from '../../services/attendanceService';
 import { registerGuardDevice } from '../../services/guardDeviceService';
 
 /** Best-effort client IP from proxy headers / socket. */
@@ -120,69 +127,118 @@ export default async (req: any, res: any) => {
       throw new Error400(req.language, 'guard.profileNotFound');
     }
 
-    // Check if already clocked in
-    const existingClock = await db.guardShift.findOne({
-      where: { guardNameId: securityGuard.id, punchOutTime: null, tenantId },
+    // ── One attendance record per shift/day (no duplicate rows) ──────────────
+    const now = new Date();
+    const distanceM = gate.geofence?.distanceM ?? null;
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    const tz = tenant?.timezone || 'UTC';
+
+    // Match the scheduled shift so the attendance record is keyed by it; a
+    // re-clock-in appends a session to that record instead of creating a new row.
+    const match = await matchScheduledShift(db, {
+      guardUserId: userId,
+      stationId,
+      tenantId,
+      at: now,
     });
 
-    if (existingClock) {
+    const existing = await findOpenOrShiftRecord(db, {
+      securityGuardId: securityGuard.id,
+      stationId,
+      shiftId: match.shiftId,
+      tenantId,
+      tz,
+      at: now,
+    });
+
+    // Already clocked in (an open session) → reject.
+    if (existing && hasOpenSession(existing)) {
       return ApiResponseHandler.success(req, res, {
         success: false,
         error: 'already_clocked_in',
         message: 'Ya tienes un registro de entrada activo.',
-        activeClockIn: existingClock.get({ plain: true }),
+        activeClockIn: existing.get({ plain: true }),
       });
     }
 
-    // Create guardShift (clock-in record)
-    const guardShiftRecord = await db.guardShift.create({
-      punchInTime: new Date(),
-      punchInLatitude: latitude != null ? Number(latitude) : null,
-      punchInLongitude: longitude != null ? Number(longitude) : null,
-      shiftSchedule: shiftSchedule || 'Diurno',
-      numberOfPatrolsDuringShift: 0,
-      numberOfIncidentsDurindShift: 0,
-      observations: observations || 'Entrada registrada',
-      punchInPhoto: selfiePhoto || null,
-      punchInAddress: address ? String(address).slice(0, 512) : null,
-      punchInBattery: battery != null && !isNaN(Number(battery)) ? Math.round(Number(battery)) : null,
-      punchInChecklist: checklist
-        ? (typeof checklist === 'string' ? checklist : JSON.stringify(checklist))
-        : null,
-      stationNameId: stationId,
-      guardNameId: securityGuard.id,
-      postSiteId: station.postSiteId || null,
-      tenantId,
-      createdById: userId,
-      updatedById: userId,
-    });
+    const punchMeta = {
+      at: now,
+      lat: latitude != null ? Number(latitude) : null,
+      lng: longitude != null ? Number(longitude) : null,
+      photo: selfiePhoto || null,
+      address: address ? String(address).slice(0, 512) : null,
+      battery:
+        battery != null && !isNaN(Number(battery)) ? Math.round(Number(battery)) : null,
+      distanceM,
+    };
+
+    let guardShiftRecord: any;
+    const isReentry = !!existing;
+    if (existing) {
+      // Re-clock-in within the same shift/day → append a session, reopen.
+      guardShiftRecord = existing;
+      await existing.update({
+        sessions: appendSession(existing, punchMeta),
+        punchOutTime: null,
+        observations: observations || existing.observations || 'Entrada registrada',
+        updatedById: userId,
+      });
+    } else {
+      // First clock-in of this shift/day → create the record with session #1.
+      guardShiftRecord = await db.guardShift.create({
+        punchInTime: now,
+        punchInLatitude: punchMeta.lat,
+        punchInLongitude: punchMeta.lng,
+        shiftSchedule: shiftSchedule || 'Diurno',
+        numberOfPatrolsDuringShift: 0,
+        numberOfIncidentsDurindShift: 0,
+        observations: observations || 'Entrada registrada',
+        punchInPhoto: punchMeta.photo,
+        punchInAddress: punchMeta.address,
+        punchInBattery: punchMeta.battery,
+        punchInChecklist: checklist
+          ? typeof checklist === 'string'
+            ? checklist
+            : JSON.stringify(checklist)
+          : null,
+        sessions: appendSession({ sessions: [] }, punchMeta),
+        stationNameId: stationId,
+        guardNameId: securityGuard.id,
+        postSiteId: station.postSiteId || null,
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
+    }
 
     // Update isOnDuty
     await securityGuard.update({ isOnDuty: true });
 
-    // Nómina: evaluate attendance (match scheduled shift, status, geofence
-    // distance, late/pending-review), persist exceptions + notify supervisors.
-    // Best-effort — never blocks the clock-in.
-    try {
-      await applyClockIn(db, {
-        record: guardShiftRecord,
-        station,
-        securityGuard,
-        guardUserId: userId,
-        tenantId,
-        userId,
-        latitude,
-        longitude,
-        deviceInfo: {
-          userAgent: req.headers?.['user-agent'] || null,
-          platform: (req.body?.data || req.body)?.platform || null,
-        },
-        ip: clientIp(req),
-        settings: gate.settings,
-        geofence: gate.geofence,
-      });
-    } catch (attErr) {
-      console.error('[clockIn] attendance evaluation failed:', (attErr as any)?.message || attErr);
+    // Nómina: evaluate attendance ONLY on the first clock-in of the record
+    // (status/late are based on first arrival). Re-clock-ins just reopen the
+    // session. Best-effort — never blocks the clock-in.
+    if (!isReentry) {
+      try {
+        await applyClockIn(db, {
+          record: guardShiftRecord,
+          station,
+          securityGuard,
+          guardUserId: userId,
+          tenantId,
+          userId,
+          latitude,
+          longitude,
+          deviceInfo: {
+            userAgent: req.headers?.['user-agent'] || null,
+            platform: (req.body?.data || req.body)?.platform || null,
+          },
+          ip: clientIp(req),
+          settings: gate.settings,
+          geofence: gate.geofence,
+        });
+      } catch (attErr) {
+        console.error('[clockIn] attendance evaluation failed:', (attErr as any)?.message || attErr);
+      }
     }
 
     // Notify the platform (websocket + in-app) and email the client/tenant/
@@ -196,9 +252,9 @@ export default async (req: any, res: any) => {
         observations: guardShiftRecord.observations,
         clockInTime: guardShiftRecord.punchInTime,
       });
-      // Carry the clock-in selfie + ids in the event payload so the panel
+      // Carry THIS punch's selfie + ids in the event payload so the panel
       // notification and the Actividad feed can show the photo and link back.
-      (data as any).photoUrl = guardShiftRecord.punchInPhoto || null;
+      (data as any).photoUrl = punchMeta.photo || guardShiftRecord.punchInPhoto || null;
       (data as any).guardId = securityGuard.id;
       (data as any).guardShiftId = guardShiftRecord.id;
       (data as any).stationId = stationId;

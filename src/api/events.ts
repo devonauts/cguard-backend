@@ -29,19 +29,31 @@ const POLL_INTERVAL_MS = 5_000;
 // How far back to look on initial SSE connect (last 24 h)
 const INITIAL_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
 
+// Roles that see every tenant notification regardless of an event's targetRoles.
+const SEE_ALL_ROLES = ['admin', 'operationsManager', 'owner'];
+
 /**
- * Extracts the primary role for the current tenant from req.currentUser.
+ * Resolves the current user's tenant roles and whether they see all events.
+ * Superadmins (platform owners) oversee any tenant even without a membership.
  */
-function getUserRoleForTenant(currentUser: any, tenantId: string): string {
-  if (!currentUser || !Array.isArray(currentUser.tenants)) return 'unknown';
-  const tenantUser = currentUser.tenants.find(
+function getUserContext(
+  currentUser: any,
+  tenantId: string,
+): { roles: string[]; seeAll: boolean } {
+  const tenants = Array.isArray(currentUser?.tenants) ? currentUser.tenants : [];
+  const tenantUser = tenants.find(
     (t: any) => t && (t.id === tenantId || t.tenantId === tenantId),
   );
-  const roles: string[] =
-    tenantUser?.roles ||
-    tenantUser?.tenantUser?.roles ||
-    [];
-  return roles[0] || 'unknown';
+  const raw = tenantUser?.roles || tenantUser?.tenantUser?.roles || [];
+  const roles: string[] = Array.isArray(raw)
+    ? raw
+    : String(raw || '')
+        .split(',')
+        .map((r) => r.trim())
+        .filter(Boolean);
+  const seeAll =
+    !!currentUser?.isSuperadmin || roles.some((r) => SEE_ALL_ROLES.includes(r));
+  return { roles, seeAll };
 }
 
 export default (routes: Router) => {
@@ -63,7 +75,7 @@ export default (routes: Router) => {
 
       const userId = currentUser.id;
       const tenantId = currentTenant.id;
-      const userRole = getUserRoleForTenant(currentUser, tenantId);
+      const { roles, seeAll } = getUserContext(currentUser, tenantId);
 
       // Set SSE headers
       res.setHeader('Content-Type', 'text/event-stream');
@@ -82,7 +94,7 @@ export default (routes: Router) => {
       };
 
       // Send initial connected acknowledgment
-      sendSSE('connected', { userId, tenantId, userRole, ts: Date.now() });
+      sendSSE('connected', { userId, tenantId, roles, seeAll, ts: Date.now() });
 
       // Start lookback from 24 h ago on first connect, then track latest seen
       let since = new Date(Date.now() - INITIAL_LOOKBACK_MS);
@@ -93,7 +105,8 @@ export default (routes: Router) => {
             database,
             tenantId,
             userId,
-            userRole,
+            roles,
+            seeAll,
             since,
           );
 
@@ -166,14 +179,15 @@ export default (routes: Router) => {
         if (!currentUser) return res.status(401).json({ message: 'Unauthorized' });
         if (!currentTenant) return res.status(403).json({ message: 'Tenant not found' });
 
-        const userRole = getUserRoleForTenant(currentUser, currentTenant.id);
+        const { roles, seeAll } = getUserContext(currentUser, currentTenant.id);
         const limit = Math.min(Number(req.query.limit) || 30, 50);
 
         const events = await getRecentEventsForUser(
           database,
           currentTenant.id,
           currentUser.id,
-          userRole,
+          roles,
+          seeAll,
           limit,
         );
 
@@ -196,12 +210,13 @@ export default (routes: Router) => {
         if (!currentUser) return res.status(401).json({ count: 0 });
         if (!currentTenant) return res.status(403).json({ count: 0 });
 
-        const userRole = getUserRoleForTenant(currentUser, currentTenant.id);
+        const { roles, seeAll } = getUserContext(currentUser, currentTenant.id);
         const count = await countUnreadEventsForUser(
           database,
           currentTenant.id,
           currentUser.id,
-          userRole,
+          roles,
+          seeAll,
         );
 
         return res.json({ count });
@@ -223,12 +238,13 @@ export default (routes: Router) => {
         if (!currentUser) return res.status(401).json({ message: 'Unauthorized' });
         if (!currentTenant) return res.status(403).json({ message: 'Tenant not found' });
 
-        const userRole = getUserRoleForTenant(currentUser, currentTenant.id);
+        const { roles, seeAll } = getUserContext(currentUser, currentTenant.id);
         await markAllEventsReadForUser(
           database,
           currentTenant.id,
           currentUser.id,
-          userRole,
+          roles,
+          seeAll,
         );
 
         return res.json({ success: true });

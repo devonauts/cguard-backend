@@ -7,7 +7,12 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
-import { applyClockOut } from '../../services/attendanceService';
+import {
+  applyClockOut,
+  closeSession,
+  getNominaSettings,
+} from '../../services/attendanceService';
+import { evaluateGeofence } from '../../lib/geofence';
 
 /** Best-effort client IP from proxy headers / socket. */
 function clientIp(req: any): string | null {
@@ -50,23 +55,82 @@ export default async (req: any, res: any) => {
       });
     }
 
-    // Update the clock-in record with punch-out data
+    const now = new Date();
+    const station = await db.station.findOne({
+      where: { id: activeClock.stationNameId, tenantId },
+    });
+
+    // ── Early clock-out gate ────────────────────────────────────────────────
+    // Leaving more than the configured threshold before the scheduled end needs
+    // a supervisor-approved clockOutRequest first. On-time / late / no-schedule
+    // clock-outs are immediate.
+    const settings = await getNominaSettings(db, tenantId);
+    const thresholdMin = Number(settings?.windows?.earlyClockoutThresholdMin ?? 0);
+    const scheduledEnd = activeClock.scheduledEnd
+      ? new Date(activeClock.scheduledEnd)
+      : null;
+    const minutesEarly = scheduledEnd
+      ? Math.round((scheduledEnd.getTime() - now.getTime()) / 60000)
+      : 0;
+
+    if (scheduledEnd && minutesEarly > thresholdMin) {
+      const approved = await db.clockOutRequest.findOne({
+        where: {
+          guardShiftId: activeClock.id,
+          status: 'approved',
+          tenantId,
+          deletedAt: null,
+        },
+      });
+      if (!approved) {
+        return ApiResponseHandler.success(req, res, {
+          success: false,
+          error: 'approval_required',
+          requiresApproval: true,
+          scheduledEnd: scheduledEnd.toISOString(),
+          minutesEarly,
+          thresholdMin,
+          message: 'Necesitas aprobación del supervisor para salir antes de tiempo.',
+        });
+      }
+      // Consume the approval so it can't be reused on a later re-clock-in.
+      try {
+        await approved.update({ status: 'cancelled', updatedById: userId });
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Close the open session + stamp the top-level punch-out (last out).
+    const distanceM = station
+      ? evaluateGeofence(
+          station,
+          latitude != null ? Number(latitude) : null,
+          longitude != null ? Number(longitude) : null,
+          Number(settings?.geofence?.defaultRadiusM) || 100,
+        ).distanceM
+      : null;
+
     await activeClock.update({
-      punchOutTime: new Date(),
+      punchOutTime: now,
       punchOutLatitude: latitude != null ? Number(latitude) : null,
       punchOutLongitude: longitude != null ? Number(longitude) : null,
       observations: observations || activeClock.observations,
+      sessions: closeSession(activeClock, {
+        at: now,
+        lat: latitude != null ? Number(latitude) : null,
+        lng: longitude != null ? Number(longitude) : null,
+        distanceM,
+      }),
+      updatedById: userId,
     });
 
     // Update isOnDuty
     await securityGuard.update({ isOnDuty: false });
 
-    // Nómina: compute hours worked + overtime/early-departure, geofence distance,
-    // persist exceptions + notify. Best-effort — never blocks the clock-out.
+    // Nómina: compute hours worked (sum of sessions) + overtime/early-departure,
+    // geofence distance, persist exceptions + notify. Best-effort.
     try {
-      const station = await db.station.findOne({
-        where: { id: activeClock.stationNameId, tenantId },
-      });
       await applyClockOut(db, {
         record: activeClock,
         station,
@@ -76,6 +140,7 @@ export default async (req: any, res: any) => {
         latitude,
         longitude,
         ip: clientIp(req),
+        settings,
       });
     } catch (attErr) {
       console.error('[clockOut] attendance evaluation failed:', (attErr as any)?.message || attErr);

@@ -104,6 +104,16 @@ export default (app) => {
     require('./guardMeClockOut').default,
   );
 
+  // Early clock-out approval request (create + status)
+  app.post(
+    `/tenant/:tenantId/guard/me/clock-out/request`,
+    require('./guardMeClockOutRequestCreate').default,
+  );
+  app.get(
+    `/tenant/:tenantId/guard/me/clock-out/request`,
+    require('./guardMeClockOutRequestGet').default,
+  );
+
   // Report an incident about my post (panic / events) — no admin perm needed
   app.post(
     `/tenant/:tenantId/guard/me/incident`,

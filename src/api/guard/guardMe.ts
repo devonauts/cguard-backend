@@ -67,6 +67,7 @@ export default async (req: any, res: any) => {
 
     // Active clock-in record (guardShift without punchOutTime)
     let activeClockIn: any = null;
+    let clockOutRequest: any = null;
     if (securityGuard) {
       const clockIn = await db.guardShift.findOne({
         where: {
@@ -78,7 +79,30 @@ export default async (req: any, res: any) => {
       });
       if (clockIn) {
         activeClockIn = clockIn.get({ plain: true });
+        // The early-clock-out approval state for this open record (drives the
+        // worker-app clock-out button: request → pending → approved).
+        try {
+          const reqRow = await db.clockOutRequest.findOne({
+            where: { guardShiftId: clockIn.id, tenantId, deletedAt: null },
+            order: [['createdAt', 'DESC']],
+            attributes: ['id', 'status', 'scheduledEnd', 'reason', 'decisionNotes'],
+          });
+          if (reqRow) clockOutRequest = reqRow.get({ plain: true });
+        } catch {
+          /* ignore */
+        }
       }
+    }
+
+    // Early-clockout threshold (minutes before scheduled end that requires
+    // approval) so the app can decide whether to show "request" vs "clock out".
+    let clockOutThresholdMin = 0;
+    try {
+      const { getNominaSettings } = require('../../services/attendanceService');
+      const settings = await getNominaSettings(db, tenantId);
+      clockOutThresholdMin = Number(settings?.windows?.earlyClockoutThresholdMin ?? 0);
+    } catch {
+      /* ignore */
     }
 
     // Tenant timezone is the single source of truth for shift time display.
@@ -104,6 +128,8 @@ export default async (req: any, res: any) => {
       nextShift: withLabels(nextShift),
       activeClockIn,
       isClockedIn: !!activeClockIn,
+      clockOutRequest, // { status, scheduledEnd, … } or null — early-out approval
+      clockOutThresholdMin,
     };
 
     return ApiResponseHandler.success(req, res, response);
