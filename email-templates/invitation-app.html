@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="x-apple-disable-message-reformatting" />
-  <title>Activa tu app · {{tenantName}}</title>
+  <title>Tu app Mi Seguridad · {{tenantName}}</title>
   <style>
     body { margin:0; padding:0; background:#eef1f5; -webkit-text-size-adjust:100%; }
     table { border-collapse:collapse; }
@@ -18,34 +18,51 @@
   </style>
 </head>
 <body style="margin:0; padding:0; background:#eef1f5;">
-  <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">Activa tu cuenta y descarga la app de {{tenantName}}.</div>
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">Activa Mi Seguridad y gestiona tu servicio de seguridad con {{tenantName}} desde tu teléfono.</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f5;">
     <tr>
       <td align="center" style="padding:32px 16px;">
         <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 10px 34px rgba(16,24,40,.10);">
 
+          <!-- Header: tenant brand -->
           <tr>
             <td style="background:#0A0E16; padding:30px 32px 26px; text-align:center;">
               <img src="{{logoUrl}}" alt="" height="42" style="height:42px; max-height:42px; display:block; margin:0 auto 12px;" />
               <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#ffffff; font-size:19px; font-weight:700; letter-spacing:.2px;">{{tenantName}}</div>
-              <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#C8860A; font-size:11px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; margin-top:6px;">App de Guardia</div>
+              <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#C8860A; font-size:11px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; margin-top:6px;">App Mi Seguridad · Cliente</div>
             </td>
           </tr>
           <tr><td style="height:4px; line-height:4px; font-size:0; background:#C8860A;">&nbsp;</td></tr>
 
+          <!-- Intro -->
           <tr>
-            <td class="px" style="padding:36px 44px 6px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+            <td class="px" style="padding:34px 44px 4px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
               <p style="margin:0 0 6px; color:#9aa3af; font-size:14px;">Hola,</p>
-              <h1 style="margin:0 0 18px; color:#0A0E16; font-size:23px; font-weight:800;">{{firstName}} {{lastName}}</h1>
+              <h1 style="margin:0 0 14px; color:#0A0E16; font-size:23px; font-weight:800;">{{firstName}} {{lastName}}</h1>
               <p style="margin:0; color:#374151; font-size:15px; line-height:1.7;">
-                Tu servicio de seguridad con <strong style="color:#0A0E16;">{{tenantName}}</strong> ahora está en la palma de tu mano.
-                Activa tu cuenta, crea tu contraseña y descarga la app para empezar.
+                <strong style="color:#0A0E16;">{{tenantName}}</strong> te da acceso a <strong style="color:#0A0E16;">Mi Seguridad</strong>,
+                la app con la que <strong>monitoreas y gestionas tu servicio de seguridad</strong> desde tu teléfono — en tiempo real y desde donde estés.
               </p>
             </td>
           </tr>
 
+          <!-- What the app does -->
           <tr>
-            <td align="center" style="padding:28px 44px 6px;">
+            <td class="px" style="padding:18px 44px 0; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+              <p style="margin:0 0 10px; color:#9aa3af; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase;">Con Mi Seguridad puedes</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr><td style="padding:7px 0; color:#374151; font-size:14px; line-height:1.5;"><span style="color:#C8860A; font-weight:700;">✓</span>&nbsp; Ver el estado de tus guardias y puestos <strong>en tiempo real</strong>.</td></tr>
+                <tr><td style="padding:7px 0; color:#374151; font-size:14px; line-height:1.5;"><span style="color:#C8860A; font-weight:700;">✓</span>&nbsp; Seguir las <strong>rondas y el recorrido GPS</strong> de tu vigilancia.</td></tr>
+                <tr><td style="padding:7px 0; color:#374151; font-size:14px; line-height:1.5;"><span style="color:#C8860A; font-weight:700;">✓</span>&nbsp; Recibir <strong>alertas de incidentes y novedades</strong> al instante.</td></tr>
+                <tr><td style="padding:7px 0; color:#374151; font-size:14px; line-height:1.5;"><span style="color:#C8860A; font-weight:700;">✓</span>&nbsp; Consultar <strong>reportes, bitácoras e historial</strong> de tu servicio.</td></tr>
+                <tr><td style="padding:7px 0; color:#374151; font-size:14px; line-height:1.5;"><span style="color:#C8860A; font-weight:700;">✓</span>&nbsp; Comunicarte directamente con <strong>{{tenantName}}</strong>.</td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CTA -->
+          <tr>
+            <td align="center" style="padding:26px 44px 6px;">
               <table role="presentation" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center" bgcolor="#C8860A" style="border-radius:10px;">
@@ -56,28 +73,31 @@
             </td>
           </tr>
           <tr>
-            <td align="center" style="padding:8px 44px 0; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
-              <p style="margin:0; color:#aab0ba; font-size:12px;">Descarga la app:&nbsp; <span style="color:#6b7280; font-weight:600;">Google Play</span> &nbsp;·&nbsp; <span style="color:#6b7280; font-weight:600;">App Store</span></p>
+            <td align="center" style="padding:10px 44px 0; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+              <p style="margin:0; color:#6b7280; font-size:13px;">Luego descarga <strong>Mi Seguridad</strong> en:</p>
+              <p style="margin:6px 0 0; color:#0A0E16; font-size:13px; font-weight:700;">Google Play&nbsp;&nbsp;·&nbsp;&nbsp;App Store</p>
             </td>
           </tr>
           <tr>
-            <td class="px" style="padding:14px 44px 0; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+            <td class="px" style="padding:16px 44px 0; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
               <p style="margin:0; color:#9aa3af; font-size:12px; line-height:1.6;">¿El botón no funciona? Copia y pega este enlace:<br />
                 <a href="{{link}}" target="_blank" style="color:#C8860A; word-break:break-all;">{{link}}</a>
               </p>
             </td>
           </tr>
 
+          <!-- Footer -->
           <tr><td class="px" style="padding:26px 44px 0;"><div style="border-top:1px solid #eef1f5; line-height:1px; font-size:0;">&nbsp;</div></td></tr>
           <tr>
             <td class="px" style="padding:16px 44px 34px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+              <p style="margin:0 0 6px; color:#aab0ba; font-size:12px; line-height:1.6;">Si no esperabas este correo puedes ignorarlo; el enlace puede expirar según la configuración del sistema.</p>
               <p style="margin:0; color:#aab0ba; font-size:12px;">¿Necesitas ayuda? <a href="mailto:{{supportEmail}}" style="color:#6b7280;">{{supportEmail}}</a></p>
             </td>
           </tr>
         </table>
 
         <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px;">
-          <tr><td align="center" style="padding:18px 16px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#b6bcc6; font-size:11px; letter-spacing:.3px;">Enviado con <strong style="color:#8a92a0;">CGuardPro</strong> · Plataforma de gestión de seguridad</td></tr>
+          <tr><td align="center" style="padding:18px 16px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#b6bcc6; font-size:11px; letter-spacing:.3px;">Mi Seguridad · Impulsado por <strong style="color:#8a92a0;">CGuardPro</strong></td></tr>
         </table>
       </td>
     </tr>
