@@ -42,10 +42,10 @@ export default async (req, res) => {
     const token = await UserRepository.generatePasswordResetToken(lower, req);
 
     const tenantRec = await TenantRepository.findById(tenant.id, req);
-    // The guard opens this on their phone browser to set a new password, then
-    // logs into the worker app with it. (Native deep-linking would need an app
-    // release; the web reset page works today.)
-    const link = `${tenantSubdomain.frontendUrl(tenantRec)}/auth/password-reset?token=${token}`;
+    // Smart link: /guard-reset is served by nginx and tries to open the worker
+    // app via the cguardpro:// deep link, falling back to the web reset page when
+    // the app isn't installed. So the same link works in-app and in a browser.
+    const link = `${tenantSubdomain.frontendUrl(tenantRec)}/guard-reset?token=${token}`;
 
     // Email (best-effort — won't block the link being returned).
     let emailed = false;
