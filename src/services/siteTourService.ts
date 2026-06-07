@@ -1,5 +1,10 @@
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
+import { haversineDistance } from '../lib/geofence';
+
+/** Default checkpoint geofence radius (m) when the station defines none. Tighter
+ *  than the clock-in default because a QR is a precise, single point. */
+const DEFAULT_CHECKPOINT_RADIUS_M = 75;
 
 export default class SiteTourService {
   options: IServiceOptions;
@@ -99,6 +104,38 @@ export default class SiteTourService {
         }
       }
 
+      // ── Server-side location verification ───────────────────────────────
+      // Best practice: never trust the device. Verify the guard's GPS against
+      // the CHECKPOINT's own coordinates (not just the station), so a scan only
+      // counts as "in location" when the guard was physically at the QR.
+      const guardLat = latitude == null ? NaN : Number(latitude);
+      const guardLng = longitude == null ? NaN : Number(longitude);
+      const cpLat = Number(tag.latitude);
+      const cpLng = Number(tag.longitude);
+
+      // Radius: station override if present, else the checkpoint default.
+      let radiusM = DEFAULT_CHECKPOINT_RADIUS_M;
+      try {
+        const stId = stationId || tag.stationId;
+        if (stId) {
+          const st = await this.options.database.station.findByPk(stId, {
+            attributes: ['id', 'geofenceRadius'],
+            transaction,
+          });
+          if (st && st.geofenceRadius != null && !isNaN(Number(st.geofenceRadius))) {
+            radiusM = Number(st.geofenceRadius);
+          }
+        }
+      } catch { /* keep default */ }
+
+      let validLocation: boolean | null = null;
+      let distanceMeters: number | null = null;
+      const canVerify = !isNaN(guardLat) && !isNaN(guardLng) && !isNaN(cpLat) && !isNaN(cpLng) && (cpLat !== 0 || cpLng !== 0);
+      if (canVerify) {
+        distanceMeters = Math.round(haversineDistance(guardLat, guardLng, cpLat, cpLng));
+        validLocation = distanceMeters <= radiusM;
+      }
+
       // Create tagScan row
       scan = await this.options.database.tagScan.create({
         siteTourTagId: tag.id,
@@ -106,7 +143,9 @@ export default class SiteTourService {
         securityGuardId,
         stationId: stationId || null,
         scannedAt: new Date(),
-        scannedData: { latitude, longitude, extra: scannedData },
+        validLocation,
+        distanceMeters,
+        scannedData: { latitude, longitude, validLocation, distanceMeters, radiusM, extra: scannedData },
       }, { transaction });
 
       // If assignment exists, increment scansCompleted and mark completed when reaching total tags
@@ -159,7 +198,12 @@ export default class SiteTourService {
         }
       }
 
-      return { tag, assignment, scan };
+      return {
+        tag,
+        assignment,
+        scan,
+        location: { validLocation, distanceMeters, radiusM, verified: canVerify },
+      };
     } catch (err) {
       await SequelizeRepository.rollbackTransaction(transaction);
       throw err;

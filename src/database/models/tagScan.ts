@@ -18,6 +18,20 @@ export default function (sequelize) {
         type: DataTypes.JSON,
         allowNull: true,
       },
+      // Server-side location verification result (computed in recordTagScan from
+      // the guard's GPS vs the checkpoint's coordinates). Null = could not
+      // verify (checkpoint or scan lacked coordinates).
+      validLocation: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: null,
+      },
+      // Distance in meters from the checkpoint at scan time (for audit/reporting).
+      distanceMeters: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        defaultValue: null,
+      },
         stationId: {
           type: DataTypes.UUID,
           allowNull: true,
