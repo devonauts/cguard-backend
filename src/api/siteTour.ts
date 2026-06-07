@@ -404,6 +404,81 @@ export default function (router) {
     }
   });
 
+  // GET ronda session history for a station (admin "Historial de Rondas").
+  // /tenant/:tenantId/station/:stationId/ronda-history
+  router.get('/tenant/:tenantId/station/:stationId/ronda-history', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      const db = req.database;
+      const tenantId = req.currentTenant.id;
+      const stationId = req.params.stationId;
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const offset = Number(req.query.offset) || 0;
+
+      const count = await db.tourAssignment.count({ where: { tenantId, stationId } });
+      const rows = await db.tourAssignment.findAll({
+        where: { tenantId, stationId },
+        include: [
+          { model: db.siteTour, as: 'siteTour', attributes: ['id', 'name'], required: false },
+          { model: db.securityGuard, as: 'guard', attributes: ['id', 'fullName'], required: false },
+          { model: db.tagScan, as: 'scans', attributes: ['id', 'siteTourTagId', 'scannedAt', 'validLocation', 'distanceMeters'], required: false },
+        ],
+        order: [['startAt', 'DESC'], ['createdAt', 'DESC']],
+        limit,
+        offset,
+      });
+
+      // Total checkpoints per tour (for progress) + checkpoint names (for scans).
+      const tourIds = Array.from(new Set((rows || []).map((r: any) => r.siteTourId).filter(Boolean)));
+      const tagCountByTour: Record<string, number> = {};
+      if (tourIds.length) {
+        const counts = await db.siteTourTag.findAll({
+          where: { siteTourId: tourIds },
+          attributes: ['siteTourId', [db.Sequelize.fn('COUNT', db.Sequelize.col('id')), 'cnt']],
+          group: ['siteTourId'],
+          raw: true,
+        });
+        counts.forEach((c: any) => { tagCountByTour[c.siteTourId] = Number(c.cnt); });
+      }
+      const tagIds = Array.from(new Set((rows || []).flatMap((r: any) => (r.scans || []).map((s: any) => s.siteTourTagId)).filter(Boolean)));
+      const tagNameById: Record<string, string> = {};
+      if (tagIds.length) {
+        const tags = await db.siteTourTag.findAll({ where: { id: tagIds }, attributes: ['id', 'name'], raw: true });
+        tags.forEach((t: any) => { tagNameById[t.id] = t.name; });
+      }
+
+      const out = (rows || []).map((r: any) => {
+        const p = r.get ? r.get({ plain: true }) : r;
+        const scans = (p.scans || [])
+          .map((s: any) => ({
+            id: s.id,
+            checkpoint: tagNameById[s.siteTourTagId] || '—',
+            scannedAt: s.scannedAt,
+            validLocation: s.validLocation,
+            distanceMeters: s.distanceMeters,
+          }))
+          .sort((a: any, b: any) => new Date(a.scannedAt).getTime() - new Date(b.scannedAt).getTime());
+        return {
+          id: p.id,
+          rondaName: (p.siteTour && p.siteTour.name) || 'Ronda',
+          guardName: (p.guard && p.guard.fullName) || '—',
+          startAt: p.startAt,
+          endAt: p.endAt,
+          status: p.status,
+          totalTags: tagCountByTour[p.siteTourId] || 0,
+          scannedCount: scans.length,
+          validCount: scans.filter((s: any) => s.validLocation === true).length,
+          outCount: scans.filter((s: any) => s.validLocation === false).length,
+          scans,
+        };
+      });
+
+      await ApiResponseHandler.success(req, res, { rows: out, count });
+    } catch (error: any) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
   // GET single assignment: /tenant/:tenantId/site-tour/:tourId/assign/:assignmentId
   router.get('/tenant/:tenantId/site-tour/:tourId/assign/:assignmentId', async (req, res, next) => {
     try {
