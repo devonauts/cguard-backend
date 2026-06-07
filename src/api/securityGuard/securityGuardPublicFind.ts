@@ -189,6 +189,21 @@ export default async (req, res, next) => {
       console.warn('Failed to attach tenantUser info in public fetch:', errMsg);
     }
 
+    // Tenant branding so the registration page can look like the TENANT
+    // (its own logo + name), not the platform.
+    try {
+      if (tenant) {
+        payload.tenantId = tenant.id;
+        payload.tenantName = tenant.name || tenant.displayName || null;
+        try {
+          const s = await options.database.settings.findOne({ where: { tenantId: tenant.id } });
+          payload.tenantLogoUrl = (s && (s.logoUrl || (s.get && s.get('logoUrl')))) || null;
+        } catch (e) { /* no logo */ }
+      }
+    } catch (err) {
+      console.warn('Failed to attach tenant branding in public fetch:', err && (err as any).message ? (err as any).message : err);
+    }
+
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

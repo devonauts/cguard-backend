@@ -442,7 +442,13 @@ class SecurityGuardRepository {
         }
       }
 
-      if (!isAdmin) {
+      // Skip the post-site scoping when the caller explicitly bypasses
+      // permission checks — e.g. an invited guard completing their OWN
+      // registration via the token-validated public endpoint (they have the
+      // securityGuard role but no assigned post-sites yet, so this scoping
+      // would otherwise 404 their own newly-created record).
+      const bypassScope = !!(options && ((options as any).bypassPermissionValidation || (options as any).bypassPrivilegeCheck));
+      if (!isAdmin && !bypassScope) {
         // current user's allowed posts
         const tenantUser = await options.database.tenantUser.findOne({
           where: { tenantId: currentTenant.id, userId: currentUser.id },
