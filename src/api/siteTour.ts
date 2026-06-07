@@ -17,12 +17,15 @@ export default function (router) {
       console.log('[DEBUG] Permission check passed');
       
       const where: any = { tenantId: req.currentTenant.id };
-      // allow optional filtering by postSiteId
+      // Rondas are isolated per station / per post-site. Honor both filters so a
+      // station never sees another station's (or another client's) rondas.
+      if (req.query && req.query.stationId) {
+        where.stationId = req.query.stationId;
+      }
       if (req.query && req.query.postSiteId) {
         where.postSiteId = req.query.postSiteId;
       }
-      console.log('[DEBUG] Query WHERE:', where);
-      
+
       const rows = await req.database.siteTour.findAll({ where });
       console.log('[DEBUG] Found rows:', rows.length);
       const plain = (rows || []).map((r: any) => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
@@ -236,32 +239,13 @@ export default function (router) {
       if (req.query && req.query.tagType) {
         where.tagType = req.query.tagType;
       }
-      let rows = await req.database.siteTourTag.findAll({ where });
-
-      // If no rows were found, attempt a diagnostic fallback: try without tenantId
-      // (helps detect missing tenantId on existing data). Return a hint flag when fallback used.
-      let fallbackUsed = false;
-      if ((!rows || rows.length === 0) && where.tenantId) {
-        try {
-          // eslint-disable-next-line no-console
-          console.warn(`site-tour tags: no rows for tenant ${where.tenantId}, trying fallback without tenant filter for tour ${tourId}`);
-          const altWhere: any = { siteTourId: tourId };
-          if (req.query && req.query.tagType) altWhere.tagType = req.query.tagType;
-          const altRows = await req.database.siteTourTag.findAll({ where: altWhere });
-          if (altRows && altRows.length > 0) {
-            rows = altRows;
-            fallbackUsed = true;
-          }
-        } catch (e: any) {
-          // swallow fallback errors and continue returning empty
-          // eslint-disable-next-line no-console
-          console.error('Fallback site-tour tags query failed', e);
-        }
-      }
+      // SECURITY: scoped strictly to this tenant's tour. No "fallback without
+      // tenant filter" — that would return another tenant's checkpoints by tourId.
+      const rows = await req.database.siteTourTag.findAll({ where });
 
       // Normalize rows to plain objects to avoid Sequelize instances on the wire
       const plain = (rows || []).map(r => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
-      await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length, fallbackTenantMismatch: fallbackUsed });
+      await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
     } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
@@ -294,26 +278,12 @@ export default function (router) {
       where[Op.or] = [{ siteTourId: tourIds }];
       if (postSiteId) where[Op.or].push({ postSiteId });
 
-      let rows = await req.database.siteTourTag.findAll({ where });
-
-      // fallback diagnostic: try without tenant filtering on tags if none found
-      let fallbackUsed = false;
-      if ((!rows || rows.length === 0) && tourIds.length) {
-        try {
-          const altWhere: any = { siteTourId: tourIds };
-          if (req.query && req.query.tagType) altWhere.tagType = req.query.tagType;
-          const altRows = await req.database.siteTourTag.findAll({ where: altWhere });
-          if (altRows && altRows.length > 0) {
-            rows = altRows;
-            fallbackUsed = true;
-          }
-        } catch (e: any) {
-          // ignore
-        }
-      }
+      // SECURITY: strictly tenant-scoped (where includes tenantId). No fallback
+      // that drops the tenant filter.
+      const rows = await req.database.siteTourTag.findAll({ where });
 
       const plain = (rows || []).map((r: any) => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
-      await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length, fallbackTenantMismatch: fallbackUsed });
+      await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
     } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);
     }
@@ -674,100 +644,16 @@ export default function (router) {
     }
   });
 
-  // DEBUG: Return all siteTourTag rows (development only)
-  router.get('/debug/site-tour-tags', async (req, res, next) => {
-    try {
-      if (process.env.NODE_ENV === 'production') {
-        const err: any = new Error('Not allowed'); err.code = 403; throw err;
-      }
-      const rows = await req.database.siteTourTag.findAll({ include: [{ model: req.database.siteTour, as: 'siteTour' }], limit: 2000 });
-      const plain = (rows || []).map((r: any) => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
-      await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
-    } catch (error) {
-      await ApiResponseHandler.error(req, res, error);
-    }
-  });
-
-  // DEBUG (no auth): Return tags for a tenant + postSiteId (development only)
-  router.get('/debug/tenant/:tenantId/post-site/:postSiteId/site-tour-tags', async (req, res, next) => {
-    try {
-      if (process.env.NODE_ENV === 'production') {
-        const err: any = new Error('Not allowed'); err.code = 403; throw err;
-      }
-      const tenantId = req.params.tenantId;
-      const postSiteId = req.params.postSiteId;
-
-      // find tours for this post site
-      const tours = await req.database.siteTour.findAll({ where: { postSiteId }, attributes: ['id', 'tenantId', 'postSiteId'] });
-      const tourIds = (tours || []).map((t: any) => t.id).filter(Boolean);
-
-      if (!tourIds.length) {
-        await ApiResponseHandler.success(req, res, { rows: [], count: 0 });
-        return;
-      }
-
-      const where: any = { siteTourId: tourIds };
-      if (req.query && req.query.tagType) where.tagType = req.query.tagType;
-
-      // Also attempt to ensure tenantId matches if provided
-      if (tenantId) where.tenantId = tenantId;
-
-      const rows = await req.database.siteTourTag.findAll({ where, include: [{ model: req.database.siteTour, as: 'siteTour' }], limit: 2000 });
-      const plain = (rows || []).map((r: any) => (typeof r.get === 'function' ? r.get({ plain: true }) : r));
-      await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
-    } catch (error) {
-      await ApiResponseHandler.error(req, res, error);
-    }
-  });
-
-  // DEBUG (no auth): Return tag scans for a tenant + postSiteId (development only)
-  router.get('/debug/tenant/:tenantId/post-site/:postSiteId/tag-scans', async (req, res, next) => {
-    try {
-      if (process.env.NODE_ENV === 'production') {
-        const err: any = new Error('Not allowed'); err.code = 403; throw err;
-      }
-      const tenantId = req.params.tenantId;
-      const postSiteId = req.params.postSiteId;
-
-      const sql = `
-        SELECT
-          ts.*, 
-          t.tagIdentifier AS tagIdentifier, 
-          t.name AS tagName, 
-          st.id AS tourId, 
-          st.tenantId AS tourTenantId,
-          s.id AS stationId,
-          COALESCE(s.stationName, '') AS stationName,
-          COALESCE(g.fullName, u.fullName, CONCAT(u.firstName, ' ', u.lastName), g2.fullName, u2.fullName, CONCAT(u2.firstName, ' ', u2.lastName), '') AS guardName,
-          ta.id AS assignmentId
-        FROM tagScans ts
-        JOIN siteTourTags t ON ts.siteTourTagId = t.id
-        JOIN siteTours st ON t.siteTourId = st.id
-        LEFT JOIN stations s ON ts.stationId = s.id
-        LEFT JOIN tourAssignments ta ON ts.tourAssignmentId = ta.id
-        LEFT JOIN securityGuards g ON ts.securityGuardId = g.id
-        LEFT JOIN users u ON g.guardId = u.id
-        LEFT JOIN securityGuards g2 ON ta.securityGuardId = g2.id
-        LEFT JOIN users u2 ON g2.guardId = u2.id
-        WHERE st.postSiteId = :postSiteId AND (st.tenantId = :tenantId OR t.tenantId = :tenantId)
-        ORDER BY ts.scannedAt DESC
-        LIMIT 2000
-      `;
-
-      const replacements = { tenantId, postSiteId };
-      const rows: any = await req.database.sequelize.query(sql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
-      await ApiResponseHandler.success(req, res, { rows: rows || [], count: (rows || []).length });
-    } catch (error) {
-      await ApiResponseHandler.error(req, res, error);
-    }
-  });
 
   // Same as debug route but without the `/debug` prefix so developers can call
   // `/api/tenant/:tenantId/post-site/:postSiteId/tag-scans` during development.
   // Still blocked in production to avoid accidental exposure.
   router.get('/tenant/:tenantId/post-site/:postSiteId/tag-scans', async (req, res, next) => {
     try {
-      const tenantId = req.params.tenantId;
+      // SECURITY: require auth + scope strictly to the authenticated tenant —
+      // never trust the URL :tenantId (that was a cross-tenant IDOR).
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      const tenantId = req.currentTenant.id;
       const postSiteId = req.params.postSiteId;
 
       const sql = `
