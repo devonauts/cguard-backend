@@ -110,6 +110,13 @@ export default function (sequelize) {
       },
       // Computed on clock-out (overnight-safe). Hours + minute breakdowns.
       hoursWorked: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+      // Shift summary snapshot (the guard's "last shift" card + CRM reports).
+      // Captured at clock-out from tag scans / incidents / GPS fixes. NULL on a
+      // shift that predates the snapshot — the last-shift endpoint recomputes
+      // those live. See computeShiftMetrics() in attendanceService.
+      checkpointsScanned: { type: DataTypes.INTEGER, allowNull: true },
+      incidentsLogged: { type: DataTypes.INTEGER, allowNull: true },
+      distanceMeters: { type: DataTypes.INTEGER, allowNull: true },
       overtimeMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       lateMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       earlyDepartureMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },

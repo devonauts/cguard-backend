@@ -259,6 +259,96 @@ export async function applyClockIn(
   return evalRes.status;
 }
 
+/** Great-circle distance between two lat/lng points, in meters. */
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Summarise a completed shift for the guard's "last shift" card:
+ *   - checkpointsScanned: tag scans the guard logged inside the punch window
+ *   - incidentsLogged:    incidents the guard reported inside the window
+ *   - distanceMeters:     patrol distance, summed from the GPS fixes we actually
+ *                         captured (clock-in → each checkpoint scan → clock-out).
+ *                         This under-counts free wandering but never invents
+ *                         movement, so it's a faithful lower bound.
+ * Best-effort: each source is wrapped so a missing model/column can't break
+ * clock-out. Snapshotted on the guardShift at clock-out and recomputed live by
+ * the last-shift endpoint for shifts that predate the snapshot.
+ */
+export async function computeShiftMetrics(
+  db: any,
+  opts: {
+    guardId: string;
+    tenantId: string;
+    punchInTime: Date;
+    punchOutTime: Date;
+    punchInLat?: number | null;
+    punchInLng?: number | null;
+    punchOutLat?: number | null;
+    punchOutLng?: number | null;
+  },
+): Promise<{ checkpointsScanned: number; incidentsLogged: number; distanceMeters: number }> {
+  const empty = { checkpointsScanned: 0, incidentsLogged: 0, distanceMeters: 0 };
+  const { guardId, tenantId, punchInTime, punchOutTime } = opts;
+  if (!guardId || !punchInTime || !punchOutTime) return empty;
+  const window = { [Op.gte]: punchInTime, [Op.lte]: punchOutTime };
+
+  // Incidents the guard reported during the shift.
+  let incidentsLogged = 0;
+  try {
+    incidentsLogged = await db.incident.count({
+      where: { guardNameId: guardId, tenantId, deletedAt: null, incidentAt: window },
+    });
+  } catch {
+    /* incident model variance — best effort */
+  }
+
+  // Checkpoint scans during the shift, in chronological order (count + GPS trail).
+  let scans: any[] = [];
+  try {
+    scans = await db.tagScan.findAll({
+      where: { securityGuardId: guardId, tenantId, scannedAt: window },
+      order: [['scannedAt', 'ASC']],
+      attributes: ['scannedAt', 'scannedData'],
+    });
+  } catch {
+    scans = [];
+  }
+  const checkpointsScanned = scans.length;
+
+  // Distance = sum of legs between consecutive captured positions.
+  const points: { lat: number; lng: number }[] = [];
+  const pushPt = (lat: any, lng: any) => {
+    const a = Number(lat);
+    const b = Number(lng);
+    if (Number.isFinite(a) && Number.isFinite(b) && !(a === 0 && b === 0)) {
+      points.push({ lat: a, lng: b });
+    }
+  };
+  pushPt(opts.punchInLat, opts.punchInLng);
+  for (const s of scans) {
+    const d = (s && s.scannedData) || {};
+    pushPt(d.latitude, d.longitude);
+  }
+  pushPt(opts.punchOutLat, opts.punchOutLng);
+  let distanceMeters = 0;
+  for (let i = 1; i < points.length; i++) {
+    distanceMeters += haversineMeters(
+      points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng,
+    );
+  }
+
+  return { checkpointsScanned, incidentsLogged, distanceMeters: Math.round(distanceMeters) };
+}
+
 /**
  * Apply attendance evaluation to a clock-out. Mutates + saves the guardShift
  * row with hoursWorked/overtime/early-departure/status/distance, persists
@@ -307,6 +397,27 @@ export async function applyClockOut(
     Array.isArray(opts.record.sessions) && opts.record.sessions.length
       ? sessionsHrs
       : evalRes.hoursWorked;
+
+  // Snapshot the shift summary (checkpoints / incidents / distance) so the
+  // guard's "last shift" card and CRM reports read a stable number without
+  // recomputing from the source tables every time. Best-effort — a failure
+  // here must never block the clock-out itself.
+  let metrics = { checkpointsScanned: 0, incidentsLogged: 0, distanceMeters: 0 };
+  try {
+    metrics = await computeShiftMetrics(db, {
+      guardId: opts.securityGuard?.id || opts.record.guardNameId,
+      tenantId: opts.tenantId,
+      punchInTime: punchIn,
+      punchOutTime: now,
+      punchInLat: opts.record.punchInLatitude,
+      punchInLng: opts.record.punchInLongitude,
+      punchOutLat: opts.latitude ?? opts.record.punchOutLatitude,
+      punchOutLng: opts.longitude ?? opts.record.punchOutLongitude,
+    });
+  } catch (e) {
+    console.error('[attendance] computeShiftMetrics failed:', (e as any)?.message || e);
+  }
+
   try {
     await opts.record.update({
       hoursWorked,
@@ -316,6 +427,9 @@ export async function applyClockOut(
       punchOutDistanceM: geofence.distanceM,
       punchOutOutsideGeofence: geofence.outside,
       punchOutIp: opts.ip || null,
+      checkpointsScanned: metrics.checkpointsScanned,
+      incidentsLogged: metrics.incidentsLogged,
+      distanceMeters: metrics.distanceMeters,
     });
   } catch (e) {
     console.error('[attendance] applyClockOut update failed:', (e as any)?.message || e);

@@ -15,6 +15,12 @@ export default (app) => {
     require('./guardMeSchedule').default,
   );
 
+  // Summary of my most recent completed shift (last-shift card)
+  app.get(
+    `/tenant/:tenantId/guard/me/last-shift`,
+    require('./guardMeLastShift').default,
+  );
+
   // Effective patrol (ronda) settings for my post site
   app.get(
     `/tenant/:tenantId/guard/me/ronda-settings`,
