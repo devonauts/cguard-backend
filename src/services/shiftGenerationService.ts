@@ -44,16 +44,16 @@ interface AssignmentData {
 /**
  * THE rotation epoch — day-zero for every rotation calculation, so platoonOffset
  * means the same thing in the generator, the staffing/gap analyzers, and the
- * frontend grid. Exported as the single source of truth (Phase 3): all consumers
- * MUST use this rather than re-deriving an epoch, or rest-day patterns disagree.
+ * frontend grid. The single source of truth: all consumers MUST use this.
  *
- * Currently anchored to Jan 1 of the reference year. Known caveat: a fixed anchor
- * (e.g. 2024-01-01) would avoid the year-boundary realignment, but switching now
- * would reshift every existing rotation, so that migration is deferred.
+ * FIXED anchor (Phase 7): previously this was Jan 1 of the *reference year*, so
+ * the rotation phase silently jumped every Jan 1 and the analyzer/grid disagreed
+ * with persisted shifts for the tail of the year. A fixed anchor removes that
+ * year-boundary drift permanently. The `referenceDate` argument is ignored.
  */
-export function getGlobalEpoch(referenceDate?: Date): Date {
-  const ref = referenceDate || new Date();
-  return new Date(ref.getFullYear(), 0, 1);
+const ROTATION_EPOCH = new Date(2024, 0, 1);
+export function getGlobalEpoch(_referenceDate?: Date): Date {
+  return new Date(ROTATION_EPOCH.getTime());
 }
 
 /**
