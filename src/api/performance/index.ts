@@ -10,6 +10,12 @@
  * and supervisorPerformance (supervisors).
  */
 export default (app) => {
+  // Guard performance leaderboard (analytics) — official scores for all guards.
+  app.get(
+    `/tenant/:tenantId/performance/guards`,
+    require('./performanceLeaderboard').default,
+  );
+
   // Uniform inspections
   app.post(
     `/tenant/:tenantId/uniform-inspection`,
