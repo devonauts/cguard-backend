@@ -21,6 +21,12 @@ export default (app) => {
     require('./guardMeLastShift').default,
   );
 
+  // Team roster on duty at my current sitio de servicio (post site)
+  app.get(
+    `/tenant/:tenantId/guard/me/team`,
+    require('./guardMeTeam').default,
+  );
+
   // Effective patrol (ronda) settings for my post site
   app.get(
     `/tenant/:tenantId/guard/me/ronda-settings`,
