@@ -145,8 +145,48 @@ export default async (req: any, res: any) => {
       minutesToScheduledEnd != null &&
       minutesToScheduledEnd > clockOutThresholdMin;
 
+    // ── Clock-in eligibility (rest-day gate) ───────────────────────────────
+    // Mirror the clock-in controller's SINGLE SOURCE OF TRUTH: a guard may clock
+    // in only at a station they have an active assignment to, OR a station with a
+    // shift covering today. On a rest day there is neither → clock-in disabled,
+    // so the app never lets the guard take a selfie just to be rejected.
+    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+    let clockInStationIds: string[] = [];
+    try {
+      const [assignments, shiftsToday] = await Promise.all([
+        db.guardAssignment.findAll({
+          where: { guardId: userId, tenantId, status: 'active', deletedAt: null },
+          attributes: ['stationId'],
+        }),
+        db.shift.findAll({
+          where: {
+            guardId: userId,
+            tenantId,
+            startTime: { [Op.lte]: endOfDay },
+            endTime: { [Op.gte]: startOfDay },
+          },
+          attributes: ['stationId'],
+        }),
+      ]);
+      clockInStationIds = Array.from(
+        new Set(
+          [...assignments, ...shiftsToday]
+            .map((r: any) => r.stationId)
+            .filter(Boolean),
+        ),
+      );
+    } catch {
+      // If assignment/shift lookup fails, leave eligibility unknown rather than
+      // wrongly blocking — the controller still validates on the actual punch.
+      clockInStationIds = stations.map((s: any) => s.id);
+    }
+    const canClockIn = clockInStationIds.length > 0;
+
     const response = {
       timezone: tz,
+      canClockIn,
+      clockInStationIds,
       guard: securityGuard ? {
         id: securityGuard.id,
         fullName: securityGuard.fullName,
