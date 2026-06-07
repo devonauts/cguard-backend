@@ -41,6 +41,13 @@ export default function (sequelize) {
         type: DataTypes.BOOLEAN,
         defaultValue: false,
       },
+      // Per-checkpoint coverage radius (meters) for scan location verification.
+      // Null = inherit the station's geofenceRadius (fallback default 75m).
+      geofenceRadius: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+      },
       postSiteId: {
         type: DataTypes.UUID,
         allowNull: true,

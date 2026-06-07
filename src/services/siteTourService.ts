@@ -113,20 +113,25 @@ export default class SiteTourService {
       const cpLat = Number(tag.latitude);
       const cpLng = Number(tag.longitude);
 
-      // Radius: station override if present, else the checkpoint default.
+      // Radius priority: the checkpoint's own coverage radius → the station's →
+      // the checkpoint default. Each checkpoint can have a tighter/looser fence.
       let radiusM = DEFAULT_CHECKPOINT_RADIUS_M;
-      try {
-        const stId = stationId || tag.stationId;
-        if (stId) {
-          const st = await this.options.database.station.findByPk(stId, {
-            attributes: ['id', 'geofenceRadius'],
-            transaction,
-          });
-          if (st && st.geofenceRadius != null && !isNaN(Number(st.geofenceRadius))) {
-            radiusM = Number(st.geofenceRadius);
+      if (tag.geofenceRadius != null && !isNaN(Number(tag.geofenceRadius))) {
+        radiusM = Number(tag.geofenceRadius);
+      } else {
+        try {
+          const stId = stationId || tag.stationId;
+          if (stId) {
+            const st = await this.options.database.station.findByPk(stId, {
+              attributes: ['id', 'geofenceRadius'],
+              transaction,
+            });
+            if (st && st.geofenceRadius != null && !isNaN(Number(st.geofenceRadius))) {
+              radiusM = Number(st.geofenceRadius);
+            }
           }
-        }
-      } catch { /* keep default */ }
+        } catch { /* keep default */ }
+      }
 
       let validLocation: boolean | null = null;
       let distanceMeters: number | null = null;

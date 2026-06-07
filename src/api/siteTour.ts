@@ -206,6 +206,10 @@ export default function (router) {
         latitude: req.body.latitude,
         longitude: req.body.longitude,
         showGeoFence: req.body.showGeoFence,
+        geofenceRadius:
+          req.body.geofenceRadius != null && !isNaN(Number(req.body.geofenceRadius))
+            ? Number(req.body.geofenceRadius)
+            : null,
         siteTourId: tourId,
         postSiteId: tour.postSiteId || null,
         // Assign the QR/checkpoint to a station (explicit, or inherit the tour's).
