@@ -2,6 +2,9 @@ import ApiResponseHandler from '../apiResponseHandler';
 import KpiService from '../../services/kpiService';
 
 export default (app) => {
+    // Operations analytics dashboard (tenant-scoped, permission-gated).
+    app.get('/tenant/:tenantId/operations/analytics', require('./analytics').default);
+
     // List of upcoming services
     app.get('/operations/upcoming-services', async (req, res) => {
       try {
