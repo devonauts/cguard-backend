@@ -91,6 +91,7 @@ class ClientAccountRepository {
         id: data && data.id ? data.id : undefined,
         ...lodash.pick(normalizedData, [
           'name',
+          'commercialName',
           'lastName',
           'email',
           'userId',
@@ -193,6 +194,7 @@ class ClientAccountRepository {
     const updateData = {
       ...lodash.pick(normalizedData, [
         'name',
+        'commercialName',
         'lastName',
         'userId',
         'email',

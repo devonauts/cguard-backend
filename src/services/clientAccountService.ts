@@ -9,6 +9,19 @@ import crypto from 'crypto';
 import CustomerIdentityService from './customerIdentityService';
 import { isEmailEnabled } from '../lib/emailPrefs';
 
+/**
+ * The canonical business name for a client = its "nombre comercial", falling
+ * back to the full client name (name + lastName). Used to label the client's
+ * sitio de servicio and to keep that label in sync.
+ */
+function businessNameOf(c: any): string {
+  const trim = (v: any) => (v == null ? '' : String(v).trim());
+  const commercial = trim(c?.commercialName);
+  if (commercial) return commercial;
+  const full = [trim(c?.name), trim(c?.lastName)].filter(Boolean).join(' ');
+  return full || trim(c?.name);
+}
+
 export default class ClientAccountService {
   options: IServiceOptions;
 
@@ -48,20 +61,10 @@ export default class ClientAccountService {
       // sectors (categoryIds). Non-fatal: if it fails, the client is still
       // created and a site can be added manually.
       try {
-        // The sitio is named after the BUSINESS, not just the client's first
-        // name: prefer an explicit "nombre comercial", otherwise the full client
-        // name (name + lastName) — e.g. "Michael Urresta", not "Michael".
-        const trim = (v: any) => (v == null ? '' : String(v).trim());
-        const fullName = [trim(data.name), trim(data.lastName)]
-          .filter(Boolean)
-          .join(' ');
-        const commercial = trim(data.commercialName);
-        // commercialName is a virtual alias of name on the model, so only treat
-        // it as a real business name when it differs from the plain first name.
-        const siteName =
-          (commercial && commercial !== trim(data.name) ? commercial : '') ||
-          fullName ||
-          trim(data.name);
+        // The sitio de servicio is labeled with the BUSINESS name = the
+        // "nombre comercial". Fall back to the full client name (name +
+        // lastName) when no commercial name was provided.
+        const siteName = businessNameOf(data);
         if (siteName) {
           const toNum = (v: any) =>
             v === undefined || v === null || v === '' ? null : Number(v);
@@ -232,6 +235,14 @@ export default class ClientAccountService {
           throw new Error400(this.options.language, 'clientAccount.invalidRuc');
         }
       }
+      // Capture the business name BEFORE the update so we can keep the sitio de
+      // servicio label in sync when the commercial name changes.
+      const before = await this.options.database.clientAccount.findByPk(id, {
+        transaction,
+        attributes: ['name', 'lastName', 'commercialName'],
+      });
+      const oldBusinessName = before ? businessNameOf(before.get({ plain: true })) : '';
+
       // No relationship filtering needed for simplified model
       const record = await ClientAccountRepository.update(
         id,
@@ -241,6 +252,30 @@ export default class ClientAccountService {
           transaction,
         },
       );
+
+      // Keep the sitio de servicio label === commercial name. Only update sites
+      // that were still mirroring the old business name (so manually-renamed
+      // sites are left alone).
+      try {
+        const newBusinessName = businessNameOf(record);
+        if (newBusinessName && newBusinessName !== oldBusinessName) {
+          await this.options.database.businessInfo.update(
+            { companyName: newBusinessName },
+            {
+              where: {
+                clientAccountId: id,
+                companyName: oldBusinessName || null,
+              },
+              transaction,
+            },
+          );
+        }
+      } catch (syncErr) {
+        console.error(
+          '[ClientAccountService] sitio name sync failed:',
+          syncErr && (syncErr as any).message ? (syncErr as any).message : syncErr,
+        );
+      }
 
       await SequelizeRepository.commitTransaction(
         transaction,

@@ -153,17 +153,12 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: true,
       },
+      // Business / trade name ("Nombre comercial"). A REAL field now (was a
+      // virtual alias of `name`). It is the canonical business name and is used
+      // as the label of the client's sitio de servicio.
       commercialName: {
-        type: DataTypes.VIRTUAL,
-        get(this: any) {
-          return this.getDataValue('name');
-        },
-        set(this: any, value: any) {
-          // Backward compatibility: older clients may still send commercialName.
-          if (value && !this.getDataValue('name')) {
-            this.setDataValue('name', value);
-          }
-        },
+        type: DataTypes.STRING(255),
+        allowNull: true,
       },
       onboardingStatus: {
         type: DataTypes.STRING(20),
