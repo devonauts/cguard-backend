@@ -568,6 +568,12 @@ class AuthService {
         try { (safeUser as any).isFirstLogin = false; } catch (ee) {}
       }
 
+      // Email verification status, so the frontend can gate tenant features
+      // (writes are 403'd server-side until the email is verified).
+      try {
+        (safeUser as any).emailVerified = !!(fullUser as any).emailVerified;
+      } catch (e) { /* non-fatal */ }
+
       // Transform `safeUser.tenants` (array) into single `tenant` object
       try {
         let tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
