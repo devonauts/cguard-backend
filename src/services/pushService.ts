@@ -70,7 +70,8 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
 export async function pushToTenant(db: any, tenantId: string, payload: PushPayload) {
   try {
     const rows = await db.deviceIdInformation.findAll({ where: { tenantId } });
-    const tokens = (rows || []).map((r: any) => r.deviceId).filter(Boolean);
+    // The FCM token lives in `pushToken`; `deviceId` is a legacy fallback.
+    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
     return sendToTokens(tokens, payload);
   } catch (e: any) {
     console.warn('[push] pushToTenant failed:', e?.message || e);
@@ -82,8 +83,11 @@ export async function pushToTenant(db: any, tenantId: string, payload: PushPaylo
 export async function pushToUser(db: any, tenantId: string, userId: string, payload: PushPayload) {
   try {
     if (!userId) return { sent: 0, skipped: true };
-    const rows = await db.deviceIdInformation.findAll({ where: { tenantId, createdById: userId } });
-    const tokens = (rows || []).map((r: any) => r.deviceId).filter(Boolean);
+    // Device tokens are keyed by the `userId` column (see guardMeDeviceToken) and
+    // the FCM token lives in `pushToken`. The old query used `createdById`/
+    // `deviceId`, which resolved zero tokens for guards — fixed here.
+    const rows = await db.deviceIdInformation.findAll({ where: { tenantId, userId } });
+    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
     return sendToTokens(tokens, payload);
   } catch (e: any) {
     console.warn('[push] pushToUser failed:', e?.message || e);

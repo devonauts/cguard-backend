@@ -23,4 +23,12 @@ export default (app) => {
     '/customer/post-site/:postSiteId/active-status',
     require('./customerPostSiteActiveStatus').default,
   );
+
+  // Client-app messaging (scoped to the JWT's clientAccount). Client UI lives in
+  // a separate project; these endpoints are the contract it connects to.
+  app.get('/customer/messages', require('./customerMessages').customerMessagesList);
+  app.get('/customer/messages/:conversationId', require('./customerMessages').customerMessageThread);
+  app.post('/customer/messages/:conversationId', require('./customerMessages').customerMessageReply);
+  app.post('/customer/messages/:conversationId/read', require('./customerMessages').customerMessageRead);
+  app.post('/customer/device-token', require('./customerMessages').customerDeviceToken);
 };

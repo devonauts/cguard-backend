@@ -362,6 +362,11 @@ class Permissions {
       notificationRead: createPermission('notificationRead', ALL_STAFF_ROLES),
       notificationAutocomplete: createPermission('notificationAutocomplete', ALL_STAFF_ROLES),
 
+      // Internal messaging (CRM ↔ worker, CRM → client). Staff + guards +
+      // clients can read/send; the controller scopes each to their own threads.
+      messageRead: createPermission('messageRead', [...ALL_STAFF_ROLES, roles.securityGuard, roles.customer]),
+      messageSend: createPermission('messageSend', [...ALL_STAFF_ROLES, roles.securityGuard, roles.customer]),
+
       // === NOTIFICATION RECIPIENTS ===
       notificationRecipientImport: createPermission('notificationRecipientImport', SUPERVISOR_ROLES),
       notificationRecipientCreate: createPermission('notificationRecipientCreate', SUPERVISOR_ROLES),

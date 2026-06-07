@@ -21,6 +21,12 @@ export default (app) => {
     require('./guardMeLastShift').default,
   );
 
+  // Internal messaging (CRM ↔ this guard)
+  app.get(`/tenant/:tenantId/guard/me/messages`, require('./guardMeMessages').guardMessagesList);
+  app.get(`/tenant/:tenantId/guard/me/messages/:conversationId`, require('./guardMeMessages').guardMessageThread);
+  app.post(`/tenant/:tenantId/guard/me/messages/:conversationId`, require('./guardMeMessages').guardMessageReply);
+  app.post(`/tenant/:tenantId/guard/me/messages/:conversationId/read`, require('./guardMeMessages').guardMessageRead);
+
   // Team roster on duty at my current sitio de servicio (post site)
   app.get(
     `/tenant/:tenantId/guard/me/team`,
