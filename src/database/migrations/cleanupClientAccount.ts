@@ -38,7 +38,12 @@ async function cleanup() {
 
                 await tryRemove('contractDate');
                 await tryRemove('rucNumber');
-                await tryRemove('commercialName');
+                // DO NOT drop commercialName — it is now a REAL, REQUIRED column
+                // (the business/trade name that labels the sitio de servicio).
+                // This file re-runs on every `migrate:all` and previously dropped
+                // the column right after the add-migrations re-created it, which
+                // 500'd every endpoint that joins clientAccount.
+                // await tryRemove('commercialName');
                 await tryRemove('representanteId');
 
         console.log('✅ Cleanup completed successfully!');
