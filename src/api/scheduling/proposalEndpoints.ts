@@ -1,4 +1,6 @@
 import ApiResponseHandler from '../apiResponseHandler';
+import PermissionChecker from '../../services/user/permissionChecker';
+import Permissions from '../../security/permissions';
 import {
   generateProposal,
   getProposal,
@@ -11,6 +13,7 @@ import { computeCoverage, requiredHalves } from '../../services/scheduleCoverage
 /** POST /scheduler/proposals — generate a DRAFT horario (no live writes). */
 export const proposalGenerate = async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const body = req.body?.data || req.body || {};
     const scope = body.scope || (body.stationId ? 'station' : body.postSiteId ? 'postSite' : 'tenant');
     const result = await generateProposal(
@@ -28,6 +31,7 @@ export const proposalGenerate = async (req, res) => {
 /** GET /scheduler/proposals/:id — the draft + its staged diff for review. */
 export const proposalGet = async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationRead);
     const data = await getProposal(req.database, req.currentTenant.id, req.params.id);
     if (!data) return ApiResponseHandler.error(req, res, new Error('Proposal not found'));
     await ApiResponseHandler.success(req, res, data);
@@ -39,6 +43,7 @@ export const proposalGet = async (req, res) => {
 /** POST /scheduler/proposals/:id/publish — apply to live shifts. Requires confirm. */
 export const proposalPublish = async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const body = req.body?.data || req.body || {};
     if (body.confirm !== true) {
       return ApiResponseHandler.error(req, res, new Error('Confirmation required to overwrite the schedule'));
@@ -63,6 +68,7 @@ export const proposalPublish = async (req, res) => {
  */
 export const coverageGet = async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationRead);
     const db = req.database;
     const tenantId = req.currentTenant.id;
     const { Op } = db.Sequelize;
@@ -98,6 +104,7 @@ export const coverageGet = async (req, res) => {
 /** GET /scheduler/proposals/:id/plan — the per-guard implementation plan. */
 export const proposalPlan = async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationRead);
     const data = await getImplementationPlan(req.database, req.currentTenant.id, req.params.id);
     await ApiResponseHandler.success(req, res, data || { plan: null, items: [] });
   } catch (error) {
@@ -108,6 +115,7 @@ export const proposalPlan = async (req, res) => {
 /** POST /scheduler/proposals/:id/discard — drop the draft (no live effect). */
 export const proposalDiscard = async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
     const result = await discardProposal(req.database, req.currentTenant.id, req.currentUser.id, req.params.id);
     await ApiResponseHandler.success(req, res, result);
   } catch (error) {
