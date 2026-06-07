@@ -1,9 +1,10 @@
 /**
  * GET /tenant/:tenantId/video/camera/:id/stream
  *
- * Resolve the playback stream descriptor for a camera. Returns the media
- * gateway HLS/WebRTC url plus an optional snapshot url. Tenant-scoped;
- * requires businessInfoRead.
+ * Resolves the browser-playable stream for a camera. If a go2rtc media gateway is
+ * configured (env GO2RTC_API + GO2RTC_PUBLIC), the camera's RTSP is registered with
+ * go2rtc on demand (server-side — credentials never reach the browser) and a same-
+ * origin HLS url is returned. Otherwise falls back to the camera's manual streamUrl.
  *
  * Response: { type: 'hls'|'webrtc'|'none', url: string|null, snapshotUrl: string|null }
  */
@@ -11,13 +12,25 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import Error404 from '../../errors/Error404';
+import { buildRtspUrl, streamName } from './_videoUrl';
+
+const GO2RTC_API = process.env.GO2RTC_API || '';        // e.g. http://127.0.0.1:1984
+const GO2RTC_PUBLIC = process.env.GO2RTC_PUBLIC || '';  // e.g. https://app.cguardpro.com/go2rtc
+
+async function registerWithGo2rtc(name: string, rtsp: string): Promise<boolean> {
+  try {
+    const u = `${GO2RTC_API.replace(/\/+$/, '')}/api/streams?name=${encodeURIComponent(name)}&src=${encodeURIComponent(rtsp)}`;
+    const r = await (fetch as any)(u, { method: 'PUT' });
+    return !!(r && r.ok);
+  } catch (e: any) {
+    console.warn('[video] go2rtc register failed:', e?.message || e);
+    return false;
+  }
+}
 
 export default async (req, res) => {
   try {
-    new PermissionChecker(req).validateHas(
-      Permissions.values.businessInfoRead,
-    );
-
+    new PermissionChecker(req).validateHas(Permissions.values.businessInfoRead);
     const db = req.database;
     const tenantId = req.currentTenant.id;
 
@@ -25,24 +38,32 @@ export default async (req, res) => {
       where: { id: req.params.id, tenantId },
       include: [{ model: db.videoDevice, as: 'device', required: false }],
     });
-
     if (!camera) throw new Error404();
 
-    const url = camera.streamUrl || null;
     const snapshotUrl = camera.snapshotUrl || null;
 
-    // Infer the stream type from the device protocol / url shape.
-    let type: 'hls' | 'webrtc' | 'none' = 'none';
-    if (url) {
-      const protocol = (camera.device && camera.device.protocol) || '';
-      if (protocol === 'webrtc' || /^webrtc:/i.test(url)) {
-        type = 'webrtc';
-      } else {
-        // Default playable web stream is HLS (.m3u8 from the media gateway).
-        type = 'hls';
+    // Preferred path: go2rtc gateway. Build the LAN RTSP (brand-aware) and register
+    // it under a stable, opaque name; hand the browser only that name.
+    if (GO2RTC_API && GO2RTC_PUBLIC) {
+      const rtsp = camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
+      if (rtsp) {
+        const name = streamName(camera.id);
+        const ok = await registerWithGo2rtc(name, rtsp);
+        const url = `${GO2RTC_PUBLIC.replace(/\/+$/, '')}/api/stream.m3u8?src=${name}`;
+        if (!camera.streamUrl || camera.streamUrl !== url) {
+          try { await camera.update({ streamUrl: url }); } catch { /* ignore */ }
+        }
+        return ApiResponseHandler.success(req, res, { type: 'hls', url, snapshotUrl, registered: ok });
       }
     }
 
+    // Fallback: manually-configured streamUrl.
+    const url = camera.streamUrl || null;
+    let type: 'hls' | 'webrtc' | 'none' = 'none';
+    if (url) {
+      const protocol = (camera.device && camera.device.protocol) || '';
+      type = (protocol === 'webrtc' || /^webrtc:/i.test(url)) ? 'webrtc' : 'hls';
+    }
     await ApiResponseHandler.success(req, res, { type, url, snapshotUrl });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
