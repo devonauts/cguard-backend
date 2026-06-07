@@ -6,7 +6,7 @@ const FIELDS = [
   'frequencyMinutes', 'roundsPerShift', 'graceMinutes', 'maxDurationMinutes',
   'requirePhoto', 'requireGeofence', 'geofenceRadius', 'requireNote',
   'notifyTenantOnStart', 'notifyTenantOnComplete', 'notifyTenantOnMissed',
-  'notifyClient', 'active',
+  'notifyClient', 'emailOnComplete', 'active',
 ];
 
 const DEFAULTS = {
@@ -22,6 +22,7 @@ const DEFAULTS = {
   notifyTenantOnComplete: true,
   notifyTenantOnMissed: true,
   notifyClient: false,
+  emailOnComplete: false,
   active: true,
 };
 

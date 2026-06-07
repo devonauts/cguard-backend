@@ -80,6 +80,12 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: false,
       },
+      // Email the tenant's admins/supervisors when a ronda completes. Opt-in.
+      emailOnComplete: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       active: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

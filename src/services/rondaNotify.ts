@@ -13,6 +13,7 @@ export const RONDA_DEFAULT_SETTINGS = {
   notifyTenantOnComplete: true,
   notifyTenantOnMissed: true,
   notifyClient: false,
+  emailOnComplete: false,
 };
 
 /** Effective ronda settings: per-post override → tenant default → built-in defaults. */
@@ -72,7 +73,8 @@ export async function notifyPatrol(
     const { tenantId, postSiteId, event, routeName, guardName, settings, createdById } = opts;
     const wantTenant = event === 'start' ? settings.notifyTenantOnStart : settings.notifyTenantOnComplete;
     const wantClient = settings.notifyClient;
-    if (!wantTenant && !wantClient) return;
+    const wantEmail = event === 'complete' && !!settings.emailOnComplete;
+    if (!wantTenant && !wantClient && !wantEmail) return;
 
     const title = event === 'start' ? 'Ronda iniciada' : 'Ronda completada';
     const route = routeName ? ` "${routeName}"` : '';
@@ -96,9 +98,13 @@ export async function notifyPatrol(
         console.warn('[ronda] tenant notification create failed:', e?.message || e);
       }
       pushToTenant(db, tenantId, { title, body, data: { type: `patrol_${event}` } }).catch(() => {});
+    }
 
-      // Email the tenant's admins/supervisors. mailService throws when no transport
-      // is configured, so this naturally only sends "if configured".
+    // Email the tenant's admins/supervisors on completion — gated by its OWN
+    // opt-in toggle (emailOnComplete), independent of the in-app/push toggle.
+    // mailService throws when no transport is configured, so this only sends when
+    // email is actually set up.
+    if (wantEmail) {
       try {
         const emails = await resolveTenantNotifyEmails(db, tenantId);
         if (emails.length) {
