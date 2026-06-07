@@ -99,8 +99,16 @@ export async function ensureBuiltInRoles(db: any): Promise<void> {
 export async function syncTenantUserRoleRows(
   db: any,
   tenantUser: any,
+  options: { transaction?: any } = {},
 ): Promise<void> {
   if (!db || !db.role || !db.tenantUserRole || !tenantUser) return;
+
+  // CRITICAL: run inside the caller's transaction. When the caller has an open
+  // transaction that just created/updated this tenantUser (locking its row),
+  // running these writes on a SEPARATE connection makes the tenantUserRoles
+  // INSERT wait on the caller's own uncommitted locks (FK on tenantUsers/roles)
+  // — a self-deadlock that hangs for innodb_lock_wait_timeout (~50s).
+  const txn = options.transaction ? { transaction: options.transaction } : {};
 
   const tenantUserId = tenantUser.id;
   const tenantId = tenantUser.tenantId;
@@ -127,11 +135,11 @@ export async function syncTenantUserRoleRows(
       const where: any = { slug };
       if (tenantId) where.tenantId = tenantId;
 
-      let role = await db.role.findOne({ where });
+      let role = await db.role.findOne({ where, ...txn });
 
       // Fallback: if no tenant-scoped row, try any matching slug.
       if (!role) {
-        role = await db.role.findOne({ where: { slug } });
+        role = await db.role.findOne({ where: { slug }, ...txn });
       }
       if (!role) {
         // No backing role row (built-in seeding may not have run yet for a
@@ -146,6 +154,7 @@ export async function syncTenantUserRoleRows(
           roleId: role.id,
           tenantId: tenantId || null,
         },
+        ...txn,
       });
     } catch (e) {
       console.warn(

@@ -690,7 +690,12 @@ export default class TenantUserRepository {
     // this is additive and must never break the role update. Best-effort.
     try {
       const { syncTenantUserRoleRows } = require('../../services/roleSync');
-      await syncTenantUserRoleRows(options.database, tenantUser);
+      // Pass the current transaction so the join writes run on the SAME
+      // connection — otherwise they self-deadlock on the caller's open
+      // transaction (FK locks on tenantUsers/roles) and hang ~50s.
+      await syncTenantUserRoleRows(options.database, tenantUser, {
+        transaction: SequelizeRepository.getTransaction(options),
+      });
     } catch (e) {
       console.warn('tenantUserRepository.updateRoles: syncTenantUserRoleRows failed (non-fatal):', e && (e as any).message ? (e as any).message : e);
     }

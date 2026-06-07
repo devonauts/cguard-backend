@@ -188,7 +188,17 @@ export default class CustomerIdentityService {
 
       const sender = new EmailSender(EmailSender.TEMPLATES.INVITATION, vars);
 
-      await sender.sendTo(recipientEmail);
+      // Fire-and-forget: the SMTP send can be slow or time out (it must not block
+      // the client save — the DB changes are already committed above). If delivery
+      // fails, the admin can re-send via "Enviar acceso a la app".
+      sender
+        .sendTo(recipientEmail)
+        .catch((emailErr: any) =>
+          console.error(
+            '[CustomerIdentityService] invitation email send failed (non-blocking):',
+            emailErr && emailErr.message ? emailErr.message : emailErr,
+          ),
+        );
 
       return { sent: true, recipient: recipientEmail };
     } catch (err) {
