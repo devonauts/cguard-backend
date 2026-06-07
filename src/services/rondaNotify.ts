@@ -27,6 +27,31 @@ export async function resolveRondaSettings(db: any, tenantId: string, postSiteId
   }
 }
 
+/** Emails of the tenant's admins/supervisors — who should hear about patrols. */
+async function resolveTenantNotifyEmails(db: any, tenantId: string): Promise<string[]> {
+  try {
+    const targetRoles = ['admin', 'owner', 'operationsManager', 'securitySupervisor', 'dispatcher'];
+    const tenantUsers = await db.tenantUser.findAll({
+      where: { tenantId },
+      include: [{ model: db.user, as: 'user', attributes: ['email'] }],
+    });
+    const emails = new Set<string>();
+    for (const tu of tenantUsers || []) {
+      const roles = Array.isArray(tu.roles)
+        ? tu.roles
+        : typeof tu.roles === 'string'
+          ? tu.roles.split(',').map((r: string) => r.trim())
+          : [];
+      if (!roles.some((r: string) => targetRoles.includes(r))) continue;
+      const u = tu.user;
+      if (u && u.email) emails.add(u.email);
+    }
+    return Array.from(emails);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Create in-app notification rows for a patrol event (and fire push if configured),
  * gated by the tenant's ronda settings. Best-effort — never throws.
@@ -71,6 +96,22 @@ export async function notifyPatrol(
         console.warn('[ronda] tenant notification create failed:', e?.message || e);
       }
       pushToTenant(db, tenantId, { title, body, data: { type: `patrol_${event}` } }).catch(() => {});
+
+      // Email the tenant's admins/supervisors. mailService throws when no transport
+      // is configured, so this naturally only sends "if configured".
+      try {
+        const emails = await resolveTenantNotifyEmails(db, tenantId);
+        if (emails.length) {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { sendMail } = require('./mailService');
+          const html =
+            `<p style="font-size:15px">${body}</p>` +
+            `<p style="color:#6b7280;font-size:12px;margin-top:12px">CGuardPro · ${new Date().toLocaleString('es')}</p>`;
+          await sendMail({ to: emails, subject: `${title}${route}`, html, text: body });
+        }
+      } catch (e: any) {
+        console.warn('[ronda] email notify skipped/failed:', e?.message || e);
+      }
     }
 
     if (wantClient && postSiteId) {
