@@ -10,6 +10,8 @@ const PUBLIC_PREFIXES = [
   '/api/auth/sign-up',
   '/api/auth/send-password-reset-email',
   '/api/plan/stripe/webhook',
+  // Public tokened video-clip share link (customer-facing, no login).
+  '/api/video/clip/shared',
   '/api/docs',
   // Public documentation UI and config
   '/documentation',
