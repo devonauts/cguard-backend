@@ -48,7 +48,20 @@ export default class ClientAccountService {
       // sectors (categoryIds). Non-fatal: if it fails, the client is still
       // created and a site can be added manually.
       try {
-        const siteName = (data.commercialName || data.name || '').toString().trim();
+        // The sitio is named after the BUSINESS, not just the client's first
+        // name: prefer an explicit "nombre comercial", otherwise the full client
+        // name (name + lastName) — e.g. "Michael Urresta", not "Michael".
+        const trim = (v: any) => (v == null ? '' : String(v).trim());
+        const fullName = [trim(data.name), trim(data.lastName)]
+          .filter(Boolean)
+          .join(' ');
+        const commercial = trim(data.commercialName);
+        // commercialName is a virtual alias of name on the model, so only treat
+        // it as a real business name when it differs from the plain first name.
+        const siteName =
+          (commercial && commercial !== trim(data.name) ? commercial : '') ||
+          fullName ||
+          trim(data.name);
         if (siteName) {
           const toNum = (v: any) =>
             v === undefined || v === null || v === '' ? null : Number(v);
