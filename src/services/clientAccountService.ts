@@ -3,6 +3,7 @@ import Error400 from '../errors/Error400';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import ClientAccountRepository from '../database/repositories/clientAccountRepository';
+import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
 import crypto from 'crypto';
 import CustomerIdentityService from './customerIdentityService';
@@ -40,6 +41,41 @@ export default class ClientAccountService {
         ...this.options,
         transaction,
       });
+
+      // Auto-create the client's primary "sitio de servicio" (businessInfo) from
+      // the SAME business data captured in the client form, so the admin doesn't
+      // have to re-enter the address/contact info. The site inherits the client's
+      // sectors (categoryIds). Non-fatal: if it fails, the client is still
+      // created and a site can be added manually.
+      try {
+        const siteName = (data.commercialName || data.name || '').toString().trim();
+        if (siteName) {
+          const toNum = (v: any) =>
+            v === undefined || v === null || v === '' ? null : Number(v);
+          await BusinessInfoRepository.create(
+            {
+              companyName: siteName,
+              contactPhone: data.phoneNumber || null,
+              contactEmail: data.email || null,
+              address: data.address || null,
+              city: data.city || null,
+              postalCode: data.postalCode || null,
+              country: data.country || null,
+              latitud: toNum(data.latitude),
+              longitud: toNum(data.longitude),
+              categoryIds: Array.isArray(data.categoryIds) ? data.categoryIds : [],
+              clientAccountId: record.id,
+              active: true,
+            },
+            { ...this.options, transaction },
+          );
+        }
+      } catch (siteErr) {
+        console.error(
+          '[ClientAccountService] auto-create sitio de servicio failed:',
+          siteErr && (siteErr as any).message ? (siteErr as any).message : siteErr,
+        );
+      }
 
       // Identity provisioning happens after the outer transaction commits.
       // See the post-commit CustomerIdentityService call below.
