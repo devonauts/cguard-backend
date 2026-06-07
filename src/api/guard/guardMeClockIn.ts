@@ -74,29 +74,41 @@ export default async (req: any, res: any) => {
       throw new Error400(req.language, 'guard.notAssignedToStation');
     }
 
-    // Validate the guard is assigned to this station via the SINGLE SOURCE OF
-    // TRUTH: an active guardAssignment, or a generated shift covering today.
+    // Validate the guard may work this station TODAY. SINGLE SOURCE OF TRUTH =
+    // a generated shift covering today (the rotation emits none on a rest day),
+    // so a permanently-assigned fijo cannot punch in on their rest day — Phase 7
+    // rest enforcement. An active assignment alone is no longer sufficient.
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
 
-    const hasAssignment = await db.guardAssignment.findOne({
-      where: { guardId: userId, stationId, tenantId, status: 'active', deletedAt: null },
+    const shiftToday = await db.shift.findOne({
+      where: {
+        guardId: userId, stationId, tenantId,
+        startTime: { [Op.lte]: endOfDay },
+        endTime: { [Op.gte]: startOfDay },
+      },
       attributes: ['id'],
     });
-    let isAssigned = !!hasAssignment;
-    if (!isAssigned) {
-      const shiftToday = await db.shift.findOne({
-        where: {
-          guardId: userId, stationId, tenantId,
-          startTime: { [Op.lte]: endOfDay },
-          endTime: { [Op.gte]: startOfDay },
-        },
+    if (!shiftToday) {
+      // Fallback: honor an active assignment ONLY when the guard has no generated
+      // shifts at all for this station (generation lag) — never overrides a real
+      // rest day, because a rest day still has other-day shifts at the station.
+      const anyShift = await db.shift.findOne({
+        where: { guardId: userId, stationId, tenantId },
         attributes: ['id'],
       });
-      isAssigned = !!shiftToday;
-    }
-    if (!isAssigned) {
-      throw new Error400(req.language, 'guard.notAssignedToStation');
+      if (anyShift) {
+        // Shifts exist but none today → it is a rest day. Block.
+        throw new Error400(req.language, 'guard.notAssignedToStation');
+      }
+      const hasAssignment = await db.guardAssignment.findOne({
+        where: { guardId: userId, stationId, tenantId, status: 'active', deletedAt: null },
+        attributes: ['id'],
+      });
+      if (!hasAssignment) {
+        throw new Error400(req.language, 'guard.notAssignedToStation');
+      }
+      // else: assignment exists but zero shifts generated yet → allow (lag).
     }
 
     // Geofence gate — governed by the tenant's Nómina settings (require

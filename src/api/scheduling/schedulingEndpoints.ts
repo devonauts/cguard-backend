@@ -875,6 +875,38 @@ export async function scheduleOverrideCreate(req, res) {
       await record.update({ type, note, assignmentId });
     }
 
+    // Propagate ABSENCE overrides to the live schedule (Phase 7): vacation /
+    // permiso / falta / libre mean the guard is OFF that day, so remove their
+    // shift — this frees the puesto and the coverage analyzer surfaces the gap.
+    // Working overrides (D/N/24) leave the shift as-is.
+    if (['V', 'PM', 'F', 'L'].includes(type)) {
+      try {
+        const { Op } = req.database.Sequelize;
+        const tenant = await req.database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+        const tz = (tenant && tenant.timezone) || 'UTC';
+        const dayAnchor = new Date(`${date}T00:00:00Z`);
+        const from = new Date(dayAnchor.getTime() - 24 * 3600000);
+        const to = new Date(dayAnchor.getTime() + 48 * 3600000);
+        const localDate = (d: any) => {
+          try {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(d));
+          } catch {
+            return new Date(d).toISOString().slice(0, 10);
+          }
+        };
+        const shifts = await req.database.shift.findAll({
+          where: { guardId, tenantId, startTime: { [Op.gte]: from, [Op.lt]: to } },
+          attributes: ['id', 'startTime'],
+        });
+        const toDelete = shifts.filter((s: any) => localDate(s.startTime) === date).map((s: any) => s.id);
+        if (toDelete.length) {
+          await req.database.shift.destroy({ where: { id: toDelete, tenantId }, force: true });
+        }
+      } catch (e: any) {
+        console.warn('[scheduleOverride] shift propagation failed:', e?.message || e);
+      }
+    }
+
     await ApiResponseHandler.success(req, res, record);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
