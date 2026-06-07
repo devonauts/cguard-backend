@@ -8,6 +8,7 @@
  * and only after explicit confirmation — req 4 (draft) + req 8 (confirm-overwrite).
  */
 import { computeShiftsForAssignment, ComputedShift } from './shiftGenerationService';
+import { getCostSettings, computeShiftsCost } from './scheduleCostService';
 
 type Scope = 'station' | 'postSite' | 'tenant';
 
@@ -63,6 +64,12 @@ export async function generateProposal(
   let windowStart: Date | null = null;
   let windowEnd: Date | null = null;
 
+  // Cost is projected over the next 30 days (a monthly figure) for current vs
+  // proposed schedules — req 5: make the money impact visible before publish.
+  const costEnd = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const liveForCost: any[] = [];
+  const proposedForCost: any[] = [];
+
   for (const a of assignments) {
     const assignment = a.get ? a.get({ plain: true }) : a;
     const computed: ComputedShift[] = await computeShiftsForAssignment(db, assignment, tenantId);
@@ -72,6 +79,13 @@ export async function generateProposal(
       where: { guardAssignmentId: assignment.id, tenantId, startTime: { [Op.gte]: today } },
       attributes: ['id', 'guardId', 'stationId', 'positionId', 'postSiteId', 'startTime', 'endTime'],
     });
+
+    for (const c of computed) {
+      if (c.startTime <= costEnd) proposedForCost.push({ guardId: c.guardId, startTime: c.startTime, endTime: c.endTime });
+    }
+    for (const l of liveShifts) {
+      if (new Date(l.startTime) <= costEnd) liveForCost.push({ guardId: l.guardId, startTime: l.startTime, endTime: l.endTime });
+    }
 
     const proposedByDay = new Map<string, ComputedShift>();
     for (const c of computed) {
@@ -119,11 +133,34 @@ export async function generateProposal(
     }
   }
 
+  // Projected monthly cost: current live schedule vs the proposed one.
+  let cost: any = null;
+  try {
+    const costSettings = await getCostSettings(db, tenantId);
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    const tz = (tenant && tenant.timezone) || 'UTC';
+    const current = computeShiftsCost(liveForCost, costSettings, tz);
+    const projected = computeShiftsCost(proposedForCost, costSettings, tz);
+    cost = {
+      currency: costSettings.currency,
+      hasRate: projected.hasRate,
+      current: current.totalCost,
+      projected: projected.totalCost,
+      delta: Math.round((projected.totalCost - current.totalCost) * 100) / 100,
+      overtimeHours: projected.overtimeHours,
+      nightHours: projected.nightHours,
+      windowDays: 30,
+    };
+  } catch (e: any) {
+    console.warn('[scheduleProposal] cost estimate failed:', e?.message || e);
+  }
+
   const summary = {
     added, removed, changed, kept,
     total: added + removed + changed + kept,
     guardsAffected: guardsAffected.size,
     assignments: assignments.length,
+    cost,
   };
 
   const proposal = await db.scheduleProposal.create({

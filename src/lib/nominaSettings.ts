@@ -50,6 +50,11 @@ export interface NominaSettings {
     currency: string;
     defaultHourlyRate: number;
     overtimeMultiplier: number;
+    // Night surcharge (recargo nocturno). nightSurchargePct of the base rate is
+    // added for hours worked in the night window. Ecuador default = 25%.
+    nightSurchargePct: number;
+    nightStartHour: number; // local hour the night window begins (default 19)
+    nightEndHour: number;   // local hour the night window ends (default 6)
     lastPeriodClose: string | null; // ISO date of the last closed (locked) cutoff
     // Per-guard hourly rate overrides, keyed by securityGuard id. Falls back to
     // defaultHourlyRate when a guard has no override.
@@ -96,6 +101,9 @@ export const DEFAULT_NOMINA_SETTINGS: NominaSettings = {
     currency: 'USD',
     defaultHourlyRate: 0,
     overtimeMultiplier: 1.5,
+    nightSurchargePct: 0.25,
+    nightStartHour: 19,
+    nightEndHour: 6,
     lastPeriodClose: null,
     guardRates: {},
   },
