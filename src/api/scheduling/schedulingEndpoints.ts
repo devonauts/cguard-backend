@@ -1,6 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+import { getGlobalEpoch } from '../../services/shiftGenerationService';
 
 // GET /tenant/:tenantId/rotation-styles
 export async function rotationStyleList(req, res) {
@@ -594,9 +595,10 @@ export async function schedulerStaffing(req, res) {
       const cycleLength = workDays + restDays;
       if (cycleLength <= 0) return 'work';
 
-      // Use global epoch so all stations remain in sequence.
-      const epoch = new Date(2024, 0, 1);
+      // Single source of truth for the rotation epoch (Phase 3) — must match the
+      // generator's anchor or rest-day patterns disagree. Was hardcoded 2024-01-01.
       const dayMid = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+      const epoch = getGlobalEpoch(dayMid);
       const daysSince = Math.floor((dayMid.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
       const offset = Number(assignment?.platoonOffset || 0);
       const adj = ((daysSince - offset) % cycleLength + cycleLength) % cycleLength;

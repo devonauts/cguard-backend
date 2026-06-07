@@ -83,9 +83,15 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      // Authoritative coverage setup for the scheduler engine (Phase 3): one of
+      // 12h-day / 12h-night / 24h / custom. Validated so it can't drift into an
+      // arbitrary free string. null = not yet configured.
       scheduleType: {
         type: DataTypes.STRING(20),
         allowNull: true,
+        validate: {
+          isIn: [['12h-day', '12h-night', '24h', 'custom']],
+        },
       },
       rotationStyleId: {
         type: DataTypes.UUID,
