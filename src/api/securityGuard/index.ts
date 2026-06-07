@@ -25,6 +25,10 @@ export default (app) => {
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardUpdate').default,
   );
+  app.post(
+    `/tenant/:tenantId/security-guard/:id/send-password-reset`,
+    require('./securityGuardSendPasswordReset').default,
+  );
   app.patch(
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardPatch').default,
