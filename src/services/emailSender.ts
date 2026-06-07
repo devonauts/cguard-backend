@@ -226,19 +226,27 @@ export default class EmailSender {
           const tenantSettings = tenantObj?.settings || tenantObj?.dataValues?.settings;
           const tenantSettingsData = (tenantSettings && typeof tenantSettings.get === 'function') ? tenantSettings.get({ plain: true }) : tenantSettings;
           // Try all possible locations: file association publicUrl/privateUrl, direct logoUrl field, settings, env
-          const rawLogoUrl =
+          let tenantLogoUrl =
             (tenantObj?.logo?.publicUrl) ||
             (tenantObj?.logoUrl) ||
             (tenantSettingsData?.logoUrl) ||
-            (getConfig().EMAIL_LOGO_URL) ||
             '';
-          // Email clients can't authenticate, so a private/download URL
-          // (e.g. /api/file/download?privateUrl=...) renders as a broken image.
-          // Drop those so the template falls back to the styled company-name
-          // header instead of showing a broken box.
-          const tenantLogoUrl = /\/api\/file\/download|[?&]privateUrl=/.test(rawLogoUrl)
-            ? ''
-            : rawLogoUrl;
+          // This is a TENANT email — show the tenant's OWN logo, never the
+          // platform logo. If the caller didn't include the tenant's logo,
+          // look it up by tenantId (the /api/file/download URL is public, so it
+          // loads in email clients). No EMAIL_LOGO_URL fallback on purpose.
+          if (!tenantLogoUrl && tenantObj?.id) {
+            try {
+              const dbModels = require('../database/models').default;
+              const db = dbModels();
+              const s = await db.settings.findOne({ where: { tenantId: tenantObj.id } });
+              if (s && (s.logoUrl || s.get?.('logoUrl'))) {
+                tenantLogoUrl = s.logoUrl || s.get('logoUrl');
+              }
+            } catch (e) {
+              console.warn('[EmailSender] tenant logo lookup failed', (e as any)?.message || e);
+            }
+          }
           const tenantName = (tenantObj && (tenantObj.name || tenantObj.displayName)) || '';
           let rendered = htmlTemplate;
 
