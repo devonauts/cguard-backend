@@ -25,17 +25,26 @@ export default class SecurityGuardService {
   }
 
   async create(data) {
-    // Si ya existe un guardia con el mismo guardId y tenantId, actualizarlo en vez de crear uno nuevo
+    // Dedupe: if a securityGuard already exists for this user in this tenant,
+    // UPDATE it instead of inserting a second row. Use a DIRECT model lookup that
+    // BYPASSES the post-site permission scoping in findAndCountAll — during the
+    // invited guard's OWN public registration the request is impersonated as that
+    // guard (no admin rights, no assigned posts), so the scoped query returns
+    // nothing and we used to insert a duplicate securityGuard row.
     if (data && data.guard) {
       try {
-        const existing = await SecurityGuardRepository.findAndCountAll(
-          { filter: { guard: data.guard }, limit: 1 },
-          this.options,
-        );
-        if (existing && existing.count > 0) {
-          const first = existing.rows && existing.rows[0];
-          // Actualiza el guardia existente, sin importar governmentId
-          return this.update(first.id, data);
+        const guardUserId =
+          data.guard && typeof data.guard === 'object' ? data.guard.id : data.guard;
+        const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+        if (guardUserId && currentTenant && currentTenant.id) {
+          const existing = await this.options.database.securityGuard.findOne({
+            where: { guardId: guardUserId, tenantId: currentTenant.id },
+            attributes: ['id'],
+          });
+          if (existing && existing.id) {
+            // Actualiza el guardia existente, sin importar governmentId
+            return this.update(existing.id, data);
+          }
         }
       } catch (err) {
         // ignore lookup errors and proceed to create a new record
