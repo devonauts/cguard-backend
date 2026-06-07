@@ -11,6 +11,7 @@
  */
 
 import { wallClockToUtc } from '../lib/tenantTime';
+import { requiredHalves, TurnoHalf } from './scheduleCoverageService';
 
 const GENERATION_DAYS = 365; // Generate 1 full year of shifts
 
@@ -34,6 +35,7 @@ interface AssignmentData {
   endDate?: string | null;
   platoonOffset: number;
   isRelief: boolean;
+  coveredStationIds?: string[] | null; // sacafranco: the stations it relieves
   kind?: 'rotation' | 'adhoc';
   startTime?: string | null; // HH:mm, adhoc only
   endTime?: string | null;   // HH:mm, adhoc only
@@ -71,6 +73,73 @@ function getRotationStatus(
   if (adjustedDay < dayShifts) return 'day';
   if (adjustedDay < dayShifts + nightShifts) return 'night';
   return 'rest';
+}
+
+interface FijoGap {
+  stationId: string;
+  half: TurnoHalf;
+  startHHmm: string;
+  endHHmm: string;
+  postSiteId: string | null;
+}
+
+/**
+ * For each day in the window, which (station, half) slots have NO fijo on duty —
+ * i.e. the real rest gaps a sacafranco must cover. Computed straight from the
+ * covered stations' fijo positions' rotation (no shift rows generated). This is
+ * what makes sacafranco relief REAL instead of the SF working its own rotation.
+ */
+async function computeFijoGaps(
+  database: any,
+  coveredStationIds: string[],
+  tenantId: string,
+  genStart: Date,
+  genEnd: Date,
+): Promise<Map<string, FijoGap[]>> {
+  const gapsByDay = new Map<string, FijoGap[]>();
+  const epoch = getGlobalEpoch(genStart);
+
+  for (const sid of coveredStationIds) {
+    const st = await database.station.findByPk(sid, { attributes: ['id', 'scheduleType', 'rotationStyleId', 'postSiteId'] });
+    if (!st || !st.rotationStyleId) continue;
+    const rot = await database.rotationStyle.findByPk(st.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+    if (!rot) continue;
+    const fijos = await database.stationPosition.findAll({
+      where: { stationId: sid, tenantId, deletedAt: null, type: 'fijo' },
+      attributes: ['platoonOffset', 'startTime', 'endTime'],
+    });
+    if (!fijos.length) continue;
+
+    const required = requiredHalves(st.scheduleType);
+    const dayStart = fijos[0].startTime || '07:00';
+    const dayEnd = fijos[0].endTime || '19:00';
+
+    const cursor = new Date(genStart);
+    while (cursor <= genEnd) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const dse = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+      const coveredHalves = new Set<string>();
+      for (const f of fijos) {
+        const s = getRotationStatus(dse, f.platoonOffset || 0, rot.dayShifts, rot.nightShifts, rot.restDays);
+        if (s === 'day') coveredHalves.add('day');
+        else if (s === 'night') coveredHalves.add('night');
+      }
+      for (const half of required) {
+        if (!coveredHalves.has(half)) {
+          if (!gapsByDay.has(dateStr)) gapsByDay.set(dateStr, []);
+          gapsByDay.get(dateStr)!.push({
+            stationId: sid,
+            half,
+            startHHmm: half === 'day' ? dayStart : dayEnd,
+            endHHmm: half === 'day' ? dayEnd : dayStart,
+            postSiteId: st.postSiteId || null,
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+  return gapsByDay;
 }
 
 /** A computed (not-yet-persisted) shift row + its rotation kind, for diffing. */
@@ -155,9 +224,56 @@ export async function computeShiftsForAssignment(
   const nightStartTime = dayEndTime;
   const nightEndTime = dayStartTime;
 
-  // Both fijo and sacafranco walk their OWN rotation (D/N/L) from the global
-  // epoch; the only difference today is the comment/semantics (SF coverage is
-  // implicit). Identical row math → one loop.
+  // ─── SACAFRANCO (real relief) ───────────────────────────────────────────
+  // The SF works on its OWN rotation work-days (so it gets its rest days and all
+  // SFs keep the same turno style), but on each work-day it goes WHERE a fijo is
+  // actually resting — among its coveredStationIds — in that gap's half. If there
+  // is no real gap that day it stays idle (no over-coverage). Multiple SFs spread
+  // across the day's gaps by platoonOffset. Residual gaps are surfaced by the
+  // coverage analyzer + blocked at publish, so an imperfect spread can't ship.
+  const isSacafranco = position.type === 'sacafranco' || assignment.isRelief;
+  if (isSacafranco) {
+    const covered =
+      Array.isArray(assignment.coveredStationIds) && assignment.coveredStationIds.length
+        ? assignment.coveredStationIds
+        : [assignment.stationId];
+    const gapsByDay = await computeFijoGaps(database, covered, tenantId, genStart, genEnd);
+
+    const sfRows: ComputedShift[] = [];
+    const cursor = new Date(genStart);
+    const epoch = getGlobalEpoch(genStart);
+    let workIdx = 0;
+    while (cursor <= genEnd) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const dse = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+      const sfStatus = getRotationStatus(dse, assignment.platoonOffset, dayShifts, nightShifts, restDays);
+      if (sfStatus !== 'rest') {
+        const gaps = gapsByDay.get(dateStr) || [];
+        if (gaps.length) {
+          const pick = gaps[((assignment.platoonOffset || 0) + workIdx) % gaps.length];
+          const startTime = wallClockToUtc(dateStr, pick.startHHmm, tz);
+          let endTime = wallClockToUtc(dateStr, pick.endHHmm, tz);
+          if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
+          sfRows.push({
+            guardId: assignment.guardId,
+            stationId: pick.stationId,
+            positionId: assignment.positionId,
+            guardAssignmentId: assignment.id,
+            postSiteId: pick.postSiteId || postSiteId,
+            startTime,
+            endTime,
+            shiftType: pick.half,
+          });
+          workIdx++;
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return sfRows;
+  }
+
+  // ─── FIJO ───────────────────────────────────────────────────────────────
+  // Walks its OWN rotation (D/N/L) from the global epoch at its own station.
   const rows: ComputedShift[] = [];
   const cursor = new Date(genStart);
   const epoch = getGlobalEpoch(genStart);
