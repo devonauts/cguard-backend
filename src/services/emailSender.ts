@@ -226,13 +226,19 @@ export default class EmailSender {
           const tenantSettings = tenantObj?.settings || tenantObj?.dataValues?.settings;
           const tenantSettingsData = (tenantSettings && typeof tenantSettings.get === 'function') ? tenantSettings.get({ plain: true }) : tenantSettings;
           // Try all possible locations: file association publicUrl/privateUrl, direct logoUrl field, settings, env
-          const tenantLogoUrl =
+          const rawLogoUrl =
             (tenantObj?.logo?.publicUrl) ||
-            (tenantObj?.logo?.privateUrl) ||
             (tenantObj?.logoUrl) ||
             (tenantSettingsData?.logoUrl) ||
             (getConfig().EMAIL_LOGO_URL) ||
             '';
+          // Email clients can't authenticate, so a private/download URL
+          // (e.g. /api/file/download?privateUrl=...) renders as a broken image.
+          // Drop those so the template falls back to the styled company-name
+          // header instead of showing a broken box.
+          const tenantLogoUrl = /\/api\/file\/download|[?&]privateUrl=/.test(rawLogoUrl)
+            ? ''
+            : rawLogoUrl;
           const tenantName = (tenantObj && (tenantObj.name || tenantObj.displayName)) || '';
           let rendered = htmlTemplate;
 
