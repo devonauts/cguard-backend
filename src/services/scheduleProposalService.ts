@@ -9,6 +9,7 @@
  */
 import { computeShiftsForAssignment, ComputedShift } from './shiftGenerationService';
 import { getCostSettings, computeShiftsCost } from './scheduleCostService';
+import { detectRestWarnings, detectSfStyleInconsistencies } from './scheduleValidation';
 
 type Scope = 'station' | 'postSite' | 'tenant';
 
@@ -81,7 +82,7 @@ export async function generateProposal(
     });
 
     for (const c of computed) {
-      if (c.startTime <= costEnd) proposedForCost.push({ guardId: c.guardId, startTime: c.startTime, endTime: c.endTime });
+      if (c.startTime <= costEnd) proposedForCost.push({ guardId: c.guardId, stationId: c.stationId, startTime: c.startTime, endTime: c.endTime });
     }
     for (const l of liveShifts) {
       if (new Date(l.startTime) <= costEnd) liveForCost.push({ guardId: l.guardId, startTime: l.startTime, endTime: l.endTime });
@@ -155,12 +156,35 @@ export async function generateProposal(
     console.warn('[scheduleProposal] cost estimate failed:', e?.message || e);
   }
 
+  // Rest-rule + sacafranco-consistency warnings over the proposed schedule
+  // (reqs 3 & 9): everyone should get a rest day; SFs in a sitio should match.
+  let warnings: any = null;
+  try {
+    const rest = detectRestWarnings(proposedForCost, 7);
+    const sfStyle = await detectSfStyleInconsistencies(db, tenantId);
+    const guardsWithIssues = new Set([
+      ...rest.doubleBookings.map((d) => d.guardId),
+      ...rest.restViolations.map((r) => r.guardId),
+    ]).size;
+    warnings = {
+      doubleBookings: rest.doubleBookings,
+      restViolations: rest.restViolations,
+      sfStyleInconsistencies: sfStyle,
+      guardsWithIssues,
+      maxConsecutiveAllowed: 7,
+      total: rest.doubleBookings.length + rest.restViolations.length + sfStyle.length,
+    };
+  } catch (e: any) {
+    console.warn('[scheduleProposal] rest-rule validation failed:', e?.message || e);
+  }
+
   const summary = {
     added, removed, changed, kept,
     total: added + removed + changed + kept,
     guardsAffected: guardsAffected.size,
     assignments: assignments.length,
     cost,
+    warnings,
   };
 
   const proposal = await db.scheduleProposal.create({

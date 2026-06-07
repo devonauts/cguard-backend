@@ -389,7 +389,7 @@ export async function optimizeSacafrancos(
   // 1. Get all stations with rotation configured
   const stations = await database.station.findAll({
     where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
-    attributes: ['id', 'stationName', 'rotationStyleId', 'scheduleType'],
+    attributes: ['id', 'stationName', 'rotationStyleId', 'scheduleType', 'postSiteId'],
     order: [['stationName', 'ASC']], // Sort alphabetically for deterministic ordering
   });
 
@@ -640,10 +640,25 @@ export async function optimizeSacafrancos(
     order: [['sortOrder', 'ASC']],
   });
 
+  // Which sitio (post site) each fijo station belongs to, and the fijo stations
+  // per sitio — so each SF's coveredStationIds reflects the stations it relieves
+  // within its own sitio (req 3: no longer dead data; per-sitio coverage).
+  const stationPostSite = new Map<string, string>(
+    stations.map((s: any) => [s.id, s.postSiteId || 'none']),
+  );
+  const fijoStationsBySitio = new Map<string, string[]>();
+  for (const sc of stationsWithFijos) {
+    const sitio = stationPostSite.get(sc.stationId) || 'none';
+    if (!fijoStationsBySitio.has(sitio)) fijoStationsBySitio.set(sitio, []);
+    fijoStationsBySitio.get(sitio)!.push(sc.stationId);
+  }
+
   for (let i = 0; i < existingSfAssignments.length; i++) {
     const a = existingSfAssignments[i];
     const targetPos = selectedPositions[i];
     if (!targetPos) break;
+    const sitio = stationPostSite.get(targetPos.stationId) || 'none';
+    const covered = fijoStationsBySitio.get(sitio) || [targetPos.stationId];
     await database.guardAssignment.update(
       {
         positionId: targetPos.id,
@@ -651,6 +666,7 @@ export async function optimizeSacafrancos(
         rotationStyleId: sfRotationStyleId,
         platoonOffset: targetPos.platoonOffset || 0,
         isRelief: true,
+        coveredStationIds: covered,
         updatedById: userId,
       },
       { where: { id: a.id, tenantId } },
