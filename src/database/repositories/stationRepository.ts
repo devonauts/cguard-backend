@@ -153,11 +153,10 @@ class StationRepository {
     await record.setPatrol(data.patrol || [], {
       transaction,
     });
-    await record.setShift(data.shift || [], {
-      transaction,
-    });
-
-
+    // NOTE: no `record.setShift(...)` — the station↔shift M:N association was
+    // removed in the Phase-1 cleanup (shifts now reference shift.stationId, a
+    // 1:N). The leftover setShift call threw "setShift is not a function" and
+    // 500'd every station update (e.g. editing the horario).
 
     await this._createAuditLog(
       AuditLogRepository.UPDATE,
