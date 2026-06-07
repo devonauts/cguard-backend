@@ -167,7 +167,8 @@ export async function getProposal(db: any, tenantId: string, proposalId: string)
 
 /**
  * Publish a draft proposal: apply its staged changes to the LIVE shift table in
- * one transaction. Caller must already have confirmed.
+ * one transaction, materialize a per-guard implementation plan, then notify each
+ * affected guard (in-app + push + best-effort email). Caller must have confirmed.
  */
 export async function publishProposal(db: any, tenantId: string, userId: string, proposalId: string) {
   const { Op } = db.Sequelize;
@@ -179,6 +180,19 @@ export async function publishProposal(db: any, tenantId: string, userId: string,
     where: { proposalId, tenantId, action: { [Op.ne]: 'keep' } },
   });
 
+  // Per-guard roll-up for the implementation plan (req 7).
+  const byGuard = new Map<string, { added: number; removed: number; changed: number; details: any[] }>();
+  for (const r of rows) {
+    if (!r.guardId) continue;
+    if (!byGuard.has(r.guardId)) byGuard.set(r.guardId, { added: 0, removed: 0, changed: 0, details: [] });
+    const g = byGuard.get(r.guardId)!;
+    if (r.action === 'add') g.added++;
+    else if (r.action === 'remove') g.removed++;
+    else if (r.action === 'change') g.changed++;
+    if (g.details.length < 10) g.details.push({ action: r.action, startTime: r.startTime, shiftType: r.meta?.shiftType });
+  }
+
+  let planId: string | null = null;
   const transaction = await db.sequelize.transaction();
   try {
     for (const r of rows) {
@@ -207,17 +221,139 @@ export async function publishProposal(db: any, tenantId: string, userId: string,
         );
       }
     }
+
     await proposal.update(
       { status: 'published', publishedAt: new Date(), approvedById: userId },
       { transaction },
     );
+
+    const plan = await db.implementationPlan.create(
+      { tenantId, proposalId, status: 'pending', totalGuards: byGuard.size, notifiedGuards: 0, publishedById: userId },
+      { transaction },
+    );
+    planId = plan.id;
+    if (byGuard.size) {
+      const items = Array.from(byGuard.entries()).map(([guardId, g]) => ({
+        tenantId, planId: plan.id, guardId,
+        added: g.added, removed: g.removed, changed: g.changed,
+        details: g.details, notifyStatus: 'pending',
+      }));
+      await db.implementationPlanItem.bulkCreate(items, { transaction });
+    }
+
     await transaction.commit();
   } catch (e) {
     await transaction.rollback();
     throw e;
   }
 
-  return { published: true, summary: proposal.summary };
+  // Notify AFTER commit — external sends must not hold the transaction open.
+  let notified = 0;
+  if (planId) {
+    try {
+      notified = await notifyImplementationPlan(db, tenantId, userId, planId);
+    } catch (e: any) {
+      console.warn('[scheduleProposal] notify failed:', e?.message || e);
+    }
+  }
+
+  return { published: true, summary: proposal.summary, plan: { id: planId, totalGuards: byGuard.size, notifiedGuards: notified } };
+}
+
+/**
+ * Fan out schedule-change notifications to each affected guard: in-app
+ * notification row + push (worker-app) + best-effort email. Records per-guard
+ * delivery status; never throws. Returns the number of guards reached.
+ */
+async function notifyImplementationPlan(db: any, tenantId: string, userId: string, planId: string): Promise<number> {
+  const items = await db.implementationPlanItem.findAll({ where: { planId, tenantId } });
+  if (!items.length) return 0;
+
+  let pushToUser: any = null;
+  try { ({ pushToUser } = require('./pushService')); } catch { /* push optional */ }
+
+  let notified = 0;
+  for (const item of items) {
+    const guardId = item.guardId;
+    const parts: string[] = [];
+    if (item.added) parts.push(`${item.added} nuevo${item.added === 1 ? '' : 's'}`);
+    if (item.changed) parts.push(`${item.changed} modificado${item.changed === 1 ? '' : 's'}`);
+    if (item.removed) parts.push(`${item.removed} retirado${item.removed === 1 ? '' : 's'}`);
+    const title = 'Tu horario fue actualizado';
+    const body = `Cambios en tus turnos: ${parts.join(', ')}. Revisa tu horario en la app.`;
+    const channels: any = { push: false, inApp: false, email: false };
+
+    try {
+      await db.notification.create({
+        title,
+        body: body.slice(0, 200),
+        targetType: 'User',
+        targetId: String(guardId),
+        deliveryStatus: 'Pending',
+        readStatus: false,
+        tenantId,
+        whoCreatedTheNotificationId: userId || null,
+      });
+      channels.inApp = true;
+    } catch (e: any) {
+      console.warn('[scheduleProposal] in-app notify failed:', e?.message || e);
+    }
+
+    if (pushToUser) {
+      try {
+        const r = await pushToUser(db, tenantId, guardId, { title, body, data: { type: 'schedule_updated' } });
+        if (r && r.skipped !== true) channels.push = true;
+      } catch { /* push best-effort */ }
+    }
+
+    try {
+      const guardUser = await db.user.findByPk(guardId, { attributes: ['email'] });
+      if (guardUser?.email) {
+        const { sendMail } = require('./mailService');
+        const html = `<p style="font-size:15px">${body}</p>` +
+          `<p style="color:#6b7280;font-size:12px;margin-top:12px">CGuardPro</p>`;
+        await sendMail({ to: guardUser.email, subject: title, html, text: body });
+        channels.email = true;
+      }
+    } catch { /* email optional */ }
+
+    const sent = channels.inApp || channels.push || channels.email;
+    if (sent) notified++;
+    try {
+      await item.update({ notifyStatus: sent ? 'sent' : 'failed', channels, notifiedAt: new Date() });
+    } catch { /* ignore */ }
+  }
+
+  try {
+    await db.implementationPlan.update(
+      { notifiedGuards: notified, status: notified === items.length ? 'notified' : notified > 0 ? 'partial' : 'failed' },
+      { where: { id: planId, tenantId } },
+    );
+  } catch { /* ignore */ }
+
+  return notified;
+}
+
+/** Load the implementation plan for a published proposal (with guard names). */
+export async function getImplementationPlan(db: any, tenantId: string, proposalId: string) {
+  const plan = await db.implementationPlan.findOne({
+    where: { proposalId, tenantId },
+    order: [['createdAt', 'DESC']],
+  });
+  if (!plan) return null;
+  const items = await db.implementationPlanItem.findAll({
+    where: { planId: plan.id, tenantId },
+    include: [{ model: db.user, as: 'guard', attributes: ['id', 'fullName', 'firstName', 'lastName'], required: false }],
+    order: [['changed', 'DESC'], ['added', 'DESC']],
+  });
+  return {
+    plan: plan.get({ plain: true }),
+    items: items.map((i: any) => {
+      const p = i.get({ plain: true });
+      const g = p.guard || {};
+      return { ...p, guardName: g.fullName || [g.firstName, g.lastName].filter(Boolean).join(' ') || 'Guardia' };
+    }),
+  };
 }
 
 /** Discard a draft proposal (no effect on live shifts). */

@@ -24,6 +24,7 @@ import {
   proposalGet,
   proposalPublish,
   proposalDiscard,
+  proposalPlan,
 } from './proposalEndpoints';
 
 export default (app) => {
@@ -54,6 +55,7 @@ export default (app) => {
   // Draft horario proposals (generate → review/diff → publish/discard)
   app.post('/tenant/:tenantId/scheduler/proposals', proposalGenerate);
   app.get('/tenant/:tenantId/scheduler/proposals/:id', proposalGet);
+  app.get('/tenant/:tenantId/scheduler/proposals/:id/plan', proposalPlan);
   app.post('/tenant/:tenantId/scheduler/proposals/:id/publish', proposalPublish);
   app.post('/tenant/:tenantId/scheduler/proposals/:id/discard', proposalDiscard);
 

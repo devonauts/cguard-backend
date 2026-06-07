@@ -4,6 +4,7 @@ import {
   getProposal,
   publishProposal,
   discardProposal,
+  getImplementationPlan,
 } from '../../services/scheduleProposalService';
 
 /** POST /scheduler/proposals — generate a DRAFT horario (no live writes). */
@@ -43,6 +44,16 @@ export const proposalPublish = async (req, res) => {
     }
     const result = await publishProposal(req.database, req.currentTenant.id, req.currentUser.id, req.params.id);
     await ApiResponseHandler.success(req, res, result);
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+};
+
+/** GET /scheduler/proposals/:id/plan — the per-guard implementation plan. */
+export const proposalPlan = async (req, res) => {
+  try {
+    const data = await getImplementationPlan(req.database, req.currentTenant.id, req.params.id);
+    await ApiResponseHandler.success(req, res, data || { plan: null, items: [] });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
