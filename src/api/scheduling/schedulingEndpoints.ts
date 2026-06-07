@@ -1,6 +1,8 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+import { getGlobalEpoch } from '../../services/shiftGenerationService';
+import { haversineDistance } from '../../lib/geofence';
 
 // GET /tenant/:tenantId/rotation-styles
 export async function rotationStyleList(req, res) {
@@ -289,9 +291,11 @@ export async function stationAutoPositions(req, res) {
     let cycleLength = 7;
     let workDays = 5;
     let restDays = 2;
+    let dayShifts = 5;
     if (rotationStyleId) {
       const rot = await req.database.rotationStyle.findByPk(rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
       if (rot) {
+        dayShifts = rot.dayShifts || 0;
         workDays = (rot.dayShifts || 0) + (rot.nightShifts || 0);
         restDays = rot.restDays || 1;
         cycleLength = workDays + restDays;
@@ -328,10 +332,15 @@ export async function stationAutoPositions(req, res) {
     }
 
     if (scheduleType === '24h') {
-      // 24h station: keep station-level sequential rest pattern (same offset for both fijo slots)
+      // 24h station needs continuous day+night coverage. Phase out the two fijos
+      // by `dayShifts` so when Fijo 1 is on its DAY block, Fijo 2 is on its NIGHT
+      // block (and vice-versa) — instead of the old bug where both shared an
+      // offset and worked/rested identically (days double-staffed, nights empty,
+      // 2-day blackout). Residual gaps are covered by sacafrancos.
+      const offset2 = ((recommendedStationOffset - dayShifts) % cycleLength + cycleLength) % cycleLength;
       positions.push(
         { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: offset2, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     } else if (scheduleType === '12h-day' || scheduleType === '12h-night') {
       const start = scheduleType === '12h-day' ? '07:00' : '19:00';
@@ -594,9 +603,10 @@ export async function schedulerStaffing(req, res) {
       const cycleLength = workDays + restDays;
       if (cycleLength <= 0) return 'work';
 
-      // Use global epoch so all stations remain in sequence.
-      const epoch = new Date(2024, 0, 1);
+      // Single source of truth for the rotation epoch (Phase 3) — must match the
+      // generator's anchor or rest-day patterns disagree. Was hardcoded 2024-01-01.
       const dayMid = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+      const epoch = getGlobalEpoch(dayMid);
       const daysSince = Math.floor((dayMid.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
       const offset = Number(assignment?.platoonOffset || 0);
       const adj = ((daysSince - offset) % cycleLength + cycleLength) % cycleLength;
@@ -699,7 +709,7 @@ export async function schedulerAutoAssign(req, res) {
       req.database.station.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'stationName', 'latitud', 'longitud', 'scheduleType', 'rotationStyleId'] }),
       req.database.stationPosition.findAll({ where: { tenantId, deletedAt: null }, order: [['stationId', 'ASC'], ['sortOrder', 'ASC']] }),
       req.database.guardAssignment.findAll({ where: { tenantId, status: 'active', deletedAt: null } }),
-      req.database.securityGuard.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'fullName', 'address', 'guardType', 'guardId'] }),
+      req.database.securityGuard.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'fullName', 'address', 'guardType', 'guardId', 'latitude', 'longitude'] }),
       req.database.rotationStyle.findAll({ where: { [Op.or]: [{ tenantId }, { tenantId: null, isSystem: true }] } }),
     ]);
 
@@ -708,19 +718,17 @@ export async function schedulerAutoAssign(req, res) {
     const titulares = availableGuards.filter((g: any) => g.guardType === 'titular');
     const sacafrancos = availableGuards.filter((g: any) => g.guardType === 'sacafranco');
 
-    // Address-based proximity scoring
-    const getAddressScore = (guardAddress: string, stationLat: string, stationLng: string) => {
-      if (!guardAddress || !stationLat || !stationLng) return 50 + Math.random() * 50;
-      const addr = (guardAddress || '').toLowerCase();
+    // Real proximity (Phase 4): great-circle distance in metres from the guard's
+    // geocoded home to the station. Guards with no coordinates (not yet geocoded)
+    // sort LAST (Infinity) so located guards are placed by true nearness first.
+    const getDistanceM = (guard: any, stationLat: string, stationLng: string): number => {
+      const gLat = Number(guard?.latitude);
+      const gLng = Number(guard?.longitude);
       const sLat = parseFloat(stationLat);
       const sLng = parseFloat(stationLng);
-      let guardLat = -0.18, guardLng = -0.49;
-      if (addr.includes('norte') || addr.includes('calderón') || addr.includes('carapungo')) { guardLat = -0.13; guardLng = -0.49; }
-      else if (addr.includes('sur') || addr.includes('conocoto')) { guardLat = -0.27; guardLng = -0.52; }
-      else if (addr.includes('cumbayá') || addr.includes('cumbaya') || addr.includes('tumbaco')) { guardLat = -0.19; guardLng = -0.43; }
-      else if (addr.includes('valles') || addr.includes('chillos') || addr.includes('san rafael') || addr.includes('sangolquí')) { guardLat = -0.31; guardLng = -0.45; }
-      else if (addr.includes('centro')) { guardLat = -0.22; guardLng = -0.51; }
-      return Math.sqrt(Math.pow(sLat - guardLat, 2) + Math.pow(sLng - guardLng, 2));
+      if (![gLat, gLng, sLat, sLng].every((n) => Number.isFinite(n))) return Number.POSITIVE_INFINITY;
+      if (gLat === 0 && gLng === 0) return Number.POSITIVE_INFINITY;
+      return haversineDistance(gLat, gLng, sLat, sLng);
     };
 
     // Group positions by station
@@ -760,7 +768,7 @@ export async function schedulerAutoAssign(req, res) {
     let platoonCounter = 0;
     for (const slot of demand) {
       if (guardsLeft.length === 0) break;
-      guardsLeft.sort((a: any, b: any) => getAddressScore(a.address, slot.station.latitud, slot.station.longitud) - getAddressScore(b.address, slot.station.latitud, slot.station.longitud));
+      guardsLeft.sort((a: any, b: any) => getDistanceM(a, slot.station.latitud, slot.station.longitud) - getDistanceM(b, slot.station.latitud, slot.station.longitud));
       const best: any = guardsLeft.shift();
       newAssignments.push({
         guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,
@@ -785,7 +793,7 @@ export async function schedulerAutoAssign(req, res) {
     let sacafLeft = [...sacafrancos];
     for (const slot of reliefDemand) {
       if (sacafLeft.length === 0) { sacafLeft = [...sacafrancos]; if (sacafLeft.length === 0) break; }
-      sacafLeft.sort((a: any, b: any) => getAddressScore(a.address, slot.station.latitud, slot.station.longitud) - getAddressScore(b.address, slot.station.latitud, slot.station.longitud));
+      sacafLeft.sort((a: any, b: any) => getDistanceM(a, slot.station.latitud, slot.station.longitud) - getDistanceM(b, slot.station.latitud, slot.station.longitud));
       const best: any = sacafLeft.shift();
       newAssignments.push({
         guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,
@@ -865,6 +873,38 @@ export async function scheduleOverrideCreate(req, res) {
 
     if (!created) {
       await record.update({ type, note, assignmentId });
+    }
+
+    // Propagate ABSENCE overrides to the live schedule (Phase 7): vacation /
+    // permiso / falta / libre mean the guard is OFF that day, so remove their
+    // shift — this frees the puesto and the coverage analyzer surfaces the gap.
+    // Working overrides (D/N/24) leave the shift as-is.
+    if (['V', 'PM', 'F', 'L'].includes(type)) {
+      try {
+        const { Op } = req.database.Sequelize;
+        const tenant = await req.database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+        const tz = (tenant && tenant.timezone) || 'UTC';
+        const dayAnchor = new Date(`${date}T00:00:00Z`);
+        const from = new Date(dayAnchor.getTime() - 24 * 3600000);
+        const to = new Date(dayAnchor.getTime() + 48 * 3600000);
+        const localDate = (d: any) => {
+          try {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(d));
+          } catch {
+            return new Date(d).toISOString().slice(0, 10);
+          }
+        };
+        const shifts = await req.database.shift.findAll({
+          where: { guardId, tenantId, startTime: { [Op.gte]: from, [Op.lt]: to } },
+          attributes: ['id', 'startTime'],
+        });
+        const toDelete = shifts.filter((s: any) => localDate(s.startTime) === date).map((s: any) => s.id);
+        if (toDelete.length) {
+          await req.database.shift.destroy({ where: { id: toDelete, tenantId }, force: true });
+        }
+      } catch (e: any) {
+        console.warn('[scheduleOverride] shift propagation failed:', e?.message || e);
+      }
     }
 
     await ApiResponseHandler.success(req, res, record);

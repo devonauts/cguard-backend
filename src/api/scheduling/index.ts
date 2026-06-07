@@ -19,6 +19,14 @@ import {
   scheduleOverrideCreate,
   scheduleOverrideDelete,
 } from './schedulingEndpoints';
+import {
+  proposalGenerate,
+  proposalGet,
+  proposalPublish,
+  proposalDiscard,
+  proposalPlan,
+  coverageGet,
+} from './proposalEndpoints';
 
 export default (app) => {
   // Rotation styles
@@ -44,6 +52,16 @@ export default (app) => {
   app.get('/tenant/:tenantId/scheduler/staffing', schedulerStaffing);
   app.post('/tenant/:tenantId/scheduler/auto-assign', schedulerAutoAssign);
   app.post('/tenant/:tenantId/scheduler/optimize-sacafrancos', schedulerOptimizeSacafrancos);
+
+  // Real coverage of the live schedule (gaps + overstaff per station/day/half)
+  app.get('/tenant/:tenantId/scheduler/coverage', coverageGet);
+
+  // Draft horario proposals (generate → review/diff → publish/discard)
+  app.post('/tenant/:tenantId/scheduler/proposals', proposalGenerate);
+  app.get('/tenant/:tenantId/scheduler/proposals/:id', proposalGet);
+  app.get('/tenant/:tenantId/scheduler/proposals/:id/plan', proposalPlan);
+  app.post('/tenant/:tenantId/scheduler/proposals/:id/publish', proposalPublish);
+  app.post('/tenant/:tenantId/scheduler/proposals/:id/discard', proposalDiscard);
 
   // AI scheduling recommendations
   app.post('/tenant/:tenantId/scheduler/ai-recommend', schedulerAiRecommend);

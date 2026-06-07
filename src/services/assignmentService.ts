@@ -71,18 +71,22 @@ export async function createAssignment(
     });
     isRelief = !!input.isRelief || position?.type === 'sacafranco';
 
-    // Fijo guards can only be assigned to ONE station.
-    if (!isRelief) {
-      const existingFijo = await database.guardAssignment.findOne({
-        where: { guardId: guardUserId, tenantId, status: 'active', isRelief: false, deletedAt: null, kind: 'rotation' },
-        include: [{ model: database.stationPosition, as: 'position', attributes: ['type'], where: { type: 'fijo' } }],
-      });
-      if (existingFijo) {
-        const st = await database.station.findByPk(existingFijo.stationId, { attributes: ['stationName'] });
-        throw new AssignmentValidationError(
-          `Este guardia ya está asignado como Fijo en "${st?.stationName || 'otra estación'}". Los guardias Fijo solo pueden estar en una estación.`,
-        );
-      }
+    // A guard may hold at most ONE active rotation assignment (fijo OR sacafranco).
+    // Stacking (fijo+fijo, fijo+relief, relief+relief) double-books the guard and
+    // destroys their rest day — the core promise. Re-assigning the SAME slot is
+    // handled idempotently below, so only a DIFFERENT active rotation slot blocks.
+    const existingRotation = await database.guardAssignment.findOne({
+      where: { guardId: guardUserId, tenantId, status: 'active', deletedAt: null, kind: 'rotation' },
+    });
+    if (
+      existingRotation &&
+      !(existingRotation.stationId === stationId && existingRotation.positionId === positionId)
+    ) {
+      const st = await database.station.findByPk(existingRotation.stationId, { attributes: ['stationName'] });
+      const roleTxt = existingRotation.isRelief ? 'Sacafranco' : 'Fijo';
+      throw new AssignmentValidationError(
+        `Este guardia ya tiene una asignación activa (${roleTxt} en "${st?.stationName || 'otra estación'}"). Un guardia solo puede tener una asignación de rotación a la vez.`,
+      );
     }
 
     if (!rotationStyleId) {

@@ -98,6 +98,22 @@ export async function notifyPatrol(
         console.warn('[ronda] tenant notification create failed:', e?.message || e);
       }
       pushToTenant(db, tenantId, { title, body, data: { type: `patrol_${event}` } }).catch(() => {});
+
+      // Email the tenant's admins/supervisors. mailService throws when no transport
+      // is configured, so this naturally only sends "if configured".
+      try {
+        const emails = await resolveTenantNotifyEmails(db, tenantId);
+        if (emails.length) {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { sendMail } = require('./mailService');
+          const html =
+            `<p style="font-size:15px">${body}</p>` +
+            `<p style="color:#6b7280;font-size:12px;margin-top:12px">CGuardPro · ${new Date().toLocaleString('es')}</p>`;
+          await sendMail({ to: emails, subject: `${title}${route}`, html, text: body });
+        }
+      } catch (e: any) {
+        console.warn('[ronda] email notify skipped/failed:', e?.message || e);
+      }
     }
 
     // Email the tenant's admins/supervisors on completion — gated by its OWN

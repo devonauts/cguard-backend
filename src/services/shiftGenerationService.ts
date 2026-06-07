@@ -11,6 +11,7 @@
  */
 
 import { wallClockToUtc } from '../lib/tenantTime';
+import { requiredHalves, TurnoHalf } from './scheduleCoverageService';
 
 const GENERATION_DAYS = 365; // Generate 1 full year of shifts
 
@@ -34,18 +35,25 @@ interface AssignmentData {
   endDate?: string | null;
   platoonOffset: number;
   isRelief: boolean;
+  coveredStationIds?: string[] | null; // sacafranco: the stations it relieves
   kind?: 'rotation' | 'adhoc';
   startTime?: string | null; // HH:mm, adhoc only
   endTime?: string | null;   // HH:mm, adhoc only
 }
 
 /**
- * Get the global epoch (Jan 1 of current year).
- * All rotation calculations use this as day-zero so offsets are globally consistent.
+ * THE rotation epoch — day-zero for every rotation calculation, so platoonOffset
+ * means the same thing in the generator, the staffing/gap analyzers, and the
+ * frontend grid. The single source of truth: all consumers MUST use this.
+ *
+ * FIXED anchor (Phase 7): previously this was Jan 1 of the *reference year*, so
+ * the rotation phase silently jumped every Jan 1 and the analyzer/grid disagreed
+ * with persisted shifts for the tail of the year. A fixed anchor removes that
+ * year-boundary drift permanently. The `referenceDate` argument is ignored.
  */
-function getGlobalEpoch(referenceDate?: Date): Date {
-  const ref = referenceDate || new Date();
-  return new Date(ref.getFullYear(), 0, 1);
+const ROTATION_EPOCH = new Date(2024, 0, 1);
+export function getGlobalEpoch(_referenceDate?: Date): Date {
+  return new Date(ROTATION_EPOCH.getTime());
 }
 
 /**
@@ -67,10 +75,244 @@ function getRotationStatus(
   return 'rest';
 }
 
+interface FijoGap {
+  stationId: string;
+  half: TurnoHalf;
+  startHHmm: string;
+  endHHmm: string;
+  postSiteId: string | null;
+}
+
 /**
- * Generate shifts for a single guard assignment.
- * For "fijo" positions: generates both D and N shifts following the rotation cycle.
- * For "sacafranco" positions: generates shifts on days when fijo guards rest + own rotation.
+ * For each day in the window, which (station, half) slots have NO fijo on duty —
+ * i.e. the real rest gaps a sacafranco must cover. Computed straight from the
+ * covered stations' fijo positions' rotation (no shift rows generated). This is
+ * what makes sacafranco relief REAL instead of the SF working its own rotation.
+ */
+async function computeFijoGaps(
+  database: any,
+  coveredStationIds: string[],
+  tenantId: string,
+  genStart: Date,
+  genEnd: Date,
+): Promise<Map<string, FijoGap[]>> {
+  const gapsByDay = new Map<string, FijoGap[]>();
+  const epoch = getGlobalEpoch(genStart);
+
+  for (const sid of coveredStationIds) {
+    const st = await database.station.findByPk(sid, { attributes: ['id', 'scheduleType', 'rotationStyleId', 'postSiteId'] });
+    if (!st || !st.rotationStyleId) continue;
+    const rot = await database.rotationStyle.findByPk(st.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+    if (!rot) continue;
+    const fijos = await database.stationPosition.findAll({
+      where: { stationId: sid, tenantId, deletedAt: null, type: 'fijo' },
+      attributes: ['platoonOffset', 'startTime', 'endTime'],
+    });
+    if (!fijos.length) continue;
+
+    const required = requiredHalves(st.scheduleType);
+    const dayStart = fijos[0].startTime || '07:00';
+    const dayEnd = fijos[0].endTime || '19:00';
+
+    const cursor = new Date(genStart);
+    while (cursor <= genEnd) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const dse = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+      const coveredHalves = new Set<string>();
+      for (const f of fijos) {
+        const s = getRotationStatus(dse, f.platoonOffset || 0, rot.dayShifts, rot.nightShifts, rot.restDays);
+        if (s === 'day') coveredHalves.add('day');
+        else if (s === 'night') coveredHalves.add('night');
+      }
+      for (const half of required) {
+        if (!coveredHalves.has(half)) {
+          if (!gapsByDay.has(dateStr)) gapsByDay.set(dateStr, []);
+          gapsByDay.get(dateStr)!.push({
+            stationId: sid,
+            half,
+            startHHmm: half === 'day' ? dayStart : dayEnd,
+            endHHmm: half === 'day' ? dayEnd : dayStart,
+            postSiteId: st.postSiteId || null,
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+  return gapsByDay;
+}
+
+/** A computed (not-yet-persisted) shift row + its rotation kind, for diffing. */
+export interface ComputedShift {
+  guardId: string;
+  stationId: string;
+  positionId: string | null;
+  guardAssignmentId: string;
+  postSiteId: string | null;
+  startTime: Date;
+  endTime: Date;
+  shiftType: 'day' | 'night' | 'adhoc';
+}
+
+/**
+ * PURE compute: return the shifts an assignment WOULD have, without touching the
+ * database (no delete, no create). The single source of rotation math, reused by
+ * both the live generator (below) and the draft/proposal engine. This is what
+ * makes a draft-first, diff-before-publish workflow possible.
+ */
+export async function computeShiftsForAssignment(
+  database: any,
+  assignment: AssignmentData,
+  tenantId: string,
+): Promise<ComputedShift[]> {
+  // Window (shared by all kinds): from max(startDate, today) for 365 days unless
+  // an explicit endDate is given.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startDate = new Date(assignment.startDate);
+  const genStart = startDate > today ? startDate : today;
+  const tz = await tenantTz(database, tenantId);
+
+  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
+  const postSiteId = station?.postSiteId || null;
+
+  // ─── AD-HOC (manual, non-rotation) ──────────────────────────────────────
+  if (assignment.kind === 'adhoc') {
+    const genEnd = assignment.endDate ? new Date(assignment.endDate) : new Date(genStart);
+    const startHHmm = assignment.startTime || '07:00';
+    const endHHmm = assignment.endTime || '19:00';
+    const rows: ComputedShift[] = [];
+    const cursor = new Date(genStart);
+    while (cursor <= genEnd) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const startTime = wallClockToUtc(dateStr, startHHmm, tz);
+      let endTime = wallClockToUtc(dateStr, endHHmm, tz);
+      if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
+      rows.push({
+        guardId: assignment.guardId,
+        stationId: assignment.stationId,
+        positionId: null,
+        guardAssignmentId: assignment.id,
+        postSiteId,
+        startTime,
+        endTime,
+        shiftType: 'adhoc',
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return rows;
+  }
+
+  const rotationStyle = await database.rotationStyle.findByPk(assignment.rotationStyleId);
+  if (!rotationStyle) {
+    console.error('[shiftGen] Rotation style not found:', assignment.rotationStyleId);
+    return [];
+  }
+  const position = await database.stationPosition.findByPk(assignment.positionId);
+  if (!position) {
+    console.error('[shiftGen] Position not found:', assignment.positionId);
+    return [];
+  }
+
+  const { dayShifts, nightShifts, restDays } = rotationStyle;
+  const genEnd = assignment.endDate
+    ? new Date(assignment.endDate)
+    : new Date(today.getTime() + GENERATION_DAYS * 24 * 60 * 60 * 1000);
+
+  const dayStartTime = position.startTime || '07:00';
+  const dayEndTime = position.endTime || '19:00';
+  const nightStartTime = dayEndTime;
+  const nightEndTime = dayStartTime;
+
+  // ─── SACAFRANCO (real relief) ───────────────────────────────────────────
+  // The SF works on its OWN rotation work-days (so it gets its rest days and all
+  // SFs keep the same turno style), but on each work-day it goes WHERE a fijo is
+  // actually resting — among its coveredStationIds — in that gap's half. If there
+  // is no real gap that day it stays idle (no over-coverage). Multiple SFs spread
+  // across the day's gaps by platoonOffset. Residual gaps are surfaced by the
+  // coverage analyzer + blocked at publish, so an imperfect spread can't ship.
+  const isSacafranco = position.type === 'sacafranco' || assignment.isRelief;
+  if (isSacafranco) {
+    const covered =
+      Array.isArray(assignment.coveredStationIds) && assignment.coveredStationIds.length
+        ? assignment.coveredStationIds
+        : [assignment.stationId];
+    const gapsByDay = await computeFijoGaps(database, covered, tenantId, genStart, genEnd);
+
+    const sfRows: ComputedShift[] = [];
+    const cursor = new Date(genStart);
+    const epoch = getGlobalEpoch(genStart);
+    let workIdx = 0;
+    while (cursor <= genEnd) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const dse = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+      const sfStatus = getRotationStatus(dse, assignment.platoonOffset, dayShifts, nightShifts, restDays);
+      if (sfStatus !== 'rest') {
+        const gaps = gapsByDay.get(dateStr) || [];
+        if (gaps.length) {
+          const pick = gaps[((assignment.platoonOffset || 0) + workIdx) % gaps.length];
+          const startTime = wallClockToUtc(dateStr, pick.startHHmm, tz);
+          let endTime = wallClockToUtc(dateStr, pick.endHHmm, tz);
+          if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
+          sfRows.push({
+            guardId: assignment.guardId,
+            stationId: pick.stationId,
+            positionId: assignment.positionId,
+            guardAssignmentId: assignment.id,
+            postSiteId: pick.postSiteId || postSiteId,
+            startTime,
+            endTime,
+            shiftType: pick.half,
+          });
+          workIdx++;
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return sfRows;
+  }
+
+  // ─── FIJO ───────────────────────────────────────────────────────────────
+  // Walks its OWN rotation (D/N/L) from the global epoch at its own station.
+  const rows: ComputedShift[] = [];
+  const cursor = new Date(genStart);
+  const epoch = getGlobalEpoch(genStart);
+  while (cursor <= genEnd) {
+    const daysSinceEpoch = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+    const status = getRotationStatus(daysSinceEpoch, assignment.platoonOffset, dayShifts, nightShifts, restDays);
+    if (status !== 'rest') {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      let startTime: Date;
+      let endTime: Date;
+      if (status === 'day') {
+        startTime = wallClockToUtc(dateStr, dayStartTime, tz);
+        endTime = wallClockToUtc(dateStr, dayEndTime, tz);
+      } else {
+        startTime = wallClockToUtc(dateStr, nightStartTime, tz);
+        endTime = wallClockToUtc(dateStr, nightEndTime, tz);
+      }
+      if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
+      rows.push({
+        guardId: assignment.guardId,
+        stationId: assignment.stationId,
+        positionId: assignment.positionId,
+        guardAssignmentId: assignment.id,
+        postSiteId,
+        startTime,
+        endTime,
+        shiftType: status,
+      });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return rows;
+}
+
+/**
+ * Generate shifts for a single guard assignment (LIVE write path).
+ * Force-deletes this assignment's future shifts and recreates them from the
+ * computed rotation. Behaviour unchanged — it now delegates the math to
+ * computeShiftsForAssignment.
  */
 export async function generateShiftsForAssignment(
   database: any,
@@ -80,258 +322,35 @@ export async function generateShiftsForAssignment(
 ) {
   const { Op } = database.Sequelize;
 
-  // ─── AD-HOC (manual, non-rotation) ─────────────────────────────────────────
-  // One-off assignments from the post-site / guard-profile screens. No position
-  // or rotation style — just an explicit day range + HH:mm window. This is the
-  // single generator for manual assignments too, so they show everywhere.
-  if (assignment.kind === 'adhoc') {
-    await generateAdhocShifts(database, assignment, tenantId, userId);
-    return;
-  }
+  const computed = await computeShiftsForAssignment(database, assignment, tenantId);
 
-  // Load rotation style (from station)
-  const rotationStyle = await database.rotationStyle.findByPk(assignment.rotationStyleId);
-  if (!rotationStyle) {
-    console.error('[shiftGen] Rotation style not found:', assignment.rotationStyleId);
-    return;
-  }
-
-  // Load position
-  const position = await database.stationPosition.findByPk(assignment.positionId);
-  if (!position) {
-    console.error('[shiftGen] Position not found:', assignment.positionId);
-    return;
-  }
-
-  const { dayShifts, nightShifts, restDays } = rotationStyle;
-
-  // Determine generation window
+  // Generation window start = max(startDate, today): only future shifts are replaced.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const startDate = new Date(assignment.startDate);
   const genStart = startDate > today ? startDate : today;
-  const genEnd = assignment.endDate
-    ? new Date(assignment.endDate)
-    : new Date(today.getTime() + GENERATION_DAYS * 24 * 60 * 60 * 1000);
 
-  // Delete existing generated shifts for this assignment in the future
-  await database.shift.destroy({
-    where: {
-      guardAssignmentId: assignment.id,
-      tenantId,
-      startTime: { [Op.gte]: genStart },
-    },
-    force: true,
-  });
-
-  // Get station info for postSiteId
-  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
-  const postSiteId = station?.postSiteId || null;
-
-  // ─── SACAFRANCO LOGIC ──────────────────────────────────────────────────
-  if (position.type === 'sacafranco' || assignment.isRelief) {
-    const shifts = await generateSacafrancoShifts(
-      database, assignment, position, rotationStyle, genStart, genEnd, tenantId, userId,
-    );
-    if (shifts.length > 0) {
-      shifts.forEach(s => { s.postSiteId = postSiteId; });
-      await database.shift.bulkCreate(shifts, { ignoreDuplicates: true });
-      console.log(`[shiftGen] Created ${shifts.length} SACAFRANCO shifts for assignment ${assignment.id}`);
-    }
-    return;
-  }
-
-  // ─── FIJO LOGIC ────────────────────────────────────────────────────────
-  // Fijo positions rotate through D → N → L following the station's rotation style
-  // Uses GLOBAL EPOCH (Jan 1) for consistent offset alignment across all stations
-  const shifts: any[] = [];
-  const cursor = new Date(genStart);
-  const epoch = getGlobalEpoch(genStart);
-
-  // Time windows: day shift uses position startTime/endTime, night is the inverse
-  const dayStartTime = position.startTime || '07:00';
-  const dayEndTime = position.endTime || '19:00';
-  const nightStartTime = dayEndTime;
-  const nightEndTime = dayStartTime;
-
-  // Wall-clock times are interpreted in the tenant timezone → stored as true UTC.
-  const tz = await tenantTz(database, tenantId);
-
-  while (cursor <= genEnd) {
-    const daysSinceEpoch = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
-    const status = getRotationStatus(daysSinceEpoch, assignment.platoonOffset, dayShifts, nightShifts, restDays);
-
-    if (status !== 'rest') {
-      const dateStr = cursor.toISOString().slice(0, 10);
-      let startTime: Date;
-      let endTime: Date;
-
-      if (status === 'day') {
-        startTime = wallClockToUtc(dateStr, dayStartTime, tz);
-        endTime = wallClockToUtc(dateStr, dayEndTime, tz);
-        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
-      } else {
-        // night
-        startTime = wallClockToUtc(dateStr, nightStartTime, tz);
-        endTime = wallClockToUtc(dateStr, nightEndTime, tz);
-        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
-      }
-
-      shifts.push({
-        guardId: assignment.guardId,
-        stationId: assignment.stationId,
-        positionId: assignment.positionId,
-        guardAssignmentId: assignment.id,
-        postSiteId,
-        startTime,
-        endTime,
-        tenantId,
-        createdById: userId,
-        updatedById: userId,
-      });
-    }
-
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  if (shifts.length > 0) {
-    await database.shift.bulkCreate(shifts, { ignoreDuplicates: true });
-    console.log(`[shiftGen] Created ${shifts.length} FIJO shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
-  }
-}
-
-/**
- * Generate concrete shifts for an AD-HOC (manual) assignment.
- * Creates one shift per day in [startDate, endDate] using the assignment's
- * HH:mm window. endDate null ⇒ single day (never the 365-day rotation fill).
- */
-async function generateAdhocShifts(
-  database: any,
-  assignment: AssignmentData,
-  tenantId: string,
-  userId: string,
-) {
-  const { Op } = database.Sequelize;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const startDate = new Date(assignment.startDate);
-  const genStart = startDate > today ? startDate : today;
-  // Ad-hoc never fills a year: default to a single day when no endDate.
-  const genEnd = assignment.endDate ? new Date(assignment.endDate) : new Date(genStart);
-
-  // Replace any previously generated shifts for this assignment (idempotent).
   await database.shift.destroy({
     where: { guardAssignmentId: assignment.id, tenantId, startTime: { [Op.gte]: genStart } },
     force: true,
   });
 
-  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
-  const postSiteId = station?.postSiteId || null;
+  if (computed.length === 0) return;
 
-  const startHHmm = assignment.startTime || '07:00';
-  const endHHmm = assignment.endTime || '19:00';
-  const tz = await tenantTz(database, tenantId);
-
-  const shifts: any[] = [];
-  const cursor = new Date(genStart);
-  while (cursor <= genEnd) {
-    const dateStr = cursor.toISOString().slice(0, 10);
-    const startTime = wallClockToUtc(dateStr, startHHmm, tz);
-    let endTime = wallClockToUtc(dateStr, endHHmm, tz);
-    if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000); // overnight
-    shifts.push({
-      guardId: assignment.guardId,
-      stationId: assignment.stationId,
-      positionId: null,
-      guardAssignmentId: assignment.id,
-      postSiteId,
-      startTime,
-      endTime,
-      tenantId,
-      createdById: userId,
-      updatedById: userId,
-    });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  if (shifts.length > 0) {
-    await database.shift.bulkCreate(shifts, { ignoreDuplicates: true });
-    console.log(`[shiftGen] Created ${shifts.length} ADHOC shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
-  }
-}
-
-/**
- * Generate sacafranco shifts.
- * Sacafrancos follow their OWN rotation cycle (D/N/L) independently.
- * On work days (D or N), they work — covering fijo rest gaps is implicit.
- * On rest days (L), they don't work.
- */
-async function generateSacafrancoShifts(
-  database: any,
-  assignment: AssignmentData,
-  position: any,
-  rotationStyle: any,
-  genStart: Date,
-  genEnd: Date,
-  tenantId: string,
-  userId: string,
-): Promise<any[]> {
-  const { dayShifts, nightShifts, restDays } = rotationStyle;
-  const cycleLength = dayShifts + nightShifts + restDays;
-  if (cycleLength === 0) return [];
-
-  const shifts: any[] = [];
-  const cursor = new Date(genStart);
-  const epoch = getGlobalEpoch(genStart);
-
-  // Time windows
-  const dayStartTime = position.startTime || '07:00';
-  const dayEndTime = position.endTime || '19:00';
-  const nightStartTime = dayEndTime;
-  const nightEndTime = dayStartTime;
-  const tz = await tenantTz(database, tenantId);
-
-  while (cursor <= genEnd) {
-    const dateStr = cursor.toISOString().slice(0, 10);
-    const daysSinceEpoch = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
-
-    // Check sacafranco's own rotation using global epoch
-    const sfStatus = getRotationStatus(daysSinceEpoch, assignment.platoonOffset, dayShifts, nightShifts, restDays);
-
-    if (sfStatus !== 'rest') {
-      // Sacafranco works on this day — generate shift
-      let startTime: Date;
-      let endTime: Date;
-
-      if (sfStatus === 'night') {
-        startTime = wallClockToUtc(dateStr, nightStartTime, tz);
-        endTime = wallClockToUtc(dateStr, nightEndTime, tz);
-        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
-      } else {
-        startTime = wallClockToUtc(dateStr, dayStartTime, tz);
-        endTime = wallClockToUtc(dateStr, dayEndTime, tz);
-        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
-      }
-
-      shifts.push({
-        guardId: assignment.guardId,
-        stationId: assignment.stationId,
-        positionId: assignment.positionId,
-        guardAssignmentId: assignment.id,
-        postSiteId: null,
-        startTime,
-        endTime,
-        tenantId,
-        createdById: userId,
-        updatedById: userId,
-      });
-    }
-
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return shifts;
+  const rows = computed.map((c) => ({
+    guardId: c.guardId,
+    stationId: c.stationId,
+    positionId: c.positionId,
+    guardAssignmentId: c.guardAssignmentId,
+    postSiteId: c.postSiteId,
+    startTime: c.startTime,
+    endTime: c.endTime,
+    tenantId,
+    createdById: userId,
+    updatedById: userId,
+  }));
+  await database.shift.bulkCreate(rows, { ignoreDuplicates: true });
+  console.log(`[shiftGen] Created ${rows.length} shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
 }
 
 /**
@@ -486,7 +505,7 @@ export async function optimizeSacafrancos(
   // 1. Get all stations with rotation configured
   const stations = await database.station.findAll({
     where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
-    attributes: ['id', 'stationName', 'rotationStyleId', 'scheduleType'],
+    attributes: ['id', 'stationName', 'rotationStyleId', 'scheduleType', 'postSiteId'],
     order: [['stationName', 'ASC']], // Sort alphabetically for deterministic ordering
   });
 
@@ -737,10 +756,25 @@ export async function optimizeSacafrancos(
     order: [['sortOrder', 'ASC']],
   });
 
+  // Which sitio (post site) each fijo station belongs to, and the fijo stations
+  // per sitio — so each SF's coveredStationIds reflects the stations it relieves
+  // within its own sitio (req 3: no longer dead data; per-sitio coverage).
+  const stationPostSite = new Map<string, string>(
+    stations.map((s: any) => [s.id, s.postSiteId || 'none']),
+  );
+  const fijoStationsBySitio = new Map<string, string[]>();
+  for (const sc of stationsWithFijos) {
+    const sitio = stationPostSite.get(sc.stationId) || 'none';
+    if (!fijoStationsBySitio.has(sitio)) fijoStationsBySitio.set(sitio, []);
+    fijoStationsBySitio.get(sitio)!.push(sc.stationId);
+  }
+
   for (let i = 0; i < existingSfAssignments.length; i++) {
     const a = existingSfAssignments[i];
     const targetPos = selectedPositions[i];
     if (!targetPos) break;
+    const sitio = stationPostSite.get(targetPos.stationId) || 'none';
+    const covered = fijoStationsBySitio.get(sitio) || [targetPos.stationId];
     await database.guardAssignment.update(
       {
         positionId: targetPos.id,
@@ -748,6 +782,7 @@ export async function optimizeSacafrancos(
         rotationStyleId: sfRotationStyleId,
         platoonOffset: targetPos.platoonOffset || 0,
         isRelief: true,
+        coveredStationIds: covered,
         updatedById: userId,
       },
       { where: { id: a.id, tenantId } },

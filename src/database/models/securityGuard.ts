@@ -132,6 +132,10 @@ export default function (sequelize) {
           len: [0, 200],
         }
       },
+      // Geocoded home coordinates (from the address) — drives real proximity
+      // ranking when assigning guards to stations. null until geocoded.
+      latitude: { type: DataTypes.DOUBLE, allowNull: true },
+      longitude: { type: DataTypes.DOUBLE, allowNull: true },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    
