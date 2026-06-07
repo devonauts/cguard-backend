@@ -153,20 +153,24 @@ export default class SiteTourService {
         scannedData: { latitude, longitude, validLocation, distanceMeters, radiusM, extra: scannedData },
       }, { transaction });
 
-      // If assignment exists, increment scansCompleted and mark completed when reaching total tags
+      // Mark the assignment complete once every checkpoint has been scanned.
+      // The model has no scansCompleted counter, so derive progress from the real
+      // tagScan rows (distinct checkpoints scanned for this assignment) — this is
+      // what actually drives the completion notification.
       let justCompleted = false;
-      if (assignment) {
-        // increment atomically
-        await assignment.increment('scansCompleted', { by: 1, transaction });
-
-        // get current scansCompleted value
-        await assignment.reload({ transaction });
-
-        // count total tags for the tour
-        const totalTags = await this.options.database.siteTourTag.count({ where: { siteTourId: tag.siteTourId }, transaction });
-
-        if ((assignment as any).scansCompleted >= totalTags && (assignment as any).status !== 'completed') {
-          await assignment.update({ status: 'completed', completedAt: new Date() }, { transaction });
+      if (assignment && (assignment as any).status !== 'completed') {
+        const totalTags = await this.options.database.siteTourTag.count({
+          where: { siteTourId: tag.siteTourId },
+          transaction,
+        });
+        const scannedDistinct = await this.options.database.tagScan.count({
+          where: { tourAssignmentId: assignment.id },
+          distinct: true,
+          col: 'siteTourTagId',
+          transaction,
+        });
+        if (totalTags > 0 && scannedDistinct >= totalTags) {
+          await assignment.update({ status: 'completed', endAt: new Date() }, { transaction });
           justCompleted = true;
         }
       }
