@@ -291,9 +291,11 @@ export async function stationAutoPositions(req, res) {
     let cycleLength = 7;
     let workDays = 5;
     let restDays = 2;
+    let dayShifts = 5;
     if (rotationStyleId) {
       const rot = await req.database.rotationStyle.findByPk(rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
       if (rot) {
+        dayShifts = rot.dayShifts || 0;
         workDays = (rot.dayShifts || 0) + (rot.nightShifts || 0);
         restDays = rot.restDays || 1;
         cycleLength = workDays + restDays;
@@ -330,10 +332,15 @@ export async function stationAutoPositions(req, res) {
     }
 
     if (scheduleType === '24h') {
-      // 24h station: keep station-level sequential rest pattern (same offset for both fijo slots)
+      // 24h station needs continuous day+night coverage. Phase out the two fijos
+      // by `dayShifts` so when Fijo 1 is on its DAY block, Fijo 2 is on its NIGHT
+      // block (and vice-versa) — instead of the old bug where both shared an
+      // offset and worked/rested identically (days double-staffed, nights empty,
+      // 2-day blackout). Residual gaps are covered by sacafrancos.
+      const offset2 = ((recommendedStationOffset - dayShifts) % cycleLength + cycleLength) % cycleLength;
       positions.push(
         { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: offset2, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
       );
     } else if (scheduleType === '12h-day' || scheduleType === '12h-night') {
       const start = scheduleType === '12h-day' ? '07:00' : '19:00';

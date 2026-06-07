@@ -10,6 +10,7 @@
 import { computeShiftsForAssignment, ComputedShift } from './shiftGenerationService';
 import { getCostSettings, computeShiftsCost } from './scheduleCostService';
 import { detectRestWarnings, detectSfStyleInconsistencies } from './scheduleValidation';
+import { computeCoverage, requiredHalves } from './scheduleCoverageService';
 
 type Scope = 'station' | 'postSite' | 'tenant';
 
@@ -178,6 +179,40 @@ export async function generateProposal(
     console.warn('[scheduleProposal] rest-rule validation failed:', e?.message || e);
   }
 
+  // Real coverage of the PROPOSED schedule: every (station, day, day/night-half)
+  // must have exactly one guard. Gaps = an empty puesto; overstaff = waste.
+  // This is what makes "guaranteed coverage" checkable before publish (Phase 7).
+  let coverage: any = null;
+  try {
+    const stationWhere: any = { tenantId, deletedAt: null, scheduleType: { [Op.ne]: null } };
+    if (input.scope === 'station' && input.stationId) stationWhere.id = input.stationId;
+    else if (input.scope === 'postSite' && input.postSiteId) stationWhere.postSiteId = input.postSiteId;
+    const stns = await db.station.findAll({ where: stationWhere, attributes: ['id', 'stationName', 'scheduleType'] });
+    if (stns.length) {
+      const stationReqs = stns.map((s: any) => ({
+        stationId: s.id,
+        stationName: s.stationName,
+        halves: requiredHalves(s.scheduleType),
+      }));
+      const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+      const tz = (tenant && tenant.timezone) || 'UTC';
+      const cov = computeCoverage(proposedForCost, stationReqs, today, 14, tz);
+      coverage = {
+        windowDays: cov.windowDays,
+        coveredPct: cov.coveredPct,
+        gapCount: cov.gapCount,
+        overstaffCount: cov.overstaffCount,
+        sampleGaps: cov.gaps.slice(0, 30),
+        sampleOverstaff: cov.overstaff.slice(0, 20),
+      };
+      if (!warnings) warnings = { total: 0 };
+      warnings.coverage = coverage;
+      warnings.total = (warnings.total || 0) + (cov.gapCount > 0 ? 1 : 0);
+    }
+  } catch (e: any) {
+    console.warn('[scheduleProposal] coverage analysis failed:', e?.message || e);
+  }
+
   const summary = {
     added, removed, changed, kept,
     total: added + removed + changed + kept,
@@ -231,11 +266,30 @@ export async function getProposal(db: any, tenantId: string, proposalId: string)
  * one transaction, materialize a per-guard implementation plan, then notify each
  * affected guard (in-app + push + best-effort email). Caller must have confirmed.
  */
-export async function publishProposal(db: any, tenantId: string, userId: string, proposalId: string) {
+export async function publishProposal(
+  db: any,
+  tenantId: string,
+  userId: string,
+  proposalId: string,
+  options: { allowGaps?: boolean } = {},
+) {
   const { Op } = db.Sequelize;
   const proposal = await db.scheduleProposal.findOne({ where: { id: proposalId, tenantId } });
   if (!proposal) throw new Error('Proposal not found');
   if (proposal.status !== 'draft') throw new Error(`Proposal is ${proposal.status}, cannot publish`);
+
+  // Coverage gate (Phase 7): refuse to publish a schedule that leaves puestos
+  // uncovered unless the operator explicitly overrides. Keeps "published" ==
+  // "actually covered" rather than silently shipping gaps.
+  const cov = (proposal.summary && proposal.summary.warnings && proposal.summary.warnings.coverage) || null;
+  if (cov && cov.gapCount > 0 && !options.allowGaps) {
+    const err: any = new Error(
+      `Cobertura incompleta: ${cov.gapCount} espacio(s) de puesto sin cubrir. Revisa o confirma publicar de todos modos.`,
+    );
+    err.code = 'coverage_gaps';
+    err.gapCount = cov.gapCount;
+    throw err;
+  }
 
   const rows = await db.proposedShift.findAll({
     where: { proposalId, tenantId, action: { [Op.ne]: 'keep' } },

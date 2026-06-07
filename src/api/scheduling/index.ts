@@ -25,6 +25,7 @@ import {
   proposalPublish,
   proposalDiscard,
   proposalPlan,
+  coverageGet,
 } from './proposalEndpoints';
 
 export default (app) => {
@@ -51,6 +52,9 @@ export default (app) => {
   app.get('/tenant/:tenantId/scheduler/staffing', schedulerStaffing);
   app.post('/tenant/:tenantId/scheduler/auto-assign', schedulerAutoAssign);
   app.post('/tenant/:tenantId/scheduler/optimize-sacafrancos', schedulerOptimizeSacafrancos);
+
+  // Real coverage of the live schedule (gaps + overstaff per station/day/half)
+  app.get('/tenant/:tenantId/scheduler/coverage', coverageGet);
 
   // Draft horario proposals (generate → review/diff → publish/discard)
   app.post('/tenant/:tenantId/scheduler/proposals', proposalGenerate);
