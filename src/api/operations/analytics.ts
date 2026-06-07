@@ -175,6 +175,33 @@ export default async (req, res) => {
         incidents: num(r.incidents),
       }));
 
+    // ── scheduling / coverage ──────────────────────────────────────────────────
+    (kpis as any).shiftsOpen = kpis.shiftsTotal - kpis.shiftsCovered;
+
+    const covByDay = await q(`SELECT DATE(startTime) d, COUNT(*) scheduled, SUM(CASE WHEN guardId IS NOT NULL THEN 1 ELSE 0 END) covered FROM shifts WHERE tenantId=:tenantId AND deletedAt IS NULL AND startTime>=:start AND startTime<=:end GROUP BY DATE(startTime)`);
+    const covMap: Record<string, any> = {};
+    covByDay.forEach((r) => { covMap[dayKey(r.d)] = { scheduled: num(r.scheduled), covered: num(r.covered) }; });
+    const coverageTrend = trend.map((t) => ({
+      date: t.date,
+      scheduled: covMap[t.date] ? covMap[t.date].scheduled : 0,
+      covered: covMap[t.date] ? covMap[t.date].covered : 0,
+    }));
+
+    // Upcoming uncovered (open) shifts in the next 7 days — forward-looking.
+    const upStart = new Date();
+    const upEnd = new Date(Date.now() + 7 * 86400000);
+    const upcomingUncovered = (await q(
+      `SELECT COALESCE(b.companyName, s.stationName, 'Sin asignar') site, COUNT(*) c
+       FROM shifts sh
+       LEFT JOIN businessInfos b ON sh.postSiteId = b.id
+       LEFT JOIN stations s ON sh.stationId = s.id
+       WHERE sh.tenantId=:tenantId AND sh.deletedAt IS NULL AND sh.guardId IS NULL
+         AND sh.startTime >= :upStart AND sh.startTime <= :upEnd
+       GROUP BY site ORDER BY c DESC LIMIT 12`,
+      { tenantId, upStart, upEnd },
+    )).map((r) => ({ site: String(r.site), count: num(r.c) }));
+    const upcomingUncoveredTotal = upcomingUncovered.reduce((s, x) => s + x.count, 0);
+
     return ApiResponseHandler.success(req, res, {
       range: { start: start.toISOString(), end: end.toISOString(), days },
       kpis,
@@ -184,6 +211,9 @@ export default async (req, res) => {
       topIncidentSites,
       perSite,
       perGuard,
+      coverageTrend,
+      upcomingUncovered,
+      upcomingUncoveredTotal,
     });
   } catch (error) {
     return ApiResponseHandler.error(req, res, error);
