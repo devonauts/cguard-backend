@@ -142,6 +142,7 @@ export default async (req, res) => {
       const id = String(s.id);
       const sh = shM[id] || {}, lo = loM[id] || {};
       return {
+        id,
         site: s.companyName || 'Sitio',
         guards: num((guM[id] || {}).g),
         shiftsTotal: num(sh.total), shiftsCovered: num(sh.covered),
