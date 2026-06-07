@@ -21,6 +21,11 @@ export default (app) => {
     `/tenant/:tenantId/security-guard`,
     require('./securityGuardCreate').default,
   );
+  // Backfill geocoded coordinates for guards missing them (proximity ranking)
+  app.post(
+    `/tenant/:tenantId/security-guard/geocode-missing`,
+    require('./securityGuardGeocode').default,
+  );
   app.put(
     `/tenant/:tenantId/security-guard/:id`,
     require('./securityGuardUpdate').default,

@@ -458,6 +458,16 @@ export default class SecurityGuardService {
         // Don't fail the create operation if email sending fails
       }
 
+      // Geocode the home address → coords for real proximity ranking. Fire-and-
+      // forget so a slow/failed geocode never affects the create.
+      try {
+        const t = SequelizeRepository.getCurrentTenant(this.options);
+        if (t?.id && record?.id && data.address) {
+          const { geocodeGuardIfNeeded } = require('../lib/geocode');
+          geocodeGuardIfNeeded(this.options.database, t.id, record.id, data.address).catch(() => {});
+        }
+      } catch { /* ignore */ }
+
       return record;
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(
@@ -526,6 +536,15 @@ export default class SecurityGuardService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Re-geocode when the address changed (best-effort, non-blocking).
+      try {
+        const t = SequelizeRepository.getCurrentTenant(this.options);
+        if (t?.id && id && data.address) {
+          const { geocodeGuardIfNeeded } = require('../lib/geocode');
+          geocodeGuardIfNeeded(this.options.database, t.id, id, data.address).catch(() => {});
+        }
+      } catch { /* ignore */ }
 
       return record;
     } catch (error) {
