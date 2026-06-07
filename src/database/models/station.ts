@@ -17,6 +17,16 @@ export default function (sequelize) {
           notEmpty: true,
         }
       },
+      // Internal call-sign / nickname ("nominativo"). PRIVATE to tenant
+      // operations — must NOT be exposed to client-portal responses.
+      nickname: {
+        type: DataTypes.STRING(120),
+        allowNull: true,
+        defaultValue: null,
+        validate: {
+          len: [0, 120],
+        },
+      },
       latitud: {
         type: DataTypes.DOUBLE,
         allowNull: true,

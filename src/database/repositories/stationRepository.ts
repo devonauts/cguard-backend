@@ -27,6 +27,7 @@ class StationRepository {
       {
         ...lodash.pick(data, [
           'stationName',
+          'nickname',
           'latitud',
           'longitud',
           'numberOfGuardsInStation',
@@ -113,6 +114,7 @@ class StationRepository {
       {
         ...lodash.pick(data, [
           'stationName',
+          'nickname',
           'latitud',
           'longitud',
           'numberOfGuardsInStation',
