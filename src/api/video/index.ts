@@ -10,6 +10,8 @@ export default (app) => {
   app.delete('/tenant/:tenantId/video/device/:id', require('./deviceDelete').default);
   app.post('/tenant/:tenantId/video/device/:id/test', require('./deviceTest').default);
   app.post('/tenant/:tenantId/video/device/:id/cameras', require('./deviceCameras').default);
+  app.put('/tenant/:tenantId/video/device/:id/gateway', require('./deviceGateway').default);
+  app.get('/tenant/:tenantId/video/device/:id/gateway-config', require('./deviceGatewayConfig').default);
 
   // ---- Cameras ----
   app.get('/tenant/:tenantId/video/cameras', require('./cameraList').default);

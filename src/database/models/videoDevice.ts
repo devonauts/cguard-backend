@@ -75,6 +75,17 @@ export default function (sequelize) {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      // Media gateway (go2rtc/MediaMTX) base URL that converts this device's RTSP
+      // into browser-playable WebRTC/HLS, and the chosen playback format.
+      streamGatewayBase: {
+        type: DataTypes.STRING(300),
+        allowNull: true,
+      },
+      streamFormat: {
+        type: DataTypes.STRING(10),
+        allowNull: false,
+        defaultValue: 'hls',
+      },
       active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,

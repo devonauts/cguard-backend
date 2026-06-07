@@ -1,16 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-
-// Build a default RTSP url for a device channel when we have enough info.
-function buildRtspUrl(device: any, channel: number): string | null {
-  if (!device.host) return null;
-  const auth = device.username
-    ? `${encodeURIComponent(device.username)}:${encodeURIComponent(device.password || '')}@`
-    : '';
-  const port = device.port || 554;
-  return `rtsp://${auth}${device.host}:${port}/ch${channel}`;
-}
+import { buildRtspUrl, gatewayPlaybackUrl } from './_videoUrl';
 
 // POST /tenant/:tenantId/video/device/:id/cameras
 // Auto-create videoCamera rows for channels 1..N if missing; return all cameras.
@@ -54,6 +45,12 @@ export default async (req, res) => {
           status: 'unknown',
           tenantId,
         });
+        // If a media gateway is configured, point the browser stream at it.
+        if (device.streamGatewayBase) {
+          await created.update({
+            streamUrl: gatewayPlaybackUrl(device.streamGatewayBase, created.id, device.streamFormat || 'hls'),
+          });
+        }
         byChannel[ch] = created;
       }
     }
