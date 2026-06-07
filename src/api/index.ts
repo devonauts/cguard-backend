@@ -220,6 +220,7 @@ require('./subscription').default(routes);
 require('./kpi').default(routes);
 require('./operations').default(routes);
 require('./video').default(routes);
+require('./alarm').default(routes);
 require('./insurance').default(routes);
 require('./reports').default(routes);
 require('./notificationRecipient').default(routes);

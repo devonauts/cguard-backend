@@ -79,6 +79,38 @@ module.exports = {
         DATABASE_POOL_MIN: '5',
       },
     },
+    {
+      // Alarm signal receiver (SIA DC-09 / Contact ID / Sur-Gard) — a single
+      // long-running TCP/UDP listener. MUST be fork mode / 1 instance (a socket
+      // listener can't be load-balanced across cluster workers).
+      name: 'cguard-alarm-receiver',
+      script: './dist/alarmReceiver.js',
+      cwd: '/home/cguardpro/cguard-backend',
+      instances: 1,
+      exec_mode: 'fork',
+      max_memory_restart: '512M',
+      min_uptime: '10s',
+      max_restarts: 10,
+      restart_delay: 4000,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      error_file: './logs/alarm-error.log',
+      out_file: './logs/alarm-out.log',
+      env: {
+        NODE_ENV: 'development',
+        ALARM_TCP_PORT: 6543,
+        ALARM_UDP_PORT: 6543,
+        TENANT_MODE: 'multi',
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        ALARM_TCP_PORT: 6543,
+        ALARM_UDP_PORT: 6543,
+        TENANT_MODE: 'multi',
+        FIREBASE_SERVICE_ACCOUNT_FILE: '/home/cguardpro/firebase-service-account.json',
+        DATABASE_POOL_MAX: '10',
+        DATABASE_POOL_MIN: '2',
+      },
+    },
   ],
   
   // ============================================================
