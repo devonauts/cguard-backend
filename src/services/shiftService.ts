@@ -98,6 +98,28 @@ export default class ShiftService {
         // ignore
       }
 
+      // A prior shift for this exact (guard, station, slot) may be soft-deleted.
+      // The uniq_shift_slot index (tenantId, guardId, stationId, startTime,
+      // endTime) ignores deletedAt, so the dead row still reserves the slot and a
+      // re-assign collides with a spurious unique violation. Hard-remove any
+      // soft-deleted occupant first so the slot is genuinely free to re-create.
+      if (data.guard && data.station && data.startTime && data.endTime) {
+        const { Op } = this.options.database.Sequelize;
+        await this.options.database.shift.destroy({
+          where: {
+            tenantId: SequelizeRepository.getCurrentTenant(this.options).id,
+            guardId: data.guard,
+            stationId: data.station,
+            startTime: data.startTime,
+            endTime: data.endTime,
+            deletedAt: { [Op.ne]: null },
+          },
+          force: true,
+          paranoid: false,
+          transaction,
+        });
+      }
+
       const record = await ShiftRepository.create(data, {
         ...this.options,
         transaction,
