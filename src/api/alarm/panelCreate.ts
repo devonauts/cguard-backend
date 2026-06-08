@@ -20,6 +20,9 @@ export default async (req, res) => {
       model: body.model || null,
       comms: body.comms || 'ip',
       receiverLine: body.receiverLine || null,
+      psapAgency: body.psapAgency || null,
+      psapPhone: body.psapPhone || null,
+      asapOri: body.asapOri || null,
       // SECURITY: AES key for DC-09 — stored, never returned.
       dc09Key:
         typeof body.dc09Key !== 'undefined' && body.dc09Key !== ''

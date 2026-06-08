@@ -67,6 +67,16 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: 0,
       },
+      // Phase 4: Enhanced Call Verification + ASAP-to-PSAP dispatch.
+      ecvSatisfied: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      asapRef: {
+        type: DataTypes.STRING(80),
+        allowNull: true,
+      },
       incidentId: {
         type: DataTypes.UUID,
         allowNull: true,

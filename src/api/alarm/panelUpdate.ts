@@ -22,6 +22,7 @@ export default async (req, res) => {
       'name', 'accountNumber', 'protocol', 'panelType', 'make', 'model',
       'comms', 'receiverLine', 'supervisionMins', 'testIntervalHrs', 'status',
       'lastSignalAt', 'postSiteId', 'stationId', 'customerId', 'notes', 'active',
+      'psapAgency', 'psapPhone', 'asapOri',
     ];
     const updateData: any = { updatedById: currentUser && currentUser.id };
     updatable.forEach((f) => {

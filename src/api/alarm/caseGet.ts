@@ -56,6 +56,13 @@ export default async (req, res) => {
       delete plain.panel.dc09Key;
     }
 
+    // ECV call log (attached without an association to keep the model lean).
+    const calls = await db.alarmCallLog.findAll({
+      where: { alarmCaseId: alarmCase.id, tenantId },
+      order: [['at', 'ASC']],
+    });
+    plain.calls = (calls || []).map((c: any) => (typeof c.get === 'function' ? c.get({ plain: true }) : c));
+
     await ApiResponseHandler.success(req, res, plain);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

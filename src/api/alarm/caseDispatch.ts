@@ -37,13 +37,29 @@ export default async (req, res) => {
 
     const now = new Date();
 
+    // Police dispatch: enforce Enhanced Call Verification (for burglary) and
+    // route via ASAP-to-PSAP when configured, else a manual PSAP contact.
+    // Hold-up/panic/fire/medical are ECV-exempt (immediate dispatch).
+    let policeResult: any = null;
+    if (type === 'police') {
+      const ECV_EXEMPT = ['holdup', 'panic', 'fire', 'medical'];
+      if (!ECV_EXEMPT.includes(alarmCase.category) && !alarmCase.ecvSatisfied && !body.override) {
+        throw new Error400(req.language, 'alarm.ecvRequired');
+      }
+      const panel = await db.alarmPanel.findByPk(alarmCase.alarmPanelId);
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { dispatchPolice } = require('../../services/alarm/policeDispatch');
+      policeResult = await dispatchPolice(panel, alarmCase, { note });
+      if (policeResult.ref) await alarmCase.update({ asapRef: policeResult.ref });
+    }
+
     const dispatch = await db.alarmDispatch.create({
       alarmCaseId: alarmCase.id,
       type,
-      target,
+      target: target || (policeResult ? policeResult.agency : null),
       status: 'requested',
       eta: body.eta ? new Date(body.eta) : null,
-      outcome: note,
+      outcome: policeResult ? policeResult.message : note,
       dispatchedById: actorId || null,
       tenantId,
     });
@@ -83,7 +99,9 @@ export default async (req, res) => {
     await db.alarmAuditLog.create({
       alarmCaseId: alarmCase.id,
       action: 'dispatch',
-      detail: `Despacho ${type}${target ? ` -> ${target}` : ''}${note ? ` (${note})` : ''}`,
+      detail: policeResult
+        ? `Despacho policía (${policeResult.mode === 'asap' ? 'ASAP' : 'manual'}) — ${policeResult.message}`
+        : `Despacho ${type}${target ? ` -> ${target}` : ''}${note ? ` (${note})` : ''}`,
       actorId: actorId || null,
       at: now,
       tenantId,
@@ -93,7 +111,7 @@ export default async (req, res) => {
 
     const plain =
       typeof dispatch.get === 'function' ? dispatch.get({ plain: true }) : dispatch;
-    await ApiResponseHandler.success(req, res, plain);
+    await ApiResponseHandler.success(req, res, { ...plain, police: policeResult || undefined });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }

@@ -41,6 +41,19 @@ export default function (sequelize) {
         type: DataTypes.STRING(40),
         allowNull: true,
       },
+      // Phase 4: PSAP / police dispatch routing for this site.
+      psapAgency: {
+        type: DataTypes.STRING(160),
+        allowNull: true,
+      },
+      psapPhone: {
+        type: DataTypes.STRING(40),
+        allowNull: true,
+      },
+      asapOri: {
+        type: DataTypes.STRING(40),
+        allowNull: true,
+      },
       // AES key (hex) for DC-09 encrypted accounts. NEVER returned by the API.
       dc09Key: {
         type: DataTypes.STRING(255),
