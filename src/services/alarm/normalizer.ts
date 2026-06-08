@@ -251,10 +251,11 @@ export async function ingestSignal(
 
   // (6) create the alarmEvent linked to the case (case may be null for a bare
   //     restore with no open case — still record the event for history).
+  const alarmZoneId = await resolveZoneId(db, tenantId, alarmPanelId, sig.zoneNumber);
   const event = await db.alarmEvent.create({
     alarmSignalId: signal.id,
     alarmPanelId,
-    alarmZoneId: await resolveZoneId(db, tenantId, alarmPanelId, sig.zoneNumber),
+    alarmZoneId,
     category: mapped.category,
     priority: mapped.priority,
     description: mapped.description,
@@ -289,7 +290,50 @@ export async function ingestSignal(
     });
   }
 
+  // (9) Video verification — if the triggering zone has a linked camera and the
+  // alarm is verifiable, auto-capture a verification clip linked to the case.
+  if (alarmCase && alarmZoneId) {
+    try { await maybeCreateVerificationClip(db, tenantId, alarmCase, alarmZoneId, mapped, now); }
+    catch (e: any) { console.warn('[alarm] verification clip failed:', e?.message || e); }
+  }
+
   return { case: alarmCase || null, event, signal, suppressed: false };
+}
+
+const VERIFIABLE = ['burglary', 'holdup', 'panic', 'fire', 'medical', 'tamper'];
+
+/** Auto-capture a verification clip for an alarm case when its zone is linked to
+ *  a camera. Deduped to one clip per camera per case. Best-effort. */
+async function maybeCreateVerificationClip(
+  db: any, tenantId: string, alarmCase: any, alarmZoneId: string, mapped: MappedCode, at: Date,
+): Promise<void> {
+  if (!VERIFIABLE.includes(mapped.category)) return;
+  const zone = await db.alarmZone.findByPk(alarmZoneId);
+  if (!zone || !zone.linkedCameraId) return;
+  const existing = await db.videoClip.findOne({
+    where: { alarmCaseId: alarmCase.id, videoCameraId: zone.linkedCameraId },
+  });
+  if (existing) return;
+  const start = new Date(at.getTime() - 30000);
+  const end = new Date(at.getTime() + 30000);
+  await db.videoClip.create({
+    videoCameraId: zone.linkedCameraId,
+    alarmCaseId: alarmCase.id,
+    startAt: start,
+    endAt: end,
+    durationSec: 60,
+    label: `Verificación: ${mapped.description}`,
+    status: 'pending',
+    tenantId,
+  });
+  await db.alarmAuditLog.create({
+    alarmCaseId: alarmCase.id,
+    action: 'video.verification',
+    detail: 'Clip de verificación capturado (cámara vinculada a la zona)',
+    actorId: null,
+    at: new Date(),
+    tenantId,
+  });
 }
 
 /**

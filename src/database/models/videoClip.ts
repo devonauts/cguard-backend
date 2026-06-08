@@ -49,6 +49,11 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      // Phase 3: the alarm case this clip verifies (auto-captured on alarm).
+      alarmCaseId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       shareToken: {
         type: DataTypes.STRING(80),
         allowNull: true,
