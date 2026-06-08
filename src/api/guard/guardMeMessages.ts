@@ -24,6 +24,14 @@ const guardCtx = (req: any) => {
   };
 };
 
+// A missing/unreachable thread is a 404, not a 500 — return a clean status and
+// keep it out of the error log (stale clients can poll bad ids harmlessly).
+const notFound = () => {
+  const e: any = new Error('Conversación no encontrada');
+  e.code = 404;
+  return e;
+};
+
 export const guardMessagesList = async (req, res) => {
   try {
     const { db, tenantId, userId } = guardCtx(req);
@@ -37,7 +45,7 @@ export const guardMessageThread = async (req, res) => {
   try {
     const { db, tenantId, userId } = guardCtx(req);
     const convo = await getConversation(db, tenantId, req.params.conversationId, userId, false);
-    if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
+    if (!convo) return ApiResponseHandler.error(req, res, notFound());
     const q = req.query || {};
     const data = await listMessages(db, tenantId, req.params.conversationId, { limit: parseInt(q.limit, 10) || 30, before: q.before || null });
     const c = convo.get({ plain: true });
@@ -53,7 +61,7 @@ export const guardMessageReply = async (req, res) => {
   try {
     const { db, tenantId, userId } = guardCtx(req);
     const convo = await getConversation(db, tenantId, req.params.conversationId, userId, false);
-    if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
+    if (!convo) return ApiResponseHandler.error(req, res, notFound());
     const body = req.body?.data || req.body || {};
     const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'guard', body: body.body, clientMsgId: body.clientMsgId });
     await ApiResponseHandler.success(req, res, { message: message.get ? message.get({ plain: true }) : message });
