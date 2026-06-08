@@ -12,6 +12,7 @@ require('dotenv').config();
 
 import { databaseInit } from './database/databaseConnection';
 import { startReceiver } from './services/alarm/receiver';
+import { runEscalationSweep } from './services/alarm/escalation';
 
 // Cache the initialized models bundle; databaseInit() itself memoizes, but we
 // pass a resolver so each message reuses the same connection pool.
@@ -31,12 +32,18 @@ async function boot() {
 
   const handles = startReceiver({ tcpPort, udpPort, resolveDb });
 
+  // SLA escalation sweep every 45s (this single-instance process is the right
+  // place — never duplicated across cluster workers).
+  const escDb = await resolveDb();
+  const escTimer = setInterval(() => { runEscalationSweep(escDb).catch(() => {}); }, 45000);
+
   if (typeof process.send === 'function') {
     process.send('ready');
   }
 
   const shutdown = async (sig: string) => {
     console.log(`[alarmReceiver] ${sig} received, shutting down...`);
+    clearInterval(escTimer);
     try {
       await handles.close();
     } catch (e: any) {

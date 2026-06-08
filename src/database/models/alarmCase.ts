@@ -53,6 +53,20 @@ export default function (sequelize) {
         type: DataTypes.STRING(16),
         allowNull: true,
       },
+      // Phase 2: action-plan step completion + SLA escalation state.
+      stepProgress: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+      escalatedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      slaLevel: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
       incidentId: {
         type: DataTypes.UUID,
         allowNull: true,

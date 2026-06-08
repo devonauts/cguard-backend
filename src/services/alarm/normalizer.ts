@@ -24,6 +24,7 @@
 
 import { Op } from 'sequelize';
 import { mapCode, MappedCode } from './codes';
+import { emitAlarmEvent } from './realtime';
 
 /** Input accepted by ingestSignal. */
 export interface IngestSignalInput {
@@ -274,6 +275,17 @@ export async function ingestSignal(
       actorId: null,
       at: now,
       tenantId,
+    });
+  }
+
+  // (8) real-time push to operator consoles (SSE + socket.io).
+  if (alarmCase) {
+    await emitAlarmEvent(db, tenantId, {
+      eventType: createdCase ? 'alarm.case.new' : 'alarm.case.updated',
+      title: createdCase ? `Nueva alarma: ${mapped.description}` : `Actualización: ${mapped.description}`,
+      body: `${panel.name}${sig.zoneNumber ? ' · zona ' + sig.zoneNumber : ''}`,
+      caseId: alarmCase.id,
+      payload: { priority: alarmCase.priority, category: alarmCase.category, panelName: panel.name },
     });
   }
 

@@ -45,6 +45,8 @@ export default (app) => {
   app.post('/tenant/:tenantId/alarm/case/:id/close', require('./caseClose').default);
   app.post('/tenant/:tenantId/alarm/case/:id/incident', require('./caseIncident').default);
   app.post('/tenant/:tenantId/alarm/case/:id/note', require('./caseNote').default);
+  app.get('/tenant/:tenantId/alarm/case/:id/action-plan', require('./caseActionPlan').default);
+  app.post('/tenant/:tenantId/alarm/case/:id/step', require('./caseStep').default);
 
   // ---- Ingest (webhook + manual) ----
   app.post('/tenant/:tenantId/alarm/ingest', require('./ingestWebhook').default);

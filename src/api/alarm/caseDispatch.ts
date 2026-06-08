@@ -12,6 +12,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import Error404 from '../../errors/Error404';
+import { emitAlarmEvent } from '../../services/alarm/realtime';
 import Error400 from '../../errors/Error400';
 
 export default async (req, res) => {
@@ -87,6 +88,8 @@ export default async (req, res) => {
       at: now,
       tenantId,
     });
+
+    await emitAlarmEvent(db, tenantId, { eventType: 'alarm.case.updated', title: 'Caso despachado', caseId: alarmCase.id, payload: { status: 'dispatched', dispatchType: type } });
 
     const plain =
       typeof dispatch.get === 'function' ? dispatch.get({ plain: true }) : dispatch;

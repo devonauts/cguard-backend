@@ -9,6 +9,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import Error404 from '../../errors/Error404';
+import { emitAlarmEvent } from '../../services/alarm/realtime';
 
 export default async (req, res) => {
   try {
@@ -40,6 +41,8 @@ export default async (req, res) => {
       at: now,
       tenantId,
     });
+
+    await emitAlarmEvent(db, tenantId, { eventType: 'alarm.case.updated', title: 'Caso reconocido', caseId: alarmCase.id, payload: { status: 'acknowledged', assignedOperatorId: actorId } });
 
     const plain =
       typeof alarmCase.get === 'function'
