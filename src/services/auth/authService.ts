@@ -30,6 +30,35 @@ import { ensureBuiltInRolesForTenant } from '../roleSync';
 const BCRYPT_SALT_ROUNDS = 12;
 
 class AuthService {
+  static async bestEffortVerificationEmail(
+    language,
+    email,
+    tenantId,
+    options,
+  ) {
+    try {
+      await Promise.race([
+        this.sendEmailAddressVerificationEmail(
+          language,
+          email,
+          tenantId,
+          options,
+        ),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('signup verification email timeout')),
+            8000,
+          ),
+        ),
+      ]);
+    } catch (err) {
+      const errMsg =
+        err && typeof err === 'object' && 'message' in err
+          ? (err as any).message
+          : String(err);
+      console.warn('[Signup] Verification email skipped:', errMsg);
+    }
+  }
 
   static async signup(
     email,
@@ -145,7 +174,7 @@ class AuthService {
         if (!isEmailVerified) {
           if (EmailSender.isConfigured) {
             console.log('📤 [Signup] Enviando email de verificación...');
-            await this.sendEmailAddressVerificationEmail(
+            await this.bestEffortVerificationEmail(
               options.language,
               existingUser.email,
               tenantId,
@@ -273,7 +302,7 @@ class AuthService {
       if (!isEmailVerified) {
         if (EmailSender.isConfigured) {
           console.log('📤 [Signup] Enviando email de verificación...');
-          await this.sendEmailAddressVerificationEmail(
+          await this.bestEffortVerificationEmail(
             options.language,
             newUser.email,
             tenantId,
