@@ -51,6 +51,8 @@ export default (app) => {
   app.get('/tenant/:tenantId/alarm/case/:id/clips', require('./caseClips').default);
   app.post('/tenant/:tenantId/alarm/case/:id/call', require('./caseCall').default);
   app.get('/tenant/:tenantId/alarm/reports/false-alarms', require('./falseAlarmReport').default);
+  app.get('/tenant/:tenantId/alarm/analytics', require('./alarmAnalytics').default);
+  app.get('/tenant/:tenantId/alarm/reports/audit-export', require('./auditExport').default);
 
   // ---- Ingest (webhook + manual) ----
   app.post('/tenant/:tenantId/alarm/ingest', require('./ingestWebhook').default);
