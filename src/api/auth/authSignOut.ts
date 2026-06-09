@@ -8,9 +8,11 @@ export default async (req, res) => {
     if (!currentUser) throw new Error401();
     const db = req.database;
 
-    // Invalidate every token issued before now → ends the active session.
+    // End the active session. Set the cutoff 1s ahead so the CURRENT token (whose
+    // iat is <= now, and MySQL DATETIME truncates to whole seconds) is also
+    // rejected — isBefore is strict, so "now" alone would leave it valid this second.
     await db.user.update(
-      { jwtTokenInvalidBefore: new Date() },
+      { jwtTokenInvalidBefore: new Date(Date.now() + 1000) },
       { where: { id: currentUser.id } },
     );
 
