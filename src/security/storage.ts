@@ -292,7 +292,15 @@ export default class Storage {
         publicRead: false,
       },
 
-
+      // Voice reply clips for the radio check (pase de novedades). OpenAI's
+      // transcription cap is 25 MB; voice replies are tiny. Private.
+      radioCheckAudio: {
+        id: 'radioCheckAudio',
+        folder: 'tenant/:tenantId/radioCheck/audio',
+        maxSizeInBytes: 25 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
 
 
     };

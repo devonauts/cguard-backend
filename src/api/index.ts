@@ -231,6 +231,7 @@ require('./scheduler').default(routes);
 require('./scheduling').default(routes);
 require('./guard').default(routes);
 require('./message').default(routes);
+require('./radioCheck').default(routes);
 require('./events').default(routes);
 require('./superadmin').default(routes);
 

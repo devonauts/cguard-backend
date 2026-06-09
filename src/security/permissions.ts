@@ -367,6 +367,14 @@ class Permissions {
       messageRead: createPermission('messageRead', [...ALL_STAFF_ROLES, roles.securityGuard, roles.customer]),
       messageSend: createPermission('messageSend', [...ALL_STAFF_ROLES, roles.securityGuard, roles.customer]),
 
+      // Radio check (pase de novedades). Dispatchers run/monitor the roll call;
+      // guards reply from the worker app. Audio clips upload to radioCheckAudio.
+      radioCheckRead: createPermission('radioCheckRead', DISPATCHER_ROLES, undefined, [storage.radioCheckAudio]),
+      radioCheckManage: createPermission('radioCheckManage', DISPATCHER_ROLES, undefined, [storage.radioCheckAudio]),
+      radioCheckReply: createPermission('radioCheckReply', [...DISPATCHER_ROLES, roles.securityGuard], undefined, [storage.radioCheckAudio]),
+      radioCheckSettingsRead: createPermission('radioCheckSettingsRead', DISPATCHER_ROLES),
+      radioCheckSettingsEdit: createPermission('radioCheckSettingsEdit', MANAGEMENT_ROLES),
+
       // === NOTIFICATION RECIPIENTS ===
       notificationRecipientImport: createPermission('notificationRecipientImport', SUPERVISOR_ROLES),
       notificationRecipientCreate: createPermission('notificationRecipientCreate', SUPERVISOR_ROLES),

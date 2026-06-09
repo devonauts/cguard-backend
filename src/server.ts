@@ -227,6 +227,66 @@ nodeSetInterval(() => { runConsignaScheduler(); }, 60 * 1000);
 setTimeout(() => runConsignaScheduler(), 20000);
 
 /**
+ * Radio check (pase de novedades) scheduler. Two jobs each minute:
+ *   1) Advance EVERY running session (manual or auto) — times out the current
+ *      station and calls the next one. Idempotent conditional UPDATEs make this
+ *      safe across the PM2 cluster.
+ *   2) For each enabled tenant inside its active hours, auto-start a roll call
+ *      when one is due. The atomic conditional UPDATE on `lastAutoRunAt` (the
+ *      trial-scheduler pattern) guarantees exactly one worker fires it.
+ */
+async function runRadioCheckScheduler() {
+  try {
+    const database = await databaseInit();
+    const { Op } = require('sequelize');
+    const radioSvc = require('./services/radioCheckService');
+    const now = new Date();
+
+    const tzCache: Record<string, string> = {};
+    const tzFor = async (tenantId: string) => {
+      if (tzCache[tenantId]) return tzCache[tenantId];
+      const tn = await database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+      return (tzCache[tenantId] = tn?.timezone || 'UTC');
+    };
+    const inActiveHours = (tz: string, start?: string | null, end?: string | null) => {
+      if (!start || !end) return true;
+      const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+      return start <= end ? hhmm >= start && hhmm < end : hhmm >= start || hhmm < end; // overnight window
+    };
+
+    // 1) Advance running sessions (timeouts move the roll call station-by-station).
+    const running = await database.radioCheckSession.findAll({ where: { status: 'running', deletedAt: null }, attributes: ['id', 'tenantId'] });
+    for (const s of running) {
+      await radioSvc.advanceSession(database, s.tenantId, s.id).catch(() => {});
+    }
+
+    // 2) Auto-start due roll calls for enabled tenants (cluster-safe atomic claim).
+    const settingsRows = await database.radioCheckSettings.findAll({ where: { enabled: true, deletedAt: null } });
+    for (const st of settingsRows) {
+      const tz = await tzFor(st.tenantId);
+      if (!inActiveHours(tz, st.activeHoursStart, st.activeHoursEnd)) continue;
+      const threshold = new Date(now.getTime() - (st.intervalMinutes || 35) * 60000);
+      const [claimed] = await database.radioCheckSettings.update(
+        { lastAutoRunAt: now },
+        { where: { tenantId: st.tenantId, [Op.or]: [{ lastAutoRunAt: null }, { lastAutoRunAt: { [Op.lte]: threshold } }] } },
+      );
+      if (!claimed) continue;
+      // Don't stack roll calls — skip if one is already running for this tenant.
+      const active = await database.radioCheckSession.findOne({ where: { tenantId: st.tenantId, status: 'running', deletedAt: null }, attributes: ['id'] });
+      if (active) continue;
+      await radioSvc.startSession(database, st.tenantId, { mode: 'auto', scope: 'all' })
+        .then(() => console.log(`[RadioCheck] auto roll call started for tenant ${st.tenantId}`))
+        .catch((e: any) => console.warn('[RadioCheck] auto start failed:', e?.message || e));
+    }
+  } catch (err) {
+    console.error('[RadioCheck] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+nodeSetInterval(() => { runRadioCheckScheduler(); }, 60 * 1000);
+setTimeout(() => runRadioCheckScheduler(), 35000);
+
+/**
  * Trial scheduler — sends reminder emails as a tenant's 14-day trial winds down
  * (stages at 7 / 3 / 1 days left and on expiry) and flips expired trials to
  * `trial_expired`. `trialReminderStage` dedupes; the conditional UPDATE makes it
