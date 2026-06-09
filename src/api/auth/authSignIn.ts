@@ -29,7 +29,22 @@ export default async (req, res) => {
     // ✅ RETORNO OBLIGATORIO para evitar doble respuesta
     return ApiResponseHandler.success(req, res, payload)
 
-  } catch (error) {
+  } catch (error: any) {
+    // Audit the failed login attempt (bad credentials, unverified email, etc.).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { logSecurityEvent, clientCtx } = require('../../services/auth/securityAudit');
+      const ctx = clientCtx(req);
+      await logSecurityEvent(req.database, {
+        tenantId: req.body?.tenantId || null,
+        email: req.body?.email || null,
+        event: 'login_failed',
+        outcome: 'failure',
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        detail: (error && (error.messageCode || error.message)) || 'login failed',
+      });
+    } catch { /* ignore */ }
     // ✅ RETORNO OBLIGATORIO para evitar doble respuesta
     return ApiResponseHandler.error(req, res, error)
   }

@@ -72,6 +72,11 @@ export async function registerGuardDevice(
       createdById: userId,
       updatedById: userId,
     });
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { logSecurityEvent } = require('./auth/securityAudit');
+      await logSecurityEvent(db, { tenantId, userId, event: 'device_registered', deviceId, platform: meta.platform, detail: meta.model || null });
+    } catch { /* ignore */ }
   }
 
   // Binding: first device binds; a different device is flagged.
@@ -124,6 +129,28 @@ export async function registerGuardDevice(
     } catch (e) {
       console.warn('[guardDeviceService] mismatch dispatch failed:', (e as any)?.message || e);
     }
+  }
+
+  // Trusted-device cap: keep at most 10 devices per guard; evict the oldest
+  // (never the bound one). Logs each eviction.
+  try {
+    const all = await db.deviceIdInformation.findAll({
+      where: { tenantId, userId },
+      order: [['lastSeenAt', 'DESC'], ['createdAt', 'DESC']],
+    });
+    if (all.length > 10) {
+      for (const d of all.slice(10)) {
+        if (d.isBound) continue;
+        await d.destroy();
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { logSecurityEvent } = require('./auth/securityAudit');
+          await logSecurityEvent(db, { tenantId, userId, event: 'device_evicted', deviceId: d.deviceId, platform: d.platform, detail: 'Límite de 10 dispositivos confiables alcanzado.' });
+        } catch { /* ignore */ }
+      }
+    }
+  } catch (e) {
+    console.warn('[guardDeviceService] device cap failed:', (e as any)?.message || e);
   }
 
   return { record, bound: isBound, mismatch };
