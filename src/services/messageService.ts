@@ -141,22 +141,52 @@ export async function sendMessage(
   return message;
 }
 
-/** Push (worker/client) + (future) socket for admins. Never throws. */
+/** Notify the recipient: a CRM platform event for staff (bell + toast + chime),
+ *  a device push for guards/clients. Never throws. */
 async function notifyRecipient(db: any, tenantId: string, conversation: any, message: any, recipientUserId: string | null, senderType: SenderType) {
   try {
     if (!recipientUserId) return;
-    // Push only to a guard/client device (admins use the CRM, which polls).
-    const adminIsRecipient = senderType !== 'staff';
-    if (adminIsRecipient) return; // guard/client replied → admin; no push needed
-    const { pushToUser } = require('./pushService');
+
     let senderName = 'Mensaje';
     try {
       const u = await db.user.findByPk(message.senderUserId, { attributes: ['fullName', 'firstName'] });
       senderName = (u && (u.fullName || u.firstName)) || 'Mensaje';
     } catch { /* ignore */ }
+    const body = String(message.body || '').slice(0, 150);
+
+    // Guard/client → staff: surface it in the CRM (bell + toast + chime) via a
+    // platform event targeted at the conversation owner. Admins live in the CRM,
+    // so no device push.
+    if (senderType !== 'staff') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { storePlatformEvent } = require('../lib/platformEventStore');
+        await storePlatformEvent(db, {
+          tenantId,
+          eventType: 'message.new',
+          title: senderName,
+          body,
+          recipientUserId,
+          sourceEntityType: 'conversation',
+          sourceEntityId: String(conversation.id),
+          payload: {
+            conversationId: String(conversation.id),
+            messageId: String(message.id),
+            senderId: String(message.senderUserId),
+            senderName,
+          },
+        });
+      } catch (e: any) {
+        console.warn('[message] CRM notify failed:', e?.message || e);
+      }
+      return;
+    }
+
+    // Staff → guard/client: device push.
+    const { pushToUser } = require('./pushService');
     await pushToUser(db, tenantId, recipientUserId, {
       title: senderName,
-      body: String(message.body).slice(0, 150),
+      body,
       data: {
         type: 'message.new',
         conversationId: String(conversation.id),
