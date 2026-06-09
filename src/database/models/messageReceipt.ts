@@ -22,6 +22,8 @@ export default function (sequelize) {
       },
       deliveredAt: { type: DataTypes.DATE, allowNull: true },
       readAt: { type: DataTypes.DATE, allowNull: true },
+      // Set once an "unread after 5 min" email reminder has been sent (at most once).
+      reminderSentAt: { type: DataTypes.DATE, allowNull: true },
     },
     {
       indexes: [
