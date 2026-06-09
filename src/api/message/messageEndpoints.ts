@@ -42,7 +42,7 @@ export const messageCreate = async (req, res) => {
     const conversation = await getOrCreateConversation(db, tenantId, userId, {
       recipientType: body.recipientType, recipientId: body.recipientId, subject: body.subject, isOneWay: body.isOneWay,
     });
-    const message = await sendMessage(db, tenantId, { conversation, senderUserId: userId, senderType: 'staff', body: body.body, clientMsgId: body.clientMsgId });
+    const message = await sendMessage(db, tenantId, { conversation, senderUserId: userId, senderType: 'staff', body: body.body, clientMsgId: body.clientMsgId, attachments: body.attachments });
     await ApiResponseHandler.success(req, res, { conversation: conversation.get({ plain: true }), message: message.get ? message.get({ plain: true }) : message });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
@@ -77,7 +77,7 @@ export const messageReply = async (req, res) => {
     const body = req.body?.data || req.body || {};
     const convo = await getConversation(db, tenantId, req.params.conversationId, undefined, true);
     if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
-    const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'staff', body: body.body, clientMsgId: body.clientMsgId });
+    const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'staff', body: body.body, clientMsgId: body.clientMsgId, attachments: body.attachments });
     await ApiResponseHandler.success(req, res, { message: message.get ? message.get({ plain: true }) : message });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };

@@ -86,12 +86,28 @@ export async function sendMessage(
     senderType: SenderType;
     body: string;
     clientMsgId?: string | null;
+    attachments?: Array<{ url?: string; type?: string; name?: string; sizeInBytes?: number }>;
   },
 ): Promise<any> {
   const { Op } = db.Sequelize;
   const { conversation, senderUserId, senderType, body } = opts;
   const clientMsgId = opts.clientMsgId || null;
-  if (!body || !String(body).trim()) throw new Error('El mensaje no puede estar vacío');
+
+  // Sanitize attachments: keep only well-formed image/video entries (max 10).
+  const attachments = (Array.isArray(opts.attachments) ? opts.attachments : [])
+    .filter((a) => a && typeof a.url === 'string' && a.url.trim())
+    .slice(0, 10)
+    .map((a) => ({
+      url: String(a.url),
+      type: a.type === 'video' ? 'video' : 'image',
+      name: a.name ? String(a.name).slice(0, 200) : null,
+      sizeInBytes: typeof a.sizeInBytes === 'number' ? a.sizeInBytes : null,
+    }));
+
+  // A message must carry text OR at least one attachment.
+  if ((!body || !String(body).trim()) && attachments.length === 0) {
+    throw new Error('El mensaje no puede estar vacío');
+  }
 
   // Guards/clients cannot reply to a one-way (broadcast) conversation.
   if (conversation.isOneWay && senderType !== 'staff') {
@@ -112,7 +128,7 @@ export async function sendMessage(
   let message: any;
   try {
     message = await db.message.create(
-      { tenantId, conversationId: conversation.id, senderUserId, senderType, body: String(body), clientMsgId, createdById: senderUserId, updatedById: senderUserId },
+      { tenantId, conversationId: conversation.id, senderUserId, senderType, body: String(body || ''), attachments: attachments.length ? attachments : null, clientMsgId, createdById: senderUserId, updatedById: senderUserId },
       { transaction },
     );
     if (recipientUserId) {
@@ -121,8 +137,11 @@ export async function sendMessage(
         { transaction },
       );
     }
+    const attachLabel = attachments.length
+      ? (attachments.some((a) => a.type === 'video') ? '🎥 Video' : '📷 Imagen')
+      : '';
     await conversation.update(
-      { lastMessageAt: message.createdAt, lastMessagePreview: preview(body), updatedById: senderUserId },
+      { lastMessageAt: message.createdAt, lastMessagePreview: preview(body) || attachLabel, updatedById: senderUserId },
       { transaction },
     );
     await transaction.commit();
@@ -152,7 +171,9 @@ async function notifyRecipient(db: any, tenantId: string, conversation: any, mes
       const u = await db.user.findByPk(message.senderUserId, { attributes: ['fullName', 'firstName'] });
       senderName = (u && (u.fullName || u.firstName)) || 'Mensaje';
     } catch { /* ignore */ }
-    const body = String(message.body || '').slice(0, 150);
+    const atts = Array.isArray(message.attachments) ? message.attachments : [];
+    const attachLabel = atts.length ? (atts.some((a: any) => a?.type === 'video') ? '🎥 Video' : '📷 Imagen') : '';
+    const body = String(message.body || '').slice(0, 150) || attachLabel;
 
     // Guard/client → staff: surface it in the CRM (bell + toast + chime) via a
     // platform event targeted at the conversation owner. Admins live in the CRM,
@@ -302,7 +323,7 @@ export async function listMessages(
     return {
       id: p.id, senderUserId: p.senderUserId, senderType: p.senderType,
       senderName: m.sender?.fullName || m.sender?.firstName || (p.senderType === 'staff' ? 'Operador' : p.senderType === 'guard' ? 'Guardia' : 'Cliente'),
-      body: p.body, createdAt: p.createdAt,
+      body: p.body, attachments: p.attachments || null, createdAt: p.createdAt,
       receipt: (p.receipts && p.receipts[0]) ? { deliveryStatus: p.receipts[0].deliveryStatus, deliveredAt: p.receipts[0].deliveredAt, readAt: p.receipts[0].readAt } : null,
     };
   });

@@ -19,6 +19,8 @@ export default function (sequelize) {
         validate: { isIn: [['staff', 'guard', 'client']] },
       },
       body: { type: DataTypes.TEXT, allowNull: false },
+      // Image/video attachments: [{ url, type: 'image'|'video', name, sizeInBytes }].
+      attachments: { type: DataTypes.JSON, allowNull: true },
       clientMsgId: { type: DataTypes.STRING(64), allowNull: true },
       importHash: { type: DataTypes.STRING(255), allowNull: true, validate: { len: [0, 255] } },
     },
