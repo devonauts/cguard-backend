@@ -27,6 +27,10 @@ export default (app) => {
   app.post(`/tenant/:tenantId/guard/me/messages/:conversationId`, require('./guardMeMessages').guardMessageReply);
   app.post(`/tenant/:tenantId/guard/me/messages/:conversationId/read`, require('./guardMeMessages').guardMessageRead);
 
+  // Radio check (pase de novedades) — the guard answers a roll-call request.
+  app.get(`/tenant/:tenantId/guard/me/radio-check/pending`, require('./guardMeRadioCheck').guardRadioPending);
+  app.post(`/tenant/:tenantId/guard/me/radio-check/entries/:entryId/reply`, require('./guardMeRadioCheck').guardRadioReply);
+
   // Team roster on duty at my current sitio de servicio (post site)
   app.get(
     `/tenant/:tenantId/guard/me/team`,

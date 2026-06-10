@@ -20,6 +20,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { databaseInit } from '../database/databaseConnection';
 import AuthService from '../services/auth/authService';
+import { registerRadioVoice } from './radioVoice';
 
 export const SOCKET_PATH = '/api/socket.io';
 
@@ -109,9 +110,15 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
       }
 
       const roles = rolesForTenant(user, String(tenantId));
+      const displayName =
+        user.fullName ||
+        [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+        user.email ||
+        'Usuario';
       (socket.data as any) = {
         userId: user.id,
         tenantId: String(tenantId),
+        name: displayName,
         roles,
         // Admins / managers / superadmins receive every tenant notification,
         // regardless of an event's targetRoles.
@@ -130,6 +137,9 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
     socket.join(`tenant:${tenantId}:user:${userId}`);
     (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
     if (seeAll) socket.join(`tenant:${tenantId}:all`);
+
+    // Live radio "Canal abierto" PTT relay (opt-in per socket via events).
+    registerRadioVoice(io as IOServer, socket);
   });
 
   console.log(`[realtime] socket.io listening on ${SOCKET_PATH}`);

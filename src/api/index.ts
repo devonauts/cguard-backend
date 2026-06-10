@@ -221,6 +221,7 @@ require('./kpi').default(routes);
 require('./operations').default(routes);
 require('./video').default(routes);
 require('./alarm').default(routes);
+require('./security').default(routes);
 require('./insurance').default(routes);
 require('./reports').default(routes);
 require('./notificationRecipient').default(routes);
@@ -230,6 +231,7 @@ require('./scheduler').default(routes);
 require('./scheduling').default(routes);
 require('./guard').default(routes);
 require('./message').default(routes);
+require('./radioCheck').default(routes);
 require('./events').default(routes);
 require('./superadmin').default(routes);
 

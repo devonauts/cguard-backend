@@ -87,6 +87,8 @@ export default (app) => {
 
   app.get(`/auth/me`, require('./authMe').default);
 
+  app.post(`/auth/sign-out`, require('./authSignOut').default);
+
   // OAuth popup flow (Google y Microsoft)
   require('./authOAuth').default(app);
 };

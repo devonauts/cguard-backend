@@ -283,7 +283,24 @@ export default class Storage {
         publicRead: false,
       },
 
+      // Image / video attachments sent in a message thread (CRM + worker app).
+      messageAttachments: {
+        id: 'messageAttachments',
+        folder: 'tenant/:tenantId/message/attachments',
+        maxSizeInBytes: 100 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
 
+      // Voice reply clips for the radio check (pase de novedades). OpenAI's
+      // transcription cap is 25 MB; voice replies are tiny. Private.
+      radioCheckAudio: {
+        id: 'radioCheckAudio',
+        folder: 'tenant/:tenantId/radioCheck/audio',
+        maxSizeInBytes: 25 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
 
 
     };

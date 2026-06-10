@@ -157,6 +157,44 @@ export default async (req: any, res: any) => {
       console.warn('[guardIncident] dispatch failed', (e as any)?.message || e);
     }
 
+    // Email the tenant's admins/supervisors so they're aware of the incident.
+    // Best-effort; mailService throws when no transport is configured, so this
+    // only sends when email is actually set up.
+    try {
+      const targetRoles = ['admin', 'owner', 'operationsManager', 'securitySupervisor', 'dispatcher'];
+      const tenantUsers = await db.tenantUser.findAll({
+        where: { tenantId },
+        include: [{ model: db.user, as: 'user', attributes: ['email'] }],
+      });
+      const emails = Array.from(new Set(
+        (tenantUsers || [])
+          .filter((tu: any) => {
+            const roles = Array.isArray(tu.roles)
+              ? tu.roles
+              : (typeof tu.roles === 'string' ? tu.roles.split(',').map((r: string) => r.trim()) : []);
+            return roles.some((r: string) => targetRoles.includes(r)) && tu.user && tu.user.email;
+          })
+          .map((tu: any) => tu.user.email),
+      ));
+      if (emails.length) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { sendMail } = require('../../services/mailService');
+        const guardName = securityGuard ? securityGuard.fullName : 'Un guardia';
+        const sev = String(data.priority || 'medium');
+        const desc = data.content || data.description || '';
+        const text = `${guardName} reportó un incidente: "${title}" (prioridad: ${sev}). ${desc}`.trim();
+        const html =
+          `<p style="font-size:15px"><strong>Nuevo incidente reportado</strong></p>` +
+          `<p>${guardName} reportó: <strong>${title}</strong> (prioridad: ${sev}).</p>` +
+          (desc ? `<blockquote style="margin:10px 0;padding:8px 12px;border-left:3px solid #C8860A;color:#374151">${String(desc)}</blockquote>` : '') +
+          (data.location ? `<p>Ubicación: ${data.location}</p>` : '') +
+          `<p style="color:#6b7280;font-size:12px;margin-top:12px">CGuardPro · ${new Date().toLocaleString('es')}</p>`;
+        await sendMail({ to: emails, subject: `Incidente reportado: ${title}`, html, text });
+      }
+    } catch (e: any) {
+      console.warn('[guardIncident] email notify skipped/failed:', e?.message || e);
+    }
+
     return ApiResponseHandler.success(req, res, incident.get({ plain: true }));
   } catch (error) {
     return ApiResponseHandler.error(req, res, error);

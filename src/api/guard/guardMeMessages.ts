@@ -63,7 +63,7 @@ export const guardMessageReply = async (req, res) => {
     const convo = await getConversation(db, tenantId, req.params.conversationId, userId, false);
     if (!convo) return ApiResponseHandler.error(req, res, notFound());
     const body = req.body?.data || req.body || {};
-    const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'guard', body: body.body, clientMsgId: body.clientMsgId });
+    const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'guard', body: body.body, clientMsgId: body.clientMsgId, attachments: body.attachments });
     await ApiResponseHandler.success(req, res, { message: message.get ? message.get({ plain: true }) : message });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };

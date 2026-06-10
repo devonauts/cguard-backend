@@ -228,6 +228,23 @@ export default async (req: any, res: any) => {
     // Update isOnDuty
     await securityGuard.update({ isOnDuty: true });
 
+    // Use the clock-in selfie as the guard's profile picture — best-effort, so a
+    // failure never blocks the clock-in. Persisted as the user avatar, so it
+    // shows in the CRM and the app profile.
+    if (selfiePhoto && typeof selfiePhoto === 'string') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const FileRepository = require('../../database/repositories/fileRepository').default;
+        await FileRepository.replaceRelationFiles(
+          { belongsTo: 'user', belongsToColumn: 'avatars', belongsToId: userId },
+          [{ new: true, name: 'clock-in-selfie.jpg', sizeInBytes: 0, privateUrl: selfiePhoto, publicUrl: null }],
+          { database: db, currentUser: req.currentUser, currentTenant: { id: tenantId } } as any,
+        );
+      } catch (e) {
+        console.warn('[clockIn] set avatar from selfie failed:', (e as any)?.message || e);
+      }
+    }
+
     // Nómina: evaluate attendance ONLY on the first clock-in of the record
     // (status/late are based on first arrival). Re-clock-ins just reopen the
     // session. Best-effort — never blocks the clock-in.

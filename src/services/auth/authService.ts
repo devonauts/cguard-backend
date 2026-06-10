@@ -413,8 +413,33 @@ class AuthService {
         console.warn('Could not mark lastLoginAt for user:', err);
       }
 
+      // SINGLE ACTIVE SESSION: invalidate this user's prior tokens. findByToken
+      // rejects any token issued before jwtTokenInvalidBefore; the new token
+      // (signed below) survives via the 2s back-dating. Per-user — only logs THIS
+      // account out of its other devices.
+      try {
+        await options.database.user.update(
+          { jwtTokenInvalidBefore: dayjs().subtract(2, 'second').toDate() },
+          { where: { id: user.id }, transaction },
+        );
+      } catch (err) {
+        console.warn('Could not set jwtTokenInvalidBefore:', err);
+      }
+
       await SequelizeRepository.commitTransaction(transaction)
       committed = true;
+
+      // Audit the successful login (best-effort, outside the transaction).
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { logSecurityEvent, clientCtx } = require('./securityAudit');
+        const ctx = clientCtx(options);
+        await logSecurityEvent(options.database, {
+          tenantId: tenantId || null, userId: user.id, email: user.email,
+          event: 'login', outcome: 'success', ip: ctx.ip, userAgent: ctx.userAgent,
+          detail: 'Inicio de sesión; sesiones anteriores cerradas (sesión única).',
+        });
+      } catch { /* ignore */ }
 
       // Load full user with tenant relations and compute tenant permissions
       // Use a loose type to avoid TS narrowing issues when fullUser is assigned later
