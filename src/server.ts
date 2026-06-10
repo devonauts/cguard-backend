@@ -20,6 +20,18 @@ import { syncGuardDutyStatus } from './services/dutySync';
 import { verifySchemaConsistency } from './database/migrations/verify-schema';
 import { setInterval as nodeSetInterval } from 'timers';
 
+// Process-level safety net. Without these, a single unhandled promise rejection or
+// uncaught exception anywhere (a route, a scheduler, a stray await) crashes the
+// worker — Node exits by default — and every in-flight request, e.g. the radio
+// console poll, gets a 500 with no CORS header while pm2 restarts it. Log loudly so
+// the real cause stays fixable, but keep the worker alive instead of crash-looping.
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[unhandledRejection]', (reason && reason.stack) ? reason.stack : reason);
+});
+process.on('uncaughtException', (err: any) => {
+  console.error('[uncaughtException]', (err && err.stack) ? err.stack : err);
+});
+
 // const PORT = process.env.PORT || 8080
 const PORT = Number(process.env.PORT) || 3001
 
