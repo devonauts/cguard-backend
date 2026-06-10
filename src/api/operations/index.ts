@@ -162,10 +162,11 @@ export default (app) => {
         attributes: ['id', 'fullName', 'stationId']
       });
 
-      // Get active guard shifts (on duty)
+      // Get active guard shifts (on duty) FILTERED BY DATE
       const activeShifts = await req.database.guardShift.findAll({
         where: {
           punchOutTime: null, // Still clocked in
+          createdAt: { [Op.gte]: start, [Op.lt]: end }, // ONLY for this date
           ...(tenantId ? { tenantId } : {})
         },
         attributes: ['id', 'guardNameId', 'stationId']
@@ -215,18 +216,33 @@ export default (app) => {
       const reports = await req.database.report.findAll({ where: whereDay, order: [['createdAt', 'DESC']], limit: 50 });
       reports.forEach((r: any) => items.push({ id: `r-${r.id}`, time: r.createdAt, text: r.title || r.summary || r.type, officerName: r.officerName || r.officer, type: 'report', severity: r.severity || 'medium' }));
 
-      // Add incidents with coordinates
-      const incidents = await req.database.incident.findAll({ where: whereDay, order: [['createdAt', 'DESC']], limit: 50 });
-      incidents.forEach((r: any) => {
+      // Add incidents with coordinates - get ALL incidents, not filtered by date
+      // (the frontend will handle date filtering)
+      const incidentsWhere: any = { ...(tenantId ? { tenantId } : {}) };
+      const allIncidents = await req.database.incident.findAll({
+        where: incidentsWhere,
+        order: [['createdAt', 'DESC']],
+        limit: 500
+      });
+
+      console.log(`[Backend] Fetching incidents for date: ${dateStr}`);
+      console.log(`[Backend] Total incidents in DB: ${allIncidents.length}`);
+
+      allIncidents.forEach((r: any) => {
         const item: any = {
           id: `i-${r.id}`,
-          time: r.createdAt,
-          text: r.title || r.summary || r.type,
-          officerName: r.guardName || r.officer,
+          time: r.createdAt || r.updatedAt || new Date(),
+          text: r.title || r.summary || r.type || 'Incidente',
+          officerName: r.guardName || r.officer || 'Sistema',
           type: 'incident',
           severity: r.severity || 'high',
-          location: r.location || null
+          location: r.location || null,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt
         };
+
+        // Log all incident dates
+        console.log(`[Backend] Incident "${item.text}" created at: ${r.createdAt}, updated at: ${r.updatedAt}`);
 
         // Look up coordinates from station if stationId is available
         const stationId = r.stationId || r.stationIncidents;
