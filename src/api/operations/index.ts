@@ -117,6 +117,7 @@ export default (app) => {
   app.get('/operations/kpis/:id', require('./detail').default);
 
   // Activities feed: supports ?date=YYYY-MM-DD or ?since=ISO_TIMESTAMP
+  // IMPORTANT: This endpoint is used by the Flutter map to show ALL operational markers
   app.get('/operations/activities', async (req, res) => {
     try {
       const tenantId = req.currentTenant ? req.currentTenant.id : null;
@@ -145,20 +146,106 @@ export default (app) => {
       const whereDay: any = { createdAt: { [Op.gte]: start, [Op.lt]: end } };
       if (tenantId) whereDay.tenantId = tenantId;
 
-      // Aggregate recent activity from reports, incidents and patrol logs
-      const reports = await req.database.report.findAll({ where: whereDay, order: [['createdAt', 'DESC']], limit: 50 });
-      const incidents = await req.database.incident.findAll({ where: whereDay, order: [['createdAt', 'DESC']], limit: 50 });
-      const patrols = await req.database.patrolLog.findAll({ where: { createdAt: { [Op.gte]: start, [Op.lt]: end }, ...(tenantId ? { tenantId } : {}) }, order: [['createdAt', 'DESC']], limit: 50 });
+      // Get all stations with coordinates (for guard locations and patrol base)
+      const stations = await req.database.station.findAll({
+        where: tenantId ? { tenantId } : undefined,
+        attributes: ['id', 'latitud', 'longitud', 'stationName']
+      });
+      const stationMap: any = {};
+      stations.forEach((s: any) => {
+        stationMap[s.id] = { latitude: s.latitud, longitude: s.longitud, name: s.stationName };
+      });
 
+      // Get all security guards (on duty)
+      const guards = await req.database.securityGuard.findAll({
+        where: tenantId ? { tenantId } : undefined,
+        attributes: ['id', 'fullName', 'stationId']
+      });
+
+      // Get active guard shifts (on duty)
+      const activeShifts = await req.database.guardShift.findAll({
+        where: {
+          punchOutTime: null, // Still clocked in
+          ...(tenantId ? { tenantId } : {})
+        },
+        attributes: ['id', 'guardNameId', 'stationId']
+      });
+
+      // Aggregate all markers: guards on duty, reports, incidents, patrols, stations
       const items: any[] = [];
+
+      // Add guards on duty with their station coordinates
+      const guardOnDutyIds = new Set(activeShifts.map((s: any) => s.guardNameId));
+      guards.forEach((g: any) => {
+        if (guardOnDutyIds.has(g.id)) {
+          const item: any = {
+            id: `g-${g.id}`,
+            time: new Date(),
+            text: g.fullName || 'Guardia',
+            officerName: g.fullName,
+            type: 'guard',
+            severity: 'low'
+          };
+          // Get station coordinates
+          if (g.stationId && stationMap[g.stationId]) {
+            item.latitude = stationMap[g.stationId].latitude;
+            item.longitude = stationMap[g.stationId].longitude;
+            item.locationName = stationMap[g.stationId].name;
+          }
+          items.push(item);
+        }
+      });
+
+      // Add stations as patrol/ronda locations
+      stations.forEach((s: any) => {
+        if (s.latitud && s.longitud) {
+          items.push({
+            id: `st-${s.id}`,
+            time: new Date(),
+            text: s.stationName || 'Estación',
+            type: 'patrol',
+            latitude: s.latitud,
+            longitude: s.longitud,
+            locationName: s.stationName
+          });
+        }
+      });
+
+      // Add reports
+      const reports = await req.database.report.findAll({ where: whereDay, order: [['createdAt', 'DESC']], limit: 50 });
       reports.forEach((r: any) => items.push({ id: `r-${r.id}`, time: r.createdAt, text: r.title || r.summary || r.type, officerName: r.officerName || r.officer, type: 'report', severity: r.severity || 'medium' }));
-      incidents.forEach((r: any) => items.push({ id: `i-${r.id}`, time: r.createdAt, text: r.title || r.summary || r.type, officerName: r.guardName || r.officer, type: 'incident', severity: r.severity || 'high' }));
+
+      // Add incidents with coordinates
+      const incidents = await req.database.incident.findAll({ where: whereDay, order: [['createdAt', 'DESC']], limit: 50 });
+      incidents.forEach((r: any) => {
+        const item: any = {
+          id: `i-${r.id}`,
+          time: r.createdAt,
+          text: r.title || r.summary || r.type,
+          officerName: r.guardName || r.officer,
+          type: 'incident',
+          severity: r.severity || 'high',
+          location: r.location || null
+        };
+
+        // Look up coordinates from station if stationId is available
+        const stationId = r.stationId || r.stationIncidents;
+        if (stationId && stationMap[stationId]) {
+          item.latitude = stationMap[stationId].latitude;
+          item.longitude = stationMap[stationId].longitude;
+          item.locationName = stationMap[stationId].name;
+        }
+
+        items.push(item);
+      });
+
+      // Add patrols (rondas)
+      const patrols = await req.database.patrolLog.findAll({ where: { createdAt: { [Op.gte]: start, [Op.lt]: end }, ...(tenantId ? { tenantId } : {}) }, order: [['createdAt', 'DESC']], limit: 50 });
       patrols.forEach((p: any) => items.push({ id: `p-${p.id}`, time: p.createdAt, text: p.note || p.summary || 'Patrol event', officerName: p.guardName || p.officer, type: 'patrol', severity: 'low' }));
 
-      // sort by time desc and return top 100
+      // sort by time desc and return
       items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-      const out = items.slice(0, 100);
-      return ApiResponseHandler.success(req, res, out);
+      return ApiResponseHandler.success(req, res, items);
     } catch (err) {
       return ApiResponseHandler.error(req, res, err);
     }
