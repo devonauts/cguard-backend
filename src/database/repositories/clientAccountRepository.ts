@@ -26,23 +26,23 @@ class ClientAccountRepository {
       options,
     );
 
-    // Validate uniqueness of email and phoneNumber within the tenant
+    // Validate uniqueness of email within the tenant.
+    // Phone numbers are intentionally NOT unique — multiple clients may share a
+    // phone (e.g. sites behind the same switchboard).
     try {
-      const whereOr: any[] = [];
-      if (data.email) whereOr.push({ email: data.email });
-      if (data.phoneNumber) whereOr.push({ phoneNumber: data.phoneNumber });
-      if (whereOr.length) {
+      const email = (data.email || '').toString().trim().toLowerCase();
+      if (email) {
         const existing = await options.database.clientAccount.findOne({
           where: {
             tenantId: tenant.id,
-            [Op.or]: whereOr,
+            email,
           },
           transaction,
         });
         if (existing) {
-          console.warn('ClientAccount create validation: duplicate email/phone detected', { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber });
+          console.warn('ClientAccount create validation: duplicate email detected', { existingId: existing.id, email: existing.email });
           const err = new Error400(options.language, 'entities.clientAccount.errors.exists');
-          (err as any).errors = { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber };
+          (err as any).errors = { existingId: existing.id, conflictField: 'email', email: existing.email };
           throw err;
         }
       }
@@ -250,24 +250,26 @@ class ClientAccountRepository {
       );
     }
 
-    // Validate uniqueness of email and phoneNumber within the tenant (exclude self)
+    // Validate uniqueness of email within the tenant (exclude self).
+    // Phone numbers are intentionally NOT unique — multiple clients may share a phone.
     try {
-      const whereOr: any[] = [];
-      if (typeof updateData.email !== 'undefined' && updateData.email) whereOr.push({ email: updateData.email });
-      if (typeof updateData.phoneNumber !== 'undefined' && updateData.phoneNumber) whereOr.push({ phoneNumber: updateData.phoneNumber });
-      if (whereOr.length) {
+      const email =
+        typeof updateData.email !== 'undefined'
+          ? (updateData.email || '').toString().trim().toLowerCase()
+          : '';
+      if (email) {
         const existing = await options.database.clientAccount.findOne({
           where: {
             tenantId: currentTenant.id,
             id: { [Op.ne]: id },
-            [Op.or]: whereOr,
+            email,
           },
           transaction,
         });
         if (existing) {
-          console.warn('ClientAccount update validation: duplicate email/phone detected', { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber });
+          console.warn('ClientAccount update validation: duplicate email detected', { existingId: existing.id, email: existing.email });
           const err = new Error400(options.language, 'entities.clientAccount.errors.exists');
-          (err as any).errors = { existingId: existing.id, email: existing.email, phoneNumber: existing.phoneNumber };
+          (err as any).errors = { existingId: existing.id, conflictField: 'email', email: existing.email };
           throw err;
         }
       }

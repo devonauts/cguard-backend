@@ -302,6 +302,20 @@ export default async (req: any, res: any) => {
       console.error('[clockIn] notification dispatch failed:', (notifyErr as any)?.message || notifyErr);
     }
 
+    // Notify the owning client that a guard started a shift at their site.
+    try {
+      const { notifyClient } = require('../../services/clientNotifyService');
+      const stationName = (station && (station.stationName || station.nickname)) || 'el puesto';
+      await notifyClient(db, tenantId, { stationId, postSiteId: station && station.postSiteId }, {
+        eventType: 'guard.checkin',
+        title: 'Inicio de turno',
+        body: `${securityGuard.fullName || 'Un guardia'} inició turno en ${stationName}.`,
+        data: { stationId: String(stationId || ''), guardId: String(securityGuard.id || ''), guardShiftId: String(guardShiftRecord.id || '') },
+        sourceEntityType: 'guardShift',
+        sourceEntityId: String(guardShiftRecord.id),
+      });
+    } catch (e) { console.warn('[clockIn] client notify failed:', (e as any)?.message || e); }
+
     return ApiResponseHandler.success(req, res, {
       success: true,
       clockIn: guardShiftRecord.get({ plain: true }),

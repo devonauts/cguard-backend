@@ -171,7 +171,7 @@ const en = {
         unique: {
 
         },
-        exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
+        exists: 'A client with this email address already exists.'
       },
       validation: {
         invalidRuc: 'Invalid RUC (must be 13 digits and end with 001).',

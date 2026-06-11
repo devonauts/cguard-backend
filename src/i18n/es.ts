@@ -170,7 +170,7 @@ const es = {
       unique: {
 
       },
-      exists: 'Ya existe un cliente con este correo electrónico o número de teléfono.'
+      exists: 'Ya existe un cliente con este correo electrónico.'
     },
       validation: {
         invalidRuc: 'RUC inválido (debe ser 13 dígitos y terminar en 001).',

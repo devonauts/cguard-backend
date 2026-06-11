@@ -102,6 +102,22 @@ export default class IncidentService {
         sourceEntityId: record.id,
       }).catch(() => {});
 
+      // Notify the owning client that an incident was reported at their site.
+      try {
+        const db = this.options.database;
+        const tenantId = this.options.currentTenant?.id;
+        const { notifyClient } = require('./clientNotifyService');
+        const siteName = record.postSite?.name || record.site?.name || 'su sitio';
+        await notifyClient(db, tenantId, { clientAccountId: record.clientId, postSiteId: record.postSiteId, stationId: record.stationId }, {
+          eventType: 'incident.created',
+          title: 'Nuevo incidente',
+          body: `${record.title || 'Incidente'} — ${siteName}.`,
+          data: { incidentId: String(record.id || ''), stationId: String(record.stationId || ''), postSiteId: String(record.postSiteId || '') },
+          sourceEntityType: 'incident',
+          sourceEntityId: String(record.id),
+        });
+      } catch (e: any) { console.warn('[incident] client notify failed:', e?.message || e); }
+
       return record;
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(

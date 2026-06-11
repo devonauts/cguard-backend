@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { fieldExamples, routeExamples, listResponseExamples, specialResponses } = require('./openapi-examples');
 
 const repoRoot = path.resolve(__dirname, '..');
 const apiDir = path.join(repoRoot, 'src', 'api');
@@ -25,24 +26,58 @@ function walk(dir) {
   return results;
 }
 
+function resolveTemplateVariables(content, rawPath) {
+  // If the path contains ${...} template expressions, try to resolve them
+  // by finding the variable assignment in the file (e.g. const base = '/tenant/:tenantId/attendance')
+  const templateVarRegex = /\$\{(\w+)\}/g;
+  let resolved = rawPath;
+  let tm;
+  while ((tm = templateVarRegex.exec(rawPath)) !== null) {
+    const varName = tm[1];
+    // Look for: const varName = '...' or let varName = '...' or var varName = '...'
+    const varDefRegex = new RegExp(`(?:const|let|var)\\s+${varName}\\s*=\\s*(['"\`])([^'"\`]+)\\1`);
+    const varMatch = varDefRegex.exec(content);
+    if (varMatch) {
+      resolved = resolved.replace(tm[0], varMatch[2]);
+    }
+  }
+  return resolved;
+}
+
 function extractRoutesFromFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
   const routes = [];
-  const regex = /app\.(get|post|put|patch|delete)\s*\(/g;
+  // Match any variable calling .get/.post/.put/.patch/.delete (app, routes, router, etc.)
+  const regex = /\b(\w+)\.(get|post|put|patch|delete)\s*\(/g;
   let m;
   while ((m = regex.exec(content)) !== null) {
-    const method = m[0].split('.')[1].replace('(', '').trim();
+    const varName = m[1];
+    const method = m[2];
+    // Skip non-router calls (e.g. Promise.resolve, Object.keys, Array.filter etc.)
+    const skipVars = ['Promise', 'Object', 'Array', 'Math', 'JSON', 'console', 'process', 'fs', 'path', 'Date', 'String', 'Number', 'res', 'db', 'sequelize', 'model', 'Model', 'https', 'http', 'axios', 'fetch', 'req'];
+    if (skipVars.includes(varName)) continue;
     // find the start of the path string after the opening paren
     const afterOpen = content.slice(m.index + m[0].length);
-    // path is the first quoted string in afterOpen
-    const pathMatch = /([`'\"])([^`'\"]+)\1/.exec(afterOpen);
-    if (!pathMatch) continue;
-    const rawPath = pathMatch[2];
-    // find the end of the app.*(...) call by locating the next occurrence of ');' after m.index
+    // path is the first quoted string (or template literal) in afterOpen
+    const pathMatch = /([`'"])([^`'"]+)\1/.exec(afterOpen);
+    let rawPath = null;
+    if (pathMatch) {
+      rawPath = pathMatch[2];
+      // If it was a backtick template with ${...}, resolve variables
+      if (pathMatch[1] === '`' && rawPath.includes('${')) {
+        rawPath = resolveTemplateVariables(content, rawPath);
+      }
+    }
+    if (!rawPath) continue;
+    // Skip paths that don't look like URL routes
+    if (!rawPath.startsWith('/')) continue;
+    // Skip paths that contain spaces or newlines (false positives from comments/strings)
+    if (/[\s\n]/.test(rawPath)) continue;
+    // find the end of the call by locating the next occurrence of ');' after m.index
     const endIdx = content.indexOf(');', m.index);
     const argsBlock = endIdx > -1 ? content.slice(m.index + m[0].length, endIdx) : '';
     // try to find require(...) inside argsBlock
-    const reqMatch = /require\(\s*([`'\"])([^`'\"]+)\1\s*\)\.(?:default)/.exec(argsBlock) || /require\(\s*([`'\"])([^`'\"]+)\1\s*\)/.exec(argsBlock);
+    const reqMatch = /require\(\s*([`'"])([^`'"]+)\1\s*\)\.(?:default)/.exec(argsBlock) || /require\(\s*([`'"])([^`'"]+)\1\s*\)/.exec(argsBlock);
     const requirePath = reqMatch ? reqMatch[2] : null;
     routes.push({ method: method.replace(/\(|\s/g,'').toLowerCase(), rawPath, file: filePath, handlerRequire: requirePath });
   }
@@ -127,7 +162,7 @@ function buildSpec(routes) {
       version: '1.0.0',
       description: 'Auto-generated OpenAPI spec (minimal) — run tools/generate-openapi.js to regenerate with more details.',
     },
-    servers: [{ url: process.env.API_BASE_URL || ' https://api.cguardpro.com/api/' }],
+    servers: [{ url: process.env.API_BASE_URL || 'https://api.cguardpro.com/api' }],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -247,6 +282,38 @@ function buildSpec(routes) {
       },
     };
 
+    // ── Apply route-specific or special response examples ──────────────────
+    const routeKey = `${r.method.toUpperCase()} ${oaPath}`;
+
+    // Add response example for GET operations
+    if (r.method === 'get') {
+      const specialResp = specialResponses[routeKey];
+      const listResp = listResponseExamples[oaPath];
+      const responseExample = specialResp || listResp;
+      if (responseExample) {
+        operation.responses['200'] = {
+          description: 'OK',
+          content: {
+            'application/json': {
+              example: responseExample,
+            },
+          },
+        };
+      }
+    }
+
+    // Add response example for POST/PUT/PATCH from routeExamples
+    if (routeExamples[routeKey] && routeExamples[routeKey].response) {
+      operation.responses['200'] = {
+        description: 'OK',
+        content: {
+          'application/json': {
+            example: routeExamples[routeKey].response,
+          },
+        },
+      };
+    }
+
     // Apply bearerAuth security to operations by default, except for auth endpoints
     // If the handler explicitly defines `security`, preserve it.
     const isAuthPath = oaPath.startsWith('/auth') || oaPath.indexOf('/auth/') === 0;
@@ -291,18 +358,19 @@ function buildSpec(routes) {
         if (content && content['application/json']) {
           const jsonPart = content['application/json'];
 
-          // If handler provided an explicit example, prefer it
-          if (jsonPart.example) {
-            // keep existing
+          // 1. Check for route-specific example from our examples file
+          const routeExample = routeExamples[routeKey];
+          if (routeExample && routeExample.request) {
+            jsonPart.example = routeExample.request;
+          } else if (jsonPart.example) {
+            // keep existing handler-provided example
           } else if (jsonPart.examples) {
-            // pick the first example value if present
             const keys = Object.keys(jsonPart.examples || {});
             if (keys.length > 0 && jsonPart.examples[keys[0]] && jsonPart.examples[keys[0]].value) {
               jsonPart.example = jsonPart.examples[keys[0]].value;
             }
           } else if (jsonPart.schema) {
-            // generate a small example from the schema properties
-            // If schema has no properties, try to infer from handler code
+            // generate from schema with domain-aware values
             if (jsonPart.schema.type === 'object' && (!jsonPart.schema.properties || Object.keys(jsonPart.schema.properties).length === 0)) {
               const inferred = inferSchemaFromHandlerFile(handlerFile);
               if (inferred) jsonPart.schema.properties = inferred;
@@ -317,12 +385,32 @@ function buildSpec(routes) {
                   const prop = sch.properties[k];
                   if (prop.example !== undefined) {
                     out[k] = prop.example;
+                  } else if (fieldExamples[k] !== undefined) {
+                    // Use domain-aware example value
+                    out[k] = fieldExamples[k];
                   } else if (prop.type === 'string') {
-                    out[k] = prop.format === 'date-time' ? new Date().toISOString() : 'string';
+                    if (prop.format === 'date-time') out[k] = '2026-06-07T08:00:00.000Z';
+                    else if (prop.format === 'date') out[k] = '2026-06-07';
+                    else if (prop.format === 'email') out[k] = 'usuario@empresa.com';
+                    else if (prop.format === 'uri' || prop.format === 'url') out[k] = 'https://www.empresa.com';
+                    else if (k.toLowerCase().includes('id')) out[k] = '550e8400-e29b-41d4-a716-446655440000';
+                    else if (k.toLowerCase().includes('email')) out[k] = 'usuario@empresa.com';
+                    else if (k.toLowerCase().includes('phone')) out[k] = '+593987654321';
+                    else if (k.toLowerCase().includes('date')) out[k] = '2026-06-07';
+                    else if (k.toLowerCase().includes('time')) out[k] = '2026-06-07T08:00:00.000Z';
+                    else if (k.toLowerCase().includes('name')) out[k] = 'Nombre ejemplo';
+                    else if (k.toLowerCase().includes('address')) out[k] = 'Av. 6 de Diciembre N33-44';
+                    else if (k.toLowerCase().includes('description')) out[k] = 'Descripción del recurso.';
+                    else out[k] = 'string';
                   } else if (prop.type === 'integer' || prop.type === 'number') {
-                    out[k] = 0;
+                    if (k.toLowerCase().includes('lat')) out[k] = -0.180653;
+                    else if (k.toLowerCase().includes('lon') || k.toLowerCase().includes('lng')) out[k] = -78.467834;
+                    else if (k.toLowerCase().includes('rate')) out[k] = 12.50;
+                    else if (k.toLowerCase().includes('total') || k.toLowerCase().includes('amount')) out[k] = 2500.00;
+                    else if (k.toLowerCase().includes('quantity') || k.toLowerCase().includes('count')) out[k] = 10;
+                    else out[k] = 0;
                   } else if (prop.type === 'boolean') {
-                    out[k] = false;
+                    out[k] = true;
                   } else if (prop.type === 'array' && prop.items) {
                     out[k] = [genExampleFromSchema(prop.items)];
                   } else if (prop.type === 'object') {
@@ -341,18 +429,18 @@ function buildSpec(routes) {
             }
 
             jsonPart.example = genExampleFromSchema(jsonPart.schema);
-            // If we generated an empty object, replace with a small non-empty placeholder
+            // If we generated an empty object, use a helpful placeholder
             try {
               const isEmptyObj = jsonPart.example && typeof jsonPart.example === 'object' && Object.keys(jsonPart.example).length === 0;
               if (isEmptyObj) {
-                jsonPart.example = { _example: `Provide request body for ${r.method.toUpperCase()} ${oaPath}` };
+                jsonPart.example = { data: { _note: `Provide request body for ${r.method.toUpperCase()} ${oaPath}` } };
               }
             } catch (e) {
               // ignore
             }
           } else {
-            // fallback to empty object
-            jsonPart.example = {};
+            // fallback: try to match from route examples by partial path
+            jsonPart.example = { data: {} };
           }
         }
       } catch (e) {
@@ -373,6 +461,69 @@ function main() {
   files.forEach((f) => {
     const rs = extractRoutesFromFile(f);
     rs.forEach((r) => routes.push(r));
+  });
+
+  // Resolve prefix for sub-router modules (e.g. superadmin/*.ts routes are
+  // mounted under /superadmin via app.use('/superadmin', router))
+  const prefixMap = {};
+  // Scan index files that mount sub-routers with app.use('/prefix', router)
+  files.forEach((f) => {
+    if (!f.endsWith('index.ts') && !f.endsWith('index.js')) return;
+    const content = fs.readFileSync(f, 'utf8');
+    // Match: app.use('/superadmin', router) or similar
+    const useRegex = /\b\w+\.use\(\s*['"`]([^'"`]+)['"`]\s*,\s*(\w+)\s*\)/g;
+    let um;
+    while ((um = useRegex.exec(content)) !== null) {
+      const prefix = um[1];
+      // Skip if it looks like a middleware path (e.g. '/api') rather than a sub-router mount
+      if (prefix === '/api') continue;
+      // Check if this file also has require statements for sub-modules that get the router
+      const dir = path.dirname(f);
+      const reqRegex = /require\(\s*['"`]\.\/([^'"`]+)['"`]\s*\)/g;
+      let rm;
+      while ((rm = reqRegex.exec(content)) !== null) {
+        const subMod = rm[1].replace(/['"`]/g, '');
+        const subPath = path.resolve(dir, subMod);
+        // Map both the resolved file and the directory
+        const candidates = [subPath, subPath + '.ts', subPath + '.js', path.join(subPath, 'index.ts'), path.join(subPath, 'index.js')];
+        for (const c of candidates) {
+          if (fs.existsSync(c)) {
+            prefixMap[c] = prefix;
+            break;
+          }
+        }
+      }
+      // Also map the directory itself (all files inside get the prefix)
+      prefixMap[dir + '/'] = prefix;
+    }
+  });
+
+  // Remove the index file's own directory from prefixMap to avoid double-prefixing
+  // Only sub-module files (not the index itself) should get the prefix
+  
+  // Apply prefixes to routes from sub-router files
+  routes.forEach((r) => {
+    for (const [filePath, prefix] of Object.entries(prefixMap)) {
+      // Check if this route's file matches a prefixed sub-module
+      if (filePath.endsWith('/')) {
+        // Directory prefix: apply to all files in that directory EXCEPT the index itself
+        if (r.file.startsWith(filePath) && !r.file.endsWith('index.ts') && !r.file.endsWith('index.js') && !r.rawPath.startsWith(prefix)) {
+          r.rawPath = prefix + r.rawPath;
+          break;
+        }
+      } else if (r.file === filePath && !r.rawPath.startsWith(prefix)) {
+        r.rawPath = prefix + r.rawPath;
+        break;
+      }
+    }
+  });
+
+  // Normalize paths: strip /api/ prefix from paths that were registered directly
+  // on the app (e.g. /api/places/autocomplete) since the server URL already includes /api
+  routes.forEach((r) => {
+    if (r.rawPath.startsWith('/api/')) {
+      r.rawPath = r.rawPath.slice(4); // remove '/api' prefix, keep the rest
+    }
   });
 
   const spec = buildSpec(routes);

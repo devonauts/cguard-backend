@@ -4,6 +4,8 @@
  * Returns the full account snapshot for the authenticated customer.
  * The clientAccountId is read from the JWT (set by /auth/sign-in-customer).
  *
+ * Optional query: ?include=guards,incidents,patrols (comma-separated; omit for all)
+ *
  * Response shape:
  * {
  *   clientAccount: { id, name, email, phone, address, onboardingStatus, logoUrl: [...], placePictureUrl: [...] },
@@ -12,6 +14,7 @@
  *   incidents: [{ id, title, description, incidentAt, severity, postSiteId }],
  *   activeShifts: [{ id, startTime, endTime, guardId, postSiteId }],
  *   inventory: [{ id, name, quantity, stationId }],
+ *   patrols: [{ id, scheduledTime, completionTime, status, completed, station, assignedGuard }],
  * }
  */
 
@@ -58,6 +61,9 @@ export default async (req: any, res: any) => {
       postsite: 'postSites',
       posts: 'postSites',
       stations: 'postSites',
+      patrols: 'patrols',
+      patrol: 'patrols',
+      rondas: 'patrols',
     };
 
     const includeSet = new Set<string>();
@@ -269,6 +275,31 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // ── 7. Recent patrols (last 7 days) ──────────────────────────────────────
+    let patrols: any[] = [];
+    if (shouldInclude('patrols') && stationIds.length) {
+      try {
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const rows = await db.patrol.findAll({
+          where: {
+            station: stationIds,
+            ...(tenantId ? { tenantId } : {}),
+            [Op.or]: [
+              { scheduledTime: { [Op.gte]: sevenDaysAgo } },
+              { createdAt: { [Op.gte]: sevenDaysAgo } },
+            ],
+          },
+          attributes: ['id', 'scheduledTime', 'completionTime', 'status', 'completed', 'station', 'assignedGuard'],
+          order: [['scheduledTime', 'DESC']],
+          limit: 100,
+        });
+        patrols = rows.map((r: any) => r.get({ plain: true }));
+        console.debug('[customerAccountMe] patrols count:', patrols.length);
+      } catch (e) {
+        patrols = [];
+      }
+    }
+
     // Build response object. `clientAccount` always present. Other keys
     // returned only if requested (or when no include param provided).
     const response: any = { clientAccount: plain };
@@ -277,6 +308,7 @@ export default async (req: any, res: any) => {
     if (shouldInclude('incidents')) response.incidents = incidents;
     if (shouldInclude('activeShifts')) response.activeShifts = activeShifts;
     if (shouldInclude('inventory')) response.inventory = inventory;
+    if (shouldInclude('patrols')) response.patrols = patrols;
 
     return ApiResponseHandler.success(req, res, response);
   } catch (error) {
