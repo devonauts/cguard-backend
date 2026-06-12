@@ -34,6 +34,22 @@ export default function (sequelize) {
         allowNull: true,
         defaultValue: [],
       },
+      // True for the built-in/system roles seeded per tenant (admin, dispatcher,
+      // securityGuard, …). System roles are editable (permissions) but never
+      // deletable; custom roles have isSystem=false.
+      isSystem: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      // True once a tenant has edited a system role's permissions away from its
+      // static defaults. Lets the checker treat the DB set as authoritative even
+      // when emptied, and powers "reset to default".
+      isCustomized: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
     },
     {
       indexes: [

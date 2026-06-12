@@ -5,6 +5,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import ClientAccountRepository from '../../database/repositories/clientAccountRepository';
 import BusinessInfoRepository from '../../database/repositories/businessInfoRepository';
+import TenantUserRepository from '../../database/repositories/tenantUserRepository';
 import Error400 from '../../errors/Error400';
 
 export default async (req, res) => {
@@ -47,6 +48,20 @@ export default async (req, res) => {
     }
 
     await editor.update(incoming);
+
+    // Per-user permission overrides are a privileged, admin-level action: they
+    // grant/revoke individual permissions on top of roles. Require settingsEdit
+    // (admin) in addition to userEdit, and enforce the admin-floor lockout
+    // guards in the repository.
+    if (incoming.permissionOverrides && (req.params?.id || incoming.id)) {
+      new PermissionChecker(req).validateHas(Permissions.values.settingsEdit);
+      await TenantUserRepository.updatePermissionOverrides(
+        req.currentTenant && req.currentTenant.id,
+        req.params?.id || incoming.id,
+        incoming.permissionOverrides,
+        req,
+      );
+    }
 
     const payload = true;
 

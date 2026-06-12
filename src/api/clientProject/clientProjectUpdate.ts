@@ -1,8 +1,12 @@
+import Permissions from '../../security/permissions';
+import { enforceGate } from '../../security/gateEnforcement';
+
 const PROJECT_TYPES = ['event', 'investigation', 'alarm_response', 'consulting', 'other'];
 const PROJECT_STATUSES = ['active', 'completed', 'cancelled', 'on_hold'];
 
 export default async (req, res) => {
   try {
+    enforceGate(req, Permissions.values.clientAccountEdit);
     const { tenantId, id } = req.params;
     const body = req.body || {};
     const db = req.database;

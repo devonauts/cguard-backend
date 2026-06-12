@@ -7,6 +7,11 @@ import Error404 from '../../errors/Error404';
 import Roles from '../../security/roles';
 import Sequelize from 'sequelize';
 import lodash from 'lodash';
+import {
+  ADMIN_FLOOR_PERMISSIONS,
+  FLOOR_ROLE_SLUGS,
+  getStaticDefaultsForRole,
+} from '../../security/staticRolePermissions';
 const cache = new Map();
   const Op = Sequelize.Op;
 
@@ -41,10 +46,11 @@ export default class RoleRepository {
 
     const rows = await db.role.findAll({
       where: { tenantId, deletedAt: null },
-      attributes: ['slug', 'permissions'],
+      attributes: ['slug', 'permissions', 'isCustomized'],
     });
 
     const map = {};
+    const customized: string[] = [];
     rows.forEach((r) => {
       try {
         const perms = r.permissions || [];
@@ -52,10 +58,11 @@ export default class RoleRepository {
       } catch (e) {
         map[r.slug] = [];
       }
+      if (r.isCustomized) customized.push(r.slug);
     });
 
-    // cache for 30 seconds
-    cache.set(cacheKey, { value: map, expires: now + 30 * 1000 });
+    // cache for 30 seconds (map + the set of customized slugs)
+    cache.set(cacheKey, { value: map, customized, expires: now + 30 * 1000 });
 
     return map;
   }
@@ -72,6 +79,15 @@ export default class RoleRepository {
     const cacheKey = `role_permissions_map:${tenantId}`;
     const cached = cache.get(cacheKey);
     return (cached && cached.value) ? cached.value : {};
+  }
+
+  // Returns the set of role slugs the tenant has customized (synchronous). Lets
+  // the checker treat an emptied custom/system role as authoritative-empty.
+  static getCachedCustomizedSlugsForTenant(tenantId): Set<string> {
+    if (!tenantId) return new Set();
+    const cacheKey = `role_permissions_map:${tenantId}`;
+    const cached = cache.get(cacheKey);
+    return new Set((cached && cached.customized) || []);
   }
 
   static async create(data, options) {
@@ -112,26 +128,37 @@ export default class RoleRepository {
     return this.findById(record.id, options);
   }
 
-  static getProtectedDefaultRoleSlugs() {
-    // Only truly locked system roles — new tenant-configurable roles (e.g. office roles) are intentionally excluded
-    const LOCKED_SYSTEM_ROLES: string[] = [
-      Roles.values.superadmin,
-      Roles.values.admin,
-      Roles.values.operationsManager,
-      Roles.values.securitySupervisor,
-      Roles.values.hrManager,
-      Roles.values.clientAccountManager,
-      Roles.values.dispatcher,
-      Roles.values.securityGuard,
-      Roles.values.customer,
-    ];
-    return LOCKED_SYSTEM_ROLES.map((slug) => String(slug).toLowerCase());
+  // Roles that remain FULLY locked (permissions not tenant-editable, never
+  // deletable). All other built-ins are now editable per tenant.
+  //  - superadmin: global platform role, not a per-tenant role.
+  //  - customer: external client access; its permission surface is fixed.
+  static getFullyLockedRoleSlugs() {
+    return [Roles.values.superadmin, Roles.values.customer].map((s) =>
+      String(s).toLowerCase(),
+    );
   }
 
-  static isProtectedDefaultRole(slug) {
+  static isFullyLockedRole(slug) {
     if (typeof slug !== 'string') return false;
-    const protectedSlugs = this.getProtectedDefaultRoleSlugs();
-    return protectedSlugs.includes(slug.toLowerCase());
+    return this.getFullyLockedRoleSlugs().includes(slug.toLowerCase());
+  }
+
+  // Back-compat alias — some callers still reference the old name. Now maps to
+  // the narrowed "fully locked" set (superadmin/customer only).
+  static isProtectedDefaultRole(slug) {
+    return this.isFullyLockedRole(slug);
+  }
+
+  // Apply the admin floor: the floor permissions can never be removed from the
+  // admin role, so a tenant can't lock itself out of role/user management.
+  static applyAdminFloor(slug, permissions) {
+    const perms = Array.isArray(permissions) ? permissions.slice() : [];
+    if (FLOOR_ROLE_SLUGS.includes(String(slug).toLowerCase())) {
+      for (const p of ADMIN_FLOOR_PERMISSIONS) {
+        if (!perms.includes(p)) perms.push(p);
+      }
+    }
+    return perms;
   }
 
   static async update(id, data, options) {
@@ -144,14 +171,27 @@ export default class RoleRepository {
       throw new Error404();
     }
 
-    if (this.isProtectedDefaultRole(record.slug)) {
+    if (this.isFullyLockedRole(record.slug)) {
       throw new Error400(options.language, 'entities.role.errors.lockedDefaultRole');
     }
 
-    await record.update({
-      ...lodash.pick(data, ['name', 'slug', 'description', 'permissions']),
-      updatedById: currentUser.id,
-    }, { transaction });
+    // System rows: only permissions/name/description are editable — never the
+    // slug (identity) or isSystem. Custom rows may change slug.
+    const editable = record.isSystem
+      ? ['name', 'description', 'permissions']
+      : ['name', 'slug', 'description', 'permissions'];
+    const patch: any = { ...lodash.pick(data, editable), updatedById: currentUser.id };
+
+    if (typeof patch.permissions !== 'undefined') {
+      // Force-union the admin floor so it can never be removed from the admin role.
+      patch.permissions = this.applyAdminFloor(record.slug, patch.permissions);
+      // Mark system roles as customized once their permissions are edited so the
+      // checker treats the DB set as authoritative (even if emptied) and "reset
+      // to default" becomes available.
+      if (record.isSystem) patch.isCustomized = true;
+    }
+
+    await record.update(patch, { transaction });
 
     await AuditLogRepository.log(
       {
@@ -171,6 +211,45 @@ export default class RoleRepository {
     return this.findById(record.id, options);
   }
 
+  // Reset a SYSTEM role's permissions back to its static defaults (undo
+  // customization). Only valid for built-in/system rows.
+  static async resetToDefault(id, options) {
+    const transaction = SequelizeRepository.getTransaction(options);
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    const tenant = SequelizeRepository.getCurrentTenant(options);
+
+    const record = await options.database.role.findByPk(id, { transaction });
+    if (!record) {
+      throw new Error404();
+    }
+    if (!record.isSystem) {
+      throw new Error400(options.language, 'entities.role.errors.notSystemRole');
+    }
+
+    const defaults = this.applyAdminFloor(record.slug, getStaticDefaultsForRole(record.slug));
+
+    await record.update(
+      { permissions: defaults, isCustomized: false, updatedById: currentUser.id },
+      { transaction },
+    );
+
+    await AuditLogRepository.log(
+      {
+        entityName: 'role',
+        entityId: record.id,
+        action: AuditLogRepository.UPDATE,
+        values: { ...record.get({ plain: true }), _resetToDefault: true },
+      },
+      options,
+    );
+
+    if (tenant && tenant.id) {
+      this.clearCacheForTenant(tenant.id);
+    }
+
+    return this.findById(record.id, options);
+  }
+
   static async destroy(id, options) {
     const transaction = SequelizeRepository.getTransaction(options);
 
@@ -179,7 +258,8 @@ export default class RoleRepository {
       throw new Error404();
     }
 
-    if (this.isProtectedDefaultRole(record.slug)) {
+    // System roles are editable but never deletable; custom roles can be removed.
+    if (record.isSystem || this.isFullyLockedRole(record.slug)) {
       throw new Error400(options.language, 'entities.role.errors.lockedDefaultRole');
     }
 

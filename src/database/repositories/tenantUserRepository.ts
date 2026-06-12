@@ -1,7 +1,13 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import AuditLogRepository from './auditLogRepository';
 import Error400 from '../../errors/Error400';
+import Error404 from '../../errors/Error404';
 import Roles from '../../security/roles';
+import Permissions from '../../security/permissions';
+import {
+  ADMIN_FLOOR_PERMISSIONS,
+  parsePermissionOverrides,
+} from '../../security/staticRolePermissions';
 import crypto from 'crypto';
 import { Op } from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
@@ -287,6 +293,77 @@ export default class TenantUserRepository {
       include: [{ model: options.database.user, as: 'user', where: { email } }],
       transaction,
     });
+  }
+
+  /**
+   * Persist per-user permission overrides ({ grant, deny }) for a tenantUser.
+   * deny wins over grant. Enforces the admin floor (a floor permission can never
+   * be denied for an admin holder, nor for the acting user themselves) to
+   * prevent self-lockout. Overrides take effect on the user's next request
+   * (currentUser is reloaded from the DB per request — no cache to clear).
+   */
+  static async updatePermissionOverrides(tenantId, userId, overrides, options: IRepositoryOptions) {
+    const transaction = SequelizeRepository.getTransaction(options);
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+
+    let resolvedTenantId = tenantId;
+    if (!resolvedTenantId) {
+      const currentTenant = SequelizeRepository.getCurrentTenant(options);
+      resolvedTenantId = currentTenant && currentTenant.id;
+    }
+    if (!resolvedTenantId) {
+      throw new Error400(options.language, 'tenant.id.required');
+    }
+
+    const row = await options.database.tenantUser.findOne({
+      where: { tenantId: resolvedTenantId, userId },
+      transaction,
+    });
+    if (!row) {
+      throw new Error404();
+    }
+
+    // Sanitize to known permission ids; deny wins (drop denied from grant).
+    const parsed = parsePermissionOverrides(overrides);
+    const known = new Set((Permissions.asArray || []).map((p: any) => p.id));
+    const deny = [...new Set(parsed.deny.filter((p) => known.has(p)))];
+    const grant = [...new Set(parsed.grant.filter((p) => known.has(p)))].filter(
+      (p) => !deny.includes(p),
+    );
+
+    // Resolve the target's role slugs.
+    let targetRoles: string[] = [];
+    const raw = row.roles;
+    if (Array.isArray(raw)) targetRoles = raw;
+    else if (typeof raw === 'string') {
+      try { targetRoles = JSON.parse(raw); } catch (e) { targetRoles = []; }
+    }
+    const targetIsAdmin = targetRoles.map((r) => String(r).toLowerCase()).includes('admin');
+    const isSelf = currentUser && String(row.userId) === String(currentUser.id);
+
+    // Lockout guard: the admin floor can never be denied for an admin holder or
+    // for the acting user themselves.
+    const deniesFloor = deny.some((p) => ADMIN_FLOOR_PERMISSIONS.includes(p));
+    if (deniesFloor && (targetIsAdmin || isSelf)) {
+      throw new Error400(options.language, 'entities.role.errors.cannotDenyAdminFloor');
+    }
+
+    await row.update(
+      { permissionOverrides: { grant, deny }, updatedById: currentUser && currentUser.id },
+      { transaction },
+    );
+
+    await AuditLogRepository.log(
+      {
+        entityName: 'tenantUser',
+        entityId: row.id,
+        action: AuditLogRepository.UPDATE,
+        values: { permissionOverrides: { grant, deny }, _permissionOverrides: true },
+      },
+      options,
+    );
+
+    return { grant, deny };
   }
 
   static async updateRoles(tenantId, id, roles, options, clientIds?, postSiteIds?, securityGuardId?, stationIds?) {

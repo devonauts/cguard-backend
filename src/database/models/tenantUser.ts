@@ -89,6 +89,15 @@ export default function (sequelize, DataTypes) {
           isIn: [['active', 'invited', 'pending', 'archived']],
         }
       },
+      // Per-user permission overrides applied ON TOP of the user's role(s):
+      //   { grant: [permissionId...], deny: [permissionId...] }
+      // deny wins over grant and over role-granted permissions; the admin floor
+      // can never be denied (enforced in the checker + write guards).
+      permissionOverrides: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: { grant: [], deny: [] },
+      },
     },
     {
       timestamps: true,

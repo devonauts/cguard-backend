@@ -1,4 +1,5 @@
 import Roles from '../security/roles';
+import { getStaticDefaultsForRole } from '../security/staticRolePermissions';
 
 /**
  * C6 — Role join sync helpers.
@@ -57,7 +58,11 @@ export async function ensureBuiltInRolesForTenant(
           name: key,
           slug: key,
           description: descriptions[key] || null,
-          permissions: [],
+          // Seed built-ins with their static default permissions so the DB role
+          // map is authoritative and the role is editable from day one.
+          permissions: getStaticDefaultsForRole(key),
+          isSystem: true,
+          isCustomized: false,
           tenantId,
         },
         ...txn,

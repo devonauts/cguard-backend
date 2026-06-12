@@ -26,6 +26,10 @@ import Roles from '../../security/roles';
 import RoleRepository from '../../database/repositories/roleRepository';
 import SettingsService from '../settingsService';
 import { ensureBuiltInRolesForTenant } from '../roleSync';
+import {
+  computeTenantPermissions,
+  applyUserOverridesAndFloor,
+} from '../../security/staticRolePermissions';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -500,6 +504,7 @@ class AuthService {
               tenant: tu.tenant || null,
               roles: tu.roles || [],
               permissions: tu.permissions || [],
+              permissionOverrides: tu.permissionOverrides || { grant: [], deny: [] },
               assignedClients: tu.assignedClients || [],
               assignedPostSites: tu.assignedPostSites || [],
               status: tu.status || null,
@@ -561,15 +566,17 @@ class AuthService {
             const tenantId = (t && (t.tenantId || (t.tenant && t.tenant.id))) ? (t.tenantId || t.tenant.id) : null;
             if (!tenantId) continue;
             const roleMap = await RoleRepository.getPermissionsMapForTenant(tenantId, { database: options.database });
-            const perms = new Set();
-            if (Array.isArray(t.roles)) {
-              for (const r of t.roles) {
-                const rp = roleMap && roleMap[r] ? roleMap[r] : [];
-                if (Array.isArray(rp)) rp.forEach((p) => perms.add(p));
-              }
-            }
-            // Attach computed permissions array to the tenant entry
-            t.permissions = Array.from(perms);
+            const customized = RoleRepository.getCachedCustomizedSlugsForTenant(tenantId);
+            const roleSlugs = Array.isArray(t.roles) ? t.roles : [];
+            // Use the SHARED helper so signin and /auth/me compute identical
+            // permissions. Critically this includes the static fallback for
+            // built-in roles — without it, once the static short-circuit is
+            // removed from permissionChecker, built-in users would have an
+            // empty permissions[] in the signin payload. Then apply per-user
+            // grant/deny + admin floor.
+            const base = computeTenantPermissions(roleMap, roleSlugs, customized);
+            t.permissionOverrides = t.permissionOverrides || { grant: [], deny: [] };
+            t.permissions = applyUserOverridesAndFloor(base, t.permissionOverrides, roleSlugs);
             } catch (e) {
             // non-fatal per-tenant
             const tenantPermsWarnMsg = e && typeof e === 'object' && 'message' in e ? (e as any).message : String(e);
@@ -591,6 +598,7 @@ class AuthService {
               tenant: t.tenant || null,
               roles: t.roles || [],
               permissions: t.permissions || [],
+              permissionOverrides: t.permissionOverrides || { grant: [], deny: [] },
               assignedClients: t.assignedClients || [],
               assignedPostSites: t.assignedPostSites || [],
               status: t.status || null,
@@ -737,6 +745,7 @@ class AuthService {
           tenant: tenantEntry.tenant || null,
           roles: tenantEntry.roles || [],
           permissions: tenantEntry.permissions || [],
+          permissionOverrides: tenantEntry.permissionOverrides || { grant: [], deny: [] },
           assignedClients: tenantEntry.assignedClients || [],
           assignedPostSites: tenantEntry.assignedPostSites || [],
           status: tenantEntry.status || null,

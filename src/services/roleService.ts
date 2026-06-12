@@ -20,6 +20,10 @@ export default class RoleService {
     return RoleRepository.destroy(id, this.options);
   }
 
+  async resetToDefault(id) {
+    return RoleRepository.resetToDefault(id, this.options);
+  }
+
   async findById(id) {
     return RoleRepository.findById(id, this.options);
   }

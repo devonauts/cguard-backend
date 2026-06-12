@@ -8,11 +8,15 @@ export default (app) => {
         require('./roleUpdate').default
     );
   app.delete(
-        `/tenant/:tenantId/role/:id`, 
+        `/tenant/:tenantId/role/:id`,
         require('./roleDestroy').default
     );
+  app.post(
+        `/tenant/:tenantId/role/:id/reset`,
+        require('./roleResetDefault').default
+    );
   app.get(
-        `/tenant/:tenantId/role`, 
+        `/tenant/:tenantId/role`,
         require('./roleList').default
     );
   app.get(

@@ -119,6 +119,8 @@ const es = {
       errors: {
         inUse: 'No se puede eliminar el rol porque está en uso.',
         lockedDefaultRole: 'No se pueden modificar ni eliminar los roles predeterminados del sistema.',
+        notSystemRole: 'Solo los roles del sistema se pueden restablecer a sus valores predeterminados.',
+        cannotDenyAdminFloor: 'No se pueden quitar permisos esenciales de administración (quedaría sin acceso al panel).',
       }
     },
     tax: {

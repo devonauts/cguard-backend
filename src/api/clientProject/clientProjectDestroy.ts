@@ -1,5 +1,9 @@
+import Permissions from '../../security/permissions';
+import { enforceGate } from '../../security/gateEnforcement';
+
 export default async (req, res) => {
   try {
+    enforceGate(req, Permissions.values.clientAccountEdit);
     const { tenantId } = req.params;
     const body = req.body || {};
     const ids: string[] = Array.isArray(body.ids) ? body.ids : (body.id ? [body.id] : []);

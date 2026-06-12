@@ -10,6 +10,8 @@ const en = {
       errors: {
         inUse: 'Cannot delete role because it is in use by {0} user(s).',
         lockedDefaultRole: 'Default system roles cannot be modified or deleted.',
+        notSystemRole: 'Only system roles can be reset to their defaults.',
+        cannotDenyAdminFloor: 'Cannot remove essential admin permissions (it would lock you out of the panel).',
       }
     },
     tax: {
