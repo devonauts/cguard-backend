@@ -173,6 +173,21 @@ export default async (req: any, res: any) => {
     }
     const canClockIn = clockInStationIds.length > 0;
 
+    // Guard profile photo (worker-app Profile screen). Prefer the guard's
+    // profileImage; the clock-in selfie also lands on the user avatar.
+    let guardPhotoUrl: string | null = null;
+    try {
+      if (securityGuard && typeof securityGuard.getProfileImage === 'function') {
+        const FileRepository = require('../../database/repositories/fileRepository').default;
+        const imgs = await FileRepository.fillDownloadUrl(await securityGuard.getProfileImage());
+        if (Array.isArray(imgs) && imgs[0]) {
+          guardPhotoUrl = imgs[0].downloadUrl || imgs[0].publicUrl || null;
+        }
+      }
+    } catch (e) {
+      // non-fatal — fall back to initials avatar
+    }
+
     const response = {
       timezone: tz,
       canClockIn,
@@ -184,7 +199,10 @@ export default async (req: any, res: any) => {
         guardType: securityGuard.guardType,
         guardId: securityGuard.guardId,
         // Profile fields (worker-app Profile screen).
-        employeeId: securityGuard.governmentId || null,
+        photoUrl: guardPhotoUrl,
+        // NOTE: do NOT expose governmentId here — it's the national ID document,
+        // not an employee code. The app derives a non-sensitive internal code
+        // from guardId.
         joinedAt: securityGuard.hiringContractDate || null,
         address: securityGuard.address || null,
         email: (req.currentUser && req.currentUser.email) || null,
