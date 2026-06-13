@@ -131,6 +131,18 @@ export default class AuditLogRepository {
         });
       }
 
+      // Generic free-text search across entity name, user email and entity id.
+      if (filter.search) {
+        const s = `%${String(filter.search).toLowerCase()}%`;
+        whereAnd.push({
+          [Op.or]: [
+            Sequelize.where(Sequelize.fn('lower', Sequelize.col('auditLog.entityName')), { [Op.like]: s }),
+            Sequelize.where(Sequelize.fn('lower', Sequelize.col('auditLog.createdByEmail')), { [Op.like]: s }),
+            Sequelize.where(Sequelize.fn('lower', Sequelize.col('auditLog.entityId')), { [Op.like]: s }),
+          ],
+        });
+      }
+
       if (filter.entityNames && filter.entityNames.length) {
         whereAnd.push({
           ['entityName']: {
