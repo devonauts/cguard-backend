@@ -141,6 +141,10 @@ export default function (sequelize) {
       },
       approvedAt: { type: DataTypes.DATE, allowNull: true },
       approvalNotes: { type: DataTypes.TEXT, allowNull: true },
+      // Auto-closed by the scheduler at shift end (guard never clocked out in
+      // the app, so no end-of-shift novedades were reported). Drives the
+      // performance penalty + the "salida forzada" marker in reports.
+      forcedClockOut: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       // Payroll period lock: once a period is closed, the record is read-only.
       locked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       lockedAt: { type: DataTypes.DATE, allowNull: true },

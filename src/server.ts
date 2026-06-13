@@ -299,6 +299,25 @@ nodeSetInterval(() => { runRadioCheckScheduler(); }, 60 * 1000);
 setTimeout(() => runRadioCheckScheduler(), 35000);
 
 /**
+ * Forced clock-out — auto-closes shifts whose scheduled end passed (+grace) while
+ * still clocked in, flags them as "salida forzada" (no novedades / no manual
+ * close), applies a light performance penalty and notifies guard + admins.
+ * Cluster-safe via a per-row atomic claim inside the service.
+ */
+async function runForcedClockOutScheduler() {
+  try {
+    const database = await databaseInit();
+    const { runForcedShiftEndClockOut } = require('./services/forcedClockOutService');
+    await runForcedShiftEndClockOut(database);
+  } catch (err) {
+    console.error('[forcedClockOut] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+nodeSetInterval(() => { runForcedClockOutScheduler(); }, 60 * 1000);
+setTimeout(() => runForcedClockOutScheduler(), 45000);
+
+/**
  * Trial scheduler — sends reminder emails as a tenant's 14-day trial winds down
  * (stages at 7 / 3 / 1 days left and on expiry) and flips expired trials to
  * `trial_expired`. `trialReminderStage` dedupes; the conditional UPDATE makes it

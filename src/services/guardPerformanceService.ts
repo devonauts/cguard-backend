@@ -69,6 +69,9 @@ const ENV = {
   penaltyK: num(process.env.PERF_PENALTY_K, 22),
   penaltyA: num(process.env.PERF_PENALTY_A, 1.0),
   penaltyB: num(process.env.PERF_PENALTY_B, 0.35),
+  // Forced clock-out (shift ended without the guard closing it). Light weight —
+  // lower than a tardy.
+  penaltyC: num(process.env.PERF_PENALTY_C, 0.18),
   volPts: num(process.env.PERF_VOLUNTEER_PTS, 1),
   coverPts: num(process.env.PERF_COVER_PTS, 4),
   bonusCap: num(process.env.PERF_BONUS_CAP, 12),
@@ -98,6 +101,7 @@ interface Knobs {
   penaltyK: number;
   penaltyA: number;
   penaltyB: number;
+  penaltyC: number;
   volPts: number;
   coverPts: number;
   bonusCap: number;
@@ -205,6 +209,7 @@ export default class GuardPerformanceService {
       penaltyK: num(row?.penaltyK, ENV.penaltyK),
       penaltyA: num(row?.penaltyA, ENV.penaltyA),
       penaltyB: num(row?.penaltyB, ENV.penaltyB),
+      penaltyC: num(row?.penaltyC, ENV.penaltyC),
       volPts: num(row?.volunteerPoints, ENV.volPts),
       coverPts: num(row?.coverPoints, ENV.coverPts),
       bonusCap: num(row?.bonusCap, ENV.bonusCap),
@@ -308,6 +313,10 @@ export default class GuardPerformanceService {
       absences++;
     }
 
+    // --- forced clock-outs: shifts auto-closed at shift end because the guard
+    //     never clocked out in the app (light penalty). ---
+    const forcedClockOuts = worked.filter((w) => w.forcedClockOut).length;
+
     // ---------------------------------------------------------------
     // Factor sub-scores (0..1, or null when there's no data to judge).
     // ---------------------------------------------------------------
@@ -381,7 +390,12 @@ export default class GuardPerformanceService {
 
     const penalty = hasData
       ? knobs.penaltyK *
-        Math.log(1 + knobs.penaltyA * absences + knobs.penaltyB * tardies)
+        Math.log(
+          1 +
+            knobs.penaltyA * absences +
+            knobs.penaltyB * tardies +
+            knobs.penaltyC * forcedClockOuts,
+        )
       : 0;
 
     const overall = hasData
@@ -423,6 +437,7 @@ export default class GuardPerformanceService {
         points: Math.round(penalty * 10) / 10,
         absences,
         tardies,
+        forcedClockOuts,
       },
       bonus: {
         points: bonus,
