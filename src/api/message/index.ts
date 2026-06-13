@@ -6,6 +6,7 @@ import {
   messageReply,
   messageMarkRead,
   messagePatch,
+  messageDelete,
   messageUnread,
 } from './messageEndpoints';
 
@@ -19,4 +20,5 @@ export default (app) => {
   app.post('/tenant/:tenantId/message/:conversationId/messages', messageReply);
   app.post('/tenant/:tenantId/message/:conversationId/read', messageMarkRead);
   app.patch('/tenant/:tenantId/message/:conversationId', messagePatch);
+  app.delete('/tenant/:tenantId/message/:conversationId', messageDelete);
 };

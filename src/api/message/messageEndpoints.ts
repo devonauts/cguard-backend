@@ -108,6 +108,22 @@ export const messagePatch = async (req, res) => {
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
 
+/** DELETE /tenant/:tenantId/message/:conversationId — delete a finished thread. */
+export const messageDelete = async (req, res) => {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.messageSend);
+    const { db, tenantId } = ctx(req);
+    const conversationId = req.params.conversationId;
+    const convo = await getConversation(db, tenantId, conversationId, undefined, true);
+    if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
+    // Soft-delete the whole thread (models are paranoid → recoverable).
+    await db.messageReceipt.destroy({ where: { tenantId, conversationId } });
+    await db.message.destroy({ where: { tenantId, conversationId } });
+    await convo.destroy();
+    await ApiResponseHandler.success(req, res, { id: conversationId, deleted: true });
+  } catch (error) { await ApiResponseHandler.error(req, res, error); }
+};
+
 /** GET /tenant/:tenantId/message-unread — badge count for the current user. */
 export const messageUnread = async (req, res) => {
   try {
