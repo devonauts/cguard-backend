@@ -1,5 +1,6 @@
 import Sequelize from 'sequelize';
 import SequelizeRepository from './sequelizeRepository';
+import AuditLogRepository from './auditLogRepository';
 import Error404 from '../../errors/Error404';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
@@ -31,6 +32,11 @@ class TimeOffRequestRepository {
       { transaction },
     );
 
+    await AuditLogRepository.log(
+      { entityName: 'timeOffRequest', entityId: record.id, action: AuditLogRepository.CREATE, values: { ...record.get({ plain: true }) } },
+      options,
+    );
+
     return this.findById(record.id, options);
   }
 
@@ -57,6 +63,11 @@ class TimeOffRequestRepository {
       { transaction },
     );
 
+    await AuditLogRepository.log(
+      { entityName: 'timeOffRequest', entityId: record.id, action: AuditLogRepository.UPDATE, values: { ...record.get({ plain: true }) } },
+      options,
+    );
+
     return this.findById(record.id, options);
   }
 
@@ -73,7 +84,13 @@ class TimeOffRequestRepository {
       throw new Error404();
     }
 
+    const snapshot = { ...record.get({ plain: true }) };
     await record.destroy({ transaction });
+
+    await AuditLogRepository.log(
+      { entityName: 'timeOffRequest', entityId: id, action: AuditLogRepository.DELETE, values: snapshot },
+      options,
+    );
   }
 
   static async findById(id, options: IRepositoryOptions) {

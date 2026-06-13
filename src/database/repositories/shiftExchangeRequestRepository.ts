@@ -1,5 +1,6 @@
 import Sequelize from 'sequelize';
 import SequelizeRepository from './sequelizeRepository';
+import AuditLogRepository from './auditLogRepository';
 import Error404 from '../../errors/Error404';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
@@ -27,6 +28,11 @@ class ShiftExchangeRequestRepository {
       { transaction },
     );
 
+    await AuditLogRepository.log(
+      { entityName: 'shiftExchangeRequest', entityId: record.id, action: AuditLogRepository.CREATE, values: { ...record.get({ plain: true }) } },
+      options,
+    );
+
     return this.findById(record.id, options);
   }
 
@@ -52,6 +58,11 @@ class ShiftExchangeRequestRepository {
       { transaction },
     );
 
+    await AuditLogRepository.log(
+      { entityName: 'shiftExchangeRequest', entityId: record.id, action: AuditLogRepository.UPDATE, values: { ...record.get({ plain: true }) } },
+      options,
+    );
+
     return this.findById(record.id, options);
   }
 
@@ -68,7 +79,13 @@ class ShiftExchangeRequestRepository {
       throw new Error404();
     }
 
+    const snapshot = { ...record.get({ plain: true }) };
     await record.destroy({ transaction });
+
+    await AuditLogRepository.log(
+      { entityName: 'shiftExchangeRequest', entityId: id, action: AuditLogRepository.DELETE, values: snapshot },
+      options,
+    );
   }
 
   static async findById(id, options: IRepositoryOptions) {
