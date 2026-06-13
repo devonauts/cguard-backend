@@ -40,6 +40,62 @@ export default (app) => {
     }
   });
 
+  // Stripe Customer Portal — lets the tenant add/update their card, manage
+  // autopay and view invoices. Charges happen automatically via the
+  // subscription created at checkout; the portal is the self-service manager.
+  app.post('/tenant/:tenantId/subscription/portal', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.settingsEdit);
+
+      const currentTenant = req.currentTenant;
+      const currentUser = req.currentUser;
+      const stripe = await getStripeClient(req.database);
+      if (!stripe) {
+        throw new Error400(req.language, 'Stripe no está configurado en la plataforma.');
+      }
+
+      // Reuse or create the tenant's Stripe customer so a card can be added
+      // even before the first subscription.
+      let customerId = currentTenant.planStripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: currentUser?.email,
+          name: currentTenant.name,
+          metadata: { tenantId: currentTenant.id },
+        });
+        customerId = customer.id;
+        await new TenantService(req).updatePlanUser(
+          currentTenant.id,
+          customerId,
+          currentUser.id,
+        );
+      }
+
+      const returnUrl = `${tenantSubdomain.frontendUrl(currentTenant)}/setting/billing`;
+
+      try {
+        const session = await stripe.billingPortal.sessions.create({
+          customer: customerId,
+          return_url: returnUrl,
+        });
+        return ApiResponseHandler.success(req, res, { url: session.url });
+      } catch (e: any) {
+        // The portal must be enabled once in the Stripe Dashboard
+        // (Settings → Billing → Customer portal). Surface a clear message.
+        const msg = (e && e.message) || '';
+        if (/portal|configuration/i.test(msg)) {
+          throw new Error400(
+            req.language,
+            'El portal de pagos de Stripe no está habilitado. Actívalo en el panel de Stripe (Configuración → Facturación → Portal de clientes).',
+          );
+        }
+        throw e;
+      }
+    } catch (error) {
+      return ApiResponseHandler.error(req, res, error);
+    }
+  });
+
   app.post('/tenant/:tenantId/subscription/checkout', async (req, res) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.settingsEdit);
