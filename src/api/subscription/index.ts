@@ -5,7 +5,7 @@ import Error400 from '../../errors/Error400';
 import { getConfig } from '../../config';
 import { tenantSubdomain } from '../../services/tenantSubdomain';
 import TenantService from '../../services/tenantService';
-import { getSummary, countBillableSeats } from '../../services/subscriptionService';
+import { getSummary, countBillableSeats, listBillableUsers } from '../../services/subscriptionService';
 import { getStripeClient } from '../../services/stripe/stripeConfigService';
 import {
   grossPerUserCents,
@@ -25,6 +25,16 @@ export default (app) => {
       new PermissionChecker(req).validateHas(Permissions.values.settingsRead);
       const summary = await getSummary(req.database, req.currentTenant);
       return ApiResponseHandler.success(req, res, summary);
+    } catch (error) {
+      return ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  app.get('/tenant/:tenantId/subscription/users', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.settingsRead);
+      const users = await listBillableUsers(req.database, req.currentTenant.id);
+      return ApiResponseHandler.success(req, res, users);
     } catch (error) {
       return ApiResponseHandler.error(req, res, error);
     }

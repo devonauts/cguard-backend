@@ -16,6 +16,49 @@ export async function countBillableSeats(db: any, tenantId: string): Promise<num
   }
 }
 
+export interface BillableUser {
+  id: string;
+  name: string;
+  email: string | null;
+  roles: string[];
+  status: string | null;
+}
+
+/**
+ * The billable users for a tenant — exactly the rows counted by
+ * countBillableSeats, with identity from the linked user. Powers the
+ * "active users" list on the billing screen so the customer can see who
+ * they are paying for.
+ */
+export async function listBillableUsers(db: any, tenantId: string): Promise<BillableUser[]> {
+  try {
+    const rows = await db.tenantUser.findAll({
+      where: { tenantId },
+      include: [{ model: db.user, attributes: ['id', 'firstName', 'lastName', 'email'] }],
+      order: [['createdAt', 'ASC']],
+    });
+    return rows.map((tu: any) => {
+      const u = tu.user || {};
+      const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim();
+      let roles: string[] = [];
+      const raw = tu.roles;
+      if (Array.isArray(raw)) roles = raw;
+      else if (typeof raw === 'string') {
+        try { roles = JSON.parse(raw); } catch { roles = []; }
+      }
+      return {
+        id: tu.id,
+        name: name || u.email || '—',
+        email: u.email || null,
+        roles,
+        status: tu.status || null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 export interface TrialInfo {
   endsAt: string | null;
   daysLeft: number;
