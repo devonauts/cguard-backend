@@ -535,6 +535,40 @@ async function runAttendanceDetectionScheduler() {
           });
         } catch { /* best-effort */ }
       }
+
+      // Also notify the affected GUARD (in-app + email) with guard-facing copy
+      // for lateness / no-show only. Deduped: this whole block runs once per
+      // (shiftId,type) thanks to the `existing` open-exception gate above.
+      if (spec.type === 'late_arrival' || spec.type === 'no_call_no_show') {
+        try {
+          // Resolve the guard's email: prefer the linked user's email, then the
+          // securityGuard.email. If neither exists, skip silently.
+          let guardEmail: string | null = null;
+          const guardUser = shift.guardId
+            ? await database.user.findByPk(shift.guardId, { attributes: ['id', 'email'] })
+            : null;
+          guardEmail = guardUser?.email || null;
+          if (!guardEmail && sg?.id) {
+            const sgRow = await database.securityGuard.findByPk(sg.id, { attributes: ['email'] });
+            guardEmail = sgRow?.email || null;
+          }
+          if (guardEmail) {
+            const selfEvent =
+              spec.type === 'late_arrival' ? 'attendance.late_self' : 'attendance.no_show_self';
+            await dispatch(selfEvent, {
+              stationName: station?.stationName || null,
+              minutesLate: spec.meta?.minutesLate ?? null,
+            }, {
+              database,
+              tenantId: shift.tenantId,
+              sourceEntityType: 'attendanceException',
+              sourceEntityId: row.id,
+              recipientUserId: guardUser?.id || undefined,
+              recipientEmail: guardEmail,
+            });
+          }
+        } catch { /* best-effort */ }
+      }
     }
     if (flagged) console.log(`[attendance] detection flagged ${flagged} exception(s)`);
   } catch (err) {

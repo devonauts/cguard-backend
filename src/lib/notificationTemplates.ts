@@ -27,6 +27,8 @@ export type EventType =
   | 'dispatch.created'
   | 'attendance.late'
   | 'attendance.no_show'
+  | 'attendance.late_self'
+  | 'attendance.no_show_self'
   | 'attendance.outside_geofence'
   | 'attendance.early_departure'
   | 'attendance.missed_clockout'
@@ -354,6 +356,28 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     emailSubject: (d) => `[CGuard] Inasistencia (no-show): ${d.guardName || 'Guardia'}`,
     emailHtml: (d) =>
       `<h2>🚨 Inasistencia (no-call no-show)</h2><p><strong>Guardia:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.reason ? `<p>${d.reason}</p>` : ''}`,
+  },
+  // Guard-facing copy (addressed to the affected guard, not the supervisor).
+  // Dispatched with { recipientUserId, recipientEmail } from the detection job.
+  'attendance.late_self': {
+    title: () => `⏰ Llegada tarde a tu turno`,
+    body: (d) =>
+      `Aún no has marcado tu entrada. Vas ${d.minutesLate != null ? `${d.minutesLate} min` : 'unos minutos'} tarde${d.stationName ? ` en ${d.stationName}` : ''}. Marca tu entrada lo antes posible.`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
+    sendEmail: true,
+    emailSubject: () => `Llegada tarde a tu turno`,
+    emailHtml: (d) =>
+      `<h2>⏰ Llegada tarde a tu turno</h2><p>Aún no has marcado tu entrada. Vas ${d.minutesLate != null ? `<strong>${esc(d.minutesLate)} min</strong>` : 'unos minutos'} tarde${d.stationName ? ` en <strong>${esc(d.stationName)}</strong>` : ''}.</p><p>Marca tu entrada lo antes posible.</p>`,
+  },
+  'attendance.no_show_self': {
+    title: () => `🚨 No has marcado entrada a tu turno`,
+    body: (d) =>
+      `No registramos tu entrada${d.stationName ? ` en ${d.stationName}` : ''}${d.minutesLate != null ? ` (${d.minutesLate} min después del inicio)` : ''}. Marca tu entrada de inmediato o contacta a tu supervisor.`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
+    sendEmail: true,
+    emailSubject: () => `No has marcado entrada a tu turno`,
+    emailHtml: (d) =>
+      `<h2>🚨 No has marcado entrada</h2><p>No registramos tu entrada${d.stationName ? ` en <strong>${esc(d.stationName)}</strong>` : ''}${d.minutesLate != null ? ` (<strong>${esc(d.minutesLate)} min</strong> después del inicio)` : ''}.</p><p>Marca tu entrada de inmediato o contacta a tu supervisor.</p>`,
   },
   'attendance.outside_geofence': {
     title: (d) => `📍 Fuera de geocerca: ${d.guardName || 'Guardia'}`,

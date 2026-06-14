@@ -108,10 +108,12 @@ export default async (req: any, res: any) => {
     // Early-clockout threshold (minutes before scheduled end that requires
     // approval) so the app can decide whether to show "request" vs "clock out".
     let clockOutThresholdMin = 0;
+    let lateGraceMin = 5;
     try {
       const { getNominaSettings } = require('../../services/attendanceService');
       const settings = await getNominaSettings(db, tenantId);
       clockOutThresholdMin = Number(settings?.windows?.earlyClockoutThresholdMin ?? 0);
+      lateGraceMin = Number(settings?.windows?.lateGraceMin ?? 5);
     } catch {
       /* ignore */
     }
@@ -188,6 +190,30 @@ export default async (req: any, res: any) => {
       // non-fatal — fall back to initials avatar
     }
 
+    // ── Late-arrival warning for the worker app ───────────────────────────
+    // Mirrors the backend detection rule: the guard has a shift active now, is
+    // NOT clocked in, and we're past startTime + lateGraceMin. Null otherwise.
+    let lateArrival: {
+      isLate: boolean;
+      lateMinutes: number;
+      graceMin: number;
+      shiftId: string | null;
+      startTimeLabel: string | null;
+      stationName: string | null;
+    } | null = null;
+    if (currentShift && !activeClockIn) {
+      const startMs = new Date(currentShift.startTime).getTime();
+      const lateMinutes = Math.max(0, Math.round((now.getTime() - startMs) / 60000));
+      lateArrival = {
+        isLate: lateMinutes > lateGraceMin,
+        lateMinutes,
+        graceMin: lateGraceMin,
+        shiftId: currentShift.id || null,
+        startTimeLabel: timeLabelInTz(currentShift.startTime, tz),
+        stationName: (currentShift.station && currentShift.station.stationName) || null,
+      };
+    }
+
     const response = {
       timezone: tz,
       canClockIn,
@@ -221,6 +247,7 @@ export default async (req: any, res: any) => {
       minutesToScheduledEnd:
         minutesToScheduledEnd != null ? Math.round(minutesToScheduledEnd) : null,
       isEarlyClockOut,
+      lateArrival,
     };
 
     return ApiResponseHandler.success(req, res, response);
