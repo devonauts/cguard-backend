@@ -123,6 +123,24 @@ class Permissions {
       performanceSettingsRead: createPermission('performanceSettingsRead', SUPERVISOR_ROLES),
       performanceSettingsEdit: createPermission('performanceSettingsEdit', MANAGEMENT_ROLES),
 
+      // === ENTRENAMIENTO (professional training) ===
+      // Tenant admins/supervisors author & manage courses and lessons.
+      trainingCourseCreate: createPermission('trainingCourseCreate', SUPERVISOR_ROLES),
+      trainingCourseEdit: createPermission('trainingCourseEdit', SUPERVISOR_ROLES),
+      trainingCourseDestroy: createPermission('trainingCourseDestroy', MANAGEMENT_ROLES),
+      trainingCourseRead: createPermission('trainingCourseRead', GUARD_ROLES),
+      trainingLessonCreate: createPermission('trainingLessonCreate', SUPERVISOR_ROLES),
+      trainingLessonEdit: createPermission('trainingLessonEdit', SUPERVISOR_ROLES),
+      trainingLessonDestroy: createPermission('trainingLessonDestroy', SUPERVISOR_ROLES),
+      trainingLessonRead: createPermission('trainingLessonRead', GUARD_ROLES),
+      // Assignments (enroll guards) — supervisors assign, guards read their own.
+      trainingEnrollmentCreate: createPermission('trainingEnrollmentCreate', SUPERVISOR_ROLES),
+      trainingEnrollmentRead: createPermission('trainingEnrollmentRead', GUARD_ROLES),
+      // Guard-facing actions in the worker app.
+      trainingLessonComplete: createPermission('trainingLessonComplete', GUARD_ROLES),
+      trainingQuizAttempt: createPermission('trainingQuizAttempt', GUARD_ROLES),
+      trainingCertificateRead: createPermission('trainingCertificateRead', GUARD_ROLES),
+
       // === CLIENT ACCOUNTS ===
       clientAccountImport: createPermission('clientAccountImport', CLIENT_MANAGEMENT_ROLES),
       clientAccountCreate: createPermission('clientAccountCreate', CLIENT_MANAGEMENT_ROLES),

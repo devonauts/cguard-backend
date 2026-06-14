@@ -380,6 +380,14 @@ const en = {
         locked: 'This attendance record is locked because its payroll period is closed.',
       },
     },
+    training: {
+      errors: {
+        titleRequired: 'Course title is required.',
+        lessonTitleRequired: 'Lesson title is required.',
+        guardRequired: 'A guard must be selected for an individual assignment.',
+        addonReadOnly: 'Platform addon courses cannot be edited.',
+      },
+    },
   }
 };
 

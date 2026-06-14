@@ -379,6 +379,14 @@ const es = {
       locked: 'Este registro de asistencia está bloqueado porque su periodo de nómina está cerrado.',
     },
   },
+  training: {
+    errors: {
+      titleRequired: 'El título del curso es obligatorio.',
+      lessonTitleRequired: 'El título de la lección es obligatorio.',
+      guardRequired: 'Debe seleccionar un guardia para la asignación individual.',
+      addonReadOnly: 'Los cursos complementarios de la plataforma no pueden editarse.',
+    },
+  },
 };
 
 export default es;

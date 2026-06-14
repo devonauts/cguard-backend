@@ -725,32 +725,67 @@ export default class GuardPerformanceService {
     }
   }
 
-  /** Tutorials completed vs assigned (0..1), or null. */
+  /**
+   * Training factor (0..1), or null when no training is assigned.
+   *
+   * Combines two sources, summed into a single "assigned vs completed" ratio:
+   *   1. Legacy tutorials (tutorial / completionOfTutorial).
+   *   2. Professional training courses (trainingEnrollment): an enrollment
+   *      counts as "completed" when status='completed' (all lessons done and,
+   *      if the course has a quiz, the quiz passed). This is where a course's
+   *      pointsValue is earned and a certificate is issued.
+   */
   private async trainingScore(
     sgId: string | undefined,
   ): Promise<number | null> {
-    if (!sgId || !this.db.tutorial || !this.db.completionOfTutorial) {
-      return null;
-    }
+    if (!sgId) return null;
     try {
-      const assigned = await this.db.tutorial.count({
-        where: { tenantId: this.tenantId, deletedAt: null },
-      });
-      if (!assigned) return null;
+      let assigned = 0;
+      let completed = 0;
 
-      const completions = await this.db.completionOfTutorial.findAll({
-        where: {
-          guardNameId: sgId,
-          tenantId: this.tenantId,
-          wasCompleted: true,
-          deletedAt: null,
-        },
-        attributes: ['tutorialId'],
-      });
-      const doneTutorials = new Set(
-        completions.map((c: any) => String(c.tutorialId)),
-      );
-      return clamp(doneTutorials.size / assigned, 0, 1);
+      // (1) Legacy tutorials.
+      if (this.db.tutorial && this.db.completionOfTutorial) {
+        const tutAssigned = await this.db.tutorial.count({
+          where: { tenantId: this.tenantId, deletedAt: null },
+        });
+        if (tutAssigned) {
+          const tutCompletions = await this.db.completionOfTutorial.findAll({
+            where: {
+              guardNameId: sgId,
+              tenantId: this.tenantId,
+              wasCompleted: true,
+              deletedAt: null,
+            },
+            attributes: ['tutorialId'],
+          });
+          const doneTutorials = new Set(
+            tutCompletions.map((c: any) => String(c.tutorialId)),
+          );
+          assigned += tutAssigned;
+          completed += Math.min(doneTutorials.size, tutAssigned);
+        }
+      }
+
+      // (2) Professional training course enrollments (per-guard rows).
+      if (this.db.trainingEnrollment) {
+        const enrollments = await this.db.trainingEnrollment.findAll({
+          where: {
+            securityGuardId: sgId,
+            tenantId: this.tenantId,
+            deletedAt: null,
+          },
+          attributes: ['status'],
+        });
+        if (enrollments.length) {
+          assigned += enrollments.length;
+          completed += enrollments.filter(
+            (e: any) => e.status === 'completed',
+          ).length;
+        }
+      }
+
+      if (!assigned) return null;
+      return clamp(completed / assigned, 0, 1);
     } catch {
       return null;
     }

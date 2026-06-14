@@ -28,6 +28,9 @@ app.use(languageMiddleware);
 // Public shared request route (no auth)
 app.get('/public/dispatch/:token', require('./publicRequest').default);
 
+// Public training certificate view/share (no auth; token validates)
+app.get('/public/training/cert/:downloadToken', require('./publicTrainingCertificate').default);
+
 // Proxy endpoints for Google Places (server-side) to avoid CORS issues
 app.get('/api/places/autocomplete', (req, res) => {
   const input = String(req.query.input || '');
@@ -233,6 +236,8 @@ require('./guard').default(routes);
 require('./message').default(routes);
 require('./radioCheck').default(routes);
 require('./events').default(routes);
+require('./training').default(routes);
+require('./trainingGuard').default(routes);
 require('./superadmin').default(routes);
 
 // CRUD endpoints for tenant_user_client_accounts

@@ -54,7 +54,14 @@ export default function (sequelize) {
     });
     quizBank.belongsTo(models.station, {
       as: 'station',
-      foreignKey: { name: 'stationId', allowNull: false },
+      foreignKey: { name: 'stationId', allowNull: true },
+      constraints: false,
+    });
+    // Optional link to a training course (when this bank is a course quiz
+    // rather than a station security-test bank). stationId is null in that case.
+    quizBank.belongsTo(models.trainingCourse, {
+      as: 'course',
+      foreignKey: { name: 'courseId', allowNull: true },
       constraints: false,
     });
     quizBank.hasMany(models.quizQuestion, {

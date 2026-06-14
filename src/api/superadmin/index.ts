@@ -24,6 +24,7 @@ export default (app) => {
   require('./users').default(router);
   require('./observability').default(router);
   require('./settings').default(router);
+  require('./trainingAddon').default(router);
 
   app.use('/superadmin', router);
 };
