@@ -17,16 +17,18 @@ export default async (req: any, res: any) => {
     const userId = currentUser.id;
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
 
-    // Shifts for the next 30 days
+    // Window: default = next 30 days; ?from=&to= (ISO) for calendar navigation.
     const now = new Date();
-    const thirtyDaysAhead = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const parseDate = (v: any) => { const d = v ? new Date(String(v)) : null; return d && !Number.isNaN(d.getTime()) ? d : null; };
+    const rangeStart = parseDate(req.query?.from) || now;
+    const rangeEnd = parseDate(req.query?.to) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     const shifts = await db.shift.findAll({
       where: {
         guardId: userId,
         tenantId,
-        startTime: { [Op.lte]: thirtyDaysAhead },
-        endTime: { [Op.gte]: now },
+        startTime: { [Op.lte]: rangeEnd },
+        endTime: { [Op.gte]: rangeStart },
       },
       attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId'],
       include: [
@@ -49,7 +51,8 @@ export default async (req: any, res: any) => {
           guardId: securityGuard.id,
           tenantId,
           status: 'approved',
-          endDate: { [Op.gte]: now },
+          endDate: { [Op.gte]: rangeStart },
+          startDate: { [Op.lte]: rangeEnd },
         },
         attributes: ['id', 'startDate', 'endDate', 'type', 'reason', 'status'],
         order: [['startDate', 'ASC']],
