@@ -18,9 +18,15 @@ export default async (req: any, res: any) => {
       Math.max(7, Number(req.query.period) || 30),
     );
 
+    const detail = (() => {
+      const d = req.query.detail;
+      return d === '1' || d === 'true' || d === 1 || d === true;
+    })();
+
     const payload = await new GuardPerformanceService(req).forUser(
       currentUser.id,
       periodDays,
+      detail,
     );
 
     return ApiResponseHandler.success(req, res, payload);

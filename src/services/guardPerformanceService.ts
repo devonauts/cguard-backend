@@ -124,7 +124,7 @@ export default class GuardPerformanceService {
   }
 
   /** Performance for the authenticated guard (resolved from their user id). */
-  async forUser(userId: string, periodDays = 30) {
+  async forUser(userId: string, periodDays = 30, detail = false) {
     const securityGuard = await this.db.securityGuard.findOne({
       where: { guardId: userId, tenantId: this.tenantId, deletedAt: null },
       attributes: ['id', 'fullName'],
@@ -134,6 +134,7 @@ export default class GuardPerformanceService {
       securityGuard,
       subjectType: 'guard',
       periodDays,
+      detail,
     });
   }
 
@@ -221,11 +222,13 @@ export default class GuardPerformanceService {
     securityGuard,
     subjectType,
     periodDays,
+    detail = false,
   }: {
     subjectUserId?: string;
     securityGuard: any;
     subjectType: SubjectType;
     periodDays: number;
+    detail?: boolean;
   }) {
     const db = this.db;
     const tenantId = this.tenantId;
@@ -275,6 +278,12 @@ export default class GuardPerformanceService {
     let tardies = 0;
     let hoursWorked = 0;
 
+    // Per-record events (only materialized in detail mode).
+    const tardyEvents: { date: string; minutesLate: number; shiftLabel?: string }[] = [];
+    const absenceEvents: { date: string; shiftLabel?: string }[] = [];
+    // Punch-in timestamp -> lateness, used to seed the trend buckets.
+    const punctualitySamples: { time: number; sub: number }[] = [];
+
     for (const w of worked) {
       const punchIn = new Date(w.punchInTime).getTime();
       if (w.punchOutTime) hoursWorked += hours(w.punchInTime, w.punchOutTime);
@@ -295,7 +304,31 @@ export default class GuardPerformanceService {
           (punchIn - new Date(matched.startTime).getTime()) / 60000;
         latenesses.push(lateMin);
         if (lateMin <= knobs.graceMin) onTimeShifts++;
-        if (lateMin > knobs.lateFloorMin) tardies++;
+        if (lateMin > knobs.lateFloorMin) {
+          tardies++;
+          if (detail) {
+            tardyEvents.push({
+              date: new Date(matched.startTime).toISOString(),
+              minutesLate: Math.round(lateMin),
+              shiftLabel: this.shiftLabel(matched),
+            });
+          }
+        }
+        // Per-shift punctuality sub-score (same formula used below for the
+        // aggregate), keyed on the worked punch-in time for trend bucketing.
+        const sub =
+          lateMin <= knobs.graceMin
+            ? 1
+            : lateMin >= knobs.lateFloorMin
+            ? 0
+            : clamp(
+                1 -
+                  (lateMin - knobs.graceMin) /
+                    (knobs.lateFloorMin - knobs.graceMin),
+                0,
+                1,
+              );
+        punctualitySamples.push({ time: punchIn, sub });
       }
     }
 
@@ -311,6 +344,12 @@ export default class GuardPerformanceService {
       const dayKey = new Date(sched.startTime).toISOString().slice(0, 10);
       if (excused.has(dayKey)) continue;
       absences++;
+      if (detail) {
+        absenceEvents.push({
+          date: new Date(sched.startTime).toISOString(),
+          shiftLabel: this.shiftLabel(sched),
+        });
+      }
     }
 
     // --- forced clock-outs: shifts auto-closed at shift end because the guard
@@ -417,6 +456,91 @@ export default class GuardPerformanceService {
         ) / 10
       : 0;
 
+    // ---------------------------------------------------------------
+    // Detail-mode additive payload: { trend, events }. Non-breaking —
+    // omitted entirely (undefined, dropped by JSON) unless detail=1.
+    // ---------------------------------------------------------------
+    let detailPayload:
+      | {
+          trend: { label: string; score: number }[];
+          events: {
+            absences: { date: string; shiftLabel?: string }[];
+            tardies: {
+              date: string;
+              minutesLate: number;
+              shiftLabel?: string;
+            }[];
+            backups: {
+              date: string;
+              stationName?: string;
+              kind: 'volunteer' | 'cover';
+            }[];
+          };
+        }
+      | undefined;
+
+    if (detail) {
+      // Real backup records (dates + kind + station) over the period.
+      const backupRows = await this.backupEvents(subjectUserId, from, now);
+
+      // Resolve station names referenced by absence/tardy/backup events.
+      const stationIds = new Set<string>();
+      for (const sched of scheduled) {
+        if (sched.stationId) stationIds.add(String(sched.stationId));
+      }
+      for (const b of backupRows) {
+        if (b.stationId) stationIds.add(String(b.stationId));
+      }
+      const stationNames = await this.stationNames(Array.from(stationIds));
+
+      const withStation = (label?: string, stationId?: any) => {
+        const name = stationId ? stationNames.get(String(stationId)) : undefined;
+        return name || label;
+      };
+
+      // Re-resolve labels with station names now that we have them.
+      const absences = absenceEvents.map((e, i) => ({
+        date: e.date,
+        shiftLabel:
+          withStation(e.shiftLabel, scheduled.find(
+            (s) => new Date(s.startTime).toISOString() === e.date,
+          )?.stationId) || e.shiftLabel,
+      }));
+      const tardiesEv = tardyEvents.map((e) => ({
+        date: e.date,
+        minutesLate: e.minutesLate,
+        shiftLabel:
+          withStation(e.shiftLabel, scheduled.find(
+            (s) => new Date(s.startTime).toISOString() === e.date,
+          )?.stationId) || e.shiftLabel,
+      }));
+      const backups = backupRows.map((b) => ({
+        date: b.date,
+        stationName: b.stationId
+          ? stationNames.get(String(b.stationId))
+          : undefined,
+        kind: b.kind,
+      }));
+
+      const trend = this.buildTrend({
+        from,
+        now,
+        periodDays,
+        overall,
+        punctualitySamples,
+        absenceTimes: absenceEvents.map((e) => new Date(e.date).getTime()),
+        tardyTimes: tardyEvents.map((e) => new Date(e.date).getTime()),
+        backupTimes: backupRows.map((b) => new Date(b.date).getTime()),
+        knobs,
+        hasData,
+      });
+
+      detailPayload = {
+        trend,
+        events: { absences, tardies: tardiesEv, backups },
+      };
+    }
+
     return {
       generatedAt: now.toISOString(),
       period: {
@@ -469,6 +593,7 @@ export default class GuardPerformanceService {
         trainingRate: s.training != null ? Math.round(s.training * 100) : null,
       },
       tips,
+      ...(detailPayload || {}),
     };
   }
 
@@ -827,5 +952,161 @@ export default class GuardPerformanceService {
     } catch {
       return { volunteerCount: 0, coverCount: 0 };
     }
+  }
+
+  // -----------------------------------------------------------------
+  // Detail-mode helpers (trend + events). Only invoked when detail=1.
+  // -----------------------------------------------------------------
+
+  /** Short human label for a scheduled shift (its start time, HH:mm). */
+  private shiftLabel(sched: any): string | undefined {
+    if (!sched?.startTime) return undefined;
+    try {
+      const d = new Date(sched.startTime);
+      const hh = String(d.getUTCHours()).padStart(2, '0');
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Map of stationId -> station name for the given ids. */
+  private async stationNames(
+    stationIds: string[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (!stationIds.length || !this.db.station) return out;
+    try {
+      const rows = await this.db.station.findAll({
+        where: {
+          id: { [Op.in]: stationIds },
+          tenantId: this.tenantId,
+          deletedAt: null,
+        },
+        attributes: ['id', 'name'],
+      });
+      for (const r of rows) {
+        const p = r.get ? r.get({ plain: true }) : r;
+        if (p?.id && p?.name) out.set(String(p.id), p.name);
+      }
+    } catch {
+      /* ignore */
+    }
+    return out;
+  }
+
+  /**
+   * Real backup records (volunteer + confirmed cover) in the period, with
+   * date / kind / station. Mirrors the filters used by backupCounts so the
+   * detail rows reconcile with the bonus counts. Empty array if no per-record
+   * source exists.
+   */
+  private async backupEvents(
+    userId: string | undefined,
+    from: Date,
+    now: Date,
+  ): Promise<
+    { date: string; stationId?: string; kind: 'volunteer' | 'cover' }[]
+  > {
+    if (!userId || !this.db.backupEvent) return [];
+    try {
+      const fromDay = from.toISOString().slice(0, 10);
+      const toDay = now.toISOString().slice(0, 10);
+      const rows = await this.db.backupEvent.findAll({
+        where: {
+          subjectUserId: userId,
+          tenantId: this.tenantId,
+          [Op.or]: [
+            { kind: 'volunteer', status: { [Op.notIn]: ['rejected', 'cancelled'] } },
+            { kind: 'cover', status: 'confirmed' },
+          ],
+          eventDate: { [Op.gte]: fromDay, [Op.lte]: toDay },
+          deletedAt: null,
+        },
+        order: [['eventDate', 'ASC']],
+      });
+      return rows
+        .map((r: any) => (r.get ? r.get({ plain: true }) : r))
+        .map((p: any) => ({
+          date: new Date(p.eventDate).toISOString(),
+          stationId: p.stationId ? String(p.stationId) : undefined,
+          kind: p.kind === 'cover' ? 'cover' : 'volunteer',
+        })) as {
+        date: string;
+        stationId?: string;
+        kind: 'volunteer' | 'cover';
+      }[];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Chronological trend across the period, oldest->newest. Buckets the window
+   * into 4–6 equal sub-windows and computes a lightweight per-bucket score
+   * from the SAME raw signals already gathered (punctuality samples that fall
+   * in the bucket, plus a localized log-penalty for the bucket's absences /
+   * tardies and a localized backup bonus). When a bucket has no punctuality
+   * samples it inherits the overall base as a neutral baseline so the line
+   * stays continuous rather than dropping to zero.
+   */
+  private buildTrend({
+    from,
+    now,
+    periodDays,
+    overall,
+    punctualitySamples,
+    absenceTimes,
+    tardyTimes,
+    backupTimes,
+    knobs,
+    hasData,
+  }: {
+    from: Date;
+    now: Date;
+    periodDays: number;
+    overall: number;
+    punctualitySamples: { time: number; sub: number }[];
+    absenceTimes: number[];
+    tardyTimes: number[];
+    backupTimes: number[];
+    knobs: Knobs;
+    hasData: boolean;
+  }): { label: string; score: number }[] {
+    if (!hasData) return [];
+    const buckets = periodDays >= 60 ? 6 : periodDays >= 21 ? 5 : 4;
+    const start = from.getTime();
+    const end = now.getTime();
+    const span = Math.max(1, end - start);
+    const width = span / buckets;
+
+    const out: { label: string; score: number }[] = [];
+    for (let i = 0; i < buckets; i++) {
+      const lo = start + i * width;
+      const hi = i === buckets - 1 ? end : start + (i + 1) * width;
+
+      const samples = punctualitySamples.filter(
+        (p) => p.time >= lo && p.time < hi,
+      );
+      // Base: bucket punctuality if we have samples, else the overall score as
+      // a neutral baseline (keeps the line continuous for sparse buckets).
+      const base100 = samples.length
+        ? (samples.reduce((a, b) => a + b.sub, 0) / samples.length) * 100
+        : overall;
+
+      const abs = absenceTimes.filter((t) => t >= lo && t < hi).length;
+      const tard = tardyTimes.filter((t) => t >= lo && t < hi).length;
+      const back = backupTimes.filter((t) => t >= lo && t < hi).length;
+
+      const penalty =
+        knobs.penaltyK *
+        Math.log(1 + knobs.penaltyA * abs + knobs.penaltyB * tard);
+      const bonus = Math.min(back * knobs.coverPts, knobs.bonusCap);
+
+      const score = Math.round(clamp(base100 - penalty + bonus, 1, 100));
+      out.push({ label: `S${i + 1}`, score });
+    }
+    return out;
   }
 }
