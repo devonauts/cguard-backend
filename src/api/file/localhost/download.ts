@@ -1,5 +1,6 @@
 import FileStorage from '../../../services/file/fileStorage';
 import ApiResponseHandler from '../../apiResponseHandler';
+import Error403 from '../../../errors/Error403';
 
 /**
  * Download a file from localhost.
@@ -19,7 +20,7 @@ export default async (req, res, next) => {
         require('../../../config').getConfig().FILE_DOWNLOAD_REQUIRE_TOKEN || '',
       ).toLowerCase() === 'true';
     if (requireToken && !fileToken) {
-      return ApiResponseHandler.error(req, res, { code: '403' });
+      return ApiResponseHandler.error(req, res, new Error403());
     }
 
     if (!privateUrl && fileToken) {
@@ -29,7 +30,7 @@ export default async (req, res, next) => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('Failed to decrypt fileToken', msg);
-        return ApiResponseHandler.error(req, res, { code: '403' });
+        return ApiResponseHandler.error(req, res, new Error403());
       }
     }
 
