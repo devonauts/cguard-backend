@@ -41,8 +41,13 @@ export default async (req, res) => {
 
     const roles = Array.isArray((tenantUser as any).roles) ? (tenantUser as any).roles : [];
     const isGuardInvite = roles.includes(Roles.values.securityGuard);
-    const invitationPath = isGuardInvite ? '/auth/invitation' : '/client/registration';
-    const inviteType = isGuardInvite ? 'guard' : 'client';
+    const isCustomerInvite = roles.includes(Roles.values.customer);
+    // Guards → guard app onboarding; customers → Mi Seguridad client view;
+    // everyone else (admin/supervisor/dispatcher/office staff) → CRM panel onboarding.
+    let invitationPath = '/auth/accept-invitation';
+    let inviteType = 'staff';
+    if (isGuardInvite) { invitationPath = '/auth/invitation'; inviteType = 'guard'; }
+    else if (isCustomerInvite) { invitationPath = '/client/registration'; inviteType = 'client'; }
     if (!tenantUser.invitationToken) {
       tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
       tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));

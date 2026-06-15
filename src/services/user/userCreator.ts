@@ -426,8 +426,10 @@ export default class UserCreator {
         invitationPath = '/client/registration';
         inviteType = 'client';
       } else if (isStaffNonGuard) {
-        // Supervisores y otros roles de staff usan el mismo flujo simplificado que clientes
-        invitationPath = '/client/registration';
+        // Staff administrativo (admin, supervisor, despachador, etc.) trabaja en
+        // ESTE CRM, así que se onboardean en el panel y entran directo al CRM,
+        // NO en la vista de confirmación de clientes.
+        invitationPath = '/auth/accept-invitation';
         inviteType = 'staff';
       }
       
