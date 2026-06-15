@@ -10,6 +10,18 @@ export default async (req, res, next) => {
     let privateUrl = req.query.privateUrl;
     const fileToken = req.query.fileToken;
 
+    // Hardening kill-switch: once all clients build download URLs from the
+    // opaque fileToken (see FileStorage.downloadUrl + the /file/token endpoint),
+    // set FILE_DOWNLOAD_REQUIRE_TOKEN=true to reject raw, guessable privateUrl
+    // requests entirely — closing the IDOR. Default off keeps current behavior.
+    const requireToken =
+      String(
+        require('../../../config').getConfig().FILE_DOWNLOAD_REQUIRE_TOKEN || '',
+      ).toLowerCase() === 'true';
+    if (requireToken && !fileToken) {
+      return ApiResponseHandler.error(req, res, { code: '403' });
+    }
+
     if (!privateUrl && fileToken) {
       try {
         const { decryptPrivateUrl } = require('../../../utils/privateUrlEncryption');

@@ -77,7 +77,17 @@ export default class LocalFileStorage {
     const downloadPath = backendUrl.endsWith('/api')
       ? '/file/download'
       : '/api/file/download';
-    return `${backendUrl}${downloadPath}?privateUrl=${encodeURIComponent(privateUrl)}`;
+    // Prefer an opaque, unforgeable fileToken (AES-256-GCM) over the raw
+    // privateUrl so download URLs cannot be used to guess/enumerate other
+    // tenants' files (IDOR). Falls back to the raw privateUrl only when token
+    // encryption isn't configured, keeping this fully non-breaking.
+    try {
+      const { encryptPrivateUrl } = require('../../utils/privateUrlEncryption');
+      const fileToken = encryptPrivateUrl(privateUrl);
+      return `${backendUrl}${downloadPath}?fileToken=${encodeURIComponent(fileToken)}`;
+    } catch {
+      return `${backendUrl}${downloadPath}?privateUrl=${encodeURIComponent(privateUrl)}`;
+    }
   }
 
   /**

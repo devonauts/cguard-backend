@@ -11,6 +11,10 @@ export default (app) => {
     `/tenant/:tenantId/file/credentials`,
     require('./credentials').default,
   );
+  app.get(
+    `/tenant/:tenantId/file/token`,
+    require('./token').default,
+  );
   // Attachments endpoints (metadata)
   app.post(
     `/tenant/:tenantId/attachments`,
