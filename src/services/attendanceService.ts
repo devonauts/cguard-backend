@@ -19,6 +19,8 @@ import {
   EXCEPTION_EVENT,
 } from '../lib/attendanceRules';
 import { dispatch } from '../lib/notificationDispatcher';
+import { sendNoShowAlert } from './communication/communicationService';
+import { resolveSupervisorUserIds } from './communication/operationalRecipients';
 import { ymd } from './consignaRecurrence';
 import { wallClockToUtc } from '../lib/tenantTime';
 
@@ -154,6 +156,10 @@ async function notifyException(
 ): Promise<void> {
   const eventType = EXCEPTION_EVENT[exceptionRow.type];
   if (!eventType) return;
+  const assignedPostSiteId =
+    settings.notifications.assignedSupervisorsOnly && exceptionRow.postSiteId
+      ? exceptionRow.postSiteId
+      : undefined;
   try {
     await dispatch(eventType, data, {
       database: db,
@@ -162,13 +168,49 @@ async function notifyException(
       sourceEntityId: exceptionRow.id,
       extraEmails: settings.notifications.customEmails || [],
       // Narrow to the post-site's assigned supervisors when enabled.
-      assignedPostSiteId:
-        settings.notifications.assignedSupervisorsOnly && exceptionRow.postSiteId
-          ? exceptionRow.postSiteId
-          : undefined,
+      assignedPostSiteId,
     });
   } catch (e) {
     console.error('[attendance] notifyException failed:', (e as any)?.message || e);
+  }
+
+  // No-show is a critical operational alert: push + WhatsApp (+ SMS fallback) to
+  // supervisors/admins via the unified communications layer, IN ADDITION to the
+  // dashboard/email dispatch above. Other exception types stay on the legacy
+  // path only. Best-effort — never blocks the punch.
+  if (exceptionRow.type === 'no_call_no_show') {
+    try {
+      const guardName = data.guardName || 'Un guardia';
+      const stationName = data.stationName || null;
+      const title = 'Inasistencia (no-show)';
+      const body =
+        `${guardName} no se presentó a su turno` +
+        (stationName ? ` en ${stationName}` : '') +
+        '.';
+      const userIds = await resolveSupervisorUserIds(db, tenantId, {
+        assignedPostSiteId: assignedPostSiteId || exceptionRow.postSiteId || null,
+      });
+      await Promise.all(
+        userIds.map((userId) =>
+          sendNoShowAlert(db, {
+            tenantId,
+            userId,
+            title,
+            body,
+            shiftId: exceptionRow.shiftId ? String(exceptionRow.shiftId) : undefined,
+            data: {
+              type: 'attendance.no_show',
+              exceptionId: String(exceptionRow.id || ''),
+              shiftId: String(exceptionRow.shiftId || ''),
+              stationId: String(exceptionRow.stationId || ''),
+              postSiteId: String(exceptionRow.postSiteId || ''),
+            },
+          }).catch(() => undefined),
+        ),
+      );
+    } catch (e) {
+      console.error('[attendance] no-show communicationService alert failed:', (e as any)?.message || e);
+    }
   }
 }
 

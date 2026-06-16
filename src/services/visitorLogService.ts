@@ -4,6 +4,8 @@ import { IServiceOptions } from './IServiceOptions';
 import VisitorLogRepository from '../database/repositories/visitorLogRepository';
 import StationRepository from '../database/repositories/stationRepository';
 import { dispatch } from '../lib/notificationDispatcher';
+import { sendVisitorAlert } from './communication/communicationService';
+import { resolveSupervisorUserIds } from './communication/operationalRecipients';
 
 export default class VisitorLogService {
   options: IServiceOptions;
@@ -24,7 +26,7 @@ export default class VisitorLogService {
 
       await SequelizeRepository.commitTransaction(transaction);
 
-      // Notify supervisors of visitor arrival
+      // Notify supervisors of visitor arrival (in-app + email + legacy SMS path).
       dispatch('visitor.arrival', {
         visitorName: record.visitorName || record.name || null,
         stationName: record.station?.name || record.stationName || null,
@@ -35,6 +37,46 @@ export default class VisitorLogService {
         sourceEntityType: 'visitorLog',
         sourceEntityId: record.id,
       }).catch(() => {});
+
+      // Push-first fan-out to supervisors/admins via the unified communications
+      // layer (WhatsApp optional per setting; SMS only if the tenant enables the
+      // critical fallback). In ADDITION to the dispatch above. Best-effort.
+      (async () => {
+        try {
+          const db = this.options.database;
+          const tenantId = this.options.currentTenant?.id;
+          if (!tenantId) return;
+          const visitorName = record.visitorName || record.name || 'Un visitante';
+          const stationName = record.station?.name || record.stationName || null;
+          const title = 'Visitante en sitio';
+          const body =
+            `${visitorName} registró su ingreso` +
+            (stationName ? ` en ${stationName}` : '') +
+            '.';
+          const userIds = await resolveSupervisorUserIds(db, tenantId, {
+            assignedPostSiteId: record.postSiteId || null,
+          });
+          await Promise.all(
+            userIds.map((userId) =>
+              sendVisitorAlert(db, {
+                tenantId,
+                userId,
+                title,
+                body,
+                visitorId: String(record.id),
+                data: {
+                  type: 'visitor.arrival',
+                  visitorLogId: String(record.id || ''),
+                  stationId: String(record.stationId || ''),
+                  postSiteId: String(record.postSiteId || ''),
+                },
+              }).catch(() => undefined),
+            ),
+          );
+        } catch (e: any) {
+          console.warn('[visitor] communicationService alert failed:', e?.message || e);
+        }
+      })();
 
       return record;
     } catch (error) {

@@ -11,6 +11,8 @@ import InventoryRepository from '../database/repositories/inventoryRepository';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
 import GuardShiftRepository from '../database/repositories/guardShiftRepository';
 import { dispatch } from '../lib/notificationDispatcher';
+import { sendRondaAlert } from './communication/communicationService';
+import { resolveSupervisorUserIds } from './communication/operationalRecipients';
 
 export default class PatrolLogService {
   options: IServiceOptions;
@@ -211,7 +213,7 @@ export default class PatrolLogService {
         }
       })();
 
-      // Notify supervisors of patrol scan result
+      // Notify supervisors of patrol scan result (in-app + email + legacy SMS).
       const patrolEventType =
         record.status === 'Missed' ? 'patrol.missed' : 'patrol.completed';
       dispatch(patrolEventType, {
@@ -223,6 +225,40 @@ export default class PatrolLogService {
         sourceEntityType: 'patrolLog',
         sourceEntityId: record.id,
       }).catch(() => {});
+
+      // Missed checkpoint: push + WhatsApp to supervisors via the unified
+      // communications layer (SMS only if the tenant configures sms_critical).
+      // In ADDITION to the dispatch above. Best-effort — never blocks creation.
+      if (record.status === 'Missed') {
+        (async () => {
+          try {
+            const db = this.options.database;
+            const tenantId = this.options.currentTenant?.id;
+            if (!tenantId) return;
+            const title = 'Punto de ronda omitido';
+            const body = 'Un punto de control de la ronda fue marcado como omitido.';
+            const userIds = await resolveSupervisorUserIds(db, tenantId);
+            await Promise.all(
+              userIds.map((userId) =>
+                sendRondaAlert(db, {
+                  tenantId,
+                  userId,
+                  title,
+                  body,
+                  rondaId: String(record.patrolId || record.patrol || record.id),
+                  data: {
+                    type: 'patrol.missed',
+                    patrolLogId: String(record.id || ''),
+                    patrolId: String(record.patrolId || record.patrol || ''),
+                  },
+                }).catch(() => undefined),
+              ),
+            );
+          } catch (e: any) {
+            console.warn('[patrol] communicationService alert failed:', e?.message || e);
+          }
+        })();
+      }
 
       return record;
     } catch (error) {

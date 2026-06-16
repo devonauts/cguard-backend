@@ -14,7 +14,7 @@
  */
 import { Op } from 'sequelize';
 import { timeLabelInTz } from '../lib/tenantTime';
-import { pushToUser } from './pushService';
+import { sendShiftReminder } from './communication/communicationService';
 
 interface Offset { key: string; ms: number; when: string }
 const OFFSETS: Offset[] = [
@@ -75,9 +75,16 @@ export async function runShiftReminders(db: any): Promise<void> {
         const stationName = (s.station && s.station.stationName) || 'tu puesto';
         const title = 'Recordatorio de turno';
         const body = `Tu turno en ${stationName} empieza ${off.when} (${timeLabelInTz(s.startTime, tz)}). No olvides marcar tu entrada.`;
-        await pushToUser(db, s.tenantId, s.guardId, {
+        // Push-first via the unified communications layer: push → WhatsApp (if the
+        // guard has no device token or the tenant enables WA reminders) → SMS
+        // fallback. Wallet-gated + logged per attempt by the router; degrades
+        // gracefully (acts like the old pushToUser) when those channels are off.
+        await sendShiftReminder(db, {
+          tenantId: s.tenantId,
+          userId: s.guardId,
           title,
           body,
+          shiftId: String(s.id),
           data: {
             type: 'shift.reminder',
             shiftId: String(s.id),

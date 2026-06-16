@@ -5,6 +5,8 @@
  * console flags it. Runs cross-tenant from the always-on receiver process.
  */
 import { emitAlarmEvent } from './realtime';
+import { sendEscalationAlert } from '../communication/communicationService';
+import { resolveSupervisorUserIds } from '../communication/operationalRecipients';
 
 // Time-to-acknowledge SLA (minutes) by priority (1=critical … 5=info).
 const SLA_MINS: Record<number, number> = { 1: 2, 2: 5, 3: 15, 4: 30, 5: 60 };
@@ -38,14 +40,41 @@ export async function runEscalationSweep(db: any): Promise<number> {
           caseId: c.id,
           payload: { priority: newPriority, slaLevel: dueLevel },
         });
+        // Broadcast push to the whole tenant (legacy behavior — preserved so
+        // every on-duty device still buzzes).
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
           require('../pushService').pushToTenant(db, c.tenantId, {
             title: 'Alarma sin atender',
             body: 'Un caso superó el SLA y fue escalado',
-            data: { type: 'alarm_escalated', caseId: c.id },
+            data: { type: 'alarm_escalated', caseId: String(c.id) },
           });
         } catch { /* best-effort */ }
+
+        // Escalation cascade via the unified communications layer: push +
+        // WhatsApp (+ SMS) to supervisors/admins so they're reached off-device
+        // too. Critical → fans out across channels, wallet-gated + logged.
+        (async () => {
+          try {
+            const userIds = await resolveSupervisorUserIds(db, c.tenantId);
+            const title = 'Alarma sin atender';
+            const body = `Un caso superó el SLA (${Math.round(ageMin)} min sin reconocer) y fue escalado.`;
+            await Promise.all(
+              userIds.map((userId) =>
+                sendEscalationAlert(db, {
+                  tenantId: c.tenantId,
+                  userId,
+                  title,
+                  body,
+                  deepLink: `cguardpro://messages/${c.id}`,
+                  data: { type: 'alarm_escalated', caseId: String(c.id) },
+                }).catch(() => undefined),
+              ),
+            );
+          } catch (e: any) {
+            console.warn('[alarm] escalation communicationService alert failed:', e?.message || e);
+          }
+        })();
         escalated += 1;
       }
     }

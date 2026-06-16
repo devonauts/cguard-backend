@@ -8,6 +8,8 @@ import ClientAccountRepository from '../database/repositories/clientAccountRepos
 import BusinessInfoRepository from '../database/repositories/businessInfoRepository';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
 import { dispatch } from '../lib/notificationDispatcher';
+import { sendIncidentAlert } from './communication/communicationService';
+import { resolveSupervisorUserIds } from './communication/operationalRecipients';
 
 export default class IncidentService {
   options: IServiceOptions;
@@ -89,7 +91,7 @@ export default class IncidentService {
         transaction,
       );
 
-      // Notify supervisors of new incident
+      // Notify supervisors of new incident (in-app + email + legacy SMS path).
       dispatch('incident.created', {
         incidentTitle: record.title,
         description: record.description,
@@ -101,6 +103,47 @@ export default class IncidentService {
         sourceEntityType: 'incident',
         sourceEntityId: record.id,
       }).catch(() => {});
+
+      // Push-first / WhatsApp fan-out to supervisors/admins via the unified
+      // communications layer (in ADDITION to the dashboard/email dispatch above).
+      // Best-effort — never blocks the create; degrades when channels are off.
+      (async () => {
+        try {
+          const db = this.options.database;
+          const tenantId = this.options.currentTenant?.id;
+          if (!tenantId) return;
+          const guardName = record.guardName?.fullName || record.guardName?.name || null;
+          const siteName = record.postSite?.name || record.site?.name || null;
+          const title = 'Nuevo incidente';
+          const body =
+            `${record.title || 'Incidente'}` +
+            (siteName ? ` — ${siteName}` : '') +
+            (guardName ? ` (${guardName})` : '') +
+            '.';
+          const userIds = await resolveSupervisorUserIds(db, tenantId, {
+            assignedPostSiteId: record.postSiteId || null,
+          });
+          await Promise.all(
+            userIds.map((userId) =>
+              sendIncidentAlert(db, {
+                tenantId,
+                userId,
+                title,
+                body,
+                incidentId: String(record.id),
+                data: {
+                  type: 'incident.created',
+                  incidentId: String(record.id || ''),
+                  stationId: String(record.stationId || ''),
+                  postSiteId: String(record.postSiteId || ''),
+                },
+              }).catch(() => undefined),
+            ),
+          );
+        } catch (e: any) {
+          console.warn('[incident] communicationService alert failed:', e?.message || e);
+        }
+      })();
 
       // Notify the owning client that an incident was reported at their site.
       try {

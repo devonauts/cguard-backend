@@ -73,6 +73,30 @@ export default function (sequelize, DataTypes) {
           );
         },
       },
+      // Per-tenant unified-communications configuration (channel toggles, OTP
+      // preference, wallet rules, per-event toggles). JSON text; defaults are
+      // merged in code (see services/communication/communicationSettingsService.ts).
+      // Missing key = default.
+      communicationSettings: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get(this: any) {
+          const raw = this.getDataValue('communicationSettings');
+          if (!raw) return {};
+          if (typeof raw !== 'string') return raw;
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        },
+        set(this: any, val: any) {
+          this.setDataValue(
+            'communicationSettings',
+            val == null ? null : typeof val === 'string' ? val : JSON.stringify(val),
+          );
+        },
+      },
       // Per-tenant Nómina / Time & Attendance configuration (general, time
       // windows, geofence, notifications, approval rules, payroll). JSON text;
       // defaults are merged in code (see lib/nominaSettings.ts). Missing = default.

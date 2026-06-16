@@ -31,6 +31,17 @@ app.get('/public/dispatch/:token', require('./publicRequest').default);
 // Public training certificate view/share (no auth; token validates)
 app.get('/public/training/cert/:downloadToken', require('./publicTrainingCertificate').default);
 
+// Public Meta WhatsApp webhook (no auth; verify_token / HMAC signature validate).
+// Mounted before authMiddleware. GET = verification handshake, POST = callbacks.
+app.get(
+  '/communications/webhooks/meta/whatsapp',
+  require('./communication/metaWebhook').metaWebhookVerify,
+);
+app.post(
+  '/communications/webhooks/meta/whatsapp',
+  require('./communication/metaWebhook').metaWebhookReceive,
+);
+
 // Proxy endpoints for Google Places (server-side) to avoid CORS issues
 app.get('/api/places/autocomplete', (req, res) => {
   const input = String(req.query.input || '');
@@ -235,6 +246,7 @@ require('./scheduling').default(routes);
 require('./guard').default(routes);
 require('./message').default(routes);
 require('./radioCheck').default(routes);
+require('./communication').default(routes);
 require('./events').default(routes);
 require('./training').default(routes);
 require('./trainingGuard').default(routes);
