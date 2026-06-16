@@ -24,6 +24,13 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: true,
       },
+      // Offset keys whose pre-shift push reminder has already been sent
+      // (e.g. ["2d","1d","12h","1h","10m"]). Dedupes the reminder scheduler.
+      remindersSent: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: null,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    

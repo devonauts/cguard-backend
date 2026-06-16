@@ -318,6 +318,25 @@ nodeSetInterval(() => { runForcedClockOutScheduler(); }, 60 * 1000);
 setTimeout(() => runForcedClockOutScheduler(), 45000);
 
 /**
+ * Shift reminders — push notifications to whoever is assigned a station turno
+ * (guard/supervisor) at 2 days, 1 day, 12h, 1h and 10min before shift start, so
+ * they don't miss going back to work after rest ("L") days. Cluster-safe via an
+ * atomic per-(shift,offset) claim inside the service. Toggle SHIFT_REMINDERS_ENABLED.
+ */
+async function runShiftReminderScheduler() {
+  try {
+    const database = await databaseInit();
+    const { runShiftReminders } = require('./services/shiftReminderService');
+    await runShiftReminders(database);
+  } catch (err) {
+    console.error('[shiftReminders] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+nodeSetInterval(() => { runShiftReminderScheduler(); }, 5 * 60 * 1000);
+setTimeout(() => runShiftReminderScheduler(), 60000);
+
+/**
  * Trial scheduler — sends reminder emails as a tenant's 14-day trial winds down
  * (stages at 7 / 3 / 1 days left and on expiry) and flips expired trials to
  * `trial_expired`. `trialReminderStage` dedupes; the conditional UPDATE makes it
