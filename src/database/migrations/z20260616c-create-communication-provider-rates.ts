@@ -32,12 +32,11 @@ async function migrate() {
         createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.fn('NOW') },
         updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.fn('NOW') },
       });
-      await qi.addIndex('communicationProviderRates', [
-        'provider',
-        'channel',
-        'countryCode',
-        'messageType',
-      ]);
+      // Explicit short name: MySQL caps identifiers at 64 chars and the
+      // auto-generated name for these 4 columns exceeds it.
+      await qi.addIndex('communicationProviderRates', ['provider', 'channel', 'countryCode', 'messageType'], {
+        name: 'cpr_provider_channel_country_type',
+      });
       console.log('✅ communicationProviderRates created.');
     } else {
       console.log('Table communicationProviderRates already exists. Skipping create.');
