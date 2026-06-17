@@ -42,6 +42,37 @@ app.post(
   require('./communication/metaWebhook').metaWebhookReceive,
 );
 
+// Platform Twilio phone center webhooks (no auth; X-Twilio-Signature validates).
+// Mounted before authMiddleware. Twilio POSTs application/x-www-form-urlencoded,
+// and the global body parser below is JSON-only, so attach a urlencoded parser
+// per-route. Voice routes return TwiML (XML).
+const twilioUrlencoded = express.urlencoded({ extended: false });
+app.post(
+  '/communications/webhooks/twilio/sms',
+  twilioUrlencoded,
+  require('./twilio/webhooks').twilioSmsInbound,
+);
+app.post(
+  '/communications/webhooks/twilio/sms-status',
+  twilioUrlencoded,
+  require('./twilio/webhooks').twilioSmsStatus,
+);
+app.post(
+  '/communications/webhooks/twilio/voice',
+  twilioUrlencoded,
+  require('./twilio/webhooks').twilioVoiceInbound,
+);
+app.post(
+  '/communications/webhooks/twilio/voice-status',
+  twilioUrlencoded,
+  require('./twilio/webhooks').twilioVoiceStatus,
+);
+app.post(
+  '/communications/webhooks/twilio/voice-outbound',
+  twilioUrlencoded,
+  require('./twilio/webhooks').twilioVoiceOutbound,
+);
+
 // Proxy endpoints for Google Places (server-side) to avoid CORS issues
 app.get('/api/places/autocomplete', (req, res) => {
   const input = String(req.query.input || '');

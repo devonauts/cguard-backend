@@ -104,12 +104,23 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
       const user: any = await AuthService.findByToken(String(token), { database });
       if (!user || !user.id) return next(new Error('unauthorized'));
       const superadmin = !!user.isSuperadmin;
-      // Superadmins can oversee any tenant even without a membership row.
-      if (!superadmin && !belongsToTenant(user, String(tenantId))) {
+
+      // The platform phone center connects as a superadmin without a real
+      // tenant — a sentinel tenantId 'platform' is allowed for superadmins.
+      const effectiveTenantId = tenantId ? String(tenantId) : superadmin ? 'platform' : '';
+      if (!effectiveTenantId) return next(new Error('unauthorized'));
+
+      // Superadmins can oversee any tenant even without a membership row, and
+      // may connect with no tenant context at all (the 'platform' sentinel).
+      if (
+        !superadmin &&
+        effectiveTenantId !== 'platform' &&
+        !belongsToTenant(user, effectiveTenantId)
+      ) {
         return next(new Error('forbidden'));
       }
 
-      const roles = rolesForTenant(user, String(tenantId));
+      const roles = rolesForTenant(user, effectiveTenantId);
       const displayName =
         user.fullName ||
         [user.firstName, user.lastName].filter(Boolean).join(' ') ||
@@ -117,9 +128,10 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
         'Usuario';
       (socket.data as any) = {
         userId: user.id,
-        tenantId: String(tenantId),
+        tenantId: effectiveTenantId,
         name: displayName,
         roles,
+        superadmin,
         // Admins / managers / superadmins receive every tenant notification,
         // regardless of an event's targetRoles.
         seeAll: superadmin || roles.some((r) => SEE_ALL_ROLES.includes(r)),
@@ -131,12 +143,16 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
   });
 
   io.on('connection', (socket) => {
-    const { userId, tenantId, roles, seeAll } = (socket.data as any) || {};
+    const { userId, tenantId, roles, seeAll, superadmin } = (socket.data as any) || {};
     if (!tenantId || !userId) return;
     socket.join(`tenant:${tenantId}`);
     socket.join(`tenant:${tenantId}:user:${userId}`);
     (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
     if (seeAll) socket.join(`tenant:${tenantId}:all`);
+
+    // Platform phone center: superadmins join a shared 'superadmin' room so the
+    // Twilio SMS/voice events fan out to every connected superadmin browser.
+    if (superadmin) socket.join('superadmin');
 
     // Live radio "Canal abierto" PTT relay (opt-in per socket via events).
     registerRadioVoice(io as IOServer, socket);
@@ -215,4 +231,25 @@ export function emitPlatformEvent(event: {
   }
 }
 
-export default { initRealtime, emitPlatformEvent, SOCKET_PATH };
+/**
+ * Emit a platform-scoped event to all connected superadmin browsers (the
+ * 'superadmin' room). Used by the Twilio phone center to push live SMS and
+ * voice-call updates. No-op if the socket server isn't initialized.
+ *
+ * Event names (see backend Twilio services):
+ *   'twilio:sms:inbound'   { conversationId, message }
+ *   'twilio:sms:status'    { twilioSid, status }
+ *   'twilio:sms:outbound'  { conversationId, message }
+ *   'twilio:call:incoming' { callSid, from }
+ *   'twilio:call:status'   { callSid, status, durationSec? }
+ */
+export function emitSuperadminEvent(event: string, payload: any): void {
+  if (!io) return;
+  try {
+    io.to('superadmin').emit(event, payload);
+  } catch (e: any) {
+    console.error('[realtime] superadmin emit failed:', e?.message || e);
+  }
+}
+
+export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, SOCKET_PATH };

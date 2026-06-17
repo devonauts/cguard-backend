@@ -25,6 +25,7 @@ export default (app) => {
   require('./observability').default(router);
   require('./settings').default(router);
   require('./trainingAddon').default(router);
+  require('./twilio').default(router);
 
   app.use('/superadmin', router);
 };
