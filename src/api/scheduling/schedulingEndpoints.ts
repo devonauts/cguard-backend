@@ -3,6 +3,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import { getGlobalEpoch } from '../../services/shiftGenerationService';
 import { haversineDistance } from '../../lib/geofence';
+import { autoConfigureStationPositions, optimizeAndAssignSacafrancos } from '../../services/stationAutoConfigService';
 
 // GET /tenant/:tenantId/rotation-styles
 export async function rotationStyleList(req, res) {
@@ -254,189 +255,30 @@ export async function stationAutoPositions(req, res) {
     const tenantId = req.currentTenant.id;
     const data = req.body?.data || req.body || {};
     const scheduleType = data.scheduleType || '24h';
-    let rotationStyleId = data.rotationStyleId || null;
-
-    // Auto-pick recommended rotation if not specified
-    if (!rotationStyleId) {
-      let recommendedName: string;
-      if (scheduleType === '24h') {
-        recommendedName = '4-4-2'; // 4 day, 4 night, 2 rest — standard for 24H
-      } else {
-        recommendedName = '5-2'; // 5 work, 2 rest — standard for 12H
-      }
-      const recommended = await req.database.rotationStyle.findOne({ where: { name: recommendedName, isSystem: true } });
-      rotationStyleId = recommended?.id || null;
-    }
-
-    // Update station scheduleType and rotationStyleId
-    const stationUpdate: any = { scheduleType };
-    if (rotationStyleId) stationUpdate.rotationStyleId = rotationStyleId;
-    await req.database.station.update(stationUpdate, { where: { id: stationId, tenantId } });
-
-    // Delete assignments and shifts referencing existing positions, then delete positions
-    const existingPositions = await req.database.stationPosition.findAll({ where: { stationId, tenantId }, attributes: ['id'] });
-    const positionIds = existingPositions.map((p: any) => p.id);
-    if (positionIds.length > 0) {
-      await req.database.shift.destroy({ where: { positionId: positionIds, tenantId }, force: true });
-      await req.database.guardAssignment.destroy({ where: { positionId: positionIds, tenantId }, force: true });
-      await req.database.stationPosition.destroy({ where: { id: positionIds, tenantId }, force: true });
-    }
-
-    const positions: any[] = [];
+    const rotationStyleId = data.rotationStyleId || null;
     const userId = req.currentUser.id;
-    const now = new Date();
 
-    // Calculate recommended sequential station offset (same algorithm as sacafranco optimizer)
-    // so newly added stations immediately follow global sequence.
-    let cycleLength = 7;
-    let workDays = 5;
-    let restDays = 2;
-    let dayShifts = 5;
-    if (rotationStyleId) {
-      const rot = await req.database.rotationStyle.findByPk(rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
-      if (rot) {
-        dayShifts = rot.dayShifts || 0;
-        workDays = (rot.dayShifts || 0) + (rot.nightShifts || 0);
-        restDays = rot.restDays || 1;
-        cycleLength = workDays + restDays;
-      }
-    }
-
-    // Build ordered station group with same cycle and compute this station index in sequence.
-    let recommendedStationOffset = 0;
-    if (cycleLength > 0) {
-      const allStations = await req.database.station.findAll({
-        where: { tenantId, deletedAt: null, rotationStyleId: { [req.database.Sequelize.Op.ne]: null } },
-        attributes: ['id', 'stationName', 'rotationStyleId'],
-        order: [['stationName', 'ASC']],
-      });
-
-      const rotationCache = new Map<string, any>();
-      for (const st of allStations) {
-        if (!rotationCache.has(st.rotationStyleId)) {
-          const r = await req.database.rotationStyle.findByPk(st.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
-          if (r) rotationCache.set(st.rotationStyleId, r);
-        }
-      }
-
-      const sameCycleStations = allStations.filter((st: any) => {
-        const r = rotationCache.get(st.rotationStyleId);
-        if (!r) return false;
-        const c = (r.dayShifts || 0) + (r.nightShifts || 0) + (r.restDays || 0);
-        return c === cycleLength;
-      });
-
-      const currentIndex = sameCycleStations.findIndex((st: any) => st.id === stationId);
-      const stationIndex = currentIndex >= 0 ? currentIndex : sameCycleStations.length;
-      recommendedStationOffset = (stationIndex * restDays - workDays + cycleLength * 10) % cycleLength;
-    }
-
-    if (scheduleType === '24h') {
-      // 24h station needs continuous day+night coverage. Phase out the two fijos
-      // by `dayShifts` so when Fijo 1 is on its DAY block, Fijo 2 is on its NIGHT
-      // block (and vice-versa) — instead of the old bug where both shared an
-      // offset and worked/rested identically (days double-staffed, nights empty,
-      // 2-day blackout). Residual gaps are covered by sacafrancos.
-      const offset2 = ((recommendedStationOffset - dayShifts) % cycleLength + cycleLength) % cycleLength;
-      positions.push(
-        { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-        { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: offset2, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-      );
-    } else if (scheduleType === '12h-day' || scheduleType === '12h-night') {
-      const start = scheduleType === '12h-day' ? '07:00' : '19:00';
-      const end = scheduleType === '12h-day' ? '19:00' : '07:00';
-      positions.push(
-        { name: 'Fijo 1', type: 'fijo', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-      );
-    } else {
-      // Custom
-      const customStart = data.startTime || '07:00';
-      const customEnd = data.endTime || '19:00';
-      positions.push(
-        { name: 'Fijo 1', type: 'fijo', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
-      );
-    }
-
-    await req.database.stationPosition.bulkCreate(positions);
-    const created = await req.database.stationPosition.findAll({
-      where: { stationId, tenantId, deletedAt: null },
-      order: [['sortOrder', 'ASC']],
+    const result = await autoConfigureStationPositions(req.database, {
+      stationId,
+      tenantId,
+      userId,
+      scheduleType,
+      rotationStyleId,
+      data,
+      // Single-station path keeps the original behaviour: run the tenant-wide
+      // sacafranco optimization + SF-guard assignment as part of this call.
+      runSacafrancoOptimize: true,
     });
 
-    let sfAvailableAtExecution = 0;
-    let sfAssignedNow = 0;
-    let sfOpenRemaining = 0;
-
-    try {
-      const { generateYearlyScheduleForStation, optimizeSacafrancos, generateShiftsForAssignment } = await import('../../services/shiftGenerationService');
-      await generateYearlyScheduleForStation(req.database, stationId, tenantId, userId);
-      // Auto-optimize: ensures sequence across ALL stations
-      await optimizeSacafrancos(req.database, tenantId, userId);
-
-      // Auto-assign available SF guards to unfilled sacafranco positions (if any)
-      const [sfPositions, activeAssignments, sfGuards, stationMap] = await Promise.all([
-        req.database.stationPosition.findAll({ where: { tenantId, deletedAt: null, type: 'sacafranco' } }),
-        req.database.guardAssignment.findAll({ where: { tenantId, status: 'active', deletedAt: null }, attributes: ['guardId', 'positionId'] }),
-        req.database.securityGuard.findAll({ where: { tenantId, deletedAt: null }, attributes: ['guardId', 'guardType'] }),
-        req.database.station.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'rotationStyleId'] }),
-      ]);
-
-      const assignedGuardIds = new Set(activeAssignments.map((a: any) => a.guardId));
-      const assignedSfPositionIds = new Set(activeAssignments.map((a: any) => a.positionId));
-      const availableSfGuards = sfGuards.filter((g: any) =>
-        g.guardId &&
-        !assignedGuardIds.has(g.guardId) &&
-        String(g.guardType || '').toLowerCase() === 'sacafranco'
-      );
-
-      const openSfPositions = sfPositions.filter((p: any) => !assignedSfPositionIds.has(p.id));
-      sfAvailableAtExecution = availableSfGuards.length;
-
-      if (availableSfGuards.length > 0 && openSfPositions.length > 0) {
-        const byStation = new Map<string, any>();
-        stationMap.forEach((s: any) => byStation.set(s.id, s));
-        const sfRot = await req.database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
-        const startDate = new Date().toISOString().slice(0, 10);
-
-        const createCount = Math.min(availableSfGuards.length, openSfPositions.length);
-        for (let i = 0; i < createCount; i++) {
-          const guard = availableSfGuards[i];
-          const pos = openSfPositions[i];
-          const station = byStation.get(pos.stationId);
-          const assignment = await req.database.guardAssignment.create({
-            guardId: guard.guardId,
-            stationId: pos.stationId,
-            positionId: pos.id,
-            rotationStyleId: sfRot?.id || station?.rotationStyleId,
-            startDate,
-            endDate: null,
-            platoonOffset: pos.platoonOffset || 0,
-            isRelief: true,
-            status: 'active',
-            tenantId,
-            createdById: userId,
-            updatedById: userId,
-          });
-
-          await generateShiftsForAssignment(req.database, assignment.get({ plain: true }), tenantId, userId);
-          sfAssignedNow++;
-        }
-      }
-
-      sfOpenRemaining = Math.max(0, openSfPositions.length - sfAssignedNow);
-    } catch (e) {
-      console.error('[stationAutoPositions] Yearly generation / sacafranco optimization error:', e);
-    }
-
     await ApiResponseHandler.success(req, res, {
-      rows: created,
-      count: created.length,
-      rotationStyleId,
-      recommendedPlatoonOffset: recommendedStationOffset,
+      rows: result.rows,
+      count: result.count,
+      rotationStyleId: result.rotationStyleId,
+      recommendedPlatoonOffset: result.recommendedPlatoonOffset,
       sequenceRule: 'offset = (stationIndex * restDays - workDays) mod cycle',
-      sfAvailableAtExecution,
-      sfAssignedNow,
-      sfOpenRemaining,
+      sfAvailableAtExecution: result.sfAvailableAtExecution,
+      sfAssignedNow: result.sfAssignedNow,
+      sfOpenRemaining: result.sfOpenRemaining,
     });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
@@ -713,10 +555,15 @@ export async function schedulerAutoAssign(req, res) {
       req.database.rotationStyle.findAll({ where: { [Op.or]: [{ tenantId }, { tenantId: null, isSystem: true }] } }),
     ]);
 
-    const assignedGuardIds = new Set(existingAssignments.map((a: any) => a.guardId));
-    const availableGuards = guards.filter((g: any) => !assignedGuardIds.has(g.guardId));
-    const titulares = availableGuards.filter((g: any) => g.guardType === 'titular');
-    const sacafrancos = availableGuards.filter((g: any) => g.guardType === 'sacafranco');
+    // `liveAssignments` tracks the current active assignments. It is re-fetched
+    // after the unconfigured-station bootstrap below (which may create SF
+    // assignments) so the demand "already assigned" checks and available-guard
+    // sets stay correct.
+    let liveAssignments = existingAssignments;
+    let assignedGuardIds = new Set(liveAssignments.map((a: any) => a.guardId));
+    let availableGuards = guards.filter((g: any) => !assignedGuardIds.has(g.guardId));
+    let titulares = availableGuards.filter((g: any) => g.guardType === 'titular');
+    let sacafrancos = availableGuards.filter((g: any) => g.guardType === 'sacafranco');
 
     // Real proximity (Phase 4): great-circle distance in metres from the guard's
     // geocoded home to the station. Guards with no coordinates (not yet geocoded)
@@ -732,10 +579,11 @@ export async function schedulerAutoAssign(req, res) {
     };
 
     // Group positions by station
-    const positionsByStation = new Map<string, any[]>();
+    let positionsByStation = new Map<string, any[]>();
     positions.forEach((p: any) => { const list = positionsByStation.get(p.stationId) || []; list.push(p.get({ plain: true })); positionsByStation.set(p.stationId, list); });
 
     // Auto-configure rotation styles for stations without one
+    const stationRotationUpdates = new Map<string, string>();
     for (const station of stations) {
       const s: any = station.get({ plain: true });
       if (!s.rotationStyleId) {
@@ -744,11 +592,72 @@ export async function schedulerAutoAssign(req, res) {
           ? (rotationStyles.find((r: any) => r.name === '4-4-2')?.id || rotationStyles[0]?.id)
           : (rotationStyles.find((r: any) => r.name === '5-2')?.id || rotationStyles[0]?.id);
         await req.database.station.update({ rotationStyleId: rotId, scheduleType: sType }, { where: { id: s.id, tenantId } });
-        s.rotationStyleId = rotId;
+        if (rotId) stationRotationUpdates.set(s.id, rotId);
       }
     }
 
-    const stationsPlain = stations.map((s: any) => s.get({ plain: true }));
+    // Bootstrap unconfigured stations: stations that currently have ZERO positions
+    // contribute zero demand, so the auto-allocate would produce nothing for them.
+    // Create their fijo/sacafranco positions + yearly schedule via the shared
+    // helper. IMPORTANT: only for stations with ZERO positions — the helper
+    // DELETES existing positions, so calling it for a configured station would be
+    // destructive. We pass runSacafrancoOptimize=false per station and run the
+    // tenant-wide optimizeSacafrancos ONCE afterwards to avoid O(n^2) passes.
+    const stationsToBootstrap = stations.filter((station: any) => {
+      const list = positionsByStation.get(station.id);
+      return !list || list.length === 0;
+    });
+
+    if (stationsToBootstrap.length > 0) {
+      for (const station of stationsToBootstrap) {
+        const s: any = station.get({ plain: true });
+        try {
+          await autoConfigureStationPositions(req.database, {
+            stationId: s.id,
+            tenantId,
+            userId,
+            scheduleType: s.scheduleType || '24h',
+            rotationStyleId: s.rotationStyleId || stationRotationUpdates.get(s.id) || null,
+            runSacafrancoOptimize: false,
+          });
+        } catch (e) {
+          console.error('[autoAssign] bootstrap autoConfigureStationPositions error for station', s.id, e);
+        }
+      }
+
+      // Run the tenant-wide sacafranco optimization + SF-guard assignment ONCE
+      // (instead of once per station) now that all empty stations have positions.
+      try {
+        await optimizeAndAssignSacafrancos(req.database, tenantId, userId);
+      } catch (e) {
+        console.error('[autoAssign] bootstrap optimizeAndAssignSacafrancos error:', e);
+      }
+
+      // Re-fetch positions + active assignments so the demand loops below see the
+      // newly created positions and any SF assignments the bootstrap just made.
+      const [freshPositions, freshAssignments] = await Promise.all([
+        req.database.stationPosition.findAll({ where: { tenantId, deletedAt: null }, order: [['stationId', 'ASC'], ['sortOrder', 'ASC']] }),
+        req.database.guardAssignment.findAll({ where: { tenantId, status: 'active', deletedAt: null } }),
+      ]);
+
+      positionsByStation = new Map<string, any[]>();
+      freshPositions.forEach((p: any) => { const list = positionsByStation.get(p.stationId) || []; list.push(p.get({ plain: true })); positionsByStation.set(p.stationId, list); });
+
+      liveAssignments = freshAssignments;
+      assignedGuardIds = new Set(liveAssignments.map((a: any) => a.guardId));
+      availableGuards = guards.filter((g: any) => !assignedGuardIds.has(g.guardId));
+      titulares = availableGuards.filter((g: any) => g.guardType === 'titular');
+      sacafrancos = availableGuards.filter((g: any) => g.guardType === 'sacafranco');
+    }
+
+    const stationsPlain = stations.map((s: any) => {
+      const plain = s.get({ plain: true });
+      // Apply the rotation-style auto-config above so demand/assignments use the
+      // up-to-date rotationStyleId rather than the stale (null) loaded value.
+      const updatedRot = stationRotationUpdates.get(plain.id);
+      if (updatedRot) plain.rotationStyleId = updatedRot;
+      return plain;
+    });
     const newAssignments: any[] = [];
 
     // Build demand: unfilled fijo positions
@@ -757,7 +666,7 @@ export async function schedulerAutoAssign(req, res) {
       const stPos = positionsByStation.get(station.id) || [];
       for (const pos of stPos) {
         if (pos.type === 'sacafranco') continue;
-        if (!existingAssignments.some((a: any) => a.positionId === pos.id)) {
+        if (!liveAssignments.some((a: any) => a.positionId === pos.id)) {
           demand.push({ stationId: station.id, positionId: pos.id, type: pos.type, station });
         }
       }
@@ -784,7 +693,7 @@ export async function schedulerAutoAssign(req, res) {
       const stPos = positionsByStation.get(station.id) || [];
       for (const pos of stPos) {
         if (pos.type !== 'sacafranco') continue;
-        if (!existingAssignments.some((a: any) => a.positionId === pos.id)) {
+        if (!liveAssignments.some((a: any) => a.positionId === pos.id)) {
           reliefDemand.push({ stationId: station.id, positionId: pos.id, station });
         }
       }

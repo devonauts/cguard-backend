@@ -1,0 +1,251 @@
+// Reusable station auto-configuration service.
+//
+// Extracted VERBATIM from the `stationAutoPositions` Express handler in
+// src/api/scheduling/schedulingEndpoints.ts so the same position-creation +
+// schedule-generation logic can be reused by the bulk `schedulerAutoAssign`
+// bootstrap (which needs to create positions for unconfigured stations).
+//
+// Performance note (optimizeSacafrancos):
+//   `optimizeSacafrancos` is a TENANT-WIDE pass. Calling it once per station
+//   (e.g. 21+ times during a bulk bootstrap) would be O(n) redundant tenant-wide
+//   passes. To avoid that O(n^2) blowup, this helper accepts a
+//   `runSacafrancoOptimize` flag (default true). The single-station Express
+//   handler keeps the default (true) so its behaviour is unchanged. The bulk
+//   `schedulerAutoAssign` bootstrap passes `false` per-station (so each station
+//   only does positions + generateYearlyScheduleForStation) and then calls
+//   `optimizeSacafrancos` + the SF-guard assignment ONCE itself after all empty
+//   stations are configured.
+
+export async function autoConfigureStationPositions(
+  db: any,
+  params: {
+    stationId: string;
+    tenantId: string;
+    userId: string;
+    scheduleType?: string;
+    rotationStyleId?: string | null;
+    data?: any;
+    runSacafrancoOptimize?: boolean;
+  },
+): Promise<{
+  rows: any[];
+  count: number;
+  rotationStyleId: string | null;
+  recommendedPlatoonOffset: number;
+  sfAvailableAtExecution: number;
+  sfAssignedNow: number;
+  sfOpenRemaining: number;
+}> {
+  const { Op } = db.Sequelize;
+  const { stationId, tenantId, userId } = params;
+  const data = params.data || {};
+  const scheduleType = params.scheduleType || data.scheduleType || '24h';
+  let rotationStyleId = params.rotationStyleId || data.rotationStyleId || null;
+  const runSacafrancoOptimize = params.runSacafrancoOptimize !== false;
+
+  // Auto-pick recommended rotation if not specified
+  if (!rotationStyleId) {
+    let recommendedName: string;
+    if (scheduleType === '24h') {
+      recommendedName = '4-4-2'; // 4 day, 4 night, 2 rest — standard for 24H
+    } else {
+      recommendedName = '5-2'; // 5 work, 2 rest — standard for 12H
+    }
+    const recommended = await db.rotationStyle.findOne({ where: { name: recommendedName, isSystem: true } });
+    rotationStyleId = recommended?.id || null;
+  }
+
+  // Update station scheduleType and rotationStyleId
+  const stationUpdate: any = { scheduleType };
+  if (rotationStyleId) stationUpdate.rotationStyleId = rotationStyleId;
+  await db.station.update(stationUpdate, { where: { id: stationId, tenantId } });
+
+  // Delete assignments and shifts referencing existing positions, then delete positions
+  const existingPositions = await db.stationPosition.findAll({ where: { stationId, tenantId }, attributes: ['id'] });
+  const positionIds = existingPositions.map((p: any) => p.id);
+  if (positionIds.length > 0) {
+    await db.shift.destroy({ where: { positionId: positionIds, tenantId }, force: true });
+    await db.guardAssignment.destroy({ where: { positionId: positionIds, tenantId }, force: true });
+    await db.stationPosition.destroy({ where: { id: positionIds, tenantId }, force: true });
+  }
+
+  const positions: any[] = [];
+  const now = new Date();
+
+  // Calculate recommended sequential station offset (same algorithm as sacafranco optimizer)
+  // so newly added stations immediately follow global sequence.
+  let cycleLength = 7;
+  let workDays = 5;
+  let restDays = 2;
+  let dayShifts = 5;
+  if (rotationStyleId) {
+    const rot = await db.rotationStyle.findByPk(rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+    if (rot) {
+      dayShifts = rot.dayShifts || 0;
+      workDays = (rot.dayShifts || 0) + (rot.nightShifts || 0);
+      restDays = rot.restDays || 1;
+      cycleLength = workDays + restDays;
+    }
+  }
+
+  // Build ordered station group with same cycle and compute this station index in sequence.
+  let recommendedStationOffset = 0;
+  if (cycleLength > 0) {
+    const allStations = await db.station.findAll({
+      where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
+      attributes: ['id', 'stationName', 'rotationStyleId'],
+      order: [['stationName', 'ASC']],
+    });
+
+    const rotationCache = new Map<string, any>();
+    for (const st of allStations) {
+      if (!rotationCache.has(st.rotationStyleId)) {
+        const r = await db.rotationStyle.findByPk(st.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+        if (r) rotationCache.set(st.rotationStyleId, r);
+      }
+    }
+
+    const sameCycleStations = allStations.filter((st: any) => {
+      const r = rotationCache.get(st.rotationStyleId);
+      if (!r) return false;
+      const c = (r.dayShifts || 0) + (r.nightShifts || 0) + (r.restDays || 0);
+      return c === cycleLength;
+    });
+
+    const currentIndex = sameCycleStations.findIndex((st: any) => st.id === stationId);
+    const stationIndex = currentIndex >= 0 ? currentIndex : sameCycleStations.length;
+    recommendedStationOffset = (stationIndex * restDays - workDays + cycleLength * 10) % cycleLength;
+  }
+
+  if (scheduleType === '24h') {
+    // 24h station needs continuous day+night coverage. Phase out the two fijos
+    // by `dayShifts` so when Fijo 1 is on its DAY block, Fijo 2 is on its NIGHT
+    // block (and vice-versa) — instead of the old bug where both shared an
+    // offset and worked/rested identically (days double-staffed, nights empty,
+    // 2-day blackout). Residual gaps are covered by sacafrancos.
+    const offset2 = ((recommendedStationOffset - dayShifts) % cycleLength + cycleLength) % cycleLength;
+    positions.push(
+      { name: 'Fijo 1', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+      { name: 'Fijo 2', type: 'fijo', startTime: '07:00', endTime: '19:00', guardsNeeded: 1, sortOrder: 1, platoonOffset: offset2, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+    );
+  } else if (scheduleType === '12h-day' || scheduleType === '12h-night') {
+    const start = scheduleType === '12h-day' ? '07:00' : '19:00';
+    const end = scheduleType === '12h-day' ? '19:00' : '07:00';
+    positions.push(
+      { name: 'Fijo 1', type: 'fijo', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+    );
+  } else {
+    // Custom
+    const customStart = data.startTime || '07:00';
+    const customEnd = data.endTime || '19:00';
+    positions.push(
+      { name: 'Fijo 1', type: 'fijo', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+    );
+  }
+
+  await db.stationPosition.bulkCreate(positions);
+  const created = await db.stationPosition.findAll({
+    where: { stationId, tenantId, deletedAt: null },
+    order: [['sortOrder', 'ASC']],
+  });
+
+  let sfAvailableAtExecution = 0;
+  let sfAssignedNow = 0;
+  let sfOpenRemaining = 0;
+
+  try {
+    const { generateYearlyScheduleForStation } = await import('./shiftGenerationService');
+    await generateYearlyScheduleForStation(db, stationId, tenantId, userId);
+
+    if (runSacafrancoOptimize) {
+      // Auto-optimize: ensures sequence across ALL stations. Skipped when the
+      // caller (bulk bootstrap) runs this tenant-wide pass once itself.
+      const result = await optimizeAndAssignSacafrancos(db, tenantId, userId);
+      sfAvailableAtExecution = result.sfAvailableAtExecution;
+      sfAssignedNow = result.sfAssignedNow;
+      sfOpenRemaining = result.sfOpenRemaining;
+    }
+  } catch (e) {
+    console.error('[autoConfigureStationPositions] Yearly generation / sacafranco optimization error:', e);
+  }
+
+  return {
+    rows: created,
+    count: created.length,
+    rotationStyleId,
+    recommendedPlatoonOffset: recommendedStationOffset,
+    sfAvailableAtExecution,
+    sfAssignedNow,
+    sfOpenRemaining,
+  };
+}
+
+// Runs the tenant-wide sacafranco optimization, then assigns available SF guards
+// to unfilled sacafranco positions (generating their shifts). Extracted VERBATIM
+// from the second half of the original stationAutoPositions try-block so it can be
+// invoked exactly once per bulk run instead of once per station.
+export async function optimizeAndAssignSacafrancos(
+  db: any,
+  tenantId: string,
+  userId: string,
+): Promise<{ sfAvailableAtExecution: number; sfAssignedNow: number; sfOpenRemaining: number }> {
+  let sfAvailableAtExecution = 0;
+  let sfAssignedNow = 0;
+  let sfOpenRemaining = 0;
+
+  const { optimizeSacafrancos, generateShiftsForAssignment } = await import('./shiftGenerationService');
+  await optimizeSacafrancos(db, tenantId, userId);
+
+  // Auto-assign available SF guards to unfilled sacafranco positions (if any)
+  const [sfPositions, activeAssignments, sfGuards, stationMap] = await Promise.all([
+    db.stationPosition.findAll({ where: { tenantId, deletedAt: null, type: 'sacafranco' } }),
+    db.guardAssignment.findAll({ where: { tenantId, status: 'active', deletedAt: null }, attributes: ['guardId', 'positionId'] }),
+    db.securityGuard.findAll({ where: { tenantId, deletedAt: null }, attributes: ['guardId', 'guardType'] }),
+    db.station.findAll({ where: { tenantId, deletedAt: null }, attributes: ['id', 'rotationStyleId'] }),
+  ]);
+
+  const assignedGuardIds = new Set(activeAssignments.map((a: any) => a.guardId));
+  const assignedSfPositionIds = new Set(activeAssignments.map((a: any) => a.positionId));
+  const availableSfGuards = sfGuards.filter((g: any) =>
+    g.guardId &&
+    !assignedGuardIds.has(g.guardId) &&
+    String(g.guardType || '').toLowerCase() === 'sacafranco'
+  );
+
+  const openSfPositions = sfPositions.filter((p: any) => !assignedSfPositionIds.has(p.id));
+  sfAvailableAtExecution = availableSfGuards.length;
+
+  if (availableSfGuards.length > 0 && openSfPositions.length > 0) {
+    const byStation = new Map<string, any>();
+    stationMap.forEach((s: any) => byStation.set(s.id, s));
+    const sfRot = await db.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
+    const startDate = new Date().toISOString().slice(0, 10);
+
+    const createCount = Math.min(availableSfGuards.length, openSfPositions.length);
+    for (let i = 0; i < createCount; i++) {
+      const guard = availableSfGuards[i];
+      const pos = openSfPositions[i];
+      const station = byStation.get(pos.stationId);
+      const assignment = await db.guardAssignment.create({
+        guardId: guard.guardId,
+        stationId: pos.stationId,
+        positionId: pos.id,
+        rotationStyleId: sfRot?.id || station?.rotationStyleId,
+        startDate,
+        endDate: null,
+        platoonOffset: pos.platoonOffset || 0,
+        isRelief: true,
+        status: 'active',
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
+
+      await generateShiftsForAssignment(db, assignment.get({ plain: true }), tenantId, userId);
+      sfAssignedNow++;
+    }
+  }
+
+  sfOpenRemaining = Math.max(0, openSfPositions.length - sfAssignedNow);
+  return { sfAvailableAtExecution, sfAssignedNow, sfOpenRemaining };
+}
