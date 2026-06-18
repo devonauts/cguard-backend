@@ -44,6 +44,27 @@ export async function ensurePlatformEventsTable(database: any): Promise<void> {
 }
 
 /**
+ * Ensures the platform_event_dismissals table exists.
+ * Per-user dismissal layer so a guard "clearing" a broadcast event does not
+ * clear it for everyone (the shared platform_events.deliveryStatus is left
+ * untouched). Call once at server startup with the initialized database object.
+ */
+export async function ensurePlatformEventDismissalsTable(database: any): Promise<void> {
+  await database.sequelize.query(`
+    CREATE TABLE IF NOT EXISTS platform_event_dismissals (
+      id          VARCHAR(36)  NOT NULL,
+      tenantId    VARCHAR(36)  NOT NULL,
+      userId      VARCHAR(36)  NOT NULL,
+      eventId     VARCHAR(36)  NOT NULL,
+      createdAt   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      INDEX idx_ped_tenant_user (tenantId, userId),
+      UNIQUE INDEX uq_ped_user_event (userId, eventId)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+/**
  * Stores a new platform event in the database.
  * Returns the generated event id.
  */
@@ -139,10 +160,14 @@ export async function fetchPendingEventsForUser(
      WHERE tenantId = ?
        AND deliveryStatus IN ('pending', 'sent')
        AND ${v.sql}
+       AND NOT EXISTS (
+         SELECT 1 FROM platform_event_dismissals d
+         WHERE d.eventId = platform_events.id AND d.userId = ?
+       )
        AND createdAt >= ?
      ORDER BY createdAt ASC
      LIMIT 50`,
-    { replacements: [tenantId, ...v.params, sinceStr] },
+    { replacements: [tenantId, ...v.params, userId, sinceStr] },
   );
   return rows as PlatformEvent[];
 }
@@ -205,6 +230,49 @@ export async function markAllEventsReadForUser(
 }
 
 /**
+ * Per-user dismissal of a single event (idempotent). Does NOT mutate the shared
+ * platform_events row, so dismissing a broadcast event hides it only for this
+ * user. Safe to call repeatedly for the same (userId, eventId).
+ */
+export async function dismissEvent(
+  database: any,
+  tenantId: string,
+  userId: string,
+  eventId: string,
+): Promise<void> {
+  await database.sequelize.query(
+    `INSERT IGNORE INTO platform_event_dismissals (id, tenantId, userId, eventId, createdAt)
+     VALUES (?, ?, ?, ?, NOW())`,
+    { replacements: [uuidv4(), tenantId, userId, eventId] },
+  );
+}
+
+/**
+ * Dismisses (per-user) every event currently visible to the user within the
+ * 7-day window — the "clear all" action. Uses the same visibility scope as the
+ * list/unread queries. Already-dismissed rows are skipped via INSERT IGNORE
+ * (UNIQUE on userId, eventId).
+ */
+export async function dismissAllForUser(
+  database: any,
+  tenantId: string,
+  userId: string,
+  roles: string[],
+  seeAll: boolean,
+): Promise<void> {
+  const v = visibilityClause(userId, roles, seeAll);
+  await database.sequelize.query(
+    `INSERT IGNORE INTO platform_event_dismissals (id, tenantId, userId, eventId, createdAt)
+     SELECT UUID(), ?, ?, platform_events.id, NOW()
+     FROM platform_events
+     WHERE tenantId = ?
+       AND ${v.sql}
+       AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
+    { replacements: [tenantId, userId, tenantId, ...v.params] },
+  );
+}
+
+/**
  * Returns up to `limit` recent events for a user (for the notification panel list).
  */
 export async function getRecentEventsForUser(
@@ -222,10 +290,14 @@ export async function getRecentEventsForUser(
      FROM platform_events
      WHERE tenantId = ?
        AND ${v.sql}
+       AND NOT EXISTS (
+         SELECT 1 FROM platform_event_dismissals d
+         WHERE d.eventId = platform_events.id AND d.userId = ?
+       )
        AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
      ORDER BY createdAt DESC
      LIMIT ?`,
-    { replacements: [tenantId, ...v.params, limit] },
+    { replacements: [tenantId, ...v.params, userId, limit] },
   );
   return rows as PlatformEvent[];
 }
@@ -247,8 +319,12 @@ export async function countUnreadEventsForUser(
      WHERE tenantId = ?
        AND deliveryStatus IN ('pending', 'sent')
        AND ${v.sql}
+       AND NOT EXISTS (
+         SELECT 1 FROM platform_event_dismissals d
+         WHERE d.eventId = platform_events.id AND d.userId = ?
+       )
        AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
-    { replacements: [tenantId, ...v.params] },
+    { replacements: [tenantId, ...v.params, userId] },
   );
   return Number((rows as any)[0]?.cnt || 0);
 }

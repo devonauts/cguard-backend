@@ -14,7 +14,7 @@ import http from 'http'
 import api from './api'
 import { databaseInit } from './database/databaseConnection';
 import TenantInvitationRepository from './database/repositories/tenantInvitationRepository';
-import { ensurePlatformEventsTable, cleanupOldPlatformEvents, storePlatformEvent } from './lib/platformEventStore';
+import { ensurePlatformEventsTable, ensurePlatformEventDismissalsTable, cleanupOldPlatformEvents, storePlatformEvent } from './lib/platformEventStore';
 import { initRealtime } from './lib/realtime';
 import { syncGuardDutyStatus } from './services/dutySync';
 import { verifySchemaConsistency } from './database/migrations/verify-schema';
@@ -121,6 +121,7 @@ async function initPlatformEvents() {
   try {
     const database = await databaseInit();
     await ensurePlatformEventsTable(database);
+    await ensurePlatformEventDismissalsTable(database);
     console.log('[PlatformEvents] Table ready');
   } catch (err) {
     console.error('[PlatformEvents] Table init failed:', (err as any)?.message || err);

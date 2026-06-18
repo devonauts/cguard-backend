@@ -22,6 +22,8 @@ import {
   markEventRead,
   markAllEventsReadForUser,
   markEventsSent,
+  dismissEvent,
+  dismissAllForUser,
 } from '../lib/platformEventStore';
 
 // SSE poll interval (ms). 5 s is a good balance between latency and DB load.
@@ -245,6 +247,60 @@ export default (routes: Router) => {
           currentUser.id,
           roles,
           seeAll,
+        );
+
+        return res.json({ success: true });
+      } catch (err) {
+        return next(err);
+      }
+    },
+  );
+
+  // ─── Dismiss all (per-user clear, leaves shared read state intact) ────────
+  routes.delete(
+    '/:tenantId/events',
+    async (req: any, res: any, next: any) => {
+      try {
+        const currentUser = req.currentUser;
+        const currentTenant = req.currentTenant;
+        const database = req.database;
+
+        if (!currentUser) return res.status(401).json({ message: 'Unauthorized' });
+        if (!currentTenant) return res.status(403).json({ message: 'Tenant not found' });
+
+        const { roles, seeAll } = getUserContext(currentUser, currentTenant.id);
+        await dismissAllForUser(
+          database,
+          currentTenant.id,
+          currentUser.id,
+          roles,
+          seeAll,
+        );
+
+        return res.json({ success: true });
+      } catch (err) {
+        return next(err);
+      }
+    },
+  );
+
+  // ─── Dismiss one (per-user clear, leaves shared read state intact) ────────
+  routes.delete(
+    '/:tenantId/events/:eventId',
+    async (req: any, res: any, next: any) => {
+      try {
+        const currentUser = req.currentUser;
+        const currentTenant = req.currentTenant;
+        const database = req.database;
+
+        if (!currentUser) return res.status(401).json({ message: 'Unauthorized' });
+        if (!currentTenant) return res.status(403).json({ message: 'Tenant not found' });
+
+        await dismissEvent(
+          database,
+          currentTenant.id,
+          currentUser.id,
+          req.params.eventId,
         );
 
         return res.json({ success: true });
