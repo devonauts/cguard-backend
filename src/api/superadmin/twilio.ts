@@ -33,6 +33,7 @@ import {
   generateVoiceToken,
   sendSms,
   getClient,
+  getBalance,
   webhookUrls,
 } from '../../services/twilio/twilioClient';
 import {
@@ -59,6 +60,16 @@ export default (router) => {
     try {
       const payload = await saveTwilioSettings(req, req.body || {});
       await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // Live balance + account status (active | suspended | closed). Twilio has no
+  // add-funds API, so the UI uses this to warn + deep-link to billing.
+  router.get('/twilio/balance', async (req, res) => {
+    try {
+      await ApiResponseHandler.success(req, res, await getBalance(db(req)));
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }

@@ -59,6 +59,43 @@ export async function getClient(database: any): Promise<any> {
   return twilio(cfg.accountSid, cfg.authToken);
 }
 
+/**
+ * Live account balance + status. Twilio exposes the running balance and the
+ * account status (active | suspended | closed) but NO API to add funds — topping
+ * up is done in the Twilio billing console (or via auto-recharge). The UI uses
+ * this to show the balance, flag a suspended/low account, and deep-link to the
+ * billing page. `accountSid` is also returned for building that deep link.
+ */
+export async function getBalance(database: any): Promise<{
+  ok: boolean;
+  balance?: number;
+  currency?: string;
+  status?: string;
+  accountSid?: string;
+  error?: string;
+}> {
+  const cfg = await getTwilioConfig(database);
+  if (!cfg.accountSid || !cfg.authToken) {
+    return { ok: false, error: 'Twilio no está configurado.' };
+  }
+  try {
+    const client = requireTwilio()(cfg.accountSid, cfg.authToken);
+    const [bal, acct] = await Promise.all([
+      client.balance.fetch(),
+      client.api.accounts(cfg.accountSid).fetch(),
+    ]);
+    return {
+      ok: true,
+      balance: parseFloat(bal.balance),
+      currency: bal.currency || 'USD',
+      status: acct.status, // active | suspended | closed
+      accountSid: cfg.accountSid,
+    };
+  } catch (e: any) {
+    return { ok: false, error: (e && e.message) || 'No se pudo obtener el saldo.' };
+  }
+}
+
 export interface SendSmsArgs {
   to: string;
   body: string;
