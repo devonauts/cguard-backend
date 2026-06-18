@@ -1150,9 +1150,42 @@ class AuthService {
         options,
       );
 
+      // Decide which reset-page variant the link should open. Field users
+      // (guards/supervisors who reset from the worker app) should land on an
+      // app-focused page, NOT the tenant/platform marketing. Honor an explicit
+      // client hint (worker app sends `app: 'worker'`); otherwise infer from the
+      // user's roles. Best-effort — defaults to the standard variant on failure.
+      let audience = '';
+      try {
+        const explicit =
+          (options && options.body && (options.body.app || options.body.audience)) || '';
+        if (explicit && /worker|field|guard/i.test(String(explicit))) {
+          audience = 'field';
+        } else {
+          const TenantUserRepositoryLocal = require('../../database/repositories/tenantUserRepository').default;
+          const userRec2 = await UserRepository.findByEmailWithoutAvatar(email, options);
+          if (userRec2 && userRec2.id) {
+            const tus = await TenantUserRepositoryLocal.findByUser(userRec2.id, options);
+            const roles: string[] = [];
+            (Array.isArray(tus) ? tus : []).forEach((tu: any) => {
+              const r = tu && tu.roles;
+              if (Array.isArray(r)) roles.push(...r);
+              else if (typeof r === 'string') roles.push(...r.split(',').map((x) => x.trim()));
+            });
+            const FIELD = ['securityGuard', 'securitySupervisor'];
+            const BACKOFFICE = ['admin', 'owner', 'operationsManager'];
+            const hasField = roles.some((r) => FIELD.includes(r));
+            const hasBackoffice = roles.some((r) => BACKOFFICE.includes(r));
+            if (hasField && !hasBackoffice) audience = 'field';
+          }
+        }
+      } catch (e) {
+        // best-effort; leave audience empty (standard variant)
+      }
+
       link = `${tenantSubdomain.frontendUrl(
         tenant,
-      )}/auth/password-reset?token=${token}`;
+      )}/auth/password-reset?token=${token}${audience ? `&audience=${audience}` : ''}`;
 
       // For development: log the reset link instead of sending email
       if (!EmailSender.isConfigured) {

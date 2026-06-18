@@ -71,11 +71,56 @@ export async function transcribeEntry(db: any, tenantId: string, entryId: string
 const statusLabel = (s: string) =>
   ({ responded: 'respondió', no_response: 'SIN RESPUESTA', skipped: 'sin guardia en turno', pending: 'pendiente', notified: 'llamado' } as any)[s] || s;
 
+/**
+ * Deterministic Spanish roll-call summary built straight from the entries — no
+ * AI needed. Used when OpenAI is unavailable (no key, quota exhausted, outage),
+ * so a pase de novedades ALWAYS produces a usable report instead of a blank /
+ * "failed" state. Returns a concise, structured summary.
+ */
+function buildBasicSummary(entries: any[]): string {
+  const total = entries.length;
+  const responded = entries.filter((e) => e.status === 'responded').length;
+  const incidents = entries.filter((e) => e.classification === 'incident');
+  const novedades = entries.filter((e) => e.classification === 'novedad' && e.transcript);
+  const noResp = entries.filter((e) => e.status === 'no_response');
+
+  const parts: string[] = [`Pase de novedades: ${responded} de ${total} puesto(s) respondieron.`];
+  if (incidents.length) {
+    parts.push(
+      `\n⚠️ INCIDENTES (${incidents.length}):\n` +
+        incidents.map((e) => `- ${e.stationName || 'Puesto'}: "${(e.transcript || '').trim() || 'reporte de incidente'}"`).join('\n'),
+    );
+  }
+  if (novedades.length) {
+    parts.push(
+      `\nNovedades:\n` +
+        novedades.map((e) => `- ${e.stationName || 'Puesto'}: "${(e.transcript || '').trim()}"`).join('\n'),
+    );
+  }
+  if (noResp.length) {
+    parts.push(`\nSIN RESPUESTA (${noResp.length}): ` + noResp.map((e) => e.stationName || 'Puesto').join(', '));
+  }
+  return parts.join('\n');
+}
+
 /** Generate a Spanish roll-call summary for a completed session. */
 export async function generateSummary(db: any, tenantId: string, sessionId: string): Promise<void> {
-  if (!KEY) { await db.radioCheckSession.update({ summaryStatus: 'skipped' }, { where: { id: sessionId, tenantId } }).catch(() => {}); return; }
   const entries = await db.radioCheckEntry.findAll({ where: { tenantId, sessionId, deletedAt: null }, order: [['seq', 'ASC']] });
   if (!entries.length) { await db.radioCheckSession.update({ summaryStatus: 'skipped' }, { where: { id: sessionId, tenantId } }).catch(() => {}); return; }
+
+  // Always have a usable summary ready; AI replaces it on success.
+  const fallback = buildBasicSummary(entries);
+  const finish = async (summary: string) => {
+    await db.radioCheckSession.update({ summary, summaryStatus: 'done' }, { where: { id: sessionId, tenantId } }).catch(() => {});
+    await storePlatformEvent(db, {
+      tenantId, eventType: 'radio.session_completed', title: 'Resumen del pase listo', body: '',
+      targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckSession', sourceEntityId: sessionId,
+      payload: { sessionId, summaryReady: true },
+    }).catch(() => {});
+  };
+
+  if (!KEY) { await finish(fallback); return; } // no AI configured → deterministic summary
+
   const lines = entries.map((e: any) => `- ${e.stationName || 'Puesto'}: ${statusLabel(e.status)}${e.transcript ? ` — "${e.transcript}"` : ''}`).join('\n');
   const prompt = `Eres el operador de central de una empresa de seguridad privada. Resume este pase de novedades en español, breve y profesional (3-6 líneas): di cuántos puestos respondieron de cuántos, resalta cualquier NOVEDAD o INCIDENTE textualmente, y enumera al final los puestos SIN RESPUESTA. No inventes datos.\n\nPase de novedades:\n${lines}`;
   try {
@@ -87,14 +132,10 @@ export async function generateSummary(db: any, tenantId: string, sessionId: stri
     if (!res.ok) throw new Error(`OpenAI summary ${res.status}: ${await res.text()}`);
     const data: any = await res.json();
     const summary = String(data.choices?.[0]?.message?.content || '').trim();
-    await db.radioCheckSession.update({ summary, summaryStatus: 'done' }, { where: { id: sessionId, tenantId } });
-    await storePlatformEvent(db, {
-      tenantId, eventType: 'radio.session_completed', title: 'Resumen del pase listo', body: '',
-      targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckSession', sourceEntityId: sessionId,
-      payload: { sessionId, summaryReady: true },
-    }).catch(() => {});
+    await finish(summary || fallback);
   } catch (e: any) {
-    console.warn('[radioCheck] summary failed:', e?.message || e);
-    await db.radioCheckSession.update({ summaryStatus: 'failed' }, { where: { id: sessionId, tenantId } }).catch(() => {});
+    // Quota/outage/etc — never leave the dispatcher without a report.
+    console.warn('[radioCheck] summary AI failed, using basic summary:', e?.message || e);
+    await finish(fallback);
   }
 }
