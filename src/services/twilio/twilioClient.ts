@@ -96,6 +96,91 @@ export async function getBalance(database: any): Promise<{
   }
 }
 
+/**
+ * Twilio usage analytics — messages + calls volume and SPEND, from Twilio's
+ * Usage Records API (the authoritative billing source; per-message/call price
+ * isn't in our webhooks). Returns period totals + a daily series for charts.
+ * period: 'thismonth' | 'lastmonth' | 'today'.
+ */
+export async function getUsageAnalytics(
+  database: any,
+  period: 'thismonth' | 'lastmonth' | 'today' = 'thismonth',
+): Promise<any> {
+  let client: any;
+  try {
+    client = await getClient(database);
+  } catch (e: any) {
+    return { ok: false, error: (e && e.message) || 'Twilio no está configurado.' };
+  }
+  const num = (v: any) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const int = (v: any) => parseInt(v, 10) || 0;
+  const sum = (recs: any[], f: (r: any) => number) => (recs || []).reduce((a, r) => a + f(r), 0);
+  const dayKey = (d: any) => (d instanceof Date ? d.toISOString() : String(d || '')).slice(0, 10);
+
+  try {
+    const sub =
+      period === 'lastmonth' ? client.usage.records.lastMonth
+      : period === 'today' ? client.usage.records.today
+      : client.usage.records.thisMonth;
+
+    const [sms, calls, total] = await Promise.all([
+      sub.list({ category: 'sms' }),
+      sub.list({ category: 'calls' }),
+      sub.list({ category: 'totalprice' }),
+    ]);
+
+    const currency = (sms[0]?.priceUnit || calls[0]?.priceUnit || total[0]?.priceUnit || 'USD').toUpperCase();
+    const summary = {
+      ok: true,
+      period,
+      currency,
+      sms: { count: sum(sms, (r) => int(r.count)), cost: Math.abs(sum(sms, (r) => num(r.price))) },
+      calls: {
+        count: sum(calls, (r) => int(r.count)),
+        minutes: Math.round(sum(calls, (r) => num(r.usage)) * 10) / 10,
+        cost: Math.abs(sum(calls, (r) => num(r.price))),
+      },
+      total: { cost: Math.abs(sum(total, (r) => num(r.price))) },
+      daily: [] as any[],
+    };
+
+    // Daily spend series for the chart.
+    try {
+      const now = new Date();
+      const iso = (d: Date) => d.toISOString().slice(0, 10);
+      let startDate: string;
+      let endDate: string;
+      if (period === 'today') {
+        startDate = endDate = iso(now);
+      } else if (period === 'lastmonth') {
+        startDate = iso(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+        endDate = iso(new Date(now.getFullYear(), now.getMonth(), 0));
+      } else {
+        startDate = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+        endDate = iso(now);
+      }
+      const [dSms, dCalls] = await Promise.all([
+        client.usage.records.daily.list({ category: 'sms', startDate, endDate }),
+        client.usage.records.daily.list({ category: 'calls', startDate, endDate }),
+      ]);
+      const map: Record<string, any> = {};
+      const row = (k: string) => (map[k] ||= { date: k, sms: 0, calls: 0 });
+      dSms.forEach((r: any) => { row(dayKey(r.startDate)).sms = Math.abs(num(r.price)); });
+      dCalls.forEach((r: any) => { row(dayKey(r.startDate)).calls = Math.abs(num(r.price)); });
+      summary.daily = Object.values(map).sort((a: any, b: any) => a.date.localeCompare(b.date));
+    } catch {
+      /* daily series is best-effort */
+    }
+
+    return summary;
+  } catch (e: any) {
+    return { ok: false, error: (e && e.message) || 'No se pudo obtener el uso de Twilio.' };
+  }
+}
+
 export interface SendSmsArgs {
   to: string;
   body: string;

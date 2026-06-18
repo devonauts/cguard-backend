@@ -34,6 +34,7 @@ import {
   sendSms,
   getClient,
   getBalance,
+  getUsageAnalytics,
   webhookUrls,
 } from '../../services/twilio/twilioClient';
 import {
@@ -70,6 +71,18 @@ export default (router) => {
   router.get('/twilio/balance', async (req, res) => {
     try {
       await ApiResponseHandler.success(req, res, await getBalance(db(req)));
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // Usage analytics (messages + calls volume and spend) from Twilio Usage Records.
+  router.get('/twilio/analytics', async (req, res) => {
+    try {
+      const period = ['thismonth', 'lastmonth', 'today'].includes(String((req.query || {}).period))
+        ? (String((req.query as any).period) as any)
+        : 'thismonth';
+      await ApiResponseHandler.success(req, res, await getUsageAnalytics(db(req), period));
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }
