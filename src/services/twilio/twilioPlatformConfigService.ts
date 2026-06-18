@@ -123,6 +123,9 @@ export async function getTwilioSettingsMasked(database: any) {
     authTokenLast4: last4(authToken),
     apiKeySecretConfigured: !!apiKeySecret || (resolved.source === 'env' && !!resolved.apiKeySecret),
     apiKeySecretLast4: last4(apiKeySecret),
+    // The public webhook URLs to register in Twilio (no secrets). Lazy-required
+    // to avoid a circular import with twilioClient.
+    webhooks: (require('./twilioClient') as typeof import('./twilioClient')).webhookUrls(),
   };
 }
 
