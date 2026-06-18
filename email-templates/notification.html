@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <title>{{title}} · {{tenantName}}</title>
+  <style>
+    body { margin:0; padding:0; background:#eef1f5; -webkit-text-size-adjust:100%; }
+    table { border-collapse:collapse; }
+    img { border:0; line-height:100%; outline:none; text-decoration:none; -ms-interpolation-mode:bicubic; }
+    a { text-decoration:none; }
+    @media only screen and (max-width:620px) {
+      .container { width:100% !important; }
+      .px { padding-left:24px !important; padding-right:24px !important; }
+      .btn-a { display:block !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; background:#eef1f5;">
+  <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">{{title}}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f5;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 10px 34px rgba(16,24,40,.10);">
+
+          <tr>
+            <td style="background:#0A0E16; padding:30px 32px 26px; text-align:center;">
+              <img src="{{logoUrl}}" alt="" height="42" style="height:42px; max-height:42px; display:block; margin:0 auto 12px;" />
+              <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#ffffff; font-size:19px; font-weight:700; letter-spacing:.2px;">{{tenantName}}</div>
+              <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#C8860A; font-size:11px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; margin-top:6px;">{{eyebrow}}</div>
+            </td>
+          </tr>
+          <tr><td style="height:4px; line-height:4px; font-size:0; background:#C8860A;">&nbsp;</td></tr>
+
+          <tr>
+            <td class="px" style="padding:36px 44px 6px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+              <h1 style="margin:0 0 18px; color:#0A0E16; font-size:23px; font-weight:800;">{{title}}</h1>
+              <p style="margin:0; color:#374151; font-size:15px; line-height:1.7;">{{body}}</p>
+            </td>
+          </tr>
+
+          <!--CTA_START-->
+          <tr>
+            <td align="center" style="padding:28px 44px 6px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" bgcolor="#C8860A" style="border-radius:10px;">
+                    <a class="btn-a" href="{{ctaUrl}}" target="_blank" style="display:inline-block; padding:15px 40px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; font-size:15px; font-weight:700; color:#ffffff; background:#C8860A; border-radius:10px; letter-spacing:.4px;">{{ctaText}}</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!--CTA_END-->
+
+          <tr><td class="px" style="padding:26px 44px 0;"><div style="border-top:1px solid #eef1f5; line-height:1px; font-size:0;">&nbsp;</div></td></tr>
+          <tr>
+            <td class="px" style="padding:16px 44px 34px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+              <p style="margin:0; color:#aab0ba; font-size:12px; line-height:1.6;">Este es un mensaje automático de {{tenantName}}.</p>
+            </td>
+          </tr>
+        </table>
+
+        <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px;">
+          <tr><td align="center" style="padding:18px 16px; font-family:'Segoe UI',Arial,Helvetica,sans-serif; color:#b6bcc6; font-size:11px; letter-spacing:.3px;">&copy; {{year}} {{tenantName}} · Enviado con <strong style="color:#8a92a0;">CGuardPro</strong></td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

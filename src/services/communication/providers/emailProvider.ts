@@ -8,8 +8,52 @@
  * recipient: OutboundMessage.recipient is the destination email address.
  * title → subject; body → html (also sent as text for plain clients).
  */
-import { CommunicationProvider, OutboundMessage, SendResult } from '../types';
+import { CommunicationProvider, OutboundMessage, SendResult, MessageType } from '../types';
 import { sendMail } from '../../mailService';
+import { renderNotificationEmail } from '../../../lib/emailLayout';
+
+/** Map a messageType to a Spanish eyebrow label shown in the branded header. */
+const EYEBROW_BY_TYPE: Partial<Record<MessageType, string>> = {
+  shift_reminder: 'Recordatorio de turno',
+  incident_alert: 'Alerta de incidente',
+  visitor_alert: 'Alerta de visitante',
+  ronda_alert: 'Alerta de ronda',
+  task_alert: 'Alerta de tarea',
+  no_show: 'Inasistencia',
+  panic: 'Alerta de pánico',
+  new_assignment: 'Nueva asignación',
+  escalation: 'Escalamiento',
+  otp: 'Código de verificación',
+  generic: 'Notificación',
+};
+
+/**
+ * Resolve the tenant's display name + own logo URL for the branded email header.
+ * Defensive: any lookup failure returns empties (the template handles missing
+ * name/logo gracefully). Mirrors emailSender's settings.logoUrl resolution.
+ */
+async function resolveTenantBranding(db: any, tenantId?: string): Promise<{ tenantName: string; logoUrl: string }> {
+  let tenantName = '';
+  let logoUrl = '';
+  if (!db || !tenantId) return { tenantName, logoUrl };
+  try {
+    const settings = await db.settings?.findOne?.({ where: { tenantId } });
+    if (settings) {
+      logoUrl = settings.logoUrl || settings.get?.('logoUrl') || '';
+    }
+  } catch (e) {
+    // ignore — proceed with empty logo
+  }
+  try {
+    const tenant = await db.tenant?.findByPk?.(tenantId);
+    if (tenant) {
+      tenantName = tenant.name || tenant.get?.('name') || tenant.displayName || '';
+    }
+  } catch (e) {
+    // ignore — proceed with empty name
+  }
+  return { tenantName, logoUrl };
+}
 
 /** Pull a provider message id out of the various transport responses. */
 function extractMessageId(res: any): string | undefined {
@@ -45,11 +89,31 @@ export class EmailProvider implements CommunicationProvider {
     const subject = msg.title || msg.body || 'Notificación';
     const body = msg.body || '';
 
+    // Resolve the tenant's branding for the global notification template.
+    const { tenantName, logoUrl } = await resolveTenantBranding(_db, msg.tenantId);
+
+    // CTA: msg.deepLink is a cguardpro:// scheme that email clients can't open
+    // reliably, so we never put it in the button. Only render a CTA when a real
+    // https URL is available (FRONTEND_URL); otherwise omit the button entirely.
+    const frontendUrl = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
+    const ctaUrl = frontendUrl ? frontendUrl : undefined;
+    const ctaText = ctaUrl ? 'Abrir C-Guard Pro' : undefined;
+
+    const html = renderNotificationEmail({
+      tenantName,
+      logoUrl,
+      eyebrow: EYEBROW_BY_TYPE[msg.messageType] || 'Notificación',
+      title: msg.title || subject,
+      body,
+      ctaUrl,
+      ctaText,
+    });
+
     try {
       const res: any = await sendMail({
         to,
         subject,
-        html: body || undefined,
+        html,
         text: body || undefined,
       });
       return {
