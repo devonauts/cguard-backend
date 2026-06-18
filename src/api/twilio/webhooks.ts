@@ -17,6 +17,7 @@
  */
 import { Request, Response } from 'express';
 import { getTwilioConfig } from '../../services/twilio/twilioPlatformConfigService';
+import { createNotification } from '../../services/superadmin/superadminNotificationService';
 import {
   validateSignature,
   buildIncomingCallTwiml,
@@ -97,6 +98,16 @@ export async function twilioSmsInbound(req: Request, res: Response): Promise<voi
       twilioSid: b.MessageSid || b.SmsSid,
       mediaUrls: collectMediaUrls(b),
     });
+    const from = b.From || 'Unknown';
+    const preview = String(b.Body || '').slice(0, 120);
+    await createNotification(db(req), {
+      type: 'sms.inbound',
+      title: `Nuevo SMS de ${from}`,
+      body: preview || 'Mensaje recibido',
+      link: '/phone',
+      icon: 'message-square',
+      metadata: { from, to: b.To },
+    });
   } catch (e: any) {
     console.error('[twilio webhook] sms inbound error:', e?.message || e);
   }
@@ -131,6 +142,15 @@ export async function twilioVoiceInbound(req: Request, res: Response): Promise<v
       from: b.From,
       to: b.To,
       status: b.CallStatus || 'ringing',
+    });
+    const from = b.From || 'Unknown';
+    await createNotification(db(req), {
+      type: 'call.incoming',
+      title: `Llamada entrante de ${from}`,
+      body: 'Toca para abrir el teléfono y atender',
+      link: '/phone',
+      icon: 'phone-incoming',
+      metadata: { from, to: b.To, callSid: b.CallSid },
     });
   } catch (e: any) {
     console.error('[twilio webhook] voice inbound error:', e?.message || e);
