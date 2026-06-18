@@ -76,7 +76,11 @@ class VisitorLogRepository {
       { ...options, transaction },
     );
 
-    return this.findById(record.id, options);
+    // Return the just-written record WITHOUT the assigned-post-site read ACL —
+    // the creator/editor (e.g. a guard not tied to a post site) must always get
+    // back what they saved. Otherwise findById's ACL 404s and the save looks
+    // like it failed ("Extraviado") even though it was stored.
+    return this.findById(record.id, { ...options, bypassPermissionValidation: true });
   }
 
   static async update(id, data, options: IRepositoryOptions) {
@@ -153,7 +157,11 @@ class VisitorLogRepository {
       { ...options, transaction },
     );
 
-    return this.findById(record.id, options);
+    // Return the just-written record WITHOUT the assigned-post-site read ACL —
+    // the creator/editor (e.g. a guard not tied to a post site) must always get
+    // back what they saved. Otherwise findById's ACL 404s and the save looks
+    // like it failed ("Extraviado") even though it was stored.
+    return this.findById(record.id, { ...options, bypassPermissionValidation: true });
   }
 
   static async destroy(id, options: IRepositoryOptions) {
