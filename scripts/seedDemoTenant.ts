@@ -435,6 +435,12 @@ async function seed() {
   await upsertAssignment(dia.user.id, '07:00', '19:00');
   await upsertAssignment(noche.user.id, '19:00', '07:00');
 
+  // 8b) Link both guards to the main station via the `assignedGuards` junction.
+  //     The worker-app clock-in screen derives its stations from this junction
+  //     (station.assignedGuards) — without it the guard has no post to clock into
+  //     and the clock-in button never appears (no error shown). Idempotent.
+  await mainStation.addAssignedGuards([dia.user.id, noche.user.id]);
+
   // 9) TODAY'S SHIFTS (Día 07-19, Noche 19-07) at the main station.
   //    Created directly so the demo baseline is deterministic. The unique
   //    index (tenantId,guardId,stationId,startTime,endTime) makes this idempotent.
