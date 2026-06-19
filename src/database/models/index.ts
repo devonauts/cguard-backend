@@ -40,16 +40,22 @@ function models() {
       port: getConfig().DATABASE_PORT || 3307,
       dialect: resolvedDialect,
       timezone: getConfig().DATABASE_TIMEZONE || '+00:00',
-      logging:
-        getConfig().DATABASE_LOGGING === 'true'
-          ? (log) =>
-              console.log(
-                highlight(log, {
-                  language: 'sql',
-                  ignoreIllegals: true,
-                }),
-              )
-          : false,
+      // benchmark: true → the logging fn receives the query's exec time (ms), which
+      // we feed to the slow-query monitor (>=0.1s) for the observability page,
+      // regardless of DATABASE_LOGGING.
+      benchmark: true,
+      logging: (log: any, timing?: number) => {
+        if (typeof timing === 'number') {
+          try {
+            require('../../lib/slowQueryMonitor').recordQuery(log, timing);
+          } catch {
+            /* monitor optional */
+          }
+        }
+        if (getConfig().DATABASE_LOGGING === 'true') {
+          console.log(highlight(String(log), { language: 'sql', ignoreIllegals: true }));
+        }
+      },
     },
   );
 

@@ -17,6 +17,7 @@ import TenantInvitationRepository from './database/repositories/tenantInvitation
 import { ensurePlatformEventsTable, ensurePlatformEventDismissalsTable, cleanupOldPlatformEvents, storePlatformEvent } from './lib/platformEventStore';
 import { initRealtime } from './lib/realtime';
 import { syncGuardDutyStatus } from './services/dutySync';
+import { runJob } from './lib/jobsMonitor';
 import { verifySchemaConsistency } from './database/migrations/verify-schema';
 import { setInterval as nodeSetInterval } from 'timers';
 
@@ -161,9 +162,7 @@ nodeSetInterval(() => {
 }, 3 * 60 * 60 * 1000);
 
 // Sync guard duty status every 5 minutes based on active shifts
-nodeSetInterval(() => {
-  syncGuardDutyStatus();
-}, 5 * 60 * 1000);
+nodeSetInterval(() => { runJob("DutySync", syncGuardDutyStatus); }, 5 * 60 * 1000);
 
 // Run once on startup after a short delay
 setTimeout(() => syncGuardDutyStatus(), 10000);
@@ -236,7 +235,7 @@ async function runConsignaScheduler() {
 }
 
 // Check due consignas every minute
-nodeSetInterval(() => { runConsignaScheduler(); }, 60 * 1000);
+nodeSetInterval(() => { runJob("Consigna", runConsignaScheduler); }, 60 * 1000);
 setTimeout(() => runConsignaScheduler(), 20000);
 
 /**
@@ -296,7 +295,7 @@ async function runRadioCheckScheduler() {
   }
 }
 
-nodeSetInterval(() => { runRadioCheckScheduler(); }, 60 * 1000);
+nodeSetInterval(() => { runJob("RadioCheck", runRadioCheckScheduler); }, 60 * 1000);
 setTimeout(() => runRadioCheckScheduler(), 35000);
 
 /**
@@ -315,7 +314,7 @@ async function runForcedClockOutScheduler() {
   }
 }
 
-nodeSetInterval(() => { runForcedClockOutScheduler(); }, 60 * 1000);
+nodeSetInterval(() => { runJob("ForcedClockOut", runForcedClockOutScheduler); }, 60 * 1000);
 setTimeout(() => runForcedClockOutScheduler(), 45000);
 
 /**
@@ -334,7 +333,7 @@ async function runShiftReminderScheduler() {
   }
 }
 
-nodeSetInterval(() => { runShiftReminderScheduler(); }, 5 * 60 * 1000);
+nodeSetInterval(() => { runJob("ShiftReminders", runShiftReminderScheduler); }, 5 * 60 * 1000);
 setTimeout(() => runShiftReminderScheduler(), 60000);
 
 /**
@@ -431,7 +430,7 @@ async function runTrialScheduler() {
 }
 
 // Check trials a few times a day.
-nodeSetInterval(() => { runTrialScheduler(); }, 6 * 60 * 60 * 1000);
+nodeSetInterval(() => { runJob("TrialBilling", runTrialScheduler); }, 6 * 60 * 60 * 1000);
 setTimeout(() => runTrialScheduler(), 30000);
 
 /**
@@ -453,7 +452,7 @@ async function runSeatReconcile() {
 }
 
 // Reconcile seats once a day.
-nodeSetInterval(() => { runSeatReconcile(); }, 24 * 60 * 60 * 1000);
+nodeSetInterval(() => { runJob("SeatReconcile", runSeatReconcile); }, 24 * 60 * 60 * 1000);
 setTimeout(() => runSeatReconcile(), 60000);
 
 /**
@@ -597,7 +596,7 @@ async function runAttendanceDetectionScheduler() {
 }
 
 // Detect attendance exceptions every 5 minutes.
-nodeSetInterval(() => { runAttendanceDetectionScheduler(); }, 5 * 60 * 1000);
+nodeSetInterval(() => { runJob("AttendanceDetection", runAttendanceDetectionScheduler); }, 5 * 60 * 1000);
 setTimeout(() => runAttendanceDetectionScheduler(), 45000);
 
 /**

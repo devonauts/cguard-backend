@@ -11,9 +11,36 @@ import {
   health,
   stats,
   auditLog,
+  system,
+  dbPerformance,
+  jobs,
+  slowQueries,
+  resetSlowQueries,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
+  const route = (path: string, fn: (req: any) => Promise<any>) =>
+    router.get(path, async (req: any, res: any) => {
+      try {
+        await ApiResponseHandler.success(req, res, await fn(req));
+      } catch (error) {
+        await ApiResponseHandler.error(req, res, error);
+      }
+    });
+
+  route('/observability/system', system);
+  route('/observability/db', dbPerformance);
+  route('/observability/jobs', jobs);
+  route('/observability/slow-queries', slowQueries);
+
+  router.delete('/observability/slow-queries', async (req: any, res: any) => {
+    try {
+      await ApiResponseHandler.success(req, res, await resetSlowQueries(req));
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
   router.get('/observability/health', async (req, res) => {
     try {
       const payload = await health(req);

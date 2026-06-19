@@ -11,8 +11,11 @@
  * cross-tenant (no tenant filter) off the models bag attached to the request.
  */
 import { Request } from 'express';
+import os from 'os';
 import { db, listParams } from './superadminHelpers';
 import { quote } from '../../lib/billingModel';
+import { getSlowQueries, clearSlowQueries } from '../../lib/slowQueryMonitor';
+import { getJobs } from '../../lib/jobsMonitor';
 
 /** Build a tenantId → seat-count map in a single grouped query (avoids N+1). */
 async function seatCountsByTenant(database: any): Promise<Record<string, number>> {
@@ -272,4 +275,117 @@ export async function auditLog(req: Request): Promise<any> {
     limit,
     totalPages: Math.ceil(count / limit) || 1,
   };
+}
+
+// ── System resources (RAM / memory-leak watch, CPU, storage, uptime) ──────────
+/** GET /observability/system */
+export async function system(_req: Request): Promise<any> {
+  const mem = process.memoryUsage();
+  const totalmem = os.totalmem();
+  const freemem = os.freemem();
+  const load = os.loadavg();
+  const cpus = os.cpus()?.length || 1;
+
+  // Disk usage for the app root (Node 18.15+ has fs.statfs).
+  let disk: any = null;
+  try {
+    const sfs: any = require('fs');
+    if (sfs.statfsSync) {
+      const s = sfs.statfsSync(process.cwd());
+      const total = s.blocks * s.bsize;
+      const free = s.bfree * s.bsize;
+      disk = { total, free, used: total - free, usedPct: total ? Math.round(((total - free) / total) * 1000) / 10 : null };
+    }
+  } catch {
+    /* statfs unavailable */
+  }
+
+  return {
+    process: {
+      rss: mem.rss,
+      heapUsed: mem.heapUsed,
+      heapTotal: mem.heapTotal,
+      external: mem.external,
+      arrayBuffers: (mem as any).arrayBuffers || 0,
+      heapUsedPct: mem.heapTotal ? Math.round((mem.heapUsed / mem.heapTotal) * 1000) / 10 : null,
+      uptimeSeconds: Math.round(process.uptime()),
+      pid: process.pid,
+      pm2Instance: process.env.NODE_APP_INSTANCE ?? process.env.pm_id ?? null,
+      nodeVersion: process.version,
+    },
+    memory: {
+      total: totalmem,
+      free: freemem,
+      used: totalmem - freemem,
+      usedPct: Math.round(((totalmem - freemem) / totalmem) * 1000) / 10,
+    },
+    cpu: { cores: cpus, load1: load[0], load5: load[1], load15: load[2], loadPct: Math.round((load[0] / cpus) * 1000) / 10 },
+    disk,
+    host: { platform: os.platform(), hostname: os.hostname(), uptimeSeconds: Math.round(os.uptime()) },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ── DB performance (pool, size, slow-query digests) ───────────────────────────
+/** GET /observability/db */
+export async function dbPerformance(req: Request): Promise<any> {
+  const database = db(req);
+  const sequelize = database.sequelize;
+
+  // Connection pool snapshot (defensive — internals vary by version).
+  let pool: any = null;
+  try {
+    const p: any = sequelize.connectionManager?.pool;
+    if (p) pool = { size: p.size, available: p.available, using: p.using ?? p.borrowed, waiting: p.pending ?? p.waiting, max: p.maxSize, min: p.minSize };
+  } catch {
+    /* ignore */
+  }
+
+  // Database size.
+  let dbSize: any = null;
+  try {
+    const [[row]]: any = await sequelize.query(
+      "SELECT COUNT(*) AS tables, COALESCE(SUM(data_length + index_length),0) AS bytes FROM information_schema.tables WHERE table_schema = DATABASE()",
+    );
+    dbSize = { tables: Number(row.tables), bytes: Number(row.bytes) };
+  } catch {
+    /* ignore */
+  }
+
+  // Slowest query patterns from performance_schema (>= 0.1s avg). Best-effort —
+  // performance_schema may be disabled.
+  let digests: any[] = [];
+  let perfSchema = true;
+  try {
+    const [rows]: any = await sequelize.query(
+      `SELECT LEFT(digest_text, 400) AS sql_text, count_star AS calls,
+              ROUND(avg_timer_wait/1e12, 4) AS avg_s,
+              ROUND(max_timer_wait/1e12, 4) AS max_s,
+              ROUND(sum_timer_wait/1e12, 2) AS total_s,
+              sum_rows_examined AS rows_examined, last_seen
+       FROM performance_schema.events_statements_summary_by_digest
+       WHERE avg_timer_wait/1e12 >= 0.1 AND digest_text IS NOT NULL
+       ORDER BY avg_timer_wait DESC LIMIT 50`,
+    );
+    digests = rows;
+  } catch {
+    perfSchema = false;
+  }
+
+  return { pool, dbSize, perfSchema, digests, timestamp: new Date().toISOString() };
+}
+
+/** GET /observability/jobs → background-job health (per worker). */
+export async function jobs(_req: Request): Promise<any> {
+  return { jobs: getJobs(), pid: process.pid, timestamp: new Date().toISOString() };
+}
+
+/** GET /observability/slow-queries → captured queries >= threshold (0.1s). */
+export async function slowQueries(_req: Request): Promise<any> {
+  return { ...getSlowQueries(), pid: process.pid, timestamp: new Date().toISOString() };
+}
+
+/** DELETE /observability/slow-queries → reset the capture buffer. */
+export async function resetSlowQueries(_req: Request): Promise<any> {
+  return clearSlowQueries();
 }
