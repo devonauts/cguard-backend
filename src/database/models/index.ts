@@ -40,6 +40,16 @@ function models() {
       port: getConfig().DATABASE_PORT || 3307,
       dialect: resolvedDialect,
       timezone: getConfig().DATABASE_TIMEZONE || '+00:00',
+      // Connection pool — previously UNSET, so every worker silently ran at
+      // Sequelize's default max=5 connections (the DATABASE_POOL_* env vars were
+      // dead config). Wire them through so the pool is sized for real load.
+      pool: {
+        max: Number(getConfig().DATABASE_POOL_MAX) || Number(process.env.DATABASE_POOL_MAX) || 20,
+        min: Number(getConfig().DATABASE_POOL_MIN) || Number(process.env.DATABASE_POOL_MIN) || 2,
+        acquire: Number(getConfig().DATABASE_POOL_ACQUIRE) || Number(process.env.DATABASE_POOL_ACQUIRE) || 30000,
+        idle: Number(getConfig().DATABASE_POOL_IDLE) || Number(process.env.DATABASE_POOL_IDLE) || 10000,
+        evict: Number(getConfig().DATABASE_POOL_EVICT) || Number(process.env.DATABASE_POOL_EVICT) || 1000,
+      },
       // benchmark: true → the logging fn receives the query's exec time (ms), which
       // we feed to the slow-query monitor (>=0.1s) for the observability page,
       // regardless of DATABASE_LOGGING.

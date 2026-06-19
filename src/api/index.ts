@@ -16,8 +16,35 @@ import * as tenantUserClientAccounts from './tenantUserClientAccounts';
 const app = express();
 
 app.set('trust proxy', 1);
-// Enables CORS
-app.use(cors({ origin: true, credentials: true }));
+// CORS — explicit allowlist instead of reflecting ANY origin with credentials.
+// Allowed: configured web origins (CORS_ORIGINS env, comma-separated) + any
+// *.cguardpro.com host; plus the mobile app (Capacitor/Ionic webview origins:
+// capacitor://, ionic://, http(s)://localhost) and no-origin requests (native
+// HTTP clients / server-to-server). Everything else is rejected.
+const corsAllowlist = (process.env.CORS_ORIGINS || 'https://app.cguardpro.com,https://api.cguardpro.com')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+function isAllowedOrigin(origin?: string): boolean {
+  if (!origin) return true; // mobile native / curl / same-origin server calls
+  if (corsAllowlist.includes(origin)) return true;
+  try {
+    const u = new URL(origin);
+    if (u.protocol === 'capacitor:' || u.protocol === 'ionic:') return true; // mobile webview
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true; // dev + Android webview
+    if (u.hostname === 'cguardpro.com' || u.hostname.endsWith('.cguardpro.com')) return true;
+  } catch {
+    /* malformed origin → reject */
+  }
+  return false;
+}
+app.use(
+  cors({
+    origin: (origin: any, cb: any) =>
+      isAllowedOrigin(origin) ? cb(null, true) : cb(new Error('Not allowed by CORS')),
+    credentials: true,
+  }),
+);
 
 // Initializes and adds the database middleware.
 app.use(databaseMiddleware);
