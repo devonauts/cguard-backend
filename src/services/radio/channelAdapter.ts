@@ -17,6 +17,8 @@ export interface RadioNotifyPayload {
   stationId: string;
   stationName: string;
   promptText: string;
+  /** Playable URL of the AI dispatcher's spoken prompt for this station (TTS). */
+  promptAudioUrl?: string | null;
 }
 
 export interface RadioChannelAdapter {

@@ -22,6 +22,7 @@ export default function (sequelize) {
       seq: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       status: { type: DataTypes.STRING(12), allowNull: false, defaultValue: 'pending' },
       promptText: { type: DataTypes.TEXT, allowNull: true },
+      promptAudioUrl: { type: DataTypes.TEXT, allowNull: true },
       audioUrl: { type: DataTypes.TEXT, allowNull: true },
       transcript: { type: DataTypes.TEXT, allowNull: true },
       transcriptStatus: { type: DataTypes.STRING(10), allowNull: false, defaultValue: 'pending' },

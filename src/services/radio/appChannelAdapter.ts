@@ -22,6 +22,7 @@ export class AppChannelAdapter implements RadioChannelAdapter {
             sessionId: payload.sessionId,
             entryId: payload.entryId,
             stationId: payload.stationId,
+            promptAudioUrl: payload.promptAudioUrl || '',
           },
         }).catch(() => undefined),
       ),

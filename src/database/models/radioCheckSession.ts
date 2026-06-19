@@ -17,6 +17,7 @@ export default function (sequelize) {
       startedAt: { type: DataTypes.DATE, allowNull: true },
       completedAt: { type: DataTypes.DATE, allowNull: true },
       summary: { type: DataTypes.TEXT, allowNull: true },
+      summaryAudioUrl: { type: DataTypes.TEXT, allowNull: true },
       summaryStatus: { type: DataTypes.STRING(10), allowNull: false, defaultValue: 'pending' },
       totalStations: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       respondedCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },

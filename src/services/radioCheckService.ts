@@ -147,6 +147,17 @@ async function notifyEntry(db: any, tenantId: string, entry: any, perStationTime
   );
   if (!claimed) return;
 
+  // Voice the call: synthesize the AI dispatcher's spoken prompt for this station
+  // and persist it so both the guard app and the dispatcher (CRM) can play it.
+  const spokenPrompt = ai.buildStationPromptText(entry.stationName);
+  const promptAudioUrl = await ai.synthesizeSpeech(
+    `radio-check/${tenantId}/${entry.sessionId}/prompt-${entry.id}.mp3`,
+    spokenPrompt,
+  );
+  if (promptAudioUrl) {
+    await db.radioCheckEntry.update({ promptAudioUrl }, { where: { id: entry.id, tenantId } }).catch(() => {});
+  }
+
   // Re-resolve on-duty guards for the station (rotation-tolerant) and push to all.
   const stations = await resolveStationsForCheck(db, tenantId, 'station', entry.stationId);
   const guards = stations[0]?.guards || [];
@@ -155,6 +166,7 @@ async function notifyEntry(db: any, tenantId: string, entry: any, perStationTime
   await adapter.notifyGuards({ db, tenantId }, userIds, {
     sessionId: entry.sessionId, entryId: entry.id, stationId: entry.stationId,
     stationName: entry.stationName || '', promptText: entry.promptText || DEFAULT_PROMPT,
+    promptAudioUrl: promptAudioUrl || null,
   }).catch(() => {});
 
   await storePlatformEvent(db, {
@@ -163,7 +175,7 @@ async function notifyEntry(db: any, tenantId: string, entry: any, perStationTime
     body: entry.stationName || '',
     targetRoles: DISPATCHER_TARGET_ROLES,
     sourceEntityType: 'radioCheckEntry', sourceEntityId: entry.id,
-    payload: { sessionId: entry.sessionId, entryId: entry.id, stationId: entry.stationId, stationName: entry.stationName, seq: entry.seq },
+    payload: { sessionId: entry.sessionId, entryId: entry.id, stationId: entry.stationId, stationName: entry.stationName, seq: entry.seq, promptAudioUrl: promptAudioUrl || null },
   }).catch(() => {});
 }
 

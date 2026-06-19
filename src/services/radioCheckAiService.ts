@@ -11,6 +11,8 @@
  * from the native recorder, webm/opus from the web fallback, wav). No transcoding.
  */
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import FileStorage from './file/fileStorage';
 import { storePlatformEvent } from '../lib/platformEventStore';
 import { classifyText } from './radio/classify';
@@ -18,9 +20,46 @@ import { classifyText } from './radio/classify';
 const KEY = process.env.OPENAI_API_KEY || '';
 const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
 const SUMMARY_MODEL = process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini';
+// Text-to-speech: the AI "dispatcher" voice that conducts the pase de novedades.
+const TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
+const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'alloy';
 const DISPATCHER_TARGET_ROLES = 'admin,operationsManager,securitySupervisor,dispatcher';
 
 export function isEnabled(): boolean { return !!KEY; }
+
+/** The spoken line the AI dispatcher uses to call a station for its report. */
+export function buildStationPromptText(stationName?: string | null): string {
+  const name = (stationName || 'puesto').trim();
+  return `${name}, aquí central de monitoreo. Adelante con su pase de novedades. Reporte cualquier novedad o indique sin novedad. Cambio.`;
+}
+
+/**
+ * Synthesize `text` to speech with OpenAI TTS, store the MP3 under `privateUrl`,
+ * and return a playable download URL (token-based). Safe no-op (returns null)
+ * when no key / on any error — the pase still proceeds with the text prompt.
+ */
+export async function synthesizeSpeech(privateUrl: string, text: string): Promise<string | null> {
+  if (!KEY || !text || !text.trim()) return null;
+  let tmp = '';
+  try {
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: text.slice(0, 4000), response_format: 'mp3' }),
+    });
+    if (!res.ok) throw new Error(`OpenAI TTS ${res.status}: ${await res.text()}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    tmp = path.join(os.tmpdir(), `tts-${Date.now()}-${Math.round(Math.random() * 1e9)}.mp3`);
+    fs.writeFileSync(tmp, buf);
+    const downloadUrl = await FileStorage.upload(tmp, privateUrl);
+    return downloadUrl;
+  } catch (e: any) {
+    console.warn('[radioCheck] TTS failed:', e?.message || e);
+    return null;
+  } finally {
+    if (tmp) { try { fs.unlinkSync(tmp); } catch { /* ignore */ } }
+  }
+}
 
 /** Read a stored clip provider-agnostically (localhost path or remote URL). */
 async function readAudio(privateUrl: string): Promise<{ buf: Buffer; filename: string }> {
@@ -111,11 +150,18 @@ export async function generateSummary(db: any, tenantId: string, sessionId: stri
   // Always have a usable summary ready; AI replaces it on success.
   const fallback = buildBasicSummary(entries);
   const finish = async (summary: string) => {
-    await db.radioCheckSession.update({ summary, summaryStatus: 'done' }, { where: { id: sessionId, tenantId } }).catch(() => {});
+    // Voice the closing report (the AI dispatcher "reads out" the pase result).
+    const spoken =
+      'Pase de novedades completado. ' +
+      summary.replace(/[⚠️*#_`>-]/g, ' ').replace(/\s*\n+\s*/g, '. ').replace(/\s{2,}/g, ' ').trim();
+    const summaryAudioUrl = await synthesizeSpeech(`radio-check/${tenantId}/${sessionId}/summary.mp3`, spoken);
+    await db.radioCheckSession
+      .update({ summary, summaryStatus: 'done', ...(summaryAudioUrl ? { summaryAudioUrl } : {}) }, { where: { id: sessionId, tenantId } })
+      .catch(() => {});
     await storePlatformEvent(db, {
       tenantId, eventType: 'radio.session_completed', title: 'Resumen del pase listo', body: '',
       targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckSession', sourceEntityId: sessionId,
-      payload: { sessionId, summaryReady: true },
+      payload: { sessionId, summaryReady: true, summaryAudioUrl: summaryAudioUrl || null },
     }).catch(() => {});
   };
 
