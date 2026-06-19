@@ -35,6 +35,8 @@ import {
   getClient,
   getBalance,
   getUsageAnalytics,
+  getMessageLog,
+  getCallLog,
   webhookUrls,
 } from '../../services/twilio/twilioClient';
 import {
@@ -83,6 +85,31 @@ export default (router) => {
         ? (String((req.query as any).period) as any)
         : 'thismonth';
       await ApiResponseHandler.success(req, res, await getUsageAnalytics(db(req), period));
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // Itemized message/call logs WITH per-item Twilio price (from the Twilio API).
+  router.get('/twilio/messages/log', async (req, res) => {
+    try {
+      const q = req.query || {};
+      await ApiResponseHandler.success(req, res, await getMessageLog(db(req), {
+        period: String((q as any).period || 'thismonth'),
+        limit: (q as any).limit ? parseInt(String((q as any).limit), 10) : 50,
+      }));
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  router.get('/twilio/calls/log', async (req, res) => {
+    try {
+      const q = req.query || {};
+      await ApiResponseHandler.success(req, res, await getCallLog(db(req), {
+        period: String((q as any).period || 'thismonth'),
+        limit: (q as any).limit ? parseInt(String((q as any).limit), 10) : 50,
+      }));
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);
     }

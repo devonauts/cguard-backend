@@ -144,8 +144,23 @@ export async function getUsageAnalytics(
         cost: Math.abs(sum(calls, (r) => num(r.price))),
       },
       total: { cost: Math.abs(sum(total, (r) => num(r.price))) },
+      previousCost: null as number | null, // prior period, for a MoM delta
       daily: [] as any[],
     };
+
+    // Previous-period total for a month-over-month / day-over-day comparison.
+    try {
+      const prevSub =
+        period === 'today' ? client.usage.records.yesterday
+        : period === 'thismonth' ? client.usage.records.lastMonth
+        : null; // no convenience subresource for the month before last
+      if (prevSub) {
+        const prev = await prevSub.list({ category: 'totalprice' });
+        summary.previousCost = Math.abs(sum(prev, (r: any) => num(r.price)));
+      }
+    } catch {
+      /* comparison is best-effort */
+    }
 
     // Daily spend series for the chart.
     try {
@@ -179,6 +194,70 @@ export async function getUsageAnalytics(
   } catch (e: any) {
     return { ok: false, error: (e && e.message) || 'No se pudo obtener el uso de Twilio.' };
   }
+}
+
+/** Date range [after, before?] for a usage period. */
+function periodRange(period: string): { after: Date; before?: Date } {
+  const now = new Date();
+  if (period === 'today') {
+    return { after: new Date(now.getFullYear(), now.getMonth(), now.getDate()) };
+  }
+  if (period === 'lastmonth') {
+    return {
+      after: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      before: new Date(now.getFullYear(), now.getMonth(), 1),
+    };
+  }
+  return { after: new Date(now.getFullYear(), now.getMonth(), 1) }; // thismonth
+}
+
+const absPrice = (v: any) => (v == null || v === '' ? null : Math.abs(parseFloat(v)));
+
+/** Itemized recent MESSAGES with per-message price, from the Twilio API. */
+export async function getMessageLog(
+  database: any,
+  opts: { period?: string; limit?: number } = {},
+): Promise<any> {
+  let client: any;
+  try { client = await getClient(database); } catch (e: any) { return { ok: false, error: (e && e.message) || 'Twilio no configurado.' }; }
+  try {
+    const { after, before } = periodRange(opts.period || 'thismonth');
+    const params: any = { limit: Math.min(200, opts.limit || 50), dateSentAfter: after };
+    if (before) params.dateSentBefore = before;
+    const rows = await client.messages.list(params);
+    return {
+      ok: true,
+      rows: rows.map((m: any) => ({
+        sid: m.sid, direction: m.direction, from: m.from, to: m.to,
+        body: String(m.body || '').slice(0, 90), status: m.status,
+        segments: parseInt(m.numSegments, 10) || 1,
+        price: absPrice(m.price), priceUnit: m.priceUnit, dateSent: m.dateSent,
+      })),
+    };
+  } catch (e: any) { return { ok: false, error: (e && e.message) || 'Error al obtener mensajes.' }; }
+}
+
+/** Itemized recent CALLS with per-call price + duration, from the Twilio API. */
+export async function getCallLog(
+  database: any,
+  opts: { period?: string; limit?: number } = {},
+): Promise<any> {
+  let client: any;
+  try { client = await getClient(database); } catch (e: any) { return { ok: false, error: (e && e.message) || 'Twilio no configurado.' }; }
+  try {
+    const { after, before } = periodRange(opts.period || 'thismonth');
+    const params: any = { limit: Math.min(200, opts.limit || 50), startTimeAfter: after };
+    if (before) params.startTimeBefore = before;
+    const rows = await client.calls.list(params);
+    return {
+      ok: true,
+      rows: rows.map((c: any) => ({
+        sid: c.sid, direction: c.direction, from: c.from, to: c.to, status: c.status,
+        durationSec: parseInt(c.duration, 10) || 0,
+        price: absPrice(c.price), priceUnit: c.priceUnit, startTime: c.startTime,
+      })),
+    };
+  } catch (e: any) { return { ok: false, error: (e && e.message) || 'Error al obtener llamadas.' }; }
 }
 
 export interface SendSmsArgs {
