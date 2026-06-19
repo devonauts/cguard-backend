@@ -16,6 +16,7 @@ import { db, listParams } from './superadminHelpers';
 import { quote } from '../../lib/billingModel';
 import { getSlowQueries, clearSlowQueries } from '../../lib/slowQueryMonitor';
 import { getJobs } from '../../lib/jobsMonitor';
+import { getAllWorkers } from '../../lib/workerMetrics';
 
 /** Build a tenantId → seat-count map in a single grouped query (avoids N+1). */
 async function seatCountsByTenant(database: any): Promise<Record<string, number>> {
@@ -388,4 +389,9 @@ export async function slowQueries(_req: Request): Promise<any> {
 /** DELETE /observability/slow-queries → reset the capture buffer. */
 export async function resetSlowQueries(_req: Request): Promise<any> {
   return clearSlowQueries();
+}
+
+/** GET /observability/workers → per-PM2-worker resource snapshots (RAM breakdown). */
+export async function workers(_req: Request): Promise<any> {
+  return { ...(await getAllWorkers()), timestamp: new Date().toISOString() };
 }

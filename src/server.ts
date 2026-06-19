@@ -18,6 +18,7 @@ import { ensurePlatformEventsTable, ensurePlatformEventDismissalsTable, cleanupO
 import { initRealtime } from './lib/realtime';
 import { syncGuardDutyStatus } from './services/dutySync';
 import { runJob } from './lib/jobsMonitor';
+import { startWorkerMetrics } from './lib/workerMetrics';
 import { verifySchemaConsistency } from './database/migrations/verify-schema';
 import { setInterval as nodeSetInterval } from 'timers';
 
@@ -154,6 +155,9 @@ async function initBuiltInRoles() {
 }
 
 initBuiltInRoles();
+
+// Publish this worker's resource metrics for the per-worker observability view.
+startWorkerMetrics();
 
 // Schedule periodic cleanup every 3 hours
 nodeSetInterval(() => {

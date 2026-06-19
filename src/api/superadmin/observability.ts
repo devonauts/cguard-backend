@@ -16,6 +16,7 @@ import {
   jobs,
   slowQueries,
   resetSlowQueries,
+  workers,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -32,6 +33,7 @@ export default (router) => {
   route('/observability/db', dbPerformance);
   route('/observability/jobs', jobs);
   route('/observability/slow-queries', slowQueries);
+  route('/observability/workers', workers);
 
   router.delete('/observability/slow-queries', async (req: any, res: any) => {
     try {
