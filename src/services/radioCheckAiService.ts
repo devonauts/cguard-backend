@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import FileStorage from './file/fileStorage';
 import { storePlatformEvent } from '../lib/platformEventStore';
+import { broadcastPcm } from '../lib/radioVoice';
 import { classifyText } from './radio/classify';
 
 const KEY = process.env.OPENAI_API_KEY || '';
@@ -60,6 +61,32 @@ export async function synthesizeSpeech(privateUrl: string, text: string): Promis
     if (tmp) { try { fs.unlinkSync(tmp); } catch { /* ignore */ } }
   }
 }
+
+/**
+ * Synthesize `text` to RAW PCM (16-bit signed LE mono @ 24 kHz — OpenAI's `pcm`
+ * format) for injection into the live radio channel. Returned as Int16Array.
+ * No ffmpeg involved (we ask OpenAI for PCM directly). null on no-key/error.
+ */
+export async function synthesizeSpeechPcm(text: string): Promise<Int16Array | null> {
+  if (!KEY || !text || !text.trim()) return null;
+  try {
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: text.slice(0, 4000), response_format: 'pcm' }),
+    });
+    if (!res.ok) throw new Error(`OpenAI TTS pcm ${res.status}: ${await res.text()}`);
+    const ab = await res.arrayBuffer();
+    // OpenAI pcm = 24 kHz, 16-bit signed little-endian, mono. Host is LE.
+    return new Int16Array(ab.slice(0, ab.byteLength - (ab.byteLength % 2)));
+  } catch (e: any) {
+    console.warn('[radioCheck] TTS pcm failed:', e?.message || e);
+    return null;
+  }
+}
+
+/** Sample rate OpenAI returns for `response_format: 'pcm'`. */
+export const OPENAI_PCM_RATE = 24000;
 
 /** Read a stored clip provider-agnostically (localhost path or remote URL). */
 async function readAudio(privateUrl: string): Promise<{ buf: Buffer; filename: string }> {
@@ -163,6 +190,13 @@ export async function generateSummary(db: any, tenantId: string, sessionId: stri
       targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckSession', sourceEntityId: sessionId,
       payload: { sessionId, summaryReady: true, summaryAudioUrl: summaryAudioUrl || null },
     }).catch(() => {});
+    // Read the closing report over the live radio channel (fire-and-forget).
+    void (async () => {
+      try {
+        const pcm = await synthesizeSpeechPcm(spoken);
+        if (pcm) await broadcastPcm(tenantId, pcm, OPENAI_PCM_RATE, 'Central de monitoreo');
+      } catch { /* ignore */ }
+    })();
   };
 
   if (!KEY) { await finish(fallback); return; } // no AI configured → deterministic summary

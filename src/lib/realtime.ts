@@ -20,7 +20,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { databaseInit } from '../database/databaseConnection';
 import AuthService from '../services/auth/authService';
-import { registerRadioVoice } from './radioVoice';
+import { registerRadioVoice, initRelay as initRadioVoiceRelay } from './radioVoice';
 
 export const SOCKET_PATH = '/api/socket.io';
 
@@ -66,6 +66,11 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
     cors: { origin: true, credentials: true },
     transports: ['websocket'],
   });
+
+  // Initialize the radio-voice relay at startup (on EVERY worker) so the AI
+  // dispatcher can broadcast into the live channel from the HTTP path, even on a
+  // worker that has no radio socket connected yet.
+  void initRadioVoiceRelay(io);
 
   // Cluster-wide broadcast via Redis (optional). Without it, an event emitted on
   // one worker only reaches clients connected to that same worker.

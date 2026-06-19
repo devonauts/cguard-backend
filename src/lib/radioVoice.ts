@@ -30,7 +30,7 @@ let redisReady = false;
 // Local record (per worker) of which socket THIS worker granted the floor to.
 const localFloor = new Map<string, { userId: string; name: string; socketId: string }>();
 
-async function initRelay(io: IOServer) {
+export async function initRelay(io: IOServer) {
   ioRef = io;
   if (pub || !process.env.REDIS_URL) return;
   try {
@@ -196,4 +196,82 @@ export function registerRadioVoice(io: IOServer, socket: Socket): void {
   socket.on('radio:voice:talk-end', () => { void releaseFloor(); });
 
   socket.on('disconnect', () => { void leave(); });
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* AI dispatcher broadcast — inject server-side TTS audio INTO the live channel  */
+/* so on-duty guards HEAR it on their already-connected channel (no app rebuild, */
+/* and no mobile autoplay problem since the channel's AudioContext is live).     */
+/* Audio must match the client wire format exactly: 16 kHz mono µ-law (G.711).   */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+const TARGET_RATE = 16000;
+
+/** µ-law (G.711) encode — byte-identical to the client's encodeMuLaw. */
+function encodeMuLawBuf(samples: Float32Array): Buffer {
+  const out = Buffer.allocUnsafe(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    let pcm = Math.max(-1, Math.min(1, samples[i]));
+    pcm = pcm < 0 ? Math.ceil(pcm * 32768) : Math.floor(pcm * 32767);
+    let sign = (pcm >> 8) & 0x80;
+    if (sign) pcm = -pcm;
+    if (pcm > 32635) pcm = 32635;
+    pcm += 0x84;
+    let exponent = 7;
+    for (let mask = 0x4000; (pcm & mask) === 0 && exponent > 0; exponent--, mask >>= 1) { /* find exponent */ }
+    const mantissa = (pcm >> (exponent + 3)) & 0x0f;
+    out[i] = ~(sign | (exponent << 4) | mantissa) & 0xff;
+  }
+  return out;
+}
+
+/** Linear resample — same approach as the client. */
+function resampleF32(input: Float32Array, inRate: number, outRate: number): Float32Array {
+  if (inRate === outRate) return input;
+  const ratio = inRate / outRate;
+  const outLen = Math.max(1, Math.floor(input.length / ratio));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const idx = i * ratio;
+    const i0 = Math.floor(idx);
+    const i1 = Math.min(i0 + 1, input.length - 1);
+    const frac = idx - i0;
+    out[i] = input[i0] * (1 - frac) + input[i1] * frac;
+  }
+  return out;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Transmit 16-bit mono PCM (any sample rate, e.g. OpenAI TTS 24 kHz) over the
+ * live channel as the AI dispatcher. Holds the floor for the duration so guards
+ * don't talk over it, paces frames ~real-time, and clears the floor at the end.
+ * Cluster-safe (fanoutChunk relays via Redis to every worker's sockets).
+ */
+export async function broadcastPcm(
+  tenantId: string,
+  pcm: Int16Array,
+  inRate: number,
+  speakerName = 'Central de monitoreo',
+): Promise<void> {
+  if (!ioRef || !tenantId || !pcm || !pcm.length) return;
+  const f = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+  const mu = encodeMuLawBuf(resampleF32(f, inRate, TARGET_RATE)); // 16 kHz µ-law bytes
+  const FRAME = 1600; // 100 ms @ 16 kHz, 1 byte/sample
+  const aiVal = `ai:${tenantId}|ai|${speakerName}`;
+
+  try { if (redisReady && pub) await pub.set(floorKey(tenantId), aiVal, { PX: FLOOR_TTL_MS }); } catch { /* ignore */ }
+  fanoutEvent(tenantId, 'radio:voice:speaker', { speaking: true, userId: 'ai-dispatcher', name: speakerName });
+  try {
+    for (let off = 0; off < mu.length; off += FRAME) {
+      fanoutChunk(tenantId, `ai:${tenantId}`, mu.subarray(off, Math.min(off + FRAME, mu.length)) as Buffer);
+      try { if (redisReady && pub) await pub.pExpire(floorKey(tenantId), FLOOR_TTL_MS); } catch { /* ignore */ }
+      await sleep(100);
+    }
+  } finally {
+    try { if (redisReady && pub) await pub.del(floorKey(tenantId)); } catch { /* ignore */ }
+    fanoutEvent(tenantId, 'radio:voice:speaker', { speaking: false, userId: 'ai-dispatcher', name: speakerName });
+  }
 }

@@ -11,6 +11,7 @@
  * req.currentUser.id, never the body.
  */
 import { storePlatformEvent } from '../lib/platformEventStore';
+import { broadcastPcm } from '../lib/radioVoice';
 import { getChannelAdapter } from './radio/channelAdapter';
 import { classifyText } from './radio/classify';
 import * as ai from './radioCheckAiService';
@@ -157,6 +158,18 @@ async function notifyEntry(db: any, tenantId: string, entry: any, perStationTime
   if (promptAudioUrl) {
     await db.radioCheckEntry.update({ promptAudioUrl }, { where: { id: entry.id, tenantId } }).catch(() => {});
   }
+
+  // TRANSMIT the call over the live radio channel so on-duty guards HEAR the AI
+  // dispatcher on their already-connected channel (no app rebuild, no autoplay
+  // block). Fire-and-forget so it never blocks the roll-call advance.
+  void (async () => {
+    try {
+      const pcm = await ai.synthesizeSpeechPcm(spokenPrompt);
+      if (pcm) await broadcastPcm(tenantId, pcm, ai.OPENAI_PCM_RATE, 'Central de monitoreo');
+    } catch (e: any) {
+      console.warn('[radioCheck] channel broadcast failed:', e?.message || e);
+    }
+  })();
 
   // Re-resolve on-duty guards for the station (rotation-tolerant) and push to all.
   const stations = await resolveStationsForCheck(db, tenantId, 'station', entry.stationId);
