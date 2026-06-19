@@ -49,6 +49,7 @@ import {
 import { startSession as startRadioSession } from '../radioCheckService';
 import { dispatch } from '../../lib/notificationDispatcher';
 import { storePlatformEvent } from '../../lib/platformEventStore';
+import { emitToTenant } from '../../lib/realtime';
 
 // Tenant-scoped class service (constructed with IServiceOptions). Visitor uses
 // the real service (its repo already bypasses the post-write read ACL); patrol
@@ -75,6 +76,7 @@ export const DEMO_STEPS: Array<{ step: number; key: string; label: string }> = [
   { step: 5, key: 'incident', label: 'Incidente' },
   { step: 6, key: 'radio', label: 'Radio / novedades' },
   { step: 7, key: 'handover', label: 'Relevo de turno' },
+  { step: 8, key: 'vehiclePatrol', label: 'Patrulla vehicular' },
 ];
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -105,6 +107,16 @@ export function getDemoLog(): DemoLogEntry[] {
 }
 export function getLastResetAt(): string | null {
   return _lastResetAt;
+}
+
+// Vehicle-patrol (step 8) live state. The supervisor's vehicle is animated by
+// streaming `location:update` socket events to the demo tenant over ~40s; there
+// is no persisted row, so we track it in-process for the panel's step state.
+let _vehiclePatrolRunning = false;
+let _lastVehiclePatrolAt = 0;
+export function isVehiclePatrolActive(): boolean {
+  // "Active" while streaming, or for 2 min after a run (so the step shows done).
+  return _vehiclePatrolRunning || Date.now() - _lastVehiclePatrolAt < 120000;
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -189,6 +201,7 @@ interface DemoContext {
   tenantId: string;
   admin: { user: any; tenantUser: any } | null;
   client: { user: any } | null;
+  supervisor: { user: any } | null;
   site: any | null; // businessInfo
   stations: any[];
   guards: {
@@ -213,6 +226,7 @@ export async function buildContext(db: any): Promise<DemoContext> {
 
   const adminUser = await findUserByEmail(db, DEMO_EMAILS.admin);
   const clientUser = await findUserByEmail(db, DEMO_EMAILS.client);
+  const supervisorUser = await findUserByEmail(db, DEMO_EMAILS.supervisor);
   const dayUser = await findUserByEmail(db, DEMO_EMAILS.guardDay);
   const nightUser = await findUserByEmail(db, DEMO_EMAILS.guardNight);
 
@@ -236,6 +250,7 @@ export async function buildContext(db: any): Promise<DemoContext> {
     tenantId,
     admin: adminUser ? { user: adminUser, tenantUser: adminMembership } : null,
     client: clientUser ? { user: clientUser } : null,
+    supervisor: supervisorUser ? { user: supervisorUser } : null,
     site: site || null,
     stations: stations || [],
     guards: {
@@ -969,6 +984,117 @@ async function stepHandover(db: any, ctx: DemoContext): Promise<DemoStepResult> 
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
+/* STEP 8 — Patrulla vehicular (supervisor drives a route, live on the map)   */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Build a closed vehicle-patrol route as a list of {lat,lng} waypoints around
+ * the site, then densify each leg so the marker glides smoothly. The circuit is
+ * kept small (~1 km) so the live map doesn't zoom out as the vehicle moves.
+ */
+function buildVehicleRoute(centerLat: number, centerLng: number): Array<{ lat: number; lng: number }> {
+  const ring = [
+    { dLat: 0.0, dLng: 0.0 },
+    { dLat: 0.006, dLng: 0.003 },
+    { dLat: 0.008, dLng: -0.004 },
+    { dLat: 0.002, dLng: -0.009 },
+    { dLat: -0.005, dLng: -0.006 },
+    { dLat: -0.007, dLng: 0.004 },
+    { dLat: -0.002, dLng: 0.008 },
+    { dLat: 0.0, dLng: 0.0 }, // back to start (closed loop)
+  ].map((o) => ({ lat: centerLat + o.dLat, lng: centerLng + o.dLng }));
+
+  const STEPS_PER_LEG = 6;
+  const path: Array<{ lat: number; lng: number }> = [];
+  for (let i = 0; i < ring.length - 1; i++) {
+    const a = ring[i];
+    const b = ring[i + 1];
+    for (let s = 0; s < STEPS_PER_LEG; s++) {
+      const t = s / STEPS_PER_LEG;
+      path.push({ lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t });
+    }
+  }
+  path.push(ring[ring.length - 1]);
+  return path;
+}
+
+async function stepVehiclePatrol(db: any, ctx: DemoContext): Promise<DemoStepResult> {
+  const def = DEMO_STEPS[7];
+  ensureSeeded(ctx);
+  if (!ctx.supervisor) {
+    const e: any = new Error400(undefined, 'demo.noSupervisor');
+    e.message = `Falta el supervisor demo (${DEMO_EMAILS.supervisor}). Re-ejecuta el seed.`;
+    throw e;
+  }
+  if (_vehiclePatrolRunning) {
+    return result(def, true, 'La patrulla vehicular ya está en curso (el supervisor se mueve en el mapa).', { reused: true });
+  }
+
+  const supId = ctx.supervisor.user.id;
+  const supName = ctx.supervisor.user.fullName || DEMO_NAMES.supervisor;
+  const centerLat = Number((ctx.site && (ctx.site.latitud ?? ctx.site.latitude)) ?? -2.170998);
+  const centerLng = Number((ctx.site && (ctx.site.longitud ?? ctx.site.longitude)) ?? -79.922359);
+  const route = buildVehicleRoute(centerLat, centerLng);
+  const tenantId = ctx.tenantId;
+  const entityId = `sup-${supId}`;
+
+  // Each tick streams the supervisor's vehicle position to the live operations
+  // map (CRM listens for 'location:update' and upserts the marker by id).
+  const emitAt = (lat: number, lng: number, idx: number) =>
+    emitToTenant(tenantId, 'location:update', {
+      id: entityId,
+      kind: 'supervisor',
+      lat,
+      lng,
+      status: 'patrol',
+      label: supName,
+      sub: 'Patrulla vehicular',
+      meta: { vehicle: true, routeIndex: idx, routeTotal: route.length },
+      at: new Date().toISOString(),
+    });
+
+  // Drop the marker at the start now; stream the rest in the background so the
+  // HTTP response returns immediately and the vehicle visibly drives the route.
+  emitAt(route[0].lat, route[0].lng, 0);
+
+  await storePlatformEvent(db, {
+    tenantId,
+    eventType: 'patrol.vehicle_started',
+    title: 'Patrulla vehicular iniciada',
+    body: `${supName} inició una patrulla vehicular en la zona de ${ctx.site?.companyName || 'el sitio'}.`,
+    targetRoles: 'admin,operationsManager,securitySupervisor',
+    sourceEntityType: 'user',
+    sourceEntityId: supId,
+    payload: { supervisorId: supId, waypoints: route.length },
+  }).catch(() => {});
+
+  _vehiclePatrolRunning = true;
+  const STEP_MS = 1200;
+  void (async () => {
+    try {
+      for (let i = 1; i < route.length; i++) {
+        await new Promise((r) => setTimeout(r, STEP_MS));
+        emitAt(route[i].lat, route[i].lng, i);
+      }
+    } catch (e: any) {
+      console.warn('[demo] vehicle patrol stream failed:', e?.message || e);
+    } finally {
+      _vehiclePatrolRunning = false;
+      _lastVehiclePatrolAt = Date.now();
+    }
+  })();
+
+  const durationSec = Math.round((route.length * STEP_MS) / 1000);
+  return result(
+    def,
+    true,
+    `Patrulla vehicular iniciada: ${supName} recorre la ruta calculada (${route.length} puntos, ~${durationSec}s) — ` +
+      `el supervisor se mueve en vivo en el mapa de operaciones.`,
+    { supervisorId: supId, entityId, waypoints: route.length, durationSec },
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
 /* RESET — restore the clean seeded state                                     */
 /* ────────────────────────────────────────────────────────────────────────── */
 
@@ -1068,12 +1194,13 @@ const STEP_FNS: Record<number, (db: any, ctx: DemoContext) => Promise<DemoStepRe
   5: stepIncident,
   6: stepRadio,
   7: stepHandover,
+  8: stepVehiclePatrol,
 };
 
-/** Run a single demo step (1..7), hard-gated to the demo tenant. */
+/** Run a single demo step (1..8), hard-gated to the demo tenant. */
 export async function runStep(db: any, step: number): Promise<DemoStepResult> {
   const n = parseInt(String(step), 10);
-  if (!Number.isInteger(n) || n < 1 || n > 7) {
+  if (!Number.isInteger(n) || n < 1 || n > 8) {
     throw new Error400(undefined, 'demo.badStep');
   }
   const ctx = await buildContext(db); // asserts demo tenant
@@ -1122,6 +1249,7 @@ export async function getState(db: any): Promise<any> {
   if (patrolLogs > 0) currentStep = Math.max(currentStep, 4);
   if (incidentsToday > 0) currentStep = Math.max(currentStep, 5);
   if (radioRunning > 0) currentStep = Math.max(currentStep, 6);
+  if (isVehiclePatrolActive()) currentStep = Math.max(currentStep, 8);
 
   const seeded =
     !!ctx.admin && !!ctx.client && !!ctx.guards.day && !!ctx.guards.night && !!ctx.site && ctx.stations.length > 0;
@@ -1139,6 +1267,7 @@ export async function getState(db: any): Promise<any> {
     accounts: {
       admin: ctx.admin ? { email: DEMO_EMAILS.admin, userId: ctx.admin.user.id, name: DEMO_NAMES.admin } : null,
       client: ctx.client ? { email: DEMO_EMAILS.client, userId: ctx.client.user.id, name: DEMO_NAMES.client } : null,
+      supervisor: ctx.supervisor ? { email: DEMO_EMAILS.supervisor, userId: ctx.supervisor.user.id, name: DEMO_NAMES.supervisor } : null,
       guardDay: ctx.guards.day
         ? { email: DEMO_EMAILS.guardDay, userId: ctx.guards.day.user.id, securityGuardId: ctx.guards.day.securityGuard?.id, name: DEMO_NAMES.guardDay }
         : null,

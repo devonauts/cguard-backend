@@ -44,6 +44,8 @@ const STEP_DESCRIPTIONS: Record<string, string> = {
   radio: 'Se inicia un pase de novedades (roll call) a los guardias de turno.',
   handover:
     'Relevo de turno: el Día marca salida y el de Noche marca entrada. Notificación de relevo en vivo.',
+  vehiclePatrol:
+    'El supervisor inicia una patrulla vehicular: se calcula la ruta y su vehículo se mueve en vivo sobre el mapa de operaciones (~40s).',
 };
 
 /** Step list used when the demo tenant is not provisioned (available:false). */

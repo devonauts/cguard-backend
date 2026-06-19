@@ -23,6 +23,7 @@ export const DEMO_EMAILS = {
   client: 'cliente@demo.cguardpro.com',
   guardDay: 'guardia.dia@demo.cguardpro.com',
   guardNight: 'guardia.noche@demo.cguardpro.com',
+  supervisor: 'supervisor@demo.cguardpro.com',
 } as const;
 
 /** Stable display names (used only for human-readable result strings/fallbacks). */
@@ -31,6 +32,7 @@ export const DEMO_NAMES = {
   client: 'María Torres',
   guardDay: 'Juan Ramírez',
   guardNight: 'Pedro Vásquez',
+  supervisor: 'Andrés Pólit',
   clientCompany: 'Comercial Pacífico S.A.',
   site: 'Torre Empresarial Pacífico',
 } as const;

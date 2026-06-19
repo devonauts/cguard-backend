@@ -60,6 +60,7 @@ const BCRYPT_ROUNDS = 12; // identity-map mandates 12 (seedGuard.ts uses 8 — w
 const EMAILS = {
   admin: 'admin@demo.cguardpro.com',
   client: 'cliente@demo.cguardpro.com',
+  supervisor: 'supervisor@demo.cguardpro.com',
   guardDia: 'guardia.dia@demo.cguardpro.com',
   guardNoche: 'guardia.noche@demo.cguardpro.com',
 };
@@ -71,6 +72,7 @@ const GEO = { lat: -2.170998, lng: -79.922359 };
 const IMG = {
   adminAvatar: 'https://randomuser.me/api/portraits/men/41.jpg',
   clientAvatar: 'https://randomuser.me/api/portraits/women/68.jpg',
+  supervisorAvatar: 'https://randomuser.me/api/portraits/men/54.jpg',
   guardDiaAvatar: 'https://randomuser.me/api/portraits/men/32.jpg',
   guardNocheAvatar: 'https://randomuser.me/api/portraits/men/76.jpg',
   tenantLogo: 'https://ui-avatars.com/api/?name=Vigilancia+Andina&background=0D47A1&color=fff&size=256',
@@ -293,6 +295,13 @@ async function seed() {
     client = await db.clientAccount.create(clientData);
   }
   await attachImage(db, db.clientAccount.getTableName(), 'logoUrl', client.id, tenantId, IMG.clientLogo, 'client-logo.png');
+
+  // 4b) SUPERVISOR (Andrés Pólit) — drives the vehicle patrol on the live map.
+  const supervisor = await upsertUser(db, {
+    email: EMAILS.supervisor, fullName: 'Andrés Pólit', firstName: 'Andrés', lastName: 'Pólit',
+    phoneNumber: '+593 99 100 0005', avatarUrl: IMG.supervisorAvatar,
+  });
+  await upsertMembership(db, tenantId, supervisor.id, ['securitySupervisor']);
 
   // 5) SITE / businessInfo (Torre Empresarial Pacífico) linked to the client.
   let site = await db.businessInfo.findOne({ where: { tenantId, companyName: 'Torre Empresarial Pacífico' } });
@@ -521,6 +530,7 @@ async function seed() {
     accounts: {
       admin: { userId: admin.id, email: EMAILS.admin, password: DEMO_PASSWORD, fullName: 'Carlos Méndez', roles: ['admin'] },
       client: { userId: clientUser.id, email: EMAILS.client, password: DEMO_PASSWORD, fullName: 'María Torres', roles: ['customer'], clientAccountId: client.id },
+      supervisor: { userId: supervisor.id, email: EMAILS.supervisor, password: DEMO_PASSWORD, fullName: 'Andrés Pólit', roles: ['securitySupervisor'] },
       guardDia: { userId: dia.user.id, securityGuardId: dia.guard.id, email: EMAILS.guardDia, password: DEMO_PASSWORD, fullName: 'Juan Ramírez', turno: 'dia' },
       guardNoche: { userId: noche.user.id, securityGuardId: noche.guard.id, email: EMAILS.guardNoche, password: DEMO_PASSWORD, fullName: 'Pedro Vásquez', turno: 'noche' },
     },

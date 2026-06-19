@@ -252,4 +252,20 @@ export function emitSuperadminEvent(event: string, payload: any): void {
   }
 }
 
+/**
+ * Emit an arbitrary event to EVERY connected socket of a tenant (the
+ * `tenant:<id>` room every member joins). Used for real-time live-map position
+ * streams (`location:update`) that aren't notifications and shouldn't persist.
+ * No-op if the socket server isn't initialized. Cluster-safe via the Redis
+ * adapter (delivered to whichever worker holds the client).
+ */
+export function emitToTenant(tenantId: string, event: string, payload: any): void {
+  if (!io || !tenantId) return;
+  try {
+    io.to(`tenant:${tenantId}`).emit(event, payload);
+  } catch (e: any) {
+    console.error('[realtime] tenant emit failed:', e?.message || e);
+  }
+}
+
 export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, SOCKET_PATH };
