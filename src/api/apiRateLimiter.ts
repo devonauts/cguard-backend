@@ -38,6 +38,24 @@ function failOpen(store: any) {
   };
 }
 
+// IPs that bypass ALL rate limiting (office / demo machines). Comma-separated in
+// RATE_LIMIT_ALLOWLIST. Matched as a substring of req.ip / the X-Forwarded-For
+// chain so it tolerates IPv6-mapped forms (e.g. ::ffff:72.191.8.49).
+const RATE_LIMIT_ALLOWLIST = (process.env.RATE_LIMIT_ALLOWLIST || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function isAllowlisted(req: any): boolean {
+  if (!RATE_LIMIT_ALLOWLIST.length) return false;
+  const candidates = [req.ip, ...(Array.isArray(req.ips) ? req.ips : [])]
+    .filter(Boolean)
+    .map(String);
+  return RATE_LIMIT_ALLOWLIST.some((allowed) =>
+    candidates.some((ip) => ip === allowed || ip.includes(allowed)),
+  );
+}
+
 export function createRateLimiter({
   max,
   windowMs,
@@ -61,6 +79,7 @@ export function createRateLimiter({
     skip: (req) => {
       if (req.method === 'OPTIONS') return true;
       if (req.originalUrl.endsWith('/import')) return true;
+      if (isAllowlisted(req)) return true; // office/demo IPs never throttled
       return false;
     },
   });
