@@ -76,6 +76,16 @@ class VisitorLogRepository {
       { ...options, transaction },
     );
 
+    await FileRepository.replaceRelationFiles(
+      {
+        belongsTo: 'visitorLog',
+        belongsToColumn: 'facePhoto',
+        belongsToId: record.id,
+      },
+      data.facePhoto,
+      { ...options, transaction },
+    );
+
     // Return the just-written record WITHOUT the assigned-post-site read ACL —
     // the creator/editor (e.g. a guard not tied to a post site) must always get
     // back what they saved. Otherwise findById's ACL 404s and the save looks
@@ -154,6 +164,16 @@ class VisitorLogRepository {
         belongsToId: record.id,
       },
       data.idPhoto,
+      { ...options, transaction },
+    );
+
+    await FileRepository.replaceRelationFiles(
+      {
+        belongsTo: 'visitorLog',
+        belongsToColumn: 'facePhoto',
+        belongsToId: record.id,
+      },
+      data.facePhoto,
       { ...options, transaction },
     );
 
@@ -540,6 +560,17 @@ class VisitorLogRepository {
     });
 
     output.idPhoto = await FileRepository.fillDownloadUrl(files);
+
+    // Attach files for facePhoto
+    const faceFiles = await options.database.file.findAll({
+      where: {
+        belongsTo: 'visitorLog',
+        belongsToId: record.id,
+        belongsToColumn: 'facePhoto',
+      },
+    });
+
+    output.facePhoto = await FileRepository.fillDownloadUrl(faceFiles);
 
     // Attach client information if present
     if (output.clientId) {
