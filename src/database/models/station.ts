@@ -79,6 +79,20 @@ export default function (sequelize) {
           );
         },
       },
+      // Per-station clock-in window overrides. null → fall back to the tenant
+      // Nómina settings (windows.earlyClockInMin / windows.lateGraceMin).
+      clockInEarlyBufferMin: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+        comment: 'Minutes before scheduled start the clock-in window opens (null → tenant setting)',
+      },
+      clockInLateGraceMin: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+        comment: 'Grace minutes after scheduled start before clock-in needs approval (null → tenant setting)',
+      },
       postSiteId: {
         type: DataTypes.UUID,
         allowNull: true,

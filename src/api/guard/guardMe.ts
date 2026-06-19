@@ -214,10 +214,64 @@ export default async (req: any, res: any) => {
       };
     }
 
+    // ── Clock-in window hint ──────────────────────────────────────────────────
+    // Best-effort pre-gate for the worker so it can disable the clock-in button
+    // (and skip wasting a selfie) before calling the punch endpoint. Computed for
+    // the primary clock-in target: the current shift's station if eligible, else
+    // the first eligible station. Never throws.
+    let clockInWindow: {
+      scheduledStart: string | null;
+      availableAt: string | null;
+      lateAfter: string | null;
+      state: 'open' | 'too_early' | 'late' | 'none';
+    } = { scheduledStart: null, availableAt: null, lateAfter: null, state: 'none' };
+    try {
+      const targetStationId =
+        (currentShift && clockInStationIds.includes(currentShift.stationId)
+          ? currentShift.stationId
+          : clockInStationIds[0]) || null;
+      if (targetStationId && !activeClockIn) {
+        const { matchScheduledShift, getNominaSettings } = require('../../services/attendanceService');
+        const settings = await getNominaSettings(db, tenantId);
+        const targetStation = await db.station.findOne({
+          where: { id: targetStationId, tenantId, deletedAt: null },
+          attributes: ['id', 'clockInEarlyBufferMin', 'clockInLateGraceMin'],
+        });
+        const match = await matchScheduledShift(db, {
+          guardUserId: userId,
+          stationId: targetStationId,
+          tenantId,
+          at: now,
+        });
+        if (match.scheduledStart) {
+          const effectiveEarly = targetStation && targetStation.clockInEarlyBufferMin != null
+            ? Number(targetStation.clockInEarlyBufferMin)
+            : Number(settings.windows.earlyClockInMin);
+          const effectiveLate = targetStation && targetStation.clockInLateGraceMin != null
+            ? Number(targetStation.clockInLateGraceMin)
+            : Number(settings.windows.lateGraceMin);
+          const scheduledStart = new Date(match.scheduledStart);
+          const windowOpen = new Date(scheduledStart.getTime() - effectiveEarly * 60000);
+          const lateLimit = new Date(scheduledStart.getTime() + effectiveLate * 60000);
+          const state: 'open' | 'too_early' | 'late' =
+            now < windowOpen ? 'too_early' : now > lateLimit ? 'late' : 'open';
+          clockInWindow = {
+            scheduledStart: scheduledStart.toISOString(),
+            availableAt: windowOpen.toISOString(),
+            lateAfter: lateLimit.toISOString(),
+            state,
+          };
+        }
+      }
+    } catch {
+      /* best-effort — leave default { state: 'none' } */
+    }
+
     const response = {
       timezone: tz,
       canClockIn,
       clockInStationIds,
+      clockInWindow,
       guard: securityGuard ? {
         id: securityGuard.id,
         fullName: securityGuard.fullName,

@@ -19,6 +19,7 @@ import {
   appendSession,
 } from '../../services/attendanceService';
 import { registerGuardDevice } from '../../services/guardDeviceService';
+import { timeLabelInTz } from '../../lib/tenantTime';
 
 /** Best-effort client IP from proxy headers / socket. */
 function clientIp(req: any): string | null {
@@ -156,6 +157,63 @@ export default async (req: any, res: any) => {
       at: now,
     });
 
+    // ── Clock-in WINDOW gate ─────────────────────────────────────────────────
+    // Only allow the punch within a window around the scheduled shift start:
+    //   [scheduledStart - effectiveEarly , scheduledStart + effectiveLate].
+    // Too early → soft-block. Late → require an APPROVED clockInRequest for today.
+    // Skipped entirely when the scheduled start is unknown (generation lag /
+    // unschedulable) so we never wrongly block. Independent of geofence bypass.
+    let approvedLateRequest: any = null;
+    if (match.scheduledStart) {
+      const effectiveEarly = station.clockInEarlyBufferMin != null
+        ? Number(station.clockInEarlyBufferMin)
+        : Number(gate.settings.windows.earlyClockInMin);
+      const effectiveLate = station.clockInLateGraceMin != null
+        ? Number(station.clockInLateGraceMin)
+        : Number(gate.settings.windows.lateGraceMin);
+
+      const scheduledStart = new Date(match.scheduledStart);
+      const windowOpen = new Date(scheduledStart.getTime() - effectiveEarly * 60000);
+      const lateLimit = new Date(scheduledStart.getTime() + effectiveLate * 60000);
+
+      if (now < windowOpen) {
+        return ApiResponseHandler.success(req, res, {
+          success: false,
+          error: 'too_early',
+          message: `No puedes marcar entrada todavía. Disponible desde las ${timeLabelInTz(windowOpen, tz)}.`,
+          scheduledStart: scheduledStart.toISOString(),
+          availableAt: windowOpen.toISOString(),
+        });
+      }
+
+      if (now > lateLimit) {
+        // Late: only allowed with a supervisor-approved, non-expired request.
+        approvedLateRequest = await db.clockInRequest.findOne({
+          where: {
+            guardUserId: userId,
+            stationId,
+            tenantId,
+            status: 'approved',
+            ...(match.shiftId ? { shiftId: match.shiftId } : {}),
+            [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gte]: now } }],
+            deletedAt: null,
+          },
+          order: [['createdAt', 'DESC']],
+        });
+
+        if (!approvedLateRequest) {
+          const lateByMin = Math.round((now.getTime() - scheduledStart.getTime()) / 60000);
+          return ApiResponseHandler.success(req, res, {
+            success: false,
+            error: 'late_needs_approval',
+            message: 'Llegada tarde. Necesitas aprobación del supervisor para marcar entrada.',
+            scheduledStart: scheduledStart.toISOString(),
+            lateByMin,
+          });
+        }
+      }
+    }
+
     const existing = await findOpenOrShiftRecord(db, {
       securityGuardId: securityGuard.id,
       stationId,
@@ -227,6 +285,15 @@ export default async (req: any, res: any) => {
 
     // Update isOnDuty
     await securityGuard.update({ isOnDuty: true });
+
+    // Consume the late-approval request that unlocked this punch (best-effort).
+    if (approvedLateRequest) {
+      try {
+        await approvedLateRequest.update({ status: 'used', updatedById: userId });
+      } catch (e) {
+        console.warn('[clockIn] mark clockInRequest used failed:', (e as any)?.message || e);
+      }
+    }
 
     // Use the clock-in selfie as the guard's profile picture — best-effort, so a
     // failure never blocks the clock-in. Persisted as the user avatar, so it

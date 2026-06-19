@@ -61,6 +61,19 @@ export default (app) => {
     ),
   );
 
+  // Late clock-in approval requests (guard requests to clock in after the
+  // scheduled start + the late-grace window).
+  app.get(
+    `${base}/clock-in-requests`,
+    handler(P.attendanceRead, (s, req) => s.listClockInRequests(req.query)),
+  );
+  app.post(
+    `${base}/clock-in-requests/:id/decision`,
+    handler(P.attendanceApprove, (s, req) =>
+      s.decideClockInRequest(req.params.id, req.body.data || req.body),
+    ),
+  );
+
   // Close (lock) a payroll period
   app.post(
     `${base}/close-period`,

@@ -297,6 +297,99 @@ export default class AttendanceAdminService {
     return reqRow.get({ plain: true });
   }
 
+  // ── Late clock-in approval requests ──────────────────────────────────────────
+  /** List clock-in approval requests (default: pending), ACL not narrowed. */
+  async listClockInRequests(query: any = {}) {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const where: any = { tenantId, deletedAt: null };
+    const status = query.status || 'pending';
+    if (status && status !== 'all') where.status = String(status).split(',');
+    const rows = await db.clockInRequest.findAll({
+      where,
+      include: [
+        { model: db.securityGuard, as: 'guard', attributes: ['id', 'fullName'] },
+        { model: db.station, as: 'station', attributes: ['id', 'stationName'] },
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: Math.min(Number(query.limit) || 100, 200),
+    });
+    return { rows: rows.map((r: any) => r.get({ plain: true })), count: rows.length };
+  }
+
+  /** Approve/reject a clock-in request; notify the guard (in-app + email + push). */
+  async decideClockInRequest(
+    id: string,
+    data: { status: 'approved' | 'rejected'; notes?: string },
+  ) {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const currentUser = SequelizeRepository.getCurrentUser(this.options);
+    const decision = data?.status === 'approved' ? 'approved' : 'rejected';
+
+    const reqRow = await db.clockInRequest.findOne({
+      where: { id, tenantId, deletedAt: null },
+    });
+    if (!reqRow) throw new Error404();
+
+    // On approval the late clock-in is allowed for the next 60 minutes only.
+    const now = new Date();
+    await reqRow.update({
+      status: decision,
+      approvedById: currentUser.id,
+      approvedAt: now,
+      decisionNotes: data?.notes ?? reqRow.decisionNotes,
+      expiresAt: decision === 'approved' ? new Date(now.getTime() + 60 * 60 * 1000) : reqRow.expiresAt,
+      updatedById: currentUser.id,
+    });
+    await this.audit('clockInRequest', reqRow.id, AuditLogRepository.UPDATE, reqRow);
+
+    // Notify the requesting guard: in-app + email (dispatch) AND a push.
+    try {
+      const sg = reqRow.guardId
+        ? await db.securityGuard.findByPk(reqRow.guardId, {
+            attributes: ['fullName', 'guardId'],
+          })
+        : null;
+      const station = reqRow.stationId
+        ? await db.station.findByPk(reqRow.stationId, { attributes: ['stationName'] })
+        : null;
+      const event =
+        decision === 'approved'
+          ? 'attendance.clockin_approved'
+          : 'attendance.clockin_rejected';
+      const tData = {
+        guardName: sg?.fullName || 'Guardia',
+        stationName: station?.stationName || null,
+        reason: data?.notes || null,
+      };
+      await dispatch(event, tData, {
+        database: db,
+        tenantId,
+        recipientUserId: reqRow.guardUserId,
+        sourceEntityType: 'clockInRequest',
+        sourceEntityId: reqRow.id,
+      });
+      await pushToUser(db, tenantId, reqRow.guardUserId, {
+        title:
+          decision === 'approved'
+            ? '✅ Entrada tarde aprobada'
+            : '❌ Entrada tarde rechazada',
+        body:
+          decision === 'approved'
+            ? 'Ya puedes marcar tu entrada.'
+            : data?.notes
+              ? `Rechazada: ${data.notes}`
+              : 'Tu solicitud fue rechazada.',
+        data: { type: event, clockInRequestId: reqRow.id },
+      });
+    } catch (e) {
+      console.error('[clockInRequest] decision notify failed:', (e as any)?.message || e);
+    }
+
+    return reqRow.get({ plain: true });
+  }
+
   // ── Manual corrections ───────────────────────────────────────────────────────
   /** Submit a correction request (original value preserved; applied on approve). */
   async correct(guardShiftId: string, data: { field: string; correctedValue: any; reason: string }) {

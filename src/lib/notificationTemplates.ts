@@ -39,6 +39,9 @@ export type EventType =
   | 'attendance.clockout_requested'
   | 'attendance.clockout_approved'
   | 'attendance.clockout_rejected'
+  | 'attendance.clockin_requested'
+  | 'attendance.clockin_approved'
+  | 'attendance.clockin_rejected'
   | 'device.mismatch'
   | 'profile.updated';
 
@@ -464,6 +467,42 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
       <p>Tu solicitud de salida anticipada fue rechazada.</p>
       ${d.reason ? `<p><strong>Motivo:</strong> ${esc(d.reason)}</p>` : ''}
       <p>Por favor permanece en tu puesto hasta el fin de tu turno.</p>`,
+  },
+  // Guard asks to clock in late → notify supervisors.
+  'attendance.clockin_requested': {
+    title: (d) => `⏱️ Entrada tarde: ${d.guardName || 'Guardia'}`,
+    body: (d) =>
+      `${d.guardName || 'Guardia'} solicita marcar entrada tarde` +
+      `${d.stationName ? ` en ${d.stationName}` : ''}${d.reason ? `. Motivo: ${d.reason}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  // Decision → notify the specific guard (in-app + email; push sent separately).
+  'attendance.clockin_approved': {
+    title: (d) => `✅ Entrada tarde aprobada`,
+    body: (d) =>
+      `Tu solicitud de entrada tarde fue aprobada${d.stationName ? ` (${d.stationName})` : ''}. ` +
+      `Ya puedes marcar tu entrada.`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
+    sendEmail: true,
+    emailSubject: () => `[CGuard] Entrada tarde aprobada`,
+    emailHtml: (d) => `
+      <h2>✅ Entrada tarde aprobada</h2>
+      <p>Tu solicitud de entrada tarde fue aprobada${d.stationName ? ` en <strong>${esc(d.stationName)}</strong>` : ''}.</p>
+      ${d.reason ? `<p><strong>Nota:</strong> ${esc(d.reason)}</p>` : ''}
+      <p>Ya puedes marcar tu entrada desde la app.</p>`,
+  },
+  'attendance.clockin_rejected': {
+    title: (d) => `❌ Entrada tarde rechazada`,
+    body: (d) =>
+      `Tu solicitud de entrada tarde fue rechazada${d.reason ? `: ${d.reason}` : ''}.`,
+    targetRoles: TARGET_ROLES.SPECIFIC,
+    sendEmail: true,
+    emailSubject: () => `[CGuard] Entrada tarde rechazada`,
+    emailHtml: (d) => `
+      <h2>❌ Entrada tarde rechazada</h2>
+      <p>Tu solicitud de entrada tarde fue rechazada.</p>
+      ${d.reason ? `<p><strong>Motivo:</strong> ${esc(d.reason)}</p>` : ''}`,
   },
   'device.mismatch': {
     title: (d) => `📱 Dispositivo no reconocido: ${d.guardName || 'Guardia'}`,

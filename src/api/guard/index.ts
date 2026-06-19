@@ -127,6 +127,17 @@ export default (app) => {
     require('./guardMeBackupVolunteer').default,
   );
 
+  // Late clock-in approval request (create + status) — registered BEFORE the
+  // bare /clock-in POST so the static /clock-in/request path is unambiguous.
+  app.post(
+    `/tenant/:tenantId/guard/me/clock-in/request`,
+    require('./guardMeClockInRequestCreate').default,
+  );
+  app.get(
+    `/tenant/:tenantId/guard/me/clock-in/request`,
+    require('./guardMeClockInRequestGet').default,
+  );
+
   // Clock in (geofence validated)
   app.post(
     `/tenant/:tenantId/guard/me/clock-in`,
