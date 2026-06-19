@@ -23,6 +23,7 @@ export default (app) => {
 
   // Internal messaging (CRM ↔ this guard)
   app.get(`/tenant/:tenantId/guard/me/messages`, require('./guardMeMessages').guardMessagesList);
+  app.post(`/tenant/:tenantId/guard/me/messages`, require('./guardMeMessages').guardMessageCreate);
   app.get(`/tenant/:tenantId/guard/me/messages/:conversationId`, require('./guardMeMessages').guardMessageThread);
   app.post(`/tenant/:tenantId/guard/me/messages/:conversationId`, require('./guardMeMessages').guardMessageReply);
   app.post(`/tenant/:tenantId/guard/me/messages/:conversationId/read`, require('./guardMeMessages').guardMessageRead);
