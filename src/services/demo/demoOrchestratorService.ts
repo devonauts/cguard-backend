@@ -50,10 +50,11 @@ import { startSession as startRadioSession } from '../radioCheckService';
 import { dispatch } from '../../lib/notificationDispatcher';
 import { storePlatformEvent } from '../../lib/platformEventStore';
 
-// Tenant-scoped class services (constructed with IServiceOptions).
+// Tenant-scoped class service (constructed with IServiceOptions). Visitor uses
+// the real service (its repo already bypasses the post-write read ACL); patrol
+// and incident write directly (their service paths 404 on a guard read ACL or
+// assume an unused status model — see stepPatrol/stepIncident).
 import VisitorLogService from '../visitorLogService';
-import PatrolLogService from '../patrolLogService';
-import IncidentService from '../incidentService';
 
 /** A single step descriptor for the panel. */
 export interface DemoStepResult {
@@ -642,43 +643,70 @@ async function stepPatrol(db: any, ctx: DemoContext): Promise<DemoStepResult> {
   }
 
   const checkpoints: any[] = Array.isArray(patrol.checkpoints) ? patrol.checkpoints : [];
-  const svc = new PatrolLogService(serviceOptions(db, ctx, guard.user));
 
   const num = (v: any) => {
     if (v == null) return null;
     const n = Number(String(v).replace(/,/g, '.'));
     return Number.isFinite(n) ? n : null;
   };
+  const stLat = num(station.latitud ?? station.latitude) ?? 0;
+  const stLng = num(station.longitud ?? station.longitude) ?? 0;
+  const now = new Date();
 
+  // The PatrolLogService spine assumes an (unused) quoted-string status enum and
+  // a proximity model that doesn't fit a scripted demo, so we write patrol logs
+  // directly (validation bypassed — the status column is free TEXT) and emit the
+  // ronda event ourselves. All but the last checkpoint scan OK; the last is the
+  // "missed" one that drives the live alert.
   const created: Array<{ checkpoint: string; status: string }> = [];
-  // Scan all checkpoints at their own coordinates (=> Scanned) EXCEPT the last,
-  // which we scan from far away so it lands as 'Missed' (the demo alert).
   for (let i = 0; i < checkpoints.length; i++) {
     const cp = checkpoints[i];
     const isLast = i === checkpoints.length - 1 && checkpoints.length > 1;
-    const cpLat = num(cp.latitud ?? cp.latitude);
-    const cpLng = num(cp.longitud ?? cp.longitude);
-    // For the missed one, offset by ~1km so proximity check fails.
-    const lat = isLast && cpLat != null ? cpLat + 0.01 : cpLat;
-    const lng = isLast && cpLng != null ? cpLng + 0.01 : cpLng;
-
-    const rec = await svc.create({
-      patrol: patrol.id,
-      checkpoint: cp.id,
-      checkpointId: cp.id,
-      scannedBy: guard.user.id,
-      latitude: lat,
-      longitude: lng,
-      scannedAt: new Date(),
-    });
-    created.push({ checkpoint: cp.name || cp.id, status: rec.status || (isLast ? 'Missed' : 'Scanned') });
+    const status = isLast ? 'Missed' : 'Scanned';
+    await db.patrolLog.create(
+      {
+        patrolId: patrol.id,
+        scannedById: guard.user.id,
+        scanTime: now,
+        latitude: num(cp.latitud ?? cp.latitude) ?? stLat,
+        longitude: num(cp.longitud ?? cp.longitude) ?? stLng,
+        validLocation: !isLast,
+        status,
+        tenantId: ctx.tenantId,
+        createdById: guard.user.id,
+        updatedById: guard.user.id,
+      },
+      { validate: false },
+    );
+    created.push({ checkpoint: cp.name || cp.id, status });
   }
 
   const missed = created.filter((c) => c.status === 'Missed').length;
+  const scanned = created.length - missed;
+
+  // Update the patrol's completion state for the dashboard.
+  await patrol
+    .update({ completed: missed === 0, status: missed === 0 ? 'Completed' : 'Incomplete', completionTime: now })
+    .catch(() => {});
+
+  // Live event → CRM feed (ronda progress + missed-checkpoint alert).
+  await storePlatformEvent(db, {
+    tenantId: ctx.tenantId,
+    eventType: 'patrol.completed',
+    title: missed > 0 ? 'Ronda con novedad' : 'Ronda completada',
+    body:
+      `${guard.securityGuard.fullName || DEMO_NAMES.guardDay}: ${scanned} de ${created.length} puntos escaneados` +
+      `${missed > 0 ? `, ${missed} omitido(s)` : ''} en ${station.stationName || 'el puesto'}.`,
+    targetRoles: 'admin,operationsManager,securitySupervisor',
+    sourceEntityType: 'patrol',
+    sourceEntityId: patrol.id,
+    payload: { patrolId: patrol.id, scans: created, missed },
+  }).catch(() => {});
+
   return result(
     def,
     true,
-    `Ronda registrada: ${created.length} puntos escaneados, ${missed} omitido(s) — ` +
+    `Ronda registrada: ${scanned} de ${created.length} puntos escaneados, ${missed} omitido(s) — ` +
       `progreso de ronda + alerta de punto omitido en vivo.`,
     { patrolId: patrol.id, scans: created },
   );
@@ -711,21 +739,74 @@ async function stepIncident(db: any, ctx: DemoContext): Promise<DemoStepResult> 
     });
   }
 
-  const svc = new IncidentService(serviceOptions(db, ctx, guard.user));
-  const record = await svc.create({
-    title: DEMO_FIXTURES.incidentTitle,
-    description: DEMO_FIXTURES.incidentDescription,
-    date: new Date().toISOString(),
-    priority: 'alta',
-    status: 'abierto',
-    guardId: guard.securityGuard.id,
-    guardNameId: guard.securityGuard.id,
-    stationId: station.id,
-    stationIncidents: station.id,
-    postSiteId: station.postSiteId || (ctx.site && ctx.site.id) || null,
-    siteId: station.postSiteId || (ctx.site && ctx.site.id) || null,
-    photoUrl: DEMO_FIXTURES.incidentPhotoUrl,
-  });
+  // IncidentService.create re-reads the row through an assigned-post-site ACL
+  // that 404s ("Extraviado") for a guard with no post sites, so we write the
+  // incident directly and emit the alert + client notification ourselves.
+  const now = new Date();
+  const postSiteId = station.postSiteId || (ctx.site && ctx.site.id) || null;
+  const record = await db.incident.create(
+    {
+      date: now,
+      title: DEMO_FIXTURES.incidentTitle,
+      description: DEMO_FIXTURES.incidentDescription,
+      status: 'abierto',
+      priority: 'alta',
+      stationId: station.id,
+      postSiteId,
+      guardNameId: guard.securityGuard.id,
+      wasRead: false,
+      tenantId: ctx.tenantId,
+      createdById: guard.user.id,
+      updatedById: guard.user.id,
+    },
+    { validate: false },
+  );
+
+  // Best-effort photo evidence (won't block if the relation alias differs).
+  try {
+    await db.file.create({
+      belongsTo: db.incident.getTableName(),
+      belongsToColumn: 'photoUrl',
+      belongsToId: record.id,
+      name: 'incident.jpg',
+      publicUrl: DEMO_FIXTURES.incidentPhotoUrl,
+      sizeInBytes: 0,
+      mimeType: 'image/jpeg',
+      tenantId: ctx.tenantId,
+    });
+  } catch { /* ignore */ }
+
+  // Live alert → supervisors/admins (CRM feed).
+  await storePlatformEvent(db, {
+    tenantId: ctx.tenantId,
+    eventType: 'incident.created',
+    title: 'Incidente reportado',
+    body: `${guard.securityGuard.fullName || DEMO_NAMES.guardDay}: ${DEMO_FIXTURES.incidentTitle} en ${station.stationName || 'el puesto'}.`,
+    targetRoles: 'admin,operationsManager,securitySupervisor',
+    sourceEntityType: 'incident',
+    sourceEntityId: record.id,
+    payload: { incidentId: record.id, stationId: station.id, priority: 'alta', photoUrl: DEMO_FIXTURES.incidentPhotoUrl },
+  }).catch(() => {});
+
+  // Escalate to the client portal.
+  try {
+    const { notifyClient } = require('../clientNotifyService');
+    await notifyClient(
+      db,
+      ctx.tenantId,
+      { stationId: station.id, postSiteId },
+      {
+        eventType: 'incident.created',
+        title: 'Incidente en su sitio',
+        body: `${DEMO_FIXTURES.incidentTitle} en ${station.stationName || 'el puesto'}.`,
+        data: { incidentId: String(record.id), stationId: String(station.id) },
+        sourceEntityType: 'incident',
+        sourceEntityId: String(record.id),
+      },
+    );
+  } catch (e: any) {
+    console.warn('[demo] client notify (incident) failed:', e?.message || e);
+  }
 
   return result(
     def,

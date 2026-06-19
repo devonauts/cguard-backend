@@ -141,7 +141,7 @@ async function upsertUser(
     await user.update(patch);
   } else {
     const data: any = { email, password: hashPwd(), ...base };
-    user = await db.user.create(data, { fields: Object.keys(data) });
+    user = await db.user.create(data);
   }
   return user;
 }
@@ -228,7 +228,7 @@ async function seed() {
   if (tenant) {
     await tenant.update(tenantData);
   } else {
-    tenant = await db.tenant.create(tenantData, { fields: Object.keys(tenantData) });
+    tenant = await db.tenant.create(tenantData);
   }
   const tenantId = tenant.id;
   await attachImage(db, db.tenant.getTableName(), 'logo', tenantId, tenantId, IMG.tenantLogo, 'logo.png');
@@ -290,7 +290,7 @@ async function seed() {
   if (client) {
     await client.update(clientData);
   } else {
-    client = await db.clientAccount.create(clientData, { fields: Object.keys(clientData) });
+    client = await db.clientAccount.create(clientData);
   }
   await attachImage(db, db.clientAccount.getTableName(), 'logoUrl', client.id, tenantId, IMG.clientLogo, 'client-logo.png');
 
@@ -315,7 +315,7 @@ async function seed() {
   if (site) {
     await site.update(siteData);
   } else {
-    site = await db.businessInfo.create(siteData, { fields: Object.keys(siteData) });
+    site = await db.businessInfo.create(siteData);
   }
   await attachImage(db, db.businessInfo.getTableName(), 'logo', site.id, tenantId, IMG.sitePhoto, 'site-photo.jpg');
 
@@ -343,7 +343,7 @@ async function seed() {
     if (st) {
       await st.update(stData);
     } else {
-      st = await db.station.create(stData, { fields: Object.keys(stData) });
+      st = await db.station.create(stData);
     }
     stations.push(st);
   }
@@ -381,7 +381,7 @@ async function seed() {
     if (guard) {
       await guard.update(gData);
     } else {
-      guard = await db.securityGuard.create(gData, { fields: Object.keys(gData) });
+      guard = await db.securityGuard.create(gData);
     }
     await attachImage(db, db.securityGuard.getTableName(), 'profileImage', guard.id, tenantId, opts.avatarUrl, 'profile.jpg');
     return { user, guard };
@@ -419,7 +419,7 @@ async function seed() {
     if (a) {
       await a.update(aData);
     } else {
-      a = await db.guardAssignment.create(aData, { fields: Object.keys(aData) });
+      a = await db.guardAssignment.create(aData);
     }
     return a;
   }
@@ -447,7 +447,7 @@ async function seed() {
     if (sh) {
       await sh.update(shData);
     } else {
-      sh = await db.shift.create(shData, { fields: Object.keys(shData) });
+      sh = await db.shift.create(shData);
     }
     return sh;
   }
@@ -474,7 +474,7 @@ async function seed() {
     if (cp) {
       await cp.update(cpData);
     } else {
-      cp = await db.patrolCheckpoint.create(cpData, { fields: Object.keys(cpData) });
+      cp = await db.patrolCheckpoint.create(cpData);
     }
     checkpoints.push(cp);
   }
@@ -495,7 +495,7 @@ async function seed() {
   if (patrol) {
     await patrol.update(patrolData);
   } else {
-    patrol = await db.patrol.create(patrolData, { fields: Object.keys(patrolData) });
+    patrol = await db.patrol.create(patrolData);
   }
   // Link checkpoints (idempotent — setCheckpoints replaces the through rows).
   await patrol.setCheckpoints(checkpoints.map((c: any) => c.id));
