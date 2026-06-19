@@ -25,8 +25,12 @@ export default (app) => {
     require('./authSendPasswordResetEmail').default,
   );
 
+  // Keyed by IP, so a single office/demo IP shares one bucket across every
+  // account + the worker app + retries — 20/15min was exhausted during demos.
+  // 100/15min still stops real brute-force (the email/reset limiters stay
+  // strict). Tunable via SIGNIN_RATE_MAX without a code change.
   const signInRateLimiter = createRateLimiter({
-    max: 20,
+    max: Number(process.env.SIGNIN_RATE_MAX) || 100,
     windowMs: 15 * 60 * 1000,
     message: 'errors.429',
   });
