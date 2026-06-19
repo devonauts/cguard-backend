@@ -19,15 +19,19 @@ module.exports = {
       // ============================================================
       // CLUSTER MODE - Critical for 10K+ tenants
       // ============================================================
-      // 'max' uses all available CPU cores
-      // For 10K tenants, recommend 4-8 instances minimum
-      instances: process.env.PM2_INSTANCES || 'max',
+      // Default 2 instances — plenty for the current load and ~halves backend
+      // RAM vs 'max' (1 worker per core). Scale up anytime without a deploy:
+      //   PM2_INSTANCES=4 pm2 reload ecosystem.config.js   (or: pm2 scale cguard-backend 4)
+      // For 10K tenants, bump to 4-8.
+      instances: Number(process.env.PM2_INSTANCES) || 2,
       exec_mode: 'cluster',
-      
+
       // ============================================================
       // MEMORY & RESTART POLICIES
       // ============================================================
-      max_memory_restart: '1G',           // Restart if memory exceeds 1GB
+      // Baseline is ~175MB/worker; restart well above that to catch a real leak
+      // early without flapping. Raise for heavy production load.
+      max_memory_restart: '450M',         // Restart a worker if it exceeds 450MB
       min_uptime: '10s',                  // Min uptime to consider "started"
       max_restarts: 10,                   // Max restarts in restart_delay window
       restart_delay: 4000,                // Wait 4s between restarts
