@@ -13,6 +13,20 @@ import {
   getStaticDefaultsForRole,
 } from '../../security/staticRolePermissions';
 const cache = new Map();
+// Permission cache eviction. Without this the Map kept ONE entry per tenant for
+// the lifetime of the process (entries were only overwritten on re-fetch, never
+// removed), so it grew with the tenant count and never released — a slow leak on
+// a hot path. Drop entries not read in 10 min (the next request re-fetches), and
+// hard-cap the size. The sweep timer is unref'd so it never keeps the worker up.
+const ROLE_CACHE_IDLE_EVICT_MS = 10 * 60 * 1000;
+const ROLE_CACHE_MAX = 10000;
+const _roleCacheSweep = setInterval(() => {
+  const cutoff = Date.now() - ROLE_CACHE_IDLE_EVICT_MS;
+  for (const [k, v] of cache) {
+    if (((v && v.lastAccess) || 0) < cutoff) cache.delete(k);
+  }
+}, 5 * 60 * 1000);
+if (_roleCacheSweep && typeof (_roleCacheSweep as any).unref === 'function') (_roleCacheSweep as any).unref();
   const Op = Sequelize.Op;
 
   function slugify(text) {
@@ -36,6 +50,7 @@ export default class RoleRepository {
     const now = Date.now();
     const cached = cache.get(cacheKey);
     if (cached && cached.expires > now) {
+      cached.lastAccess = now;
       return cached.value;
     }
 
@@ -62,7 +77,15 @@ export default class RoleRepository {
     });
 
     // cache for 30 seconds (map + the set of customized slugs)
-    cache.set(cacheKey, { value: map, customized, expires: now + 30 * 1000 });
+    cache.set(cacheKey, { value: map, customized, expires: now + 30 * 1000, lastAccess: now });
+
+    // Hard cap: if we somehow exceed the limit, evict the least-recently-read.
+    if (cache.size > ROLE_CACHE_MAX) {
+      const entries = [...cache.entries()].sort(
+        (a, b) => ((a[1] && a[1].lastAccess) || 0) - ((b[1] && b[1].lastAccess) || 0),
+      );
+      for (let i = 0; i < entries.length - ROLE_CACHE_MAX; i++) cache.delete(entries[i][0]);
+    }
 
     return map;
   }
@@ -78,6 +101,7 @@ export default class RoleRepository {
     if (!tenantId) return {};
     const cacheKey = `role_permissions_map:${tenantId}`;
     const cached = cache.get(cacheKey);
+    if (cached) cached.lastAccess = Date.now();
     return (cached && cached.value) ? cached.value : {};
   }
 
@@ -87,6 +111,7 @@ export default class RoleRepository {
     if (!tenantId) return new Set();
     const cacheKey = `role_permissions_map:${tenantId}`;
     const cached = cache.get(cacheKey);
+    if (cached) cached.lastAccess = Date.now();
     return new Set((cached && cached.customized) || []);
   }
 

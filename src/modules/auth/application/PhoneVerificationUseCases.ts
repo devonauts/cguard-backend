@@ -4,6 +4,16 @@ import SequelizeRepository from '../../../database/repositories/sequelizeReposit
 // Simple in-memory store for verification codes (in production, use Redis or database)
 const verificationCodes = new Map<string, { code: string; expiresAt: number }>();
 
+// Sweep expired codes so abandoned verifications (requested but never confirmed)
+// don't accumulate in the Map forever. Unref'd so it never keeps the worker up.
+const _codeSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of verificationCodes) {
+    if (!v || v.expiresAt < now) verificationCodes.delete(k);
+  }
+}, 5 * 60 * 1000);
+if (_codeSweep && typeof (_codeSweep as any).unref === 'function') (_codeSweep as any).unref();
+
 export class SendPhoneVerificationUseCase {
     private userRepository: IUserRepository;
 
