@@ -25,6 +25,12 @@ export default function (sequelize) {
       subject: { type: DataTypes.STRING(200), allowNull: true },
       isOneWay: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       archived: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      // Group anchor: membership is re-derived from this post site / station's
+      // guard assignments (kind='group' only). anchorType: 'postSite' | 'station'.
+      anchorType: { type: DataTypes.STRING(20), allowNull: true },
+      anchorId: { type: DataTypes.UUID, allowNull: true },
+      groupSyncedAt: { type: DataTypes.DATE, allowNull: true },
+      avatarUrl: { type: DataTypes.STRING(1024), allowNull: true },
       // Denormalized for inbox sort + preview without a join.
       lastMessageAt: { type: DataTypes.DATE, allowNull: true },
       lastMessagePreview: { type: DataTypes.STRING(200), allowNull: true },
@@ -50,6 +56,7 @@ export default function (sequelize) {
     models.messageConversation.belongsTo(models.clientAccount, { as: 'recipientClient', foreignKey: 'recipientClientAccountId', constraints: false });
     models.messageConversation.belongsTo(models.user, { as: 'createdBy', foreignKey: 'createdById', constraints: false });
     models.messageConversation.hasMany(models.message, { as: 'messages', foreignKey: 'conversationId', constraints: false });
+    models.messageConversation.hasMany(models.messageConversationParticipant, { as: 'participants', foreignKey: 'conversationId', constraints: false });
   };
 
   return messageConversation;

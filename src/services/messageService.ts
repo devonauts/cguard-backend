@@ -16,6 +16,14 @@ type RecipientType = 'guard' | 'client';
 
 const preview = (body: string) => String(body || '').replace(/\s+/g, ' ').trim().slice(0, 200);
 
+/** A short label for a message that carries only attachments (no text). */
+const attachmentLabel = (atts: Array<{ type?: string }>): string => {
+  if (!atts || !atts.length) return '';
+  if (atts.some((a) => a?.type === 'audio')) return '🎤 Audio';
+  if (atts.some((a) => a?.type === 'video')) return '🎥 Video';
+  return '📷 Imagen';
+};
+
 /** Resolve a recipient (guard securityGuardId / client clientAccountId) to the
  *  canonical user.id + denormalized FKs + a display name. */
 export async function resolveRecipient(
@@ -93,13 +101,13 @@ export async function sendMessage(
   const { conversation, senderUserId, senderType, body } = opts;
   const clientMsgId = opts.clientMsgId || null;
 
-  // Sanitize attachments: keep only well-formed image/video entries (max 10).
+  // Sanitize attachments: keep only well-formed image/video/audio entries (max 10).
   const attachments = (Array.isArray(opts.attachments) ? opts.attachments : [])
     .filter((a) => a && typeof a.url === 'string' && a.url.trim())
     .slice(0, 10)
     .map((a) => ({
       url: String(a.url),
-      type: a.type === 'video' ? 'video' : 'image',
+      type: (a.type === 'video' || a.type === 'audio') ? a.type : 'image',
       name: a.name ? String(a.name).slice(0, 200) : null,
       sizeInBytes: typeof a.sizeInBytes === 'number' ? a.sizeInBytes : null,
     }));
@@ -120,9 +128,11 @@ export async function sendMessage(
     if (existing) return existing;
   }
 
-  // The receipt goes to the OTHER participant: admin→recipient, or
-  // guard/client→the admin who owns the thread (createdById).
-  const recipientUserId = senderType === 'staff' ? conversation.recipientUserId : conversation.createdById;
+  // Resolve who should receive this message (and a receipt). For a direct thread
+  // that's the OTHER participant (admin→recipient, or guard/client→the owning
+  // admin). For a group, every active participant except the sender — after
+  // re-deriving auto membership so newly-assigned guards are included.
+  const recipients = await getConversationRecipients(db, tenantId, conversation, senderUserId, senderType);
 
   const transaction = await db.sequelize.transaction();
   let message: any;
@@ -131,17 +141,14 @@ export async function sendMessage(
       { tenantId, conversationId: conversation.id, senderUserId, senderType, body: String(body || ''), attachments: attachments.length ? attachments : null, clientMsgId, createdById: senderUserId, updatedById: senderUserId },
       { transaction },
     );
-    if (recipientUserId) {
+    for (const r of recipients) {
       await db.messageReceipt.create(
-        { tenantId, messageId: message.id, conversationId: conversation.id, recipientUserId, deliveryStatus: 'pending' },
+        { tenantId, messageId: message.id, conversationId: conversation.id, recipientUserId: r.userId, deliveryStatus: 'pending' },
         { transaction },
       );
     }
-    const attachLabel = attachments.length
-      ? (attachments.some((a) => a.type === 'video') ? '🎥 Video' : '📷 Imagen')
-      : '';
     await conversation.update(
-      { lastMessageAt: message.createdAt, lastMessagePreview: preview(body) || attachLabel, updatedById: senderUserId },
+      { lastMessageAt: message.createdAt, lastMessagePreview: preview(body) || attachmentLabel(attachments), updatedById: senderUserId },
       { transaction },
     );
     await transaction.commit();
@@ -156,15 +163,60 @@ export async function sendMessage(
   }
 
   // Best-effort notification — never affects the committed send.
-  notifyRecipient(db, tenantId, conversation, message, recipientUserId, senderType).catch(() => {});
+  notifyRecipients(db, tenantId, conversation, message, recipients).catch(() => {});
   return message;
 }
 
-/** Notify the recipient: a CRM platform event for staff (bell + toast + chime),
- *  a device push for guards/clients. Never throws. */
-async function notifyRecipient(db: any, tenantId: string, conversation: any, message: any, recipientUserId: string | null, senderType: SenderType) {
+/** A message recipient: the user.id + how to reach them (staff → CRM event,
+ *  guard/client → device push). */
+type Recipient = { userId: string; type: 'staff' | 'guard' | 'client' };
+
+/** Resolve the recipients (each gets a receipt + notification) for a send. */
+async function getConversationRecipients(
+  db: any,
+  tenantId: string,
+  conversation: any,
+  senderUserId: string,
+  senderType: SenderType,
+): Promise<Recipient[]> {
+  if (conversation.kind === 'group') {
+    // Keep auto membership fresh so a newly-assigned guard receives this message.
+    if (conversation.anchorId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { syncGroupMembership } = require('./groupMembershipService');
+        await syncGroupMembership(db, conversation.id, tenantId);
+      } catch (e: any) { console.warn('[message] group resync failed:', e?.message || e); }
+    }
+    const parts = await db.messageConversationParticipant.findAll({
+      where: { tenantId, conversationId: conversation.id, deletedAt: null },
+      attributes: ['userId', 'participantType'],
+    });
+    const seen = new Set<string>();
+    const out: Recipient[] = [];
+    for (const p of parts) {
+      const uid = String(p.userId);
+      if (!uid || uid === senderUserId || seen.has(uid)) continue;
+      seen.add(uid);
+      out.push({ userId: uid, type: p.participantType === 'staff' ? 'staff' : 'guard' });
+    }
+    return out;
+  }
+  // Direct thread.
+  const single = senderType === 'staff' ? conversation.recipientUserId : conversation.createdById;
+  if (!single) return [];
+  const type: Recipient['type'] = senderType === 'staff'
+    ? (conversation.recipientType === 'client' ? 'client' : 'guard')
+    : 'staff';
+  return [{ userId: String(single), type }];
+}
+
+/** Notify each recipient: a CRM platform event for staff (bell + toast + chime),
+ *  a device push for guards/clients. Best-effort; never throws. For a group this
+ *  fans out one notification per participant (minus the sender). */
+async function notifyRecipients(db: any, tenantId: string, conversation: any, message: any, recipients: Recipient[]) {
   try {
-    if (!recipientUserId) return;
+    if (!recipients || !recipients.length) return;
 
     let senderName = 'Mensaje';
     try {
@@ -172,52 +224,78 @@ async function notifyRecipient(db: any, tenantId: string, conversation: any, mes
       senderName = (u && (u.fullName || u.firstName)) || 'Mensaje';
     } catch { /* ignore */ }
     const atts = Array.isArray(message.attachments) ? message.attachments : [];
-    const attachLabel = atts.length ? (atts.some((a: any) => a?.type === 'video') ? '🎥 Video' : '📷 Imagen') : '';
-    const body = String(message.body || '').slice(0, 150) || attachLabel;
+    const body = String(message.body || '').slice(0, 150) || attachmentLabel(atts);
+    // For groups, prefix the sender so the recipient knows who wrote in the group.
+    const isGroup = conversation.kind === 'group';
+    const groupName = isGroup ? (conversation.subject || 'Grupo') : '';
+    const title = isGroup ? groupName : senderName;
+    const displayBody = isGroup ? `${senderName}: ${body}`.slice(0, 180) : body;
+    const payload = {
+      conversationId: String(conversation.id),
+      messageId: String(message.id),
+      senderId: String(message.senderUserId),
+      senderName,
+    };
 
-    // Guard/client → staff: surface it in the CRM (bell + toast + chime) via a
-    // platform event targeted at the conversation owner. Admins live in the CRM,
-    // so no device push.
-    if (senderType !== 'staff') {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { storePlatformEvent } = require('../lib/platformEventStore');
-        await storePlatformEvent(db, {
-          tenantId,
-          eventType: 'message.new',
-          title: senderName,
-          body,
-          recipientUserId,
-          sourceEntityType: 'conversation',
-          sourceEntityId: String(conversation.id),
-          payload: {
-            conversationId: String(conversation.id),
-            messageId: String(message.id),
-            senderId: String(message.senderUserId),
-            senderName,
-          },
-        });
-      } catch (e: any) {
-        console.warn('[message] CRM notify failed:', e?.message || e);
-      }
-      return;
-    }
-
-    // Staff → guard/client: device push.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { storePlatformEvent } = require('../lib/platformEventStore');
     const { pushToUser } = require('./pushService');
-    await pushToUser(db, tenantId, recipientUserId, {
-      title: senderName,
-      body,
-      data: {
-        type: 'message.new',
-        conversationId: String(conversation.id),
-        messageId: String(message.id),
-        senderId: String(message.senderUserId),
-      },
-    });
+
+    for (const r of recipients) {
+      try {
+        if (r.type === 'staff') {
+          // Staff live in the CRM → bell + toast + chime via a targeted platform event.
+          await storePlatformEvent(db, {
+            tenantId,
+            eventType: 'message.new',
+            title,
+            body: displayBody,
+            recipientUserId: r.userId,
+            sourceEntityType: 'conversation',
+            sourceEntityId: String(conversation.id),
+            payload,
+          });
+        } else {
+          // Guard/client → device push.
+          await pushToUser(db, tenantId, r.userId, {
+            title,
+            body: displayBody,
+            data: { type: 'message.new', ...payload },
+          });
+        }
+      } catch (e: any) {
+        console.warn('[message] notify recipient failed:', e?.message || e);
+      }
+    }
   } catch (e: any) {
     console.warn('[message] notify failed:', e?.message || e);
   }
+}
+
+/** Create a group conversation (kind='group') anchored to a post site / station,
+ *  with the creating staff user as an admin participant. */
+export async function createGroupConversation(
+  db: any,
+  tenantId: string,
+  adminUserId: string,
+  input: { name: string; anchorType?: string | null; anchorId?: string | null; isOneWay?: boolean; avatarUrl?: string | null },
+): Promise<any> {
+  const convo = await db.messageConversation.create({
+    tenantId,
+    kind: 'group',
+    recipientType: 'guard', // groups are guard-membership; satisfies the NOT NULL/isIn
+    recipientUserId: null,
+    subject: input.name ? String(input.name).slice(0, 200) : 'Grupo',
+    isOneWay: !!input.isOneWay,
+    anchorType: input.anchorType || null,
+    anchorId: input.anchorId || null,
+    avatarUrl: input.avatarUrl || null,
+    createdById: adminUserId,
+    updatedById: adminUserId,
+  });
+  const { upsertParticipant } = require('./groupMembershipService');
+  await upsertParticipant(db, tenantId, convo.id, adminUserId, { participantType: 'staff', role: 'admin', source: 'manual', actorId: adminUserId });
+  return convo;
 }
 
 /** Unread receipt counts for a viewer, grouped by conversation. */
@@ -244,7 +322,15 @@ export async function listConversations(
   const { Op } = db.Sequelize;
   const limit = Math.min(opts.limit || 25, 100);
   const where: any = { tenantId, archived: false, deletedAt: null };
-  if (!opts.asAdmin) where.recipientUserId = viewerUserId;
+  // Non-admin viewers see direct threads where they are the recipient PLUS any
+  // group they participate in.
+  if (!opts.asAdmin) {
+    const partRows = await db.messageConversationParticipant.findAll({
+      where: { tenantId, userId: viewerUserId, deletedAt: null }, attributes: ['conversationId'], raw: true,
+    });
+    const partIds = (partRows || []).map((r: any) => String(r.conversationId));
+    where[Op.or] = [{ recipientUserId: viewerUserId }, ...(partIds.length ? [{ id: { [Op.in]: partIds } }] : [])];
+  }
   if (opts.recipientType) where.recipientType = opts.recipientType;
   if (opts.cursor) where.lastMessageAt = { [Op.lt]: new Date(opts.cursor) };
   if (opts.q) where.subject = { [Op.like]: `%${opts.q}%` };
@@ -262,15 +348,34 @@ export async function listConversations(
   const unread = await unreadByConversation(db, tenantId, viewerUserId);
   const hasMore = convos.length > limit;
   const page = hasMore ? convos.slice(0, limit) : convos;
+
+  // Member counts for any group conversations on this page (one grouped query).
+  const groupIds = page.filter((c: any) => c.kind === 'group').map((c: any) => String(c.id));
+  const memberCounts = new Map<string, number>();
+  if (groupIds.length) {
+    const { fn, col } = db.Sequelize;
+    const counts = await db.messageConversationParticipant.findAll({
+      where: { tenantId, conversationId: { [Op.in]: groupIds }, deletedAt: null },
+      attributes: ['conversationId', [fn('COUNT', col('id')), 'n']],
+      group: ['conversationId'], raw: true,
+    });
+    for (const r of counts) memberCounts.set(String(r.conversationId), Number(r.n) || 0);
+  }
+
   const rows = page.map((c: any) => {
     const p = c.get({ plain: true });
-    const name = c.recipientGuard?.fullName
-      || c.recipientClient?.commercialName
-      || [c.recipientClient?.name, c.recipientClient?.lastName].filter(Boolean).join(' ')
-      || (p.recipientType === 'guard' ? 'Guardia' : 'Cliente');
+    const isGroup = p.kind === 'group';
+    const name = isGroup
+      ? (p.subject || 'Grupo')
+      : (c.recipientGuard?.fullName
+        || c.recipientClient?.commercialName
+        || [c.recipientClient?.name, c.recipientClient?.lastName].filter(Boolean).join(' ')
+        || (p.recipientType === 'guard' ? 'Guardia' : 'Cliente'));
     return {
-      id: p.id, recipientType: p.recipientType, recipientUserId: p.recipientUserId,
+      id: p.id, kind: p.kind, isGroup, recipientType: p.recipientType, recipientUserId: p.recipientUserId,
       recipientName: name, subject: p.subject, isOneWay: p.isOneWay,
+      avatarUrl: p.avatarUrl || null,
+      memberCount: isGroup ? (memberCounts.get(String(p.id)) || 0) : null,
       lastMessageAt: p.lastMessageAt, lastMessagePreview: p.lastMessagePreview,
       unreadCount: unread.get(String(p.id)) || 0,
     };
@@ -289,8 +394,15 @@ export async function getConversation(db: any, tenantId: string, conversationId:
     ],
   });
   if (!convo) return null;
-  if (!asAdmin && viewerUserId && convo.recipientUserId !== viewerUserId && convo.createdById !== viewerUserId) {
-    return null; // not a participant
+  if (!asAdmin && viewerUserId) {
+    let ok = convo.recipientUserId === viewerUserId || convo.createdById === viewerUserId;
+    if (!ok && convo.kind === 'group') {
+      const part = await db.messageConversationParticipant.findOne({
+        where: { tenantId, conversationId, userId: viewerUserId, deletedAt: null }, attributes: ['id'],
+      });
+      ok = !!part;
+    }
+    if (!ok) return null; // not a participant
   }
   return convo;
 }

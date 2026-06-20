@@ -103,6 +103,9 @@ export const messagePatch = async (req, res) => {
     const patch: any = { updatedById: userId };
     if (typeof body.isOneWay === 'boolean') patch.isOneWay = body.isOneWay;
     if (typeof body.archived === 'boolean') patch.archived = body.archived;
+    // Renaming a group (subject is the group's display name).
+    if (typeof body.name === 'string' && body.name.trim()) patch.subject = body.name.trim().slice(0, 200);
+    else if (typeof body.subject === 'string') patch.subject = body.subject.trim().slice(0, 200);
     await convo.update(patch);
     await ApiResponseHandler.success(req, res, convo.get({ plain: true }));
   } catch (error) { await ApiResponseHandler.error(req, res, error); }

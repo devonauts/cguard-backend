@@ -90,7 +90,7 @@ export const guardMessageThread = async (req, res) => {
     const data = await listMessages(db, tenantId, req.params.conversationId, { limit: parseInt(q.limit, 10) || 30, before: q.before || null });
     const c = convo.get({ plain: true });
     await ApiResponseHandler.success(req, res, {
-      conversation: { id: c.id, subject: c.subject, isOneWay: c.isOneWay, recipientType: c.recipientType },
+      conversation: { id: c.id, subject: c.subject, isOneWay: c.isOneWay, recipientType: c.recipientType, kind: c.kind, isGroup: c.kind === 'group' },
       rows: data.rows,
       nextCursor: data.nextCursor,
     });
