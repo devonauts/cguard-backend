@@ -1,0 +1,22 @@
+export default (app) => {
+  app.get(
+    `/tenant/:tenantId/shift-template`,
+    require('./shiftTemplateList').default,
+  );
+  app.post(
+    `/tenant/:tenantId/shift-template`,
+    require('./shiftTemplateCreate').default,
+  );
+  app.get(
+    `/tenant/:tenantId/shift-template/:id`,
+    require('./shiftTemplateFind').default,
+  );
+  app.put(
+    `/tenant/:tenantId/shift-template/:id`,
+    require('./shiftTemplateUpdate').default,
+  );
+  app.delete(
+    `/tenant/:tenantId/shift-template/:id`,
+    require('./shiftTemplateDestroy').default,
+  );
+};

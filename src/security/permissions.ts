@@ -224,6 +224,12 @@ class Permissions {
       shiftRead: createPermission('shiftRead', ALL_STAFF_ROLES),
       shiftAutocomplete: createPermission('shiftAutocomplete', ALL_STAFF_ROLES),
 
+      // === SHIFT TEMPLATES (Programador · Plantillas de turno) ===
+      shiftTemplateCreate: createPermission('shiftTemplateCreate', DISPATCHER_ROLES),
+      shiftTemplateEdit: createPermission('shiftTemplateEdit', DISPATCHER_ROLES),
+      shiftTemplateDestroy: createPermission('shiftTemplateDestroy', DISPATCHER_ROLES),
+      shiftTemplateRead: createPermission('shiftTemplateRead', ALL_STAFF_ROLES),
+
       // === GUARD SHIFTS ===
       guardShiftImport: createPermission('guardShiftImport', DISPATCHER_ROLES),
       guardShiftCreate: createPermission('guardShiftCreate', DISPATCHER_ROLES),
