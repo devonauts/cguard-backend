@@ -554,18 +554,26 @@ export async function optimizeSacafrancos(
       const { station, rot } = stationGroup[i];
       const workDays = rot.dayShifts + rot.nightShifts;
       const restDays = rot.restDays;
-      
+
       // Formula: station i rests starting on day (i * restDays) % cycle relative to epoch
       // offset = (i * restDays - workDays + cycle) % cycle
       const stationOffset = (i * restDays - workDays + cycle * 10) % cycle; // +cycle*10 to avoid negative
 
-      // ALL fijos at this station get the SAME offset
-      const stationFijos = fijosByStation.get(station.id) || [];
-      for (const fijo of stationFijos) {
-        if (fijo.platoonOffset !== stationOffset) {
-          offsetUpdates.push({ id: fijo.id, platoonOffset: stationOffset });
+      // STAGGER the fijos within the station instead of giving them ONE shared
+      // offset (the old bug: both fijos of a 24h station shared a phase, so both
+      // did day together / night together / rested together — see screenshot).
+      // Fijo k is phased back by k*dayShifts so when Fijo 1 is on its DAY block,
+      // Fijo 2 is on its NIGHT block (continuous day+night coverage that swaps
+      // each cycle). Mirrors autoConfigureStationPositions so both paths agree.
+      const stationFijos = (fijosByStation.get(station.id) || [])
+        .slice()
+        .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      stationFijos.forEach((fijo: any, k: number) => {
+        const fijoOffset = ((stationOffset - k * rot.dayShifts) % cycle + cycle) % cycle;
+        if (fijo.platoonOffset !== fijoOffset) {
+          offsetUpdates.push({ id: fijo.id, platoonOffset: fijoOffset });
         }
-      }
+      });
     }
   }
 
@@ -593,8 +601,11 @@ export async function optimizeSacafrancos(
       stationConfigs.push({
         stationId: station.id,
         stationName: station.stationName,
-        fijoPositions: stationFijos.map(() => ({
-          platoonOffset: stationOffset,
+        // Model each fijo with its STAGGERED offset (same as the offset updates
+        // above) so SF demand reflects the real phased gaps, not a synchronized
+        // double-blackout.
+        fijoPositions: stationFijos.map((_: any, k: number) => ({
+          platoonOffset: ((stationOffset - k * rot.dayShifts) % cycle + cycle) % cycle,
           dayShifts: rot.dayShifts,
           nightShifts: rot.nightShifts,
           restDays: rot.restDays,

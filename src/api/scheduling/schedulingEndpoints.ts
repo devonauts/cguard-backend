@@ -660,21 +660,22 @@ export async function schedulerAutoAssign(req, res) {
     });
     const newAssignments: any[] = [];
 
-    // Build demand: unfilled fijo positions
-    const demand: { stationId: string; positionId: string; type: string; station: any }[] = [];
+    // Build demand: unfilled fijo positions (carry the position's platoonOffset —
+    // it's already staggered per fijo by autoConfig/optimizeSacafrancos, so the
+    // assignment must inherit it rather than an arbitrary counter).
+    const demand: { stationId: string; positionId: string; type: string; platoonOffset: number; station: any }[] = [];
     for (const station of stationsPlain) {
       const stPos = positionsByStation.get(station.id) || [];
       for (const pos of stPos) {
         if (pos.type === 'sacafranco') continue;
         if (!liveAssignments.some((a: any) => a.positionId === pos.id)) {
-          demand.push({ stationId: station.id, positionId: pos.id, type: pos.type, station });
+          demand.push({ stationId: station.id, positionId: pos.id, type: pos.type, platoonOffset: pos.platoonOffset || 0, station });
         }
       }
     }
 
     // Assign titulares to nearest open positions
     let guardsLeft = [...titulares];
-    let platoonCounter = 0;
     for (const slot of demand) {
       if (guardsLeft.length === 0) break;
       guardsLeft.sort((a: any, b: any) => getDistanceM(a, slot.station.latitud, slot.station.longitud) - getDistanceM(b, slot.station.latitud, slot.station.longitud));
@@ -682,9 +683,8 @@ export async function schedulerAutoAssign(req, res) {
       newAssignments.push({
         guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,
         rotationStyleId: slot.station.rotationStyleId, startDate: new Date().toISOString().slice(0, 10),
-        platoonOffset: platoonCounter % 3, isRelief: false, status: 'active', tenantId, createdById: userId, updatedById: userId,
+        platoonOffset: slot.platoonOffset, isRelief: false, status: 'active', tenantId, createdById: userId, updatedById: userId,
       });
-      platoonCounter++;
     }
 
     // Assign sacafrancos to sacafranco positions (reuse across stations)
