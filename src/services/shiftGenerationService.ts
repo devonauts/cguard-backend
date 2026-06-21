@@ -255,10 +255,23 @@ export async function computeShiftsForAssignment(
   // coverage analyzer + blocked at publish, so an imperfect spread can't ship.
   const isSacafranco = position.type === 'sacafranco' || assignment.isRelief;
   if (isSacafranco) {
-    const covered =
+    // SFs are GLOBAL: cover every fijo station tenant-wide. Use the explicit
+    // coveredStationIds when set, else default to ALL fijo stations (so an SF
+    // assigned ad-hoc — without running the optimizer — still covers globally,
+    // not just its home station).
+    let covered: string[] =
       Array.isArray(assignment.coveredStationIds) && assignment.coveredStationIds.length
         ? assignment.coveredStationIds
-        : [assignment.stationId];
+        : [];
+    if (!covered.length) {
+      const fijoStations = await database.stationPosition.findAll({
+        where: { tenantId, type: 'fijo', deletedAt: null },
+        attributes: ['stationId'],
+        group: ['stationId'],
+      });
+      covered = fijoStations.map((r: any) => String(r.stationId));
+      if (!covered.length) covered = [assignment.stationId];
+    }
     const gapsByDay = await computeFijoGaps(database, covered, tenantId, genStart, genEnd);
 
     // This SF's index among the sitio's SFs, so when >1 SF is needed they
