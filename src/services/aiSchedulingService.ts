@@ -60,96 +60,93 @@ async function callAI(systemPrompt: string, userMessage: string, maxTokens = 200
   return data.choices?.[0]?.message?.content || '';
 }
 
+/** True when the AI advisor can be called. */
+export function isAiConfigured(): boolean {
+  return !!process.env.OPENAI_API_KEY;
+}
+
+const AI_UNAVAILABLE_ES =
+  'El asesor de IA no está disponible en este momento (falta configurar OPENAI_API_KEY o hubo un error de conexión con OpenAI). ' +
+  'Esto NO afecta el horario: el motor determinístico “Optimizar sacafrancos” sigue funcionando y es la fuente de verdad. ' +
+  'Vuelve a intentarlo más tarde o pide al administrador que configure la clave de OpenAI.';
+
+/** Call the AI but never throw — return a clear Spanish message on any failure
+ *  (missing key, network, rate-limit) so the feature degrades gracefully. */
+async function safeCallAI(systemPrompt: string, userMessage: string, maxTokens = 2000): Promise<string> {
+  try {
+    return await callAI(systemPrompt, userMessage, maxTokens);
+  } catch (e: any) {
+    console.warn('[aiScheduling] advisor unavailable:', e?.message || e);
+    return AI_UNAVAILABLE_ES;
+  }
+}
+
 /**
  * Deep system knowledge prompt — teaches the AI exactly how our scheduling engine works
  * so it can reason mathematically and suggest true optimizations.
  */
-const SYSTEM_PROMPT = `You are an expert scheduling optimization AI for "CGuard Pro", a security guard management system deployed in Ecuador. You have DEEP knowledge of the system's mathematical model and can reason about it precisely.
+const SYSTEM_PROMPT = `You are an expert scheduling optimization AI for "CGuard Pro", a security guard management system deployed in Ecuador. You have DEEP, ACCURATE knowledge of how the system's scheduling engine actually works (described below) and reason about it precisely. NEVER invent rules that contradict this model.
 
-## SYSTEM ARCHITECTURE
+## SYSTEM ARCHITECTURE (current engine)
 
-### Global Epoch Model
-All rotation calculations use **January 1 of the current year** as day-zero (epoch). This makes all offsets globally comparable across stations. The formula:
+### Fixed Epoch
+All rotations are anchored to a FIXED epoch (January 1, 2024) — it does NOT move each year. Rotation status for a guard on day D:
 \`\`\`
-adjustedDay = (daysSinceJan1 - platoonOffset) % cycleLength
-if adjustedDay < dayShifts → WORK (day shift)
-if adjustedDay < dayShifts + nightShifts → WORK (night shift)
-otherwise → REST
+adjustedDay = ((daysSinceEpoch - platoonOffset) mod cycleLength + cycleLength) mod cycleLength
+adjustedDay < dayShifts                      → DAY shift (work)
+adjustedDay < dayShifts + nightShifts        → NIGHT shift (work)
+otherwise                                    → REST
 \`\`\`
 
-### Sequential Station Offset Algorithm
-Stations are grouped by rotation cycle length. Within each group, offsets are assigned sequentially so rest days form a **chain**:
+### Everything runs on a 10-DAY CYCLE so all stations + sacafrancos SYNC
+- **24h station** → rotation **4-4-2** (4 day, 4 night, 2 rest; cycle 10). It has TWO fijos, STAGGERED by dayShifts (offset and offset−4) so when one fijo is on its DAY block the other is on its NIGHT block — they swap day/night each cycle and together cover most of the 24h. Each fijo rests 2 days per cycle.
+- **12h-day** / **12h-night** station → rotation **8-2** (8 work, 2 rest, single shift; cycle 10). One fijo; rests 2 days per cycle. (NOT 5-2 — a 7-day cycle would not sync with the 10-day SF.)
+- Every guard therefore rests exactly **2 days per 10-day cycle**.
+
+### Gaps
+When a fijo rests, its shift half (DAY 07:00–19:00 or NIGHT 19:00–07:00) is uncovered → a "gap". A 24h station yields 2 day-gaps + 2 night-gaps per cycle; a 12h-day station 2 day-gaps; a 12h-night station 2 night-gaps.
+
+### Sacafranco (SF) — GLOBAL relief on a real 4-4-2
+- An SF is GLOBAL: shared across ALL post sites and stations; it goes wherever a fijo is resting.
+- An SF runs **4-4-2**: it works its DAY block (4 days) covering DAY gaps, then its NIGHT block (4 days) covering NIGHT gaps, then RESTS 2 days. Pattern: D D D D N N N N L L.
+- FEASIBILITY RULE (critical): an SF can NEVER work a night then a day the next morning (a night ends 07:00, a day starts 07:00 — no rest). Following 4-4-2 strictly guarantees feasible transitions (day→night→rest→day only).
+- So one SF provides **4 day-slots + 4 night-slots per cycle** → it can cover the rest days of ~4 guards (e.g. 2 day-resting + 2 night-resting).
+
+### The Planner (planStationsAndSf) — how offsets are chosen
+The engine chooses each fijo's offset AND the single shared SF offset together so that EVERY day-gap lands inside the SF's day-block and EVERY night-gap inside its night-block (no "out-of-block" gaps). Then:
 \`\`\`
-stationOffset = (stationIndex * restDays - workDays + cycle * 10) % cycle
+SF count (N) = peak per-block load = max over the cycle of (day-gaps on a day-block day, night-gaps on a night-block day)
 \`\`\`
-Result: Station 0 rests days 0-1, Station 1 rests days 2-3, Station 2 rests days 4-5, etc.
-This allows sacafrancos to work CONSECUTIVE days covering different stations in sequence.
+When N>1, the SFs share the offset and SPLIT each day's same-half gaps by index. Goal: FEWEST sacafrancos that fully cover, with a feasible day→night→rest schedule.
 
-### Capacity Formula
-For N stations with the same cycle:
-- slotsPerCycle = floor(cycle / restDays) → max non-overlapping rest slots
-- If N > slotsPerCycle: some days have multiple stations resting → higher SF demand
-- peakDemand = max stations needing coverage on any single day
-- SFs needed = ceil(peakDemand * sfCycle / sfWorkDays)
+### Coverage truth
+A schedule is valid only if EVERY (station, day, half it requires) has exactly 1 guard. 0 = gap (uncovered post), >1 = overstaff (wasted). This is checked from the real generated shifts.
 
-### Rotation Styles (cycle = dayShifts + nightShifts + restDays)
-| Name  | Day | Night | Rest | Cycle | Work Ratio | Best For |
-|-------|-----|-------|------|-------|------------|----------|
-| 5-2   | 5   | 0     | 2    | 7     | 71%        | 12H stations (day or night) |
-| 6-1   | 6   | 0     | 1    | 7     | 86%        | Sacafrancos (max coverage) |
-| 4-2   | 4   | 0     | 2    | 6     | 67%        | Less overtime, better QoL |
-| 4-4-2 | 4   | 4     | 2    | 10    | 80%        | 24H stations (alternating D/N) |
-| 3-3-2 | 3   | 3     | 2    | 8     | 75%        | 24H with shorter cycles |
-| 2-2-2 | 2   | 2     | 2    | 6     | 67%        | 24H minimal fatigue |
+### Rotation styles (cycle = day + night + rest)
+| Name  | Day | Night | Rest | Cycle | Used for |
+|-------|-----|-------|------|-------|----------|
+| 4-4-2 | 4   | 4     | 2    | 10    | 24H stations (fijos swap D/N) AND sacafrancos |
+| 8-2   | 8   | 0     | 2    | 10    | 12H stations (single shift) |
+| 4-2 / 3-3-2 / 2-2-2 / 6-1 / 5-2 | … | | | 6–10 | available, but NON-10-day cycles break sync with the SF — avoid mixing |
 
-### Key Entities
-- **Fijo**: Fixed guard assigned permanently to ONE station. Follows station's rotation.
-- **Sacafranco (SF)**: Relief guard that covers fijos during their rest days. Floats between stations.
-- **platoonOffset**: Integer that shifts when in the cycle the guard's rest days fall. All fijos at the SAME station share the SAME offset.
-- **Station types**: "24h" (needs guard 24/7, uses D+N positions), "12h-day" (07:00-19:00), "12h-night" (19:00-07:00)
+### Ecuador labor context
+- Night surcharge +25% (19:00–07:00); Sunday/holiday surcharge; vacations 15 days/yr after 1 year.
+- The 4-4-2 / 8-2 cadence implies up to 8 consecutive workdays then 2 rest. If stricter consecutive-day limits are required, more SFs/guards are needed — flag this when relevant.
 
-### SF Coverage Model
-With sequential offsets and 6-1 SF rotation:
-- Each SF works 6 days, rests 1
-- In 6 work days with 5-2 stations (rest=2): an SF can cover floor(6/2) = 3 stations
-- SF assignment is round-robin: on any given day, working SFs are distributed across stations that need coverage
-- SF offsets are also staggered: SF_offset = (i * 1 - 6 + 7*10) % 7 → each SF rests on a different day
-
-### Ecuador Labor Law Constraints
-- Max 8 hours/day ordinary, 40 hours/week
-- Max 160 hours/month (overtime above this)
-- Night surcharge: +25% (19:00-07:00)
-- Weekend/holiday surcharge: +100%
-- Mandatory consecutive rest: 24-48h depending on rotation
-- Guards cannot work more than 6 consecutive days without rest
-- Vacations: 15 days/year after 1 year of service
-
-### Cost Model (approximate, Ecuador 2025-2026)
-- Base salary: ~$500 USD/month per guard
-- Night surcharge: +$125/month for night-only guards
-- SF premium: same base, but covers multiple stations (more efficient per dollar)
-- Overtime hour: 1.5x regular rate
-- Total loaded cost per guard (with benefits): ~$700-800/month
+### Cost (approx, Ecuador 2025–2026): loaded cost ~$700–800/month per guard. An SF is efficient because one SF relieves ~4 guards' rest days.
 
 ## YOUR CAPABILITIES
-
-You can:
-1. **Mathematical analysis**: Calculate exactly how many SFs are needed for a given configuration. Verify if the current setup is optimal.
-2. **Pattern detection**: Identify if stations have suboptimal rotations or if the mix of rotation types is inefficient.
-3. **What-if scenarios**: "If we change 10 stations from 5-2 to 4-2, how does that affect SF count?"
-4. **Cost optimization**: Find the cheapest configuration that maintains 100% coverage.
-5. **Anomaly detection**: Find stations that are over/under-staffed.
-6. **Growth planning**: "If we add 15 new 12H stations, how many new guards total?"
-7. **Labor compliance**: Flag any configuration that would violate Ecuador labor law.
-8. **Schedule quality scoring**: Rate a schedule on cost-efficiency, guard wellbeing, and coverage reliability.
+1. Verify if the current setup is optimal (right rotations per type, fewest SFs, full coverage, feasible SF schedule).
+2. Detect anomalies: stations on a non-10-day rotation (won't sync), 24H stations with <2 fijos, under/over-staffing.
+3. What-if & growth planning: estimate SFs/guards when adding stations (≈ one SF per ~4 guards' rest days, exact via the block model).
+4. Flag infeasible or labor-risky configurations.
 
 ## RESPONSE FORMAT
-Always respond in Spanish. Be precise with numbers. When suggesting changes, show BEFORE → AFTER comparison.
-Use this structure:
-1. **Diagnóstico**: What's the current state and what problems exist
-2. **Recomendación**: Specific actionable changes
-3. **Impacto**: Quantified effect (cost savings, guard count change, etc.)
-4. **Riesgos**: Any trade-offs or risks of the recommendation`;
+Always respond in Spanish, precise with numbers, BEFORE → AFTER when proposing changes. Structure:
+1. **Diagnóstico** — current state + problems
+2. **Recomendación** — specific actionable changes
+3. **Impacto** — quantified effect (SF/guard count, coverage, cost)
+4. **Riesgos** — trade-offs`;
 
 /**
  * Get AI recommendation for a new station setup
@@ -178,17 +175,18 @@ PREGUNTA COMPUESTA:
 4. ¿Cuál sería el nuevo peakDemand si agregamos esta estación?
 5. Costo mensual incremental estimado.
 
-IMPORTANTE: Usa la fórmula del sistema para calcular:
-- Nuevo peak = ceil((${context.totalStations} + 1) * restDays / cycle) si la estación usa la misma rotación
-- SFs adicionales = ceil(nuevoPeak * sfCycle / sfWorkDays) - ${context.totalSacafrancos}`;
+IMPORTANTE: Razona con el modelo REAL del sistema (ciclo de 10 días, todo sincronizado):
+- 24h → 4-4-2 con 2 fijos; 12h → 8-2 con 1 fijo. Cada guardia descansa 2 días por ciclo.
+- Esta estación añade gaps: un 24h = 2 de día + 2 de noche; 12h-day = 2 de día; 12h-night = 2 de noche.
+- Un sacafranco (4-4-2) aporta 4 cupos de día + 4 de noche por ciclo (≈ los descansos de 4 guardias). Estima SFs adicionales según cuántos gaps de día/noche por día se sumen al bloque del SF.`;
 
-  const response = await callAI(SYSTEM_PROMPT, prompt);
+  const response = await safeCallAI(SYSTEM_PROMPT, prompt);
 
   // Extract suggested rotation from response
   const rotationMatch = response.match(/(?:rotación|recomendada|óptima)[:\s]*["']?(\d-\d(?:-\d)?)/i)
     || response.match(/(\d-\d(?:-\d)?)\s*(?:es|sería|como)\s*(?:la\s+)?(?:mejor|óptima|recomendada)/i)
     || response.match(/["'](\d-\d(?:-\d)?)["']/);
-  const suggestedRotation = rotationMatch?.[1] || (scheduleType === '24h' ? '4-4-2' : '5-2');
+  const suggestedRotation = rotationMatch?.[1] || (scheduleType === '24h' ? '4-4-2' : '8-2');
 
   // Extract guards needed
   const guardsMatch = response.match(/(\d+)\s*(?:guardias?|fijos?)\s*(?:necesarios?|nuevos?|adicionales?|fijos?)/i)
@@ -220,17 +218,16 @@ ${context.sfUtilization ? `- Utilización SF: ${context.sfUtilization}% (días t
 DETALLE ESTACIONES (primeras 30):
 ${stationsSummary}
 
-ANÁLISIS SOLICITADO:
-1. **Eficiencia de rotaciones**: ¿Todas las estaciones usan la rotación óptima para su tipo? ¿Hay estaciones 24H con rotación 5-2 (ineficiente) o 12H con 4-4-2 (desperdicio)?
-2. **Balance de offsets**: Con ${context.totalStations} estaciones en ciclo de 7 días y restDays=2, el máximo no-solapado es floor(7/2)=3 slots. Con ${context.totalStations} estaciones, hay ceil(${context.totalStations}*2/7)≈${Math.ceil((context.totalStations * 2) / 7)} estaciones descansando por día. ¿Es óptimo?
-3. **SF sizing**: ¿${context.totalSacafrancos} SFs es el número óptimo? Calcula: necesarios = ceil(peakDemand * 7 / 6) = ceil(${context.peakDemand} * 7 / 6) = ${Math.ceil(context.peakDemand * 7 / 6)}. ¿Coincide?
-4. **Ahorro potencial**: Si cambiamos estaciones de baja prioridad a rotación 4-2 (cycle=6, rest=2, slots=3), ¿cuántos SFs se ahorran?
-5. **Contrataciones**: ¿Cuántos guardias faltan? (fijos + SFs - contratados = ${context.totalFijos + context.totalSacafrancos - context.currentGuards})
-6. **Score general**: Califica de 1-10 en eficiencia, cobertura, y bienestar.
+ANÁLISIS SOLICITADO (usa el modelo real: ciclo de 10 días, todo sincronizado):
+1. **Sincronización de rotaciones**: ¿Toda estación 24h usa 4-4-2 (2 fijos) y toda 12h usa 8-2 (1 fijo)? Marca como problema cualquier estación en una rotación de ciclo ≠ 10 (p.ej. 5-2, 6-1) porque ROMPE la sincronía con el sacafranco.
+2. **Cobertura de fijos**: ¿Hay estaciones 24h con menos de 2 fijos, o posiciones fijo sin guardia asignado? Esos puestos quedan sin cubrir.
+3. **Dimensionamiento de SF**: ${context.totalSacafrancos} SFs actuales. Un SF (4-4-2) cubre ≈ los descansos de 4 guardias (4 cupos día + 4 noche por ciclo). ¿Es suficiente, sobra o falta? Recuerda: un SF nunca puede hacer noche y luego día al día siguiente.
+4. **Contrataciones**: faltante aproximado = fijos + SFs - contratados = ${context.totalFijos + context.totalSacafrancos - context.currentGuards}.
+5. **Score general**: 1-10 en sincronización, cobertura y bienestar.
 
 RESPONDE con diagnóstico preciso y recomendaciones numeradas con impacto cuantificado.`;
 
-  return callAI(SYSTEM_PROMPT, prompt, 3000);
+  return safeCallAI(SYSTEM_PROMPT, prompt, 3000);
 }
 
 /**
@@ -240,15 +237,14 @@ export async function getRotationAdvice(scheduleType: string, numPositions: numb
   const prompt = `CONSULTA RÁPIDA:
 Estación tipo "${scheduleType}" con ${numPositions} posiciones fijo.
 
-Usando las fórmulas del sistema:
-- 24H → recomendado 4-4-2 (cycle=10, 80% eficiencia, alterna D/N)
-- 12H → recomendado 5-2 (cycle=7, 71% eficiencia, estándar)
-- Si solo 1 posición en 24H → necesita al menos 2 fijos (uno D, uno N) o 1 fijo en 4-4-2
+Usando el modelo real (ciclo de 10 días, todo sincronizado con el sacafranco):
+- 24H → 4-4-2 (cycle 10), con 2 fijos escalonados (uno cubre día mientras el otro cubre noche, alternan).
+- 12H → 8-2 (cycle 10, turno único). NO usar 5-2 (ciclo 7) porque rompe la sincronía.
 
-¿Cuál es la rotación óptima y por qué? ¿Cuántos SFs adicionales genera esta configuración?
+¿Cuál es la rotación óptima y por qué? ¿Cuántos SFs adicionales genera esta configuración (un SF 4-4-2 cubre ≈ los descansos de 4 guardias)?
 Responde en 3-4 oraciones máximo con números exactos.`;
 
-  return callAI(SYSTEM_PROMPT, prompt, 500);
+  return safeCallAI(SYSTEM_PROMPT, prompt, 500);
 }
 
 /**
@@ -262,7 +258,7 @@ export async function analyzeScenario(
 - ${context.totalStations} estaciones, ${context.totalFijos} fijos, ${context.totalSacafrancos} SFs
 - ${context.currentGuards} guardias contratados
 - Peak demand: ${context.peakDemand}
-- Offsets secuenciales activos (Jan 1 epoch)
+- Modelo: ciclo de 10 días, epoch fijo (1 ene 2024); 24h=4-4-2, 12h=8-2; sacafranco 4-4-2 global (día→noche→libre)
 ${context.dailyDemand ? `- Demanda diaria: [${context.dailyDemand.join(', ')}]` : ''}
 
 PREGUNTA DEL USUARIO:
@@ -270,6 +266,6 @@ ${question}
 
 Responde usando tu conocimiento del modelo matemático del sistema. Sé preciso con cálculos. Si la pregunta implica un cambio, muestra el impacto ANTES → DESPUÉS.`;
 
-  return callAI(SYSTEM_PROMPT, prompt, 2500);
+  return safeCallAI(SYSTEM_PROMPT, prompt, 2500);
 }
 

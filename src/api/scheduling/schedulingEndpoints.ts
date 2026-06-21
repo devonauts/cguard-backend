@@ -926,8 +926,8 @@ export async function schedulerAiRecommend(req, res) {
       }
     }
 
-    // Calculate daily demand across a super-cycle
-    const cycle = 7; // Most common cycle
+    // Calculate daily demand across the 10-day super-cycle (all stations sync to it).
+    const cycle = 10;
     const dailyDemand: number[] = [];
     for (let day = 0; day < cycle; day++) {
       let stationsResting = 0;
@@ -948,7 +948,7 @@ export async function schedulerAiRecommend(req, res) {
     const peakDemand = Math.max(...dailyDemand, 0);
     const currentFijoGuards = activeAssignments.filter((a: any) => !a.isRelief).length;
     const currentSfGuards = activeAssignments.filter((a: any) => a.isRelief).length;
-    const sfWorkCapacity = sfPositions.length * 6; // 6-1 rotation: 6 work days per SF per cycle
+    const sfWorkCapacity = sfPositions.length * 8; // 4-4-2 rotation: 8 work days per SF per 10-day cycle
     const totalRestSlots = dailyDemand.reduce((s, d) => s + d, 0);
     const sfUtilization = sfWorkCapacity > 0 ? Math.round((totalRestSlots / sfWorkCapacity) * 100) : 0;
 
