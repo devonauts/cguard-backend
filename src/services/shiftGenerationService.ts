@@ -272,53 +272,51 @@ export async function computeShiftsForAssignment(
       covered = fijoStations.map((r: any) => String(r.stationId));
       if (!covered.length) covered = [assignment.stationId];
     }
-    // Anchor the coverage simulation at the global epoch so every SF agrees on
-    // the schedule regardless of its own start date.
     const epoch = getGlobalEpoch(genStart);
-    const gapsByDay = await computeFijoGaps(database, covered, tenantId, epoch, genEnd);
+    const gapsByDay = await computeFijoGaps(database, covered, tenantId, genStart, genEnd);
 
-    // This SF's index among ALL sacafrancos (global), and the total count N.
+    // This SF's index among ALL sacafrancos (global), ordered by sortOrder. All
+    // SFs share the planned offset, so when >1 they split each day's same-half
+    // gaps by index.
     const sfPositions = await database.stationPosition.findAll({
       where: { tenantId, deletedAt: null, type: 'sacafranco', stationId: covered },
       attributes: ['id', 'sortOrder'],
       order: [['sortOrder', 'ASC'], ['createdAt', 'ASC']],
     });
-    const N = Math.max(1, sfPositions.length);
     let sfIndex = sfPositions.findIndex((p: any) => String(p.id) === String(assignment.positionId));
     if (sfIndex < 0) sfIndex = 0;
 
-    // FLEXIBLE greedy, GLOBAL: run the balanced/capped greedy over every day from
-    // the epoch and extract the days assigned to THIS SF. The cap comes from the
-    // SF rotation (e.g. 4-4-2 ⇒ up to 8 consecutive, then 2 rest). The SF works
-    // whenever there's a gap and it's available, chaining across all stations.
-    const maxWork = Math.max(1, dayShifts + nightShifts);
-    const sfRest = Math.max(0, restDays);
-    const orderedKeys: string[] = [];
-    {
-      const c = new Date(epoch);
-      while (c <= genEnd) { orderedKeys.push(c.toISOString().slice(0, 10)); c.setDate(c.getDate() + 1); }
-    }
-    const perDay = assignSfGaps(orderedKeys, gapsByDay, N, maxWork, sfRest);
-
+    // STRICT 4-4-2: the SF works its DAY block (covering day-gaps), then its
+    // NIGHT block (night-gaps), then rests — a feasible sequence (never a night
+    // followed by a day the next morning). Its platoonOffset = the planned SF
+    // offset that aligns gaps to these blocks.
     const sfRows: ComputedShift[] = [];
     const cursor = new Date(genStart);
     while (cursor <= genEnd) {
       const dateStr = cursor.toISOString().slice(0, 10);
-      const pick = perDay.get(dateStr)?.get(sfIndex);
-      if (pick) {
-        const startTime = wallClockToUtc(dateStr, pick.startHHmm, tz);
-        let endTime = wallClockToUtc(dateStr, pick.endHHmm, tz);
-        if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
-        sfRows.push({
-          guardId: assignment.guardId,
-          stationId: pick.stationId,
-          positionId: assignment.positionId,
-          guardAssignmentId: assignment.id,
-          postSiteId: pick.postSiteId || postSiteId,
-          startTime,
-          endTime,
-          shiftType: pick.half,
-        });
+      const dse = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
+      const status = getRotationStatus(dse, assignment.platoonOffset, dayShifts, nightShifts, restDays);
+      if (status !== 'rest') {
+        const wantHalf: TurnoHalf = status === 'night' ? 'night' : 'day';
+        const gaps = (gapsByDay.get(dateStr) || [])
+          .filter((g) => g.half === wantHalf)
+          .sort((a, b) => `${a.stationId}`.localeCompare(`${b.stationId}`));
+        const pick = gaps[sfIndex]; // SFs split the day's same-half gaps by index
+        if (pick) {
+          const startTime = wallClockToUtc(dateStr, pick.startHHmm, tz);
+          let endTime = wallClockToUtc(dateStr, pick.endHHmm, tz);
+          if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
+          sfRows.push({
+            guardId: assignment.guardId,
+            stationId: pick.stationId,
+            positionId: assignment.positionId,
+            guardAssignmentId: assignment.id,
+            postSiteId: pick.postSiteId || postSiteId,
+            startTime,
+            endTime,
+            shiftType: pick.half,
+          });
+        }
       }
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -542,176 +540,103 @@ interface StationSpreadInfo {
 }
 
 /**
- * Day indices (0..L-1), one entry per uncovered REQUIRED half-slot, given a
- * station's fijo offsets. Pure in-memory mirror of computeFijoGaps, used to
- * evaluate candidate offsets while spreading.
+ * Plan ALL fijo offsets + the sacafranco offset so that ONE (or fewest) SF on a
+ * real DAY→NIGHT→REST rotation can cover every station's rest-gaps — feasibly.
+ *
+ * Key feasibility rule: a sacafranco works its DAY block, then its NIGHT block,
+ * then rests — it can NEVER do a night then a day the next morning. So we must
+ * arrange the guards' rest days so every DAY gap lands on the SF's day-block and
+ * every NIGHT gap on its night-block. For each candidate SF offset we greedily
+ * choose each station's offset to push its day-gaps into the day-block and
+ * night-gaps into the night-block (least-loaded day first), then size N = the
+ * peak per-block load. We keep the SF offset with no out-of-block gaps and the
+ * fewest SFs.
  */
-function stationGapSlots(
-  scheduleType: string | null | undefined,
-  rot: { dayShifts: number; nightShifts: number; restDays: number },
-  fijoOffsets: number[],
-  L: number,
-): number[] {
-  const halves = requiredHalves(scheduleType);
-  const out: number[] = [];
-  for (let d = 0; d < L; d++) {
-    const covered = new Set<string>();
-    for (const off of fijoOffsets) {
-      const s = getRotationStatus(d, off, rot.dayShifts, rot.nightShifts, rot.restDays);
-      const h = coveredHalf(scheduleType, s);
-      if (h) covered.add(h);
-    }
-    for (const h of halves) if (!covered.has(h)) out.push(d);
-  }
-  return out;
-}
-
-/**
- * Greedily choose each station's base offset so rest-gaps spread across the
- * super-cycle (minimize the PEAK number of concurrent gaps per day → fewest SFs).
- * 24h stations stagger their two fijos by dayShifts. Returns each fijo position's
- * offset, the per-day gap load over the super-cycle, the cycle length and peak.
- */
-function spreadStationOffsets(stations: StationSpreadInfo[]): {
-  offsets: Map<string, number>;
-  dayLoad: number[];
-  L: number;
-  peak: number;
-} {
-  const cycles = stations
-    .map((s) => s.rot.dayShifts + s.rot.nightShifts + s.rot.restDays)
-    .filter((c) => c > 0);
-  let L = cycles.reduce((a, c) => lcm2(a, c), 1);
-  if (!Number.isFinite(L) || L <= 0) L = 7;
-  if (L > 366) L = Math.max(...cycles, 7) * 2;
-
-  const offsets = new Map<string, number>();
-  const dayLoad = new Array(L).fill(0);
-
-  // Place the most-constrained stations (most gap-slots) first.
-  const ordered = stations
-    .map((st) => {
-      const cycle = st.rot.dayShifts + st.rot.nightShifts + st.rot.restDays;
-      const base0 = st.fijos.map((_, k) => ((0 - k * st.rot.dayShifts) % cycle + cycle) % cycle);
-      return { st, cycle, gapCount: stationGapSlots(st.scheduleType, st.rot, base0, L).length };
-    })
-    .sort((a, b) => b.gapCount - a.gapCount);
-
-  for (const { st, cycle } of ordered) {
-    if (cycle <= 0 || !st.fijos.length) continue;
-    let bestO = 0;
-    let bestPeak = Infinity;
-    let bestSpread = Infinity;
-    let bestSlots: number[] = [];
-    for (let o = 0; o < cycle; o++) {
-      const fijoOffsets = st.fijos.map((_, k) => ((o - k * st.rot.dayShifts) % cycle + cycle) % cycle);
-      const slots = stationGapSlots(st.scheduleType, st.rot, fijoOffsets, L);
-      const test = dayLoad.slice();
-      for (const d of slots) test[d % L]++;
-      let peak = 0;
-      let sumSq = 0;
-      for (const v of test) { if (v > peak) peak = v; sumSq += v * v; }
-      if (peak < bestPeak || (peak === bestPeak && sumSq < bestSpread)) {
-        bestPeak = peak; bestSpread = sumSq; bestO = o; bestSlots = slots;
-      }
-    }
-    const fijoOffsets = st.fijos.map((_, k) => ((bestO - k * st.rot.dayShifts) % cycle + cycle) % cycle);
-    st.fijos.forEach((f, k) => offsets.set(f.id, fijoOffsets[k]));
-    for (const d of bestSlots) dayLoad[d % L]++;
-  }
-
-  const peak = dayLoad.reduce((m, v) => Math.max(m, v), 0);
-  return { offsets, dayLoad, L, peak };
-}
-
-/**
- * FLEXIBLE greedy coverage simulation (count-based) — the model the field
- * actually wants: a sacafranco works WHENEVER there's an uncovered gap and it's
- * available, resting only when capped (after `maxWork` consecutive days) or when
- * there's nothing to cover. SFs are balanced (the least-recently-worked one
- * takes the next gap). `flaggedFor(N)` = uncovered gap-slots over the cycle with
- * N SFs. This packs FAR better than a rigid rotation (fewer SFs for the same
- * coverage). Run over a couple of cycles so the rolling state stabilises.
- */
-function simulateFlexibleFlagged(
-  dayLoad: number[],
-  N: number,
-  maxWork: number,
-  restDays: number,
-): number {
-  const L = dayLoad.length;
-  const consec = new Array(N).fill(0);
-  const forced = new Array(N).fill(0);
-  let flagged = 0;
-  for (let pass = 0; pass < 3; pass++) {
-    for (let d = 0; d < L; d++) {
-      const avail: number[] = [];
-      for (let i = 0; i < N; i++) {
-        if (forced[i] > 0) { forced[i]--; consec[i] = 0; } else avail.push(i);
-      }
-      avail.sort((a, b) => consec[a] - consec[b] || a - b); // balance: least-worked first
-      const need = dayLoad[d];
-      let covered = 0;
-      for (let k = 0; k < avail.length; k++) {
-        const i = avail[k];
-        if (k < need) { consec[i]++; covered++; if (consec[i] >= maxWork) forced[i] = restDays; }
-        else { consec[i] = 0; } // available but no gap → natural rest
-      }
-      if (pass === 2) flagged += Math.max(0, need - covered);
-    }
-  }
-  return flagged;
-}
-
-/** Fewest sacafrancos that cover the per-day gap load under the FLEXIBLE model. */
-function computeSfPlan(
-  dayLoad: number[],
+function planStationsAndSf(
+  stations: StationSpreadInfo[],
   sfRot: { dayShifts: number; nightShifts: number; restDays: number },
-): { sfCount: number; flaggedGaps: number } {
-  const totalGaps = dayLoad.reduce((a, v) => a + v, 0);
-  if (totalGaps === 0) return { sfCount: 0, flaggedGaps: 0 };
-  const maxWork = Math.max(1, sfRot.dayShifts + sfRot.nightShifts);
-  const restDays = Math.max(0, sfRot.restDays);
-  let N = 1;
-  let guard = 0;
-  while (simulateFlexibleFlagged(dayLoad, N, maxWork, restDays) > 0 && guard < 30) { N++; guard++; }
-  return { sfCount: N, flaggedGaps: simulateFlexibleFlagged(dayLoad, N, maxWork, restDays) };
-}
+): { fijoOffsets: Map<string, number>; sfOffset: number; sfCount: number; L: number; dayLoad: number[]; nightLoad: number[]; outOfBlock: number } {
+  const sfCycle = Math.max(1, sfRot.dayShifts + sfRot.nightShifts + sfRot.restDays);
+  const cycles = stations.map((s) => s.rot.dayShifts + s.rot.nightShifts + s.rot.restDays).filter((c) => c > 0);
+  cycles.push(sfCycle);
+  let L = cycles.reduce((a, c) => lcm2(a, c), 1);
+  if (!Number.isFinite(L) || L <= 0) L = sfCycle;
+  if (L > 366) L = Math.max(...cycles, sfCycle) * 2;
 
-/**
- * FLEXIBLE greedy ASSIGNMENT (object-based) — runs the same balanced/capped
- * greedy as above but over real gap objects, returning per-day which SF index
- * covers which gap. Deterministic, so every SF assignment reproduces the global
- * schedule and extracts its own shifts (no shared state needed). Anchored at the
- * global epoch so all SFs agree regardless of their individual start dates.
- */
-function assignSfGaps(
-  orderedDayKeys: string[],
-  gapsByDay: Map<string, FijoGap[]>,
-  N: number,
-  maxWork: number,
-  restDays: number,
-): Map<string, Map<number, FijoGap>> {
-  const consec = new Array(N).fill(0);
-  const forced = new Array(N).fill(0);
-  const perDay = new Map<string, Map<number, FijoGap>>();
-  for (const key of orderedDayKeys) {
-    const avail: number[] = [];
-    for (let i = 0; i < N; i++) {
-      if (forced[i] > 0) { forced[i]--; consec[i] = 0; } else avail.push(i);
+  // SF coverage half on day d for a given SF offset: 'day' (day-block), 'night'
+  // (night-block) or null (rest).
+  const sfHalf = (d: number, sfOff: number): 'day' | 'night' | null => {
+    const s = getRotationStatus(d, sfOff, sfRot.dayShifts, sfRot.nightShifts, sfRot.restDays);
+    return s === 'rest' ? null : s === 'night' ? 'night' : 'day';
+  };
+
+  // Order stations most-constrained first (24h, then by required halves).
+  const ordered = stations.slice().sort((a, b) => {
+    const ra = requiredHalves(a.scheduleType).length, rb = requiredHalves(b.scheduleType).length;
+    return rb - ra;
+  });
+
+  let best: { fijoOffsets: Map<string, number>; sfOffset: number; sfCount: number; dayLoad: number[]; nightLoad: number[]; outOfBlock: number } | null = null;
+
+  for (let sfOff = 0; sfOff < sfCycle; sfOff++) {
+    const dayLoad = new Array(L).fill(0);
+    const nightLoad = new Array(L).fill(0);
+    const fijoOffsets = new Map<string, number>();
+    let outOfBlock = 0;
+
+    for (const st of ordered) {
+      const cycle = st.rot.dayShifts + st.rot.nightShifts + st.rot.restDays;
+      if (cycle <= 0 || !st.fijos.length) continue;
+      let bestO = 0, bestPen = Infinity, bestOob = 0;
+      let bestAddDay: Record<number, number> = {}, bestAddNight: Record<number, number> = {};
+      for (let o = 0; o < cycle; o++) {
+        const fijoOffs = st.fijos.map((_, k) => ((o - k * st.rot.dayShifts) % cycle + cycle) % cycle);
+        let pen = 0, oob = 0;
+        const addDay: Record<number, number> = {}, addNight: Record<number, number> = {};
+        for (let d = 0; d < L; d++) {
+          const covered = new Set<string>();
+          for (const f of fijoOffs) {
+            const h = coveredHalf(st.scheduleType, getRotationStatus(d, f, st.rot.dayShifts, st.rot.nightShifts, st.rot.restDays));
+            if (h) covered.add(h);
+          }
+          for (const half of requiredHalves(st.scheduleType)) {
+            if (covered.has(half)) continue;
+            if (half === 'day') {
+              if (sfHalf(d, sfOff) === 'day') { pen += dayLoad[d] + (addDay[d] || 0); addDay[d] = (addDay[d] || 0) + 1; }
+              else { pen += 1000; oob++; }
+            } else {
+              if (sfHalf(d, sfOff) === 'night') { pen += nightLoad[d] + (addNight[d] || 0); addNight[d] = (addNight[d] || 0) + 1; }
+              else { pen += 1000; oob++; }
+            }
+          }
+        }
+        if (pen < bestPen) { bestPen = pen; bestO = o; bestOob = oob; bestAddDay = addDay; bestAddNight = addNight; }
+      }
+      const fijoOffs = st.fijos.map((_, k) => ((bestO - k * st.rot.dayShifts) % cycle + cycle) % cycle);
+      st.fijos.forEach((f, k) => fijoOffsets.set(f.id, fijoOffs[k]));
+      for (const d in bestAddDay) dayLoad[+d] += bestAddDay[+d];
+      for (const d in bestAddNight) nightLoad[+d] += bestAddNight[+d];
+      outOfBlock += bestOob;
     }
-    avail.sort((a, b) => consec[a] - consec[b] || a - b);
-    const gaps = (gapsByDay.get(key) || []).slice()
-      .sort((a, b) => `${a.stationId}|${a.half}`.localeCompare(`${b.stationId}|${b.half}`));
-    const dayMap = new Map<number, FijoGap>();
-    for (let k = 0; k < avail.length; k++) {
-      const i = avail[k];
-      if (k < gaps.length) { dayMap.set(i, gaps[k]); consec[i]++; if (consec[i] >= maxWork) forced[i] = restDays; }
-      else { consec[i] = 0; }
+
+    let sfCount = 0;
+    for (let d = 0; d < L; d++) {
+      const h = sfHalf(d, sfOff);
+      if (h === 'day') sfCount = Math.max(sfCount, dayLoad[d]);
+      else if (h === 'night') sfCount = Math.max(sfCount, nightLoad[d]);
+      // gaps on rest days were penalised as out-of-block; ensure they're counted too
+      if (h === null) sfCount = Math.max(sfCount, dayLoad[d], nightLoad[d]);
     }
-    perDay.set(key, dayMap);
+    if (dayLoad.some((v, d) => v > 0) || nightLoad.some((v, d) => v > 0)) sfCount = Math.max(sfCount, 1);
+
+    const cand = { fijoOffsets, sfOffset: sfOff, sfCount, dayLoad, nightLoad, outOfBlock };
+    if (!best || cand.outOfBlock < best.outOfBlock || (cand.outOfBlock === best.outOfBlock && cand.sfCount < best.sfCount)) {
+      best = cand;
+    }
   }
-  return perDay;
+
+  const b = best!;
+  return { fijoOffsets: b.fijoOffsets, sfOffset: b.sfOffset, sfCount: b.sfCount, L, dayLoad: b.dayLoad, nightLoad: b.nightLoad, outOfBlock: b.outOfBlock };
 }
 
 /**
@@ -792,11 +717,35 @@ export async function optimizeSacafrancos(
     });
   }
 
-  const spread = spreadStationOffsets(spreadInfo);
+  // 5. Resolve SF rotation style — default to 4-4-2 (the SF runs a real
+  // day→night→rest rotation; it can never do a night then a day next morning).
+  let sfRotationStyleId = sacafrancoRotationStyleId;
+  if (!sfRotationStyleId) {
+    const rot442 = await database.rotationStyle.findOne({ where: { name: '4-4-2', isSystem: true } });
+    sfRotationStyleId = rot442?.id;
+    if (!sfRotationStyleId) {
+      const rot61 = await database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
+      sfRotationStyleId = rot61?.id;
+    }
+    if (!sfRotationStyleId) {
+      const anyRot = await database.rotationStyle.findOne({ where: { isSystem: true }, order: [['restDays', 'ASC']] });
+      sfRotationStyleId = anyRot?.id;
+    }
+  }
+  const sfRotation = await database.rotationStyle.findByPk(sfRotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+  if (!sfRotation) {
+    return { message: 'No se encontró estilo de rotación para sacafrancos', details: {} };
+  }
 
-  // Apply the chosen offsets to fijo positions + their active assignments.
+  // 6. Plan fijo offsets + the SF offset so a real day→night→rest SF covers every
+  // gap feasibly (day-gaps land in the SF day-block, night-gaps in its night-block).
+  const plan = planStationsAndSf(spreadInfo, {
+    dayShifts: sfRotation.dayShifts, nightShifts: sfRotation.nightShifts, restDays: sfRotation.restDays,
+  });
+
+  // Apply the chosen fijo offsets to positions + their active assignments.
   const offsetUpdates: { id: string; platoonOffset: number }[] = [];
-  for (const [posId, off] of spread.offsets.entries()) {
+  for (const [posId, off] of plan.fijoOffsets.entries()) {
     const fijo = fijoPositions.find((f: any) => String(f.id) === String(posId));
     if (fijo && fijo.platoonOffset !== off) offsetUpdates.push({ id: posId, platoonOffset: off });
   }
@@ -811,34 +760,8 @@ export async function optimizeSacafrancos(
     );
   }
 
-  // 5. Resolve SF rotation style — default to 4-4-2 (the SF shares the stations'
-  // rotation cadence: up to 8 consecutive workdays, then 2 rest).
-  let sfRotationStyleId = sacafrancoRotationStyleId;
-  if (!sfRotationStyleId) {
-    const rot442 = await database.rotationStyle.findOne({ where: { name: '4-4-2', isSystem: true } });
-    sfRotationStyleId = rot442?.id;
-    if (!sfRotationStyleId) {
-      const rot61 = await database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true } });
-      sfRotationStyleId = rot61?.id;
-    }
-    if (!sfRotationStyleId) {
-      const anyRot = await database.rotationStyle.findOne({ where: { isSystem: true }, order: [['restDays', 'ASC']] });
-      sfRotationStyleId = anyRot?.id;
-    }
-  }
-
-  const sfRotation = await database.rotationStyle.findByPk(sfRotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
-  if (!sfRotation) {
-    return { message: 'No se encontró estilo de rotación para sacafrancos', details: {} };
-  }
-
-  // 6. Size SFs dynamically: gap-driven coverage under the SF labor cap.
-  const sfPlan = computeSfPlan(spread.dayLoad, {
-    dayShifts: sfRotation.dayShifts,
-    nightShifts: sfRotation.nightShifts,
-    restDays: sfRotation.restDays,
-  });
-  const numSfNeeded = sfPlan.sfCount;
+  const numSfNeeded = plan.sfCount;
+  const sfOffset = plan.sfOffset;
   const totalFijos = fijoPositions.length;
 
   // 7. Preserve SF guards/assignments and rebalance SF positions.
@@ -883,16 +806,15 @@ export async function optimizeSacafrancos(
 
   const targetSlots: TargetSfSlot[] = [];
   for (let i = 0; i < targetSfCount; i++) {
-    // SF i rests on sequential days (for 6-1 => M,T,W,T,F,S,D)
-    const sfOffset = (i * sfRotation.restDays - sfWorkDays + sfCycle * 10) % sfCycle;
+    // All SFs share the planned offset (same day→night→rest rotation); the
+    // runtime splits each day's gaps among them by their index. Home station is
+    // just where the position record lives (coverage is global).
     const stationId = stationsWithFijos[i % stationsWithFijos.length].stationId;
-    const scheduleType = stationScheduleById.get(stationId) || '24h';
-    const isNightStation = scheduleType === '12h-night';
     targetSlots.push({
       index: i,
       stationId,
-      startTime: isNightStation ? '19:00' : '07:00',
-      endTime: isNightStation ? '07:00' : '19:00',
+      startTime: '07:00',
+      endTime: '19:00',
       platoonOffset: sfOffset,
       sortOrder: 100 + i,
       name: `SF ${i + 1}`,
@@ -1010,15 +932,15 @@ export async function optimizeSacafrancos(
   }
 
   return {
-    message: `Optimizado: ${targetSfCount} sacafranco(s) cubren ${stationsWithFijos.length} estaciones en cadena (gaps repartidos, pico ${spread.peak}/día).`,
+    message: `Optimizado: ${targetSfCount} sacafranco(s) cubren ${stationsWithFijos.length} estaciones en cadena día→noche→libre.`,
     details: {
       totalStations: stationsWithFijos.length,
       sacafrancosNeeded: numSfNeeded,
       sacafrancosConfigured: targetSfCount,
       fijosNeeded: totalFijos,
-      peakConcurrentGaps: spread.peak,
-      flaggedGaps: sfPlan.flaggedGaps,
-      superCycleDays: spread.L,
+      sfOffset,
+      outOfBlockGaps: plan.outOfBlock,
+      superCycleDays: plan.L,
       offsetsOptimized: offsetUpdates.length,
       rotationStyleId: sfRotationStyleId,
       sfAssignmentsPreserved: existingSfAssignments.length,
