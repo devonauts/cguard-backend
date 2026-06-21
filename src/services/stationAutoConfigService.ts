@@ -16,6 +16,19 @@
 //   `optimizeSacafrancos` + the SF-guard assignment ONCE itself after all empty
 //   stations are configured.
 
+/** Find a system rotation style by name, creating it if missing. Returns its id. */
+export async function ensureRotationStyle(db: any, name: string, dayShifts: number, nightShifts: number, restDays: number): Promise<string | null> {
+  const existing = await db.rotationStyle.findOne({ where: { name, isSystem: true } });
+  if (existing) return existing.id;
+  const created = await db.rotationStyle.create({
+    name,
+    description: `${dayShifts} trabajo${nightShifts ? `, ${nightShifts} noche` : ''}, ${restDays} descanso`,
+    dayShifts, nightShifts, restDays,
+    isSystem: true, tenantId: null,
+  });
+  return created.id;
+}
+
 export async function autoConfigureStationPositions(
   db: any,
   params: {
@@ -43,16 +56,18 @@ export async function autoConfigureStationPositions(
   let rotationStyleId = params.rotationStyleId || data.rotationStyleId || null;
   const runSacafrancoOptimize = params.runSacafrancoOptimize !== false;
 
-  // Auto-pick recommended rotation if not specified
+  // Auto-pick recommended rotation if not specified. ALL stations use a 10-day
+  // cycle so they SYNC with each other and the sacafranco (also 10-day): a 24h
+  // station rotates 4-4-2 (its 2 fijos swap day/night); a 12h station uses 8-2
+  // (8 work, 2 rest, single shift). Same cycle length ⇒ each guard rests 2 days
+  // per cycle and ONE sacafranco can chain through all of their rest days.
   if (!rotationStyleId) {
-    let recommendedName: string;
     if (scheduleType === '24h') {
-      recommendedName = '4-4-2'; // 4 day, 4 night, 2 rest — standard for 24H
+      const r = await db.rotationStyle.findOne({ where: { name: '4-4-2', isSystem: true } });
+      rotationStyleId = r?.id || null;
     } else {
-      recommendedName = '5-2'; // 5 work, 2 rest — standard for 12H
+      rotationStyleId = await ensureRotationStyle(db, '8-2', 8, 0, 2);
     }
-    const recommended = await db.rotationStyle.findOne({ where: { name: recommendedName, isSystem: true } });
-    rotationStyleId = recommended?.id || null;
   }
 
   // Update station scheduleType and rotationStyleId

@@ -588,9 +588,12 @@ export async function schedulerAutoAssign(req, res) {
       const s: any = station.get({ plain: true });
       if (!s.rotationStyleId) {
         const sType = s.scheduleType || '24h';
+        // 10-day cycle for everyone so stations sync with the sacafranco:
+        // 24h → 4-4-2 (fijos swap day/night); 12h → 8-2 (single shift).
+        const { ensureRotationStyle } = await import('../../services/stationAutoConfigService');
         const rotId = sType === '24h'
           ? (rotationStyles.find((r: any) => r.name === '4-4-2')?.id || rotationStyles[0]?.id)
-          : (rotationStyles.find((r: any) => r.name === '5-2')?.id || rotationStyles[0]?.id);
+          : await ensureRotationStyle(req.database, '8-2', 8, 0, 2);
         await req.database.station.update({ rotationStyleId: rotId, scheduleType: sType }, { where: { id: s.id, tenantId } });
         if (rotId) stationRotationUpdates.set(s.id, rotId);
       }
