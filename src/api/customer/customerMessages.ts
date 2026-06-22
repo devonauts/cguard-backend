@@ -76,17 +76,37 @@ export const customerMessageRead = async (req, res) => {
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
 
-/** Register the client app's FCM token so CRM→client push is deliverable. */
+/**
+ * Register the native client app's FCM token so CRM→client push is deliverable.
+ * Customer-scoped (auth via the sign-in-customer JWT — no admin permission), so
+ * the apps don't hit the permissioned /tenant/:id/device-id-information (403).
+ * Accepts the apps' current body { deviceId } as well as { token }/{ pushToken },
+ * plus optional device metadata. Keyed by (tenant, user): a refreshed token
+ * overwrites the old row.
+ */
 export const customerDeviceToken = async (req, res) => {
   try {
     const { db, tenantId, userId } = customerCtx(req);
-    const token = (req.body?.data?.token || req.body?.token || '').toString();
-    if (!token) return ApiResponseHandler.error(req, res, new Error('token requerido'));
+    const b = req.body?.data || req.body || {};
+    const token = (b.deviceId || b.token || b.pushToken || '').toString().trim();
+    if (!token) return ApiResponseHandler.error(req, res, new Error('deviceId requerido'));
+
+    const fields: any = {
+      deviceId: token,
+      pushToken: token,
+      lastSeenAt: new Date(),
+      updatedById: userId,
+    };
+    if (b.platform) fields.platform = String(b.platform).slice(0, 40);
+    if (b.model) fields.model = String(b.model).slice(0, 120);
+    if (b.osVersion) fields.osVersion = String(b.osVersion).slice(0, 60);
+    if (b.appVersion) fields.appVersion = String(b.appVersion).slice(0, 40);
+
     const existing = await db.deviceIdInformation.findOne({ where: { tenantId, userId } });
     if (existing) {
-      await existing.update({ pushToken: token, updatedById: userId });
+      await existing.update(fields);
     } else {
-      await db.deviceIdInformation.create({ deviceId: token, pushToken: token, userId, tenantId, createdById: userId, updatedById: userId });
+      await db.deviceIdInformation.create({ ...fields, userId, tenantId, createdById: userId });
     }
     await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }

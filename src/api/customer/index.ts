@@ -30,5 +30,10 @@ export default (app) => {
   app.get('/customer/messages/:conversationId', require('./customerMessages').customerMessageThread);
   app.post('/customer/messages/:conversationId', require('./customerMessages').customerMessageReply);
   app.post('/customer/messages/:conversationId/read', require('./customerMessages').customerMessageRead);
+  // Register the client app's FCM token. Customer-scoped (tenant comes from the
+  // JWT) so it never hits the permissioned /tenant/:id/device-id-information.
+  // Same handler at two paths: the new RESTful one the apps requested + the
+  // legacy alias, so existing builds keep working.
+  app.post('/customer/me/device-id-information', require('./customerMessages').customerDeviceToken);
   app.post('/customer/device-token', require('./customerMessages').customerDeviceToken);
 };
