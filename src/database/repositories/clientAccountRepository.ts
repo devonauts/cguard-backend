@@ -288,8 +288,20 @@ class ClientAccountRepository {
       },
     );
 
-    console.log('✅ Registro actualizado en BD:', record.toJSON());
-    console.log('✅ Registro (active):', record.active);
+    // Keep coordinates in sync when the address changes: if the caller edited an
+    // address field but did NOT supply explicit coordinates, forward-geocode the
+    // new address and persist lat/lng. Best-effort — never blocks the save.
+    try {
+      const addressTouched = ['address', 'addressComplement', 'city', 'country', 'zipCode']
+        .some((k) => normalizedData[k] !== undefined);
+      const coordsProvided = normalizedData.latitude != null || normalizedData.longitude != null;
+      if (addressTouched && !coordsProvided) {
+        const { geocodeAddress } = require('../../lib/geocode');
+        const full = [record.address, record.city, record.country].filter(Boolean).join(', ');
+        const pt = await geocodeAddress(full);
+        if (pt) await record.update({ latitude: pt.latitude, longitude: pt.longitude }, { transaction });
+      }
+    } catch (e) { /* best-effort geocode */ }
 
 
     if (data.logoUrl !== undefined) {

@@ -139,7 +139,19 @@ class BusinessInfoRepository {
       },
     );
 
-
+    // Keep the post-site coordinates in sync with its address: if the address
+    // changed and no explicit coords were supplied, forward-geocode. Best-effort.
+    try {
+      const addressTouched = ['address', 'secondAddress', 'city', 'country', 'postalCode']
+        .some((k) => data[k] !== undefined);
+      const coordsProvided = data.latitud != null || data.longitud != null;
+      if (addressTouched && !coordsProvided) {
+        const { geocodeAddress } = require('../../lib/geocode');
+        const full = [record.address, record.city, record.country].filter(Boolean).join(', ');
+        const pt = await geocodeAddress(full);
+        if (pt) await record.update({ latitud: pt.latitude, longitud: pt.longitude }, { transaction });
+      }
+    } catch (e) { /* best-effort geocode */ }
 
     await FileRepository.replaceRelationFiles(
       {
