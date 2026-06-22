@@ -139,24 +139,19 @@ class StationRepository {
       },
     );
 
-    await record.setAssignedGuards(data.assignedGuards || [], {
-      transaction,
-    });
-    await record.setTasks(data.tasks || [], {
-      transaction,
-    });
-    await record.setReports(data.reports || [], {
-      transaction,
-    });
-    await record.setIncidents(data.incidents || [], {
-      transaction,
-    });
-    await record.setCheckpoints(data.checkpoints || [], {
-      transaction,
-    });
-    await record.setPatrol(data.patrol || [], {
-      transaction,
-    });
+    // Only re-set an association when the caller actually sent it. A partial
+    // update (e.g. the post-site wizard, which only edits station fields) must
+    // NOT wipe relations it didn't touch. Critically, setCheckpoints([]) would
+    // try to NULL the stationId of this station's existing patrol checkpoints —
+    // and patrolCheckpoint.stationId is NOT NULL → "patrolCheckpoint.stationId
+    // cannot be null" 400. Guarding on `!== undefined` avoids that and also stops
+    // silently clearing assigned guards / tasks / reports / incidents on every edit.
+    if (data.assignedGuards !== undefined) await record.setAssignedGuards(data.assignedGuards || [], { transaction });
+    if (data.tasks !== undefined) await record.setTasks(data.tasks || [], { transaction });
+    if (data.reports !== undefined) await record.setReports(data.reports || [], { transaction });
+    if (data.incidents !== undefined) await record.setIncidents(data.incidents || [], { transaction });
+    if (data.checkpoints !== undefined) await record.setCheckpoints(data.checkpoints || [], { transaction });
+    if (data.patrol !== undefined) await record.setPatrol(data.patrol || [], { transaction });
     // NOTE: no `record.setShift(...)` — the station↔shift M:N association was
     // removed in the Phase-1 cleanup (shifts now reference shift.stationId, a
     // 1:N). The leftover setShift call threw "setShift is not a function" and
