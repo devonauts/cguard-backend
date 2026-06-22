@@ -84,6 +84,27 @@ export async function notifyPatrol(
         : `Ronda${route} completada por ${guardName || 'el guardia'}.`;
 
     if (wantTenant) {
+      // PRIMARY CRM delivery: the CRM notification feed (bell) reads the
+      // platform_events stream over websockets — NOT the legacy `notifications`
+      // table. storePlatformEvent persists the row (bell backlog) AND emits it
+      // live to the tenant's connected browsers. Without this, ronda events
+      // never reached the CRM. targetRoles=null → broadcast to the whole tenant.
+      try {
+        const { storePlatformEvent } = require('../lib/platformEventStore');
+        await storePlatformEvent(db, {
+          tenantId,
+          eventType: event === 'start' ? 'patrol.started' : 'patrol.completed',
+          title,
+          body: body.slice(0, 200),
+          payload: { routeName: routeName || null, guardName: guardName || null, postSiteId: postSiteId || null },
+          targetRoles: null,
+          sourceEntityType: 'siteTour',
+          sourceEntityId: postSiteId || null,
+        });
+      } catch (e: any) {
+        console.warn('[ronda] platform event emit failed:', e?.message || e);
+      }
+      // Legacy in-app row (kept for any consumers of the notifications table).
       try {
         await db.notification.create({
           title,
