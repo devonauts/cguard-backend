@@ -231,6 +231,10 @@ export default class SiteTourService {
                 guardName = sg ? sg.fullName : undefined;
               }
             } catch { /* ignore */ }
+            // notifyPatrol handles BOTH the tenant (CRM) and the client app
+            // (mi seguridad) delivery, gated by the ronda settings
+            // (notifyTenantOnComplete / notifyClient). No separate notifyClient
+            // call here — that previously double-notified the client.
             await notifyPatrol(db, {
               tenantId,
               postSiteId: tour.postSiteId,
@@ -238,16 +242,6 @@ export default class SiteTourService {
               routeName: tour.name,
               guardName,
               settings,
-            });
-            // Push to the owning client (post-site owner) — "ronda done".
-            const { notifyClient } = require('./clientNotifyService');
-            await notifyClient(db, tenantId, { postSiteId: tour.postSiteId, stationId: tour.stationId }, {
-              eventType: 'patrol.completed',
-              title: 'Ronda completada',
-              body: `Ronda "${tour.name || 'patrullaje'}" completada${guardName ? ` por ${guardName}` : ''}.`,
-              data: { postSiteId: String(tour.postSiteId || ''), routeName: String(tour.name || '') },
-              sourceEntityType: 'siteTour',
-              sourceEntityId: String(tour.id),
             });
           }
         } catch (e: any) {

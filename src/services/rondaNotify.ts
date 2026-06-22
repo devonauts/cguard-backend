@@ -158,23 +158,22 @@ export async function notifyPatrol(
     }
 
     if (wantClient && postSiteId) {
+      // Notify the native CLIENT app (mi seguridad) for BOTH start and complete.
+      // clientNotifyService resolves the client's user(s) and delivers via the
+      // native channels: FCM push (pushToUser) + a platform_event scoped to that
+      // client user (so the client app's websocket/in-app feed gets it too).
       try {
-        const post = await db.businessInfo.findByPk(postSiteId);
-        const clientId = post && (post.clientAccountId || post.clientId);
-        if (clientId) {
-          await db.notification.create({
-            title,
-            body: body.slice(0, 200),
-            targetType: 'Client',
-            targetId: String(clientId),
-            deliveryStatus: 'Pending',
-            readStatus: false,
-            tenantId,
-            whoCreatedTheNotificationId: createdById || null,
-          });
-        }
+        const { notifyClient } = require('./clientNotifyService');
+        await notifyClient(db, tenantId, { postSiteId }, {
+          eventType: event === 'start' ? 'patrol.started' : 'patrol.completed',
+          title,
+          body: body.slice(0, 200),
+          data: { type: `patrol_${event}`, routeName: routeName || '' },
+          sourceEntityType: 'siteTour',
+          sourceEntityId: String(postSiteId),
+        });
       } catch (e: any) {
-        console.warn('[ronda] client notification create failed:', e?.message || e);
+        console.warn('[ronda] client app notify failed:', e?.message || e);
       }
     }
   } catch (e: any) {
