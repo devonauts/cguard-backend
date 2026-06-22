@@ -104,6 +104,25 @@ export default class SiteTourService {
         }
       }
 
+      // ── Configuración de Rondas (rondaSettings) ─────────────────────────
+      // The CRM "Configuración de Rondas" (geofence radius + photo/note/geofence
+      // requirements) must actually govern the scan — not just advise the worker
+      // app. Resolve the effective settings (per-post override → tenant default →
+      // built-in) and use them for the radius and for recording compliance.
+      const scanTenantId = this.options.currentTenant && this.options.currentTenant.id;
+      let rondaSettings: any = null;
+      try {
+        const { resolveRondaSettings } = require('./rondaNotify');
+        let psId = tag.postSiteId;
+        if (!psId) {
+          const tour0 = await this.options.database.siteTour.findByPk(tag.siteTourId, {
+            attributes: ['id', 'postSiteId'], transaction,
+          });
+          psId = tour0 ? tour0.postSiteId : null;
+        }
+        rondaSettings = await resolveRondaSettings(this.options.database, scanTenantId, psId);
+      } catch { /* fall back to non-config behavior below */ }
+
       // ── Server-side location verification ───────────────────────────────
       // Best practice: never trust the device. Verify the guard's GPS against
       // the CHECKPOINT's own coordinates (not just the station), so a scan only
@@ -113,11 +132,13 @@ export default class SiteTourService {
       const cpLat = Number(tag.latitude);
       const cpLng = Number(tag.longitude);
 
-      // Radius priority: the checkpoint's own coverage radius → the station's →
-      // the checkpoint default. Each checkpoint can have a tighter/looser fence.
+      // Radius priority: the checkpoint's own coverage radius → the configured
+      // Configuración de Rondas radius → the station's → the checkpoint default.
       let radiusM = DEFAULT_CHECKPOINT_RADIUS_M;
       if (tag.geofenceRadius != null && !isNaN(Number(tag.geofenceRadius))) {
         radiusM = Number(tag.geofenceRadius);
+      } else if (rondaSettings && rondaSettings.geofenceRadius != null && !isNaN(Number(rondaSettings.geofenceRadius))) {
+        radiusM = Number(rondaSettings.geofenceRadius);
       } else {
         try {
           const stId = stationId || tag.stationId;
@@ -141,6 +162,23 @@ export default class SiteTourService {
         validLocation = distanceMeters <= radiusM;
       }
 
+      // Evaluate the scan against the Configuración de Rondas so the configured
+      // requirements are enforced/recorded server-side (not only client-side).
+      const photoProvided = !!(scannedData && (scannedData.photoPrivateUrl || scannedData.photoFileToken));
+      const noteProvided = !!(scannedData && scannedData.notes && String(scannedData.notes).trim());
+      const compliance: any = {
+        requirePhoto: !!(rondaSettings && rondaSettings.requirePhoto),
+        photoProvided,
+        requireNote: !!(rondaSettings && rondaSettings.requireNote),
+        noteProvided,
+        requireGeofence: !!(rondaSettings && rondaSettings.requireGeofence),
+        locationValid: validLocation,
+      };
+      compliance['compliant'] =
+        (!compliance.requirePhoto || photoProvided) &&
+        (!compliance.requireNote || noteProvided) &&
+        (!compliance.requireGeofence || validLocation === true);
+
       // Create tagScan row
       scan = await this.options.database.tagScan.create({
         siteTourTagId: tag.id,
@@ -150,7 +188,7 @@ export default class SiteTourService {
         scannedAt: new Date(),
         validLocation,
         distanceMeters,
-        scannedData: { latitude, longitude, validLocation, distanceMeters, radiusM, extra: scannedData },
+        scannedData: { latitude, longitude, validLocation, distanceMeters, radiusM, compliance, extra: scannedData },
       }, { transaction });
 
       // Mark the assignment complete once every checkpoint has been scanned.
@@ -222,6 +260,7 @@ export default class SiteTourService {
         assignment,
         scan,
         location: { validLocation, distanceMeters, radiusM, verified: canVerify },
+        compliance,
       };
     } catch (err) {
       await SequelizeRepository.rollbackTransaction(transaction);
