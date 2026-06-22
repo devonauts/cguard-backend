@@ -112,32 +112,32 @@ class StationRepository {
       throw new Error404();
     }
 
-    record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'stationName',
-          'nickname',
-          'latitud',
-          'longitud',
-          'numberOfGuardsInStation',
-          'stationSchedule',
-          'startingTimeInDay',
-          'finishTimeInDay',
-          'geofenceRadius',
-          'geofencePolygon',
-          'clockInEarlyBufferMin',
-          'clockInLateGraceMin',
-          'importHash',
-          'postSiteId',
-        ]),
-        stationOriginId: data.stationOrigin || null,
-        postSiteId: data.postSite || data.postSiteId || null,
-        updatedById: currentUser.id,
-      },
-      {
-        transaction,
-      },
-    );
+    const updatePayload: any = {
+      ...lodash.pick(data, [
+        'stationName',
+        'nickname',
+        'latitud',
+        'longitud',
+        'numberOfGuardsInStation',
+        'stationSchedule',
+        'startingTimeInDay',
+        'finishTimeInDay',
+        'geofenceRadius',
+        'geofencePolygon',
+        'clockInEarlyBufferMin',
+        'clockInLateGraceMin',
+        'importHash',
+      ]),
+      updatedById: currentUser.id,
+    };
+    // Only (re)assign the FK columns when the caller actually sent them — a
+    // partial update (e.g. saving only the location/geofence) must NOT null the
+    // station's sitio (postSiteId) or origin.
+    if (data.stationOrigin !== undefined) updatePayload.stationOriginId = data.stationOrigin || null;
+    if (data.postSite !== undefined || data.postSiteId !== undefined) {
+      updatePayload.postSiteId = data.postSite || data.postSiteId || null;
+    }
+    record = await record.update(updatePayload, { transaction });
 
     // Only re-set an association when the caller actually sent it. A partial
     // update (e.g. the post-site wizard, which only edits station fields) must

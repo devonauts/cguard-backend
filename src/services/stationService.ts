@@ -64,14 +64,19 @@ export default class StationService {
     );
 
     try {
-      data.stationOrigin = await ClientAccountRepository.filterIdInTenant(data.stationOrigin, { ...this.options, transaction });
-      data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
-      data.assignedGuards = await UserRepository.filterIdsInTenant(data.assignedGuards, { ...this.options, transaction });
-      data.tasks = await TaskRepository.filterIdsInTenant(data.tasks, { ...this.options, transaction });
-      data.reports = await ReportRepository.filterIdsInTenant(data.reports, { ...this.options, transaction });
-      data.incidents = await IncidentRepository.filterIdsInTenant(data.incidents, { ...this.options, transaction });
-      data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });
-      data.patrol = await PatrolRepository.filterIdsInTenant(data.patrol, { ...this.options, transaction });
+      // Only normalize a relation when the caller actually SENT it. Otherwise
+      // filterIds*(undefined) returns [] — which the repo would then treat as
+      // "clear this association", wiping checkpoints (→ NOT NULL stationId 400),
+      // assigned guards, tasks, etc. on any partial update (e.g. saving just the
+      // station's location/geofence).
+      if (data.stationOrigin !== undefined) data.stationOrigin = await ClientAccountRepository.filterIdInTenant(data.stationOrigin, { ...this.options, transaction });
+      if (data.postSite !== undefined) data.postSite = await BusinessInfoRepository.filterIdInTenant(data.postSite, { ...this.options, transaction });
+      if (data.assignedGuards !== undefined) data.assignedGuards = await UserRepository.filterIdsInTenant(data.assignedGuards, { ...this.options, transaction });
+      if (data.tasks !== undefined) data.tasks = await TaskRepository.filterIdsInTenant(data.tasks, { ...this.options, transaction });
+      if (data.reports !== undefined) data.reports = await ReportRepository.filterIdsInTenant(data.reports, { ...this.options, transaction });
+      if (data.incidents !== undefined) data.incidents = await IncidentRepository.filterIdsInTenant(data.incidents, { ...this.options, transaction });
+      if (data.checkpoints !== undefined) data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });
+      if (data.patrol !== undefined) data.patrol = await PatrolRepository.filterIdsInTenant(data.patrol, { ...this.options, transaction });
 
       const record = await StationRepository.update(
         id,
