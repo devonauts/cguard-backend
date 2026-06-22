@@ -108,6 +108,14 @@ class BusinessInfoRepository {
       throw new Error404();
     }
 
+    // Only re-geocode when an address field TRULY changed (forms resend the
+    // address every save), and no explicit coords were supplied. Compare before
+    // the update.
+    const addressChanged = ['address', 'secondAddress', 'city', 'country', 'postalCode'].some(
+      (k) => data[k] !== undefined && String(data[k] ?? '') !== String((record as any)[k] ?? ''),
+    );
+    const coordsProvided = data.latitud != null || data.longitud != null;
+
     record = await record.update(
       {
         ...lodash.pick(data, [
@@ -139,19 +147,15 @@ class BusinessInfoRepository {
       },
     );
 
-    // Keep the post-site coordinates in sync with its address: if the address
-    // changed and no explicit coords were supplied, forward-geocode. Best-effort.
-    try {
-      const addressTouched = ['address', 'secondAddress', 'city', 'country', 'postalCode']
-        .some((k) => data[k] !== undefined);
-      const coordsProvided = data.latitud != null || data.longitud != null;
-      if (addressTouched && !coordsProvided) {
+    // Best-effort, cached + rate-limited (see geocode.ts).
+    if (addressChanged && !coordsProvided) {
+      try {
         const { geocodeAddress } = require('../../lib/geocode');
         const full = [record.address, record.city, record.country].filter(Boolean).join(', ');
         const pt = await geocodeAddress(full);
         if (pt) await record.update({ latitud: pt.latitude, longitud: pt.longitude }, { transaction });
-      }
-    } catch (e) { /* best-effort geocode */ }
+      } catch (e) { /* best-effort geocode */ }
+    }
 
     await FileRepository.replaceRelationFiles(
       {

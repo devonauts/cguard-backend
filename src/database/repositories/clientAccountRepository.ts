@@ -281,6 +281,15 @@ class ClientAccountRepository {
     console.log('📥 UpdateData (active):', updateData.active);
     console.log('📥 UpdateData (categoryIds):', updateData.categoryIds);
 
+    // Did an address field ACTUALLY change? Compare the incoming value to the
+    // current record BEFORE updating — forms resend the address on every save,
+    // so checking "field present" would re-geocode unchanged addresses and waste
+    // (rate-limited) geocoder calls.
+    const addressChanged = ['address', 'addressComplement', 'city', 'country', 'zipCode'].some(
+      (k) => normalizedData[k] !== undefined && String(normalizedData[k] ?? '') !== String((record as any)[k] ?? ''),
+    );
+    const coordsProvided = normalizedData.latitude != null || normalizedData.longitude != null;
+
     record = await record.update(
       updateData,
       {
@@ -288,20 +297,16 @@ class ClientAccountRepository {
       },
     );
 
-    // Keep coordinates in sync when the address changes: if the caller edited an
-    // address field but did NOT supply explicit coordinates, forward-geocode the
-    // new address and persist lat/lng. Best-effort — never blocks the save.
-    try {
-      const addressTouched = ['address', 'addressComplement', 'city', 'country', 'zipCode']
-        .some((k) => normalizedData[k] !== undefined);
-      const coordsProvided = normalizedData.latitude != null || normalizedData.longitude != null;
-      if (addressTouched && !coordsProvided) {
+    // Keep coordinates in sync only when the address truly changed and no explicit
+    // coords were supplied. Best-effort, cached + rate-limited in geocode.ts.
+    if (addressChanged && !coordsProvided) {
+      try {
         const { geocodeAddress } = require('../../lib/geocode');
         const full = [record.address, record.city, record.country].filter(Boolean).join(', ');
         const pt = await geocodeAddress(full);
         if (pt) await record.update({ latitude: pt.latitude, longitude: pt.longitude }, { transaction });
-      }
-    } catch (e) { /* best-effort geocode */ }
+      } catch (e) { /* best-effort geocode */ }
+    }
 
 
     if (data.logoUrl !== undefined) {
