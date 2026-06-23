@@ -23,8 +23,12 @@ const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcri
 const SUMMARY_MODEL = process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini';
 // Text-to-speech: the AI "dispatcher" voice that conducts the pase de novedades.
 const TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
-const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'alloy';
+// Female dispatcher voice by default ('nova' is a clear female voice). Override
+// with OPENAI_TTS_VOICE (e.g. shimmer/coral/sage are also female; alloy neutral).
+const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'nova';
 const DISPATCHER_TARGET_ROLES = 'admin,operationsManager,securitySupervisor,dispatcher';
+// Timezone used to pick the spoken greeting (server runs UTC; tenants are local).
+const RADIO_TZ = process.env.RADIO_TZ || 'America/Guayaquil';
 
 export function isEnabled(): boolean { return !!KEY; }
 
@@ -32,6 +36,37 @@ export function isEnabled(): boolean { return !!KEY; }
 export function buildStationPromptText(stationName?: string | null): string {
   const name = (stationName || 'puesto').trim();
   return `${name}, aquí central de monitoreo. Adelante con su pase de novedades. Reporte cualquier novedad o indique sin novedad. Cambio.`;
+}
+
+/** Time-of-day greeting (días/tardes/noches) in the tenant's timezone. */
+function greeting(): string {
+  let hour = new Date().getHours();
+  try {
+    const h = new Intl.DateTimeFormat('en-US', { timeZone: RADIO_TZ, hour: 'numeric', hour12: false }).format(new Date());
+    const n = parseInt(h, 10);
+    if (Number.isFinite(n)) hour = n % 24;
+  } catch { /* fall back to server hour */ }
+  if (hour < 12) return 'Buenos días';
+  if (hour < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+/**
+ * The single OPENING announcement the AI specialist speaks to ALL guards when a
+ * pase de novedades starts. They then have one minute to complete their report.
+ */
+export function buildOpeningAnnouncement(): string {
+  return `${greeting()} compañeros, saludos desde la central. Por favor revisen sus dispositivos y completen el reporte de novedades. Tienen un minuto para completarlo. Si no se completa dentro del minuto, se marcará su reporte como fallido.`;
+}
+
+/** Speak the opening announcement live into the open radio channel (best-effort). */
+export async function broadcastOpening(tenantId: string): Promise<void> {
+  try {
+    const pcm = await synthesizeSpeechPcm(buildOpeningAnnouncement());
+    if (pcm) await broadcastPcm(tenantId, pcm, OPENAI_PCM_RATE, 'Central de monitoreo');
+  } catch (e: any) {
+    console.warn('[radioCheck] opening broadcast failed:', e?.message || e);
+  }
 }
 
 /**

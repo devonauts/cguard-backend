@@ -132,9 +132,60 @@ export async function startSession(db: any, tenantId: string, opts: { mode: 'man
     payload: { sessionId: session.id, mode: opts.mode, totalStations: stations.length },
   }).catch(() => {});
 
-  // Kick off the first pending station, then return.
-  await advanceSession(db, tenantId, session.id);
+  // Speak ONE opening announcement to everyone, then open a single 60-second
+  // window for ALL stations to report at once (instead of calling them one by
+  // one). The scheduler/advanceSession then expires anyone who didn't reply.
+  await notifyAllEntries(db, tenantId, session.id, RADIO_REPORT_WINDOW_SECONDS);
   return db.radioCheckSession.findOne({ where: { id: session.id, tenantId } });
+}
+
+/** Seconds guards have to complete their report after the opening announcement. */
+const RADIO_REPORT_WINDOW_SECONDS = 60;
+
+/**
+ * Announcement model: the AI specialist speaks the opening line into the live
+ * channel, then EVERY station is notified simultaneously with the same deadline.
+ * The worker app shows a countdown to `timeoutAt`.
+ */
+async function notifyAllEntries(db: any, tenantId: string, sessionId: string, windowSeconds: number): Promise<void> {
+  const now = new Date();
+  const timeoutAt = new Date(now.getTime() + windowSeconds * 1000);
+
+  // Opening voice: broadcast live into the channel + synthesize one mp3 the
+  // worker app can auto-play, reused as every entry's promptAudio.
+  void ai.broadcastOpening(tenantId);
+  const openingMp3 = await ai
+    .synthesizeSpeech(`radio-check/${tenantId}/${sessionId}/opening.mp3`, ai.buildOpeningAnnouncement())
+    .catch(() => null);
+
+  const pending = await db.radioCheckEntry.findAll({
+    where: { tenantId, sessionId, status: 'pending', deletedAt: null },
+    order: [['seq', 'ASC']],
+  });
+  const adapter = getChannelAdapter();
+
+  for (const entry of pending) {
+    const [claimed] = await db.radioCheckEntry.update(
+      { status: 'notified', notifiedAt: now, timeoutAt, promptAudioUrl: openingMp3 || null },
+      { where: { id: entry.id, tenantId, status: 'pending' } },
+    );
+    if (!claimed) continue;
+
+    const stations = await resolveStationsForCheck(db, tenantId, 'station', entry.stationId);
+    const guards = stations[0]?.guards || [];
+    const userIds = guards.map((g: any) => g.userId).filter(Boolean);
+    await adapter.notifyGuards({ db, tenantId }, userIds, {
+      sessionId, entryId: entry.id, stationId: entry.stationId,
+      stationName: entry.stationName || '', promptText: entry.promptText || DEFAULT_PROMPT,
+      promptAudioUrl: openingMp3 || null,
+    }).catch(() => {});
+
+    await storePlatformEvent(db, {
+      tenantId, eventType: 'radio.station_notified', title: 'Llamando a puesto', body: entry.stationName || '',
+      targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckEntry', sourceEntityId: entry.id,
+      payload: { sessionId, entryId: entry.id, stationId: entry.stationId, stationName: entry.stationName, seq: entry.seq, promptAudioUrl: openingMp3 || null, timeoutAt: timeoutAt.toISOString() },
+    }).catch(() => {});
+  }
 }
 
 /** Mark an entry notified, set its timeout, push to its station's on-duty guards. */
