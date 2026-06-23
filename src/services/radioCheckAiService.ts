@@ -23,9 +23,12 @@ const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcri
 const SUMMARY_MODEL = process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini';
 // Text-to-speech: the AI "dispatcher" voice that conducts the pase de novedades.
 const TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
-// Female dispatcher voice by default ('nova' is a clear female voice). Override
-// with OPENAI_TTS_VOICE (e.g. shimmer/coral/sage are also female; alloy neutral).
-const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'nova';
+// Happy, warm female dispatcher voice by default ('coral' is bright/cheerful).
+// Override with OPENAI_TTS_VOICE (other female options: nova, shimmer, sage).
+const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'coral';
+// gpt-4o-mini-tts honors a free-text tone instruction — steer it upbeat/friendly.
+const TTS_INSTRUCTIONS = process.env.OPENAI_TTS_INSTRUCTIONS
+  || 'Habla en español latino con un tono alegre, cálido y amable, con energía positiva y cercanía, como una compañera de la central que saluda con buena actitud.';
 const DISPATCHER_TARGET_ROLES = 'admin,operationsManager,securitySupervisor,dispatcher';
 // Timezone used to pick the spoken greeting (server runs UTC; tenants are local).
 const RADIO_TZ = process.env.RADIO_TZ || 'America/Guayaquil';
@@ -81,7 +84,7 @@ export async function synthesizeSpeech(privateUrl: string, text: string): Promis
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: text.slice(0, 4000), response_format: 'mp3' }),
+      body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: text.slice(0, 4000), response_format: 'mp3', instructions: TTS_INSTRUCTIONS }),
     });
     if (!res.ok) throw new Error(`OpenAI TTS ${res.status}: ${await res.text()}`);
     const buf = Buffer.from(await res.arrayBuffer());
@@ -108,7 +111,7 @@ export async function synthesizeSpeechPcm(text: string): Promise<Int16Array | nu
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: text.slice(0, 4000), response_format: 'pcm' }),
+      body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: text.slice(0, 4000), response_format: 'pcm', instructions: TTS_INSTRUCTIONS }),
     });
     if (!res.ok) throw new Error(`OpenAI TTS pcm ${res.status}: ${await res.text()}`);
     const ab = await res.arrayBuffer();
@@ -223,7 +226,11 @@ export async function generateSummary(db: any, tenantId: string, sessionId: stri
     await storePlatformEvent(db, {
       tenantId, eventType: 'radio.session_completed', title: 'Resumen del pase listo', body: '',
       targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckSession', sourceEntityId: sessionId,
-      payload: { sessionId, summaryReady: true, summaryAudioUrl: summaryAudioUrl || null },
+      // summaryAudioUrl intentionally NOT in the payload: the closing report is
+      // spoken ONCE live on the radio channel (below). Auto-playing the mp3 too
+      // made the dispatcher hear it twice. The mp3 stays persisted on the session
+      // for an optional manual replay.
+      payload: { sessionId, summaryReady: true, summaryAudioUrl: null },
     }).catch(() => {});
     // Read the closing report over the live radio channel (fire-and-forget).
     void (async () => {

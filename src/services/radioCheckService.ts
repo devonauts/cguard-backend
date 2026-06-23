@@ -151,12 +151,11 @@ async function notifyAllEntries(db: any, tenantId: string, sessionId: string, wi
   const now = new Date();
   const timeoutAt = new Date(now.getTime() + windowSeconds * 1000);
 
-  // Opening voice: broadcast live into the channel + synthesize one mp3 the
-  // worker app can auto-play, reused as every entry's promptAudio.
+  // ONE voice only: the AI speaks the opening LIVE on the radio channel. We do
+  // NOT also attach an auto-play mp3 (promptAudioUrl) — doing both made the
+  // dispatcher/guard hear the announcement twice (channel + mp3). The live
+  // broadcast is the single source of the spoken announcement.
   void ai.broadcastOpening(tenantId);
-  const openingMp3 = await ai
-    .synthesizeSpeech(`radio-check/${tenantId}/${sessionId}/opening.mp3`, ai.buildOpeningAnnouncement())
-    .catch(() => null);
 
   const pending = await db.radioCheckEntry.findAll({
     where: { tenantId, sessionId, status: 'pending', deletedAt: null },
@@ -166,7 +165,7 @@ async function notifyAllEntries(db: any, tenantId: string, sessionId: string, wi
 
   for (const entry of pending) {
     const [claimed] = await db.radioCheckEntry.update(
-      { status: 'notified', notifiedAt: now, timeoutAt, promptAudioUrl: openingMp3 || null },
+      { status: 'notified', notifiedAt: now, timeoutAt, promptAudioUrl: null },
       { where: { id: entry.id, tenantId, status: 'pending' } },
     );
     if (!claimed) continue;
@@ -177,13 +176,13 @@ async function notifyAllEntries(db: any, tenantId: string, sessionId: string, wi
     await adapter.notifyGuards({ db, tenantId }, userIds, {
       sessionId, entryId: entry.id, stationId: entry.stationId,
       stationName: entry.stationName || '', promptText: entry.promptText || DEFAULT_PROMPT,
-      promptAudioUrl: openingMp3 || null,
+      promptAudioUrl: null,
     }).catch(() => {});
 
     await storePlatformEvent(db, {
       tenantId, eventType: 'radio.station_notified', title: 'Llamando a puesto', body: entry.stationName || '',
       targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckEntry', sourceEntityId: entry.id,
-      payload: { sessionId, entryId: entry.id, stationId: entry.stationId, stationName: entry.stationName, seq: entry.seq, promptAudioUrl: openingMp3 || null, timeoutAt: timeoutAt.toISOString() },
+      payload: { sessionId, entryId: entry.id, stationId: entry.stationId, stationName: entry.stationName, seq: entry.seq, promptAudioUrl: null, timeoutAt: timeoutAt.toISOString() },
     }).catch(() => {});
   }
 }
