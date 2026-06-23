@@ -257,6 +257,59 @@ export async function reactivateTenant(req: Request, id: string): Promise<any> {
 }
 
 /**
+ * POST /tenants/:id/extend-trial — push out the free-trial end date.
+ * Body accepts EITHER:
+ *   { days: <positive int> } — add N days. Base = the LATER of now and the
+ *     current trialEndsAt, so extending a still-running trial ADDS to the time
+ *     left, while extending an already-expired trial counts from today.
+ *   { until: <ISO date> }    — set an absolute new end date (must be future).
+ * Reviving an expired/trialing tenant flips billingStatus back to 'trialing' and
+ * resets the reminder stage so reminder emails re-fire from the new window. A
+ * paying tenant's billingStatus ('active'/'past_due'/'canceled') is left intact.
+ */
+export async function extendTrial(req: Request, id: string): Promise<any> {
+  const tenant = await findTenantOr404(req, id);
+  const body = (req.body || {}) as { days?: number | string; until?: string };
+
+  let newEnd: Date;
+  if (body.until !== undefined && body.until !== null && body.until !== '') {
+    newEnd = new Date(body.until);
+    if (isNaN(newEnd.getTime())) {
+      throw new Error400((req as any).language, undefined, 'Invalid "until" date');
+    }
+  } else {
+    const days = Number(body.days);
+    if (!Number.isFinite(days) || days <= 0 || days > 3650) {
+      throw new Error400(
+        (req as any).language,
+        undefined,
+        'Provide "days" (1–3650) or an "until" date',
+      );
+    }
+    const current = tenant.trialEndsAt ? new Date(tenant.trialEndsAt) : null;
+    const base =
+      current && current.getTime() > Date.now() ? current : new Date();
+    newEnd = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+
+  if (newEnd.getTime() <= Date.now()) {
+    throw new Error400(
+      (req as any).language,
+      undefined,
+      'New trial end must be in the future',
+    );
+  }
+
+  const updates: any = { trialEndsAt: newEnd, trialReminderStage: 0 };
+  // Re-open access if the trial had lapsed; never override a paying/canceled state.
+  if (['trial_expired', 'trialing'].includes(tenant.billingStatus)) {
+    updates.billingStatus = 'trialing';
+  }
+  await tenant.update(updates);
+  return getTenantDetail(req, id);
+}
+
+/**
  * DELETE /tenants/:id — soft-delete (paranoid) the tenant only. Does NOT
  * hard-cascade child tables. Requires ?confirm=true. 404 if missing.
  */

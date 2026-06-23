@@ -16,6 +16,7 @@ import {
   updateTenant,
   suspendTenant,
   reactivateTenant,
+  extendTrial,
   deleteTenant,
   exportTenant,
 } from '../../services/superadmin/tenantsService';
@@ -125,6 +126,28 @@ export default (router) => {
         tenantId: req.params.id,
         statusCode: 200,
         details: {},
+      });
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // POST /tenants/:id/extend-trial — push out the trial end. Body: { days } or { until }.
+  router.post('/tenants/:id/extend-trial', async (req, res) => {
+    try {
+      const payload = await extendTrial(req, req.params.id);
+      await writeAudit(req, {
+        action: 'tenant.extend_trial',
+        targetType: 'tenant',
+        targetId: req.params.id,
+        tenantId: req.params.id,
+        statusCode: 200,
+        details: {
+          days: (req.body || {}).days ?? null,
+          until: (req.body || {}).until ?? null,
+          trialEndsAt: payload.trialEndsAt ?? null,
+        },
       });
       await ApiResponseHandler.success(req, res, payload);
     } catch (error) {
