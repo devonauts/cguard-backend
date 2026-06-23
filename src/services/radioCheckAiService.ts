@@ -23,12 +23,12 @@ const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcri
 const SUMMARY_MODEL = process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini';
 // Text-to-speech: the AI "dispatcher" voice that conducts the pase de novedades.
 const TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
-// Happy, warm female dispatcher voice by default ('coral' is bright/cheerful).
-// Override with OPENAI_TTS_VOICE (other female options: nova, shimmer, sage).
-const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'coral';
+// Female dispatcher voice. Distinct/bright by default ('shimmer'); swap via
+// OPENAI_TTS_VOICE without a rebuild. Female options: shimmer, nova, coral, sage.
+const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'shimmer';
 // gpt-4o-mini-tts honors a free-text tone instruction — steer it upbeat/friendly.
 const TTS_INSTRUCTIONS = process.env.OPENAI_TTS_INSTRUCTIONS
-  || 'Habla en español latino con un tono alegre, cálido y amable, con energía positiva y cercanía, como una compañera de la central que saluda con buena actitud.';
+  || 'Eres una operadora joven y entusiasta de la central de monitoreo. Habla en español latino con un tono muy alegre, enérgico y amigable, sonriendo al hablar, con calidez y buena vibra.';
 const DISPATCHER_TARGET_ROLES = 'admin,operationsManager,securitySupervisor,dispatcher';
 // Timezone used to pick the spoken greeting (server runs UTC; tenants are local).
 const RADIO_TZ = process.env.RADIO_TZ || 'America/Guayaquil';
