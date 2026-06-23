@@ -9,6 +9,26 @@ import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
 
+/**
+ * Coerce any incoming date-ish value to a clean `YYYY-MM-DD` string for a
+ * DATEONLY column, or null when it's blank/unparseable. The form may send an
+ * empty string, a full ISO datetime, or a localized string — all of which made
+ * the DATEONLY insert throw ("hiringContractDate/birthDate is bad"). This makes
+ * guard create/update tolerant instead of erroring.
+ */
+function toDateOnlyOrNull(v: any): string | null {
+  if (v == null) return null;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return null;
+    const iso = s.match(/^(\d{4}-\d{2}-\d{2})/); // already YYYY-MM-DD[...]
+    if (iso) return iso[1];
+  }
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
 class SecurityGuardRepository {
 
   static async create(data, options: IRepositoryOptions) {
@@ -46,6 +66,14 @@ class SecurityGuardRepository {
       'guardType',
       'workRules',
     ]);
+
+    // Normalize date-only fields so a blank/odd-format value becomes null (or a
+    // clean YYYY-MM-DD) instead of crashing the DATEONLY insert. birthDate=null
+    // is then backfilled by the draft placeholder logic below.
+    createPayload.hiringContractDate = toDateOnlyOrNull(createPayload.hiringContractDate);
+    if (createPayload.birthDate !== undefined) {
+      createPayload.birthDate = toDateOnlyOrNull(createPayload.birthDate);
+    }
 
     createPayload.guardId = data.guard || null;
     createPayload.tenantId = tenant.id;
@@ -220,6 +248,18 @@ class SecurityGuardRepository {
       ]),
       updatedById: currentUser.id,
     };
+
+    // Normalize date-only fields when present so a blank/odd-format value can't
+    // crash the DATEONLY update. hiringContractDate is nullable; birthDate is
+    // required, so drop an unparseable value (leave it unchanged) rather than null it.
+    if (Object.prototype.hasOwnProperty.call(payloadToUpdate, 'hiringContractDate')) {
+      payloadToUpdate.hiringContractDate = toDateOnlyOrNull(payloadToUpdate.hiringContractDate);
+    }
+    if (Object.prototype.hasOwnProperty.call(payloadToUpdate, 'birthDate')) {
+      const bd = toDateOnlyOrNull(payloadToUpdate.birthDate);
+      if (bd) payloadToUpdate.birthDate = bd;
+      else delete payloadToUpdate.birthDate;
+    }
 
     if (Object.prototype.hasOwnProperty.call(data, 'guard')) {
       // Only set guardId when the caller explicitly provided `guard` in payload
