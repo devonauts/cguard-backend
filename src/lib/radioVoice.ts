@@ -288,3 +288,59 @@ export async function broadcastPcm(
     fanoutEvent(tenantId, 'radio:voice:speaker', { speaking: false, userId: 'ai-dispatcher', name: speakerName });
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* RoIP bridge — STREAMING injection (radio → app), used by the SIP bridge      */
+/* process. Unlike broadcastPcm (a finite clip), this holds the floor across a   */
+/* live transmission and fans out frames as they arrive in real time. Call       */
+/* bridgeBegin() when the radio keys up, bridgeSendPcm() per inbound frame, and   */
+/* bridgeEnd() on un-key/timeout. Publishes via Redis so it reaches the cluster  */
+/* workers' sockets even though the bridge runs in its own process.              */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/** Redis relay channel the bridge process subscribes to for app → radio audio. */
+export const RELAY_CHANNEL = CH;
+
+const bridgeHolds = new Map<string, string>(); // tenantId → speakerName while the bridge holds the floor
+
+/** Try to acquire the floor for the radio side. Yields to a guard already talking. */
+export async function bridgeBegin(tenantId: string, speakerName: string): Promise<boolean> {
+  if (bridgeHolds.has(tenantId)) return true;
+  let granted = false;
+  if (redisReady && pub) {
+    try {
+      const res = await pub.set(floorKey(tenantId), `roip:${tenantId}|roip|${speakerName}`, { NX: true, PX: FLOOR_TTL_MS });
+      granted = res === 'OK';
+      if (!granted) {
+        const ex = await pub.get(floorKey(tenantId));
+        if (ex && String(ex).startsWith('roip:')) { granted = true; await pub.pExpire(floorKey(tenantId), FLOOR_TTL_MS); }
+      }
+    } catch { granted = false; }
+  } else {
+    if (!localFloor.has(tenantId)) { localFloor.set(tenantId, { userId: 'roip', name: speakerName, socketId: `roip:${tenantId}` }); granted = true; }
+  }
+  if (granted) {
+    bridgeHolds.set(tenantId, speakerName);
+    fanoutEvent(tenantId, 'radio:voice:speaker', { speaking: true, userId: 'roip-bridge', name: speakerName });
+  }
+  return granted;
+}
+
+/** Fan out one inbound radio frame (PCM16 @ inRate) to the app channel. */
+export function bridgeSendPcm(tenantId: string, pcm: Int16Array, inRate: number): void {
+  if (!bridgeHolds.has(tenantId) || !pcm.length) return;
+  const f = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) { let v = pcm[i] / 32768; if (v > 1) v = 1; else if (v < -1) v = -1; f[i] = v; }
+  const mu = encodeMuLawBuf(resampleF32(f, inRate, TARGET_RATE)); // → 16 kHz µ-law
+  fanoutChunk(tenantId, `roip:${tenantId}`, mu as Buffer);
+  if (redisReady && pub) pub.pExpire(floorKey(tenantId), FLOOR_TTL_MS).catch(() => {});
+}
+
+/** Release the floor when the radio un-keys (or after an inactivity timeout). */
+export async function bridgeEnd(tenantId: string): Promise<void> {
+  const name = bridgeHolds.get(tenantId);
+  if (!name) return;
+  bridgeHolds.delete(tenantId);
+  try { if (redisReady && pub) await pub.del(floorKey(tenantId)); else localFloor.delete(tenantId); } catch { /* ignore */ }
+  fanoutEvent(tenantId, 'radio:voice:speaker', { speaking: false, userId: 'roip-bridge', name });
+}

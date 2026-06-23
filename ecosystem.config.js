@@ -115,6 +115,40 @@ module.exports = {
         DATABASE_POOL_MIN: '2',
       },
     },
+    {
+      // RoIP / SIP bridge — relays audio between tenant radio gateways and the app
+      // PTT channel. MUST be fork mode / 1 instance (owns SIP + RTP UDP sockets,
+      // can't be load-balanced across cluster workers). DISABLED by default
+      // (autostart:false) — start only once gateway creds + UDP networking are in
+      // place: `pm2 start ecosystem.config.js --only cguard-sip-bridge --env production`.
+      name: 'cguard-sip-bridge',
+      script: './dist/sipBridge.js',
+      cwd: '/home/cguardpro/cguard-backend',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      // Not started by a blanket `pm2 reload ecosystem.config.js` until enabled.
+      // (Remove this flag / start explicitly when going live.)
+      // eslint-disable-next-line
+      autostart: false,
+      max_memory_restart: '300M',
+      min_uptime: '10s',
+      max_restarts: 10,
+      restart_delay: 5000,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      error_file: './logs/sip-bridge-error.log',
+      out_file: './logs/sip-bridge-out.log',
+      env: {
+        NODE_ENV: 'development',
+        TENANT_MODE: 'multi',
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        TENANT_MODE: 'multi',
+        DATABASE_POOL_MAX: '5',
+        DATABASE_POOL_MIN: '1',
+      },
+    },
   ],
   
   // ============================================================

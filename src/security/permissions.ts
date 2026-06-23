@@ -230,6 +230,12 @@ class Permissions {
       shiftTemplateDestroy: createPermission('shiftTemplateDestroy', DISPATCHER_ROLES),
       shiftTemplateRead: createPermission('shiftTemplateRead', ALL_STAFF_ROLES),
 
+      // === RADIO DEVICES (IP / RoIP-SIP gateways) ===
+      radioDeviceCreate: createPermission('radioDeviceCreate', DISPATCHER_ROLES),
+      radioDeviceEdit: createPermission('radioDeviceEdit', DISPATCHER_ROLES),
+      radioDeviceDestroy: createPermission('radioDeviceDestroy', DISPATCHER_ROLES),
+      radioDeviceRead: createPermission('radioDeviceRead', ALL_STAFF_ROLES),
+
       // === GUARD SHIFTS ===
       guardShiftImport: createPermission('guardShiftImport', DISPATCHER_ROLES),
       guardShiftCreate: createPermission('guardShiftCreate', DISPATCHER_ROLES),
