@@ -256,8 +256,21 @@ export async function broadcastPcm(
   speakerName = 'Central de monitoreo',
 ): Promise<void> {
   if (!ioRef || !tenantId || !pcm || !pcm.length) return;
+  // Peak-normalize the AI audio to near full scale so it isn't quiet on the
+  // channel — OpenAI TTS PCM comes well below full level, so it sounded much
+  // softer than live mic PTT. Scale so the loudest sample hits ~0.97, with an
+  // optional extra boost (RADIO_AI_GAIN, default 1.0), hard-clamped to avoid
+  // clipping/distortion.
+  let peak = 0;
+  for (let i = 0; i < pcm.length; i++) { const a = pcm[i] < 0 ? -pcm[i] : pcm[i]; if (a > peak) peak = a; }
+  const extra = Number(process.env.RADIO_AI_GAIN) || 1;
+  const gain = (peak > 0 ? (0.97 * 32767) / peak : 1) * extra;
   const f = new Float32Array(pcm.length);
-  for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+  for (let i = 0; i < pcm.length; i++) {
+    let v = (pcm[i] * gain) / 32768;
+    if (v > 1) v = 1; else if (v < -1) v = -1;
+    f[i] = v;
+  }
   const mu = encodeMuLawBuf(resampleF32(f, inRate, TARGET_RATE)); // 16 kHz µ-law bytes
   const FRAME = 1600; // 100 ms @ 16 kHz, 1 byte/sample
   const aiVal = `ai:${tenantId}|ai|${speakerName}`;
