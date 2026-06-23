@@ -49,21 +49,12 @@ export function validateEcuadorRucJuridica(ruc: string) {
 }
 
 export function validateEcuadorRuc(ruc: string) {
-  const r = digitsOnly(ruc);
-  if (!/^[0-9]{13}$/.test(r)) return false;
-  if (!r.endsWith('001')) return false;
-
-  const thirdDigit = Number(r[2]);
-  if (thirdDigit >= 0 && thirdDigit <= 5) {
-    const base = r.substring(0, 10);
-    return validateEcuadorCedula(base);
-  }
-
-  if (thirdDigit === 9) {
-    return validateEcuadorRucJuridica(r);
-  }
-
-  return false;
+  // Practical requirement: a RUC is 13 numeric digits. We deliberately do NOT
+  // enforce the '001' establishment suffix, the 3rd-digit type, or the
+  // check-digit — those reject legitimate RUCs: public-sector RUCs (3rd digit
+  // 6), branch establishments ending in 002/003…, and valid numbers issued by
+  // the SRI that don't pass the modulus check. 13 digits is the rule.
+  return /^[0-9]{13}$/.test(digitsOnly(ruc));
 }
 
 export function validateCedulaOrRuc(value: string) {
