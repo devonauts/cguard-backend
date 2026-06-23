@@ -381,10 +381,14 @@ export async function generateShiftsForAssignment(
   const startDate = new Date(assignment.startDate);
   const genStart = startDate > today ? startDate : today;
 
-  await database.shift.destroy({
-    where: { guardAssignmentId: assignment.id, tenantId, startTime: { [Op.gte]: genStart } },
-    force: true,
-  });
+  // Replace future shifts for THIS assignment, AND any future shifts at the same
+  // rotation POSITION (regardless of who/what created them). Without the position
+  // clause, re-assigning a slot left the previous occupant's shifts behind —
+  // especially legacy shifts with a NULL guardAssignmentId (kept sticky by
+  // ignoreDuplicates), so the station showed stale/duplicate coverage.
+  const destroyWhere: any = { tenantId, startTime: { [Op.gte]: genStart }, [Op.or]: [{ guardAssignmentId: assignment.id }] };
+  if ((assignment as any).positionId) destroyWhere[Op.or].push({ positionId: (assignment as any).positionId });
+  await database.shift.destroy({ where: destroyWhere, force: true });
 
   if (computed.length === 0) return;
 
