@@ -100,6 +100,14 @@ app.post(
   require('./twilio/webhooks').twilioVoiceOutbound,
 );
 
+// SendGrid Event Webhook (no auth; optional ?key=SENDGRID_WEBHOOK_SECRET guard).
+// Posts a JSON array of delivery events → recorded as email.* in the audit log.
+app.post(
+  '/email/webhooks/sendgrid',
+  express.json({ limit: '2mb' }),
+  require('./email/sendgridWebhook').sendgridEventWebhook,
+);
+
 // Proxy endpoints for Google Places (server-side) to avoid CORS issues
 app.get('/api/places/autocomplete', (req, res) => {
   const input = String(req.query.input || '');

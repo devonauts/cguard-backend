@@ -1,6 +1,7 @@
 import assert from 'assert';
 import { getConfig } from '../config';
 import sendgridMail from '@sendgrid/mail';
+import { auditEmail, messageIdFromSendgridResponse } from '../lib/emailAudit';
 import mailService from './mailService';
 import fs from 'fs';
 import path from 'path';
@@ -63,6 +64,7 @@ export default class EmailSender {
         if (last && last.template === 'invitation' && Date.now() - last.ts < 10000) {
           if (this.templateId === EmailSender.TEMPLATES.PASSWORD_RESET || this.templateId === EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION) {
             console.warn('[EmailSender] Skipping SendGrid verification/password send because recent invitation was sent', { to: recipient });
+            auditEmail('email.skipped', { to: recipient, reason: 'recent invitation already sent', transport: 'sendgrid-template' });
             return { skippedDuplicate: true };
           }
         }
@@ -79,6 +81,12 @@ export default class EmailSender {
       try {
         console.info('[EmailSender] Using SendGrid template send', { to: recipient, templateId: this.templateId });
         const res = await sendgridMail.send(msg);
+        auditEmail('email.sent', {
+          to: recipient,
+          subject: `template:${this.templateId}`,
+          transport: 'sendgrid-template',
+          messageId: messageIdFromSendgridResponse(res),
+        });
         try {
           const recentSends: Map<string, { template?: string; ts: number }> = (EmailSender as any)._recentSends || new Map();
           const tName = this.templateId === EmailSender.TEMPLATES.INVITATION ? 'invitation' : (this.templateId === EmailSender.TEMPLATES.EMAIL_ADDRESS_VERIFICATION ? 'verification' : 'other');
@@ -92,6 +100,12 @@ export default class EmailSender {
       } catch (error) {
         console.error('Error sending SendGrid email.');
         console.error(error);
+        auditEmail('email.send_failed', {
+          to: recipient,
+          subject: `template:${this.templateId}`,
+          transport: 'sendgrid-template',
+          error: (error as any)?.message || String(error),
+        });
         throw error;
       }
     }
@@ -302,6 +316,7 @@ export default class EmailSender {
             const last = recentSends.get(key) || 0;
             if (now - last < 3000) {
               console.warn('[EmailSender] Skipping duplicate email send (dedupe)', { to: recipient, subject, sinceMs: now - last });
+              auditEmail('email.skipped', { to: recipient, subject, reason: `dedupe (${now - last}ms since last send)` });
               return { skippedDuplicate: true };
             }
             recentSends.set(key, now);
@@ -319,6 +334,7 @@ export default class EmailSender {
             if (last && last.template === 'invitation' && Date.now() - last.ts < 10000) {
               if (templateFile === 'passwordReset.html' || templateFile === 'emailAddressVerification.html') {
                 console.warn('[EmailSender] Skipping fallback verification/password because recent invitation was sent', { to: recipient });
+                auditEmail('email.skipped', { to: recipient, reason: 'recent invitation already sent' });
                 return { skippedDuplicate: true };
               }
             }

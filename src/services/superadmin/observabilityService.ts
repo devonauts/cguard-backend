@@ -252,8 +252,10 @@ export async function auditLog(req: Request): Promise<any> {
   const { page, limit, offset } = listParams(req.query);
 
   const q = req.query as any;
+  const { Op } = database.Sequelize;
   const where: any = {};
   if (q?.action) where.action = String(q.action).trim();
+  else if (q?.actionPrefix) where.action = { [Op.like]: `${String(q.actionPrefix).trim()}%` };
   if (q?.tenantId) where.tenantId = String(q.tenantId).trim();
   if (q?.actorUserId) where.actorUserId = String(q.actorUserId).trim();
 

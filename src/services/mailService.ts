@@ -1,5 +1,6 @@
 import sgMail from '@sendgrid/mail';
 import nodemailer from 'nodemailer';
+import { auditEmail, messageIdFromSendgridResponse } from '../lib/emailAudit';
 import fs from 'fs';
 
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
@@ -90,9 +91,21 @@ export async function sendMail(opts: MailOpts) {
     }
     try {
       const res = await sgMail.send(msg);
+      auditEmail('email.sent', {
+        to: String(opts.to),
+        subject: opts.subject,
+        transport: 'sendgrid',
+        messageId: messageIdFromSendgridResponse(res),
+      });
       return res;
     } catch (err) {
       console.error('SendGrid send error', err);
+      auditEmail('email.send_failed', {
+        to: String(opts.to),
+        subject: opts.subject,
+        transport: 'sendgrid',
+        error: (err as any)?.message || String(err),
+      });
       throw err;
     }
   }
@@ -104,9 +117,21 @@ export async function sendMail(opts: MailOpts) {
         mailOptions.attachments = opts.attachments.map(a => ({ filename: a.filename, path: a.path, content: a.content, cid: a.cid }));
       }
       const res = await smtpTransport.sendMail(mailOptions);
+      auditEmail('email.sent', {
+        to: String(opts.to),
+        subject: opts.subject,
+        transport: 'smtp',
+        messageId: (res as any)?.messageId || null,
+      });
       return res;
     } catch (err) {
       console.error('SMTP send error', err);
+      auditEmail('email.send_failed', {
+        to: String(opts.to),
+        subject: opts.subject,
+        transport: 'smtp',
+        error: (err as any)?.message || String(err),
+      });
       throw err;
     }
   }
