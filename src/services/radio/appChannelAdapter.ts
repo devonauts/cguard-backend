@@ -15,14 +15,19 @@ export class AppChannelAdapter implements RadioChannelAdapter {
     await Promise.all(
       targets.map((uid) =>
         pushToUser(ctx.db, ctx.tenantId, uid, {
-          title: 'Radio check',
-          body: payload.promptText || 'Reporte de novedades del puesto',
+          title: '📻 Pase de novedades',
+          // Guide the guard to OPEN the app and report — works even when the app
+          // is backgrounded/closed (the radio channel can't run in the background).
+          body: `Abre la app para reportar tu novedad${payload.stationName ? ` en ${payload.stationName}` : ''}. Tienes 1 minuto.`,
           data: {
             type: 'radio.check_request',
             sessionId: payload.sessionId,
             entryId: payload.entryId,
             stationId: payload.stationId,
+            stationName: payload.stationName || '',
             promptAudioUrl: payload.promptAudioUrl || '',
+            // Where the app should navigate when the guard taps the notification.
+            route: '/guard/radio',
           },
         }).catch(() => undefined),
       ),

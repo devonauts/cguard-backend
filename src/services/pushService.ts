@@ -58,6 +58,10 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
       tokens: unique,
       notification: { title: payload.title, body: payload.body },
       data: payload.data || {},
+      // High priority so a BACKGROUNDED device wakes and shows the alert promptly
+      // (critical for the radio pase — it nudges the guard to open the app).
+      android: { priority: 'high', notification: { sound: 'default', priority: 'high', channelId: 'default' } },
+      apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
     });
     return { sent: res.successCount, failed: res.failureCount };
   } catch (e: any) {
