@@ -1,6 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+import { encrypt } from '../../lib/secretBox';
 
 // PUT /tenant/:tenantId/video/device/:id
 export default async (req, res) => {
@@ -24,15 +25,15 @@ export default async (req, res) => {
     const updatable = [
       'name', 'type', 'brand', 'model', 'host', 'port', 'httpPort', 'username',
       'channels', 'protocol', 'status', 'lastSeenAt', 'postSiteId', 'stationId',
-      'notes', 'active',
+      'notes', 'active', 'connectionMode', 'relaySiteId',
     ];
     const updateData: any = { updatedById: currentUser && currentUser.id };
     updatable.forEach((f) => {
       if (typeof body[f] !== 'undefined') updateData[f] = body[f];
     });
-    // Only overwrite the password when a non-empty value is explicitly sent.
+    // Only overwrite the password when a non-empty value is explicitly sent; encrypt at rest.
     if (typeof body.password !== 'undefined' && body.password !== null && body.password !== '') {
-      updateData.password = body.password;
+      updateData.password = encrypt(String(body.password));
     }
 
     await record.update(updateData);

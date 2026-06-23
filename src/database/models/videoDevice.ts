@@ -86,6 +86,20 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: 'hls',
       },
+      // How cguard reaches this device's video:
+      //   'direct' — pull RTSP straight from `host` (same LAN/routable).
+      //   'relay'  — device is behind NAT in another site; a site relay pushes its
+      //              channels into the cloud ingest and go2rtc pulls from there.
+      connectionMode: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'direct',
+      },
+      // When connectionMode='relay', the videoRelaySite this device's streams arrive through.
+      relaySiteId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,

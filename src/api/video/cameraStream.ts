@@ -12,7 +12,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import Error404 from '../../errors/Error404';
-import { buildRtspUrl, streamName } from './_videoUrl';
+import { buildRtspUrl, streamName, relayPullUrl } from './_videoUrl';
 
 const GO2RTC_API = process.env.GO2RTC_API || '';        // e.g. http://127.0.0.1:1984
 const GO2RTC_PUBLIC = process.env.GO2RTC_PUBLIC || '';  // e.g. https://app.cguardpro.com/go2rtc
@@ -42,10 +42,21 @@ export default async (req, res) => {
 
     const snapshotUrl = camera.snapshotUrl || null;
 
-    // Preferred path: go2rtc gateway. Build the LAN RTSP (brand-aware) and register
-    // it under a stable, opaque name; hand the browser only that name.
+    // For a RELAY device the LAN RTSP is unreachable; go2rtc must instead pull from
+    // the cloud ingest path the remote site publishes into (relay/<siteKey>/chN).
+    let relaySrc: string | null = null;
+    if (camera.device && camera.device.connectionMode === 'relay' && camera.device.relaySiteId) {
+      const site = await db.videoRelaySite.findOne({
+        where: { id: camera.device.relaySiteId, tenantId },
+      });
+      if (site) relaySrc = relayPullUrl(site, camera.channel);
+    }
+
+    // Preferred path: go2rtc gateway. Register the source (relay ingest for remote
+    // devices, otherwise the brand-aware LAN RTSP) under a stable, opaque name and
+    // hand the browser only that name.
     if (GO2RTC_API && GO2RTC_PUBLIC) {
-      const rtsp = camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
+      const rtsp = relaySrc || camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
       if (rtsp) {
         const name = streamName(camera.id);
         const ok = await registerWithGo2rtc(name, rtsp);

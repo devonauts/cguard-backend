@@ -13,6 +13,14 @@ export default (app) => {
   app.put('/tenant/:tenantId/video/device/:id/gateway', require('./deviceGateway').default);
   app.get('/tenant/:tenantId/video/device/:id/gateway-config', require('./deviceGatewayConfig').default);
 
+  // ---- Relay sites (remote cameras behind NAT in another network/country) ----
+  app.get('/tenant/:tenantId/video/relay-sites', require('./relaySiteList').default);
+  app.post('/tenant/:tenantId/video/relay-site', require('./relaySiteCreate').default);
+  app.get('/tenant/:tenantId/video/relay-site/:id', require('./relaySiteGet').default);
+  app.put('/tenant/:tenantId/video/relay-site/:id', require('./relaySiteUpdate').default);
+  app.delete('/tenant/:tenantId/video/relay-site/:id', require('./relaySiteDelete').default);
+  app.get('/tenant/:tenantId/video/relay-site/:id/bundle', require('./relayBundle').default);
+
   // ---- Cameras ----
   app.get('/tenant/:tenantId/video/cameras', require('./cameraList').default);
   app.get('/tenant/:tenantId/video/camera/:id', require('./cameraGet').default);

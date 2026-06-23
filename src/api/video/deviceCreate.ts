@@ -1,6 +1,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+import { encrypt } from '../../lib/secretBox';
 
 // POST /tenant/:tenantId/video/device
 export default async (req, res) => {
@@ -20,8 +21,8 @@ export default async (req, res) => {
       port: typeof body.port !== 'undefined' && body.port !== null ? Number(body.port) : 554,
       httpPort: typeof body.httpPort !== 'undefined' && body.httpPort !== null ? Number(body.httpPort) : 80,
       username: body.username || null,
-      // Stored as-is for now. SECURITY TODO: encrypt at rest.
-      password: typeof body.password !== 'undefined' ? body.password : null,
+      // Encrypted at rest (secretBox); decrypted only when building the RTSP URL.
+      password: body.password ? encrypt(String(body.password)) : null,
       channels: typeof body.channels !== 'undefined' && body.channels !== null ? Number(body.channels) : 1,
       protocol: body.protocol || 'rtsp',
       status: body.status || 'unknown',
@@ -29,6 +30,8 @@ export default async (req, res) => {
       postSiteId: body.postSiteId || null,
       stationId: body.stationId || null,
       notes: body.notes || null,
+      connectionMode: body.connectionMode === 'relay' ? 'relay' : 'direct',
+      relaySiteId: body.relaySiteId || null,
       active: typeof body.active !== 'undefined' ? body.active : true,
       tenantId,
       createdById: currentUser && currentUser.id,
