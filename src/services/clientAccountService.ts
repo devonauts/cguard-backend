@@ -169,6 +169,34 @@ export default class ClientAccountService {
 
       await SequelizeRepository.commitTransaction(transaction);
 
+      // ── Post-commit: async media enrichment (FALLBACK) ────────────────────────
+      // The form already asks for the logo + header image; only when the admin
+      // leaves them empty do we try to scrape them from the client's website
+      // (logo + og:image) or fall back to a Street View of the location. Fire-and-
+      // forget so the create returns instantly; images appear on the next refresh.
+      try {
+        const hasLogo = Array.isArray(data.logoUrl) && data.logoUrl.length > 0;
+        const hasHeader = Array.isArray(data.placePictureUrl) && data.placePictureUrl.length > 0;
+        const tenantId = this.options.currentTenant && this.options.currentTenant.id;
+        const needSomething = (!hasLogo || !hasHeader);
+        const haveSource = !!(data.website || (data.latitude != null && data.longitude != null));
+        if (tenantId && needSomething && haveSource) {
+          const { enrichClientMedia } = require('./clientMediaService');
+          void enrichClientMedia(this.options.database, {
+            tenantId,
+            clientAccountId: record.id,
+            userId: this.options.currentUser ? this.options.currentUser.id : null,
+            website: data.website || null,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            hasLogo,
+            hasHeader,
+          });
+        }
+      } catch (e: any) {
+        console.warn('[ClientAccountService] media enrichment kickoff failed:', e?.message || e);
+      }
+
       // ── Post-commit: provision identity and send invitation ───────────────────
       // Runs in its own independent transaction via CustomerIdentityService.
       // If it fails, the clientAccount record is safely committed and the admin
