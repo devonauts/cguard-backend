@@ -1,4 +1,5 @@
 import Error400 from '../errors/Error400';
+import Error404 from '../errors/Error404';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import ShiftRepository from '../database/repositories/shiftRepository';
@@ -202,10 +203,17 @@ export default class ShiftService {
 
     try {
       for (const id of ids) {
-        await ShiftRepository.destroy(id, {
-          ...this.options,
-          transaction,
-        });
+        try {
+          await ShiftRepository.destroy(id, {
+            ...this.options,
+            transaction,
+          });
+        } catch (err) {
+          // Idempotent delete: a shift that's already gone (stale id, double
+          // click, or one the engine regenerated) is not an error — skip it.
+          if (err instanceof Error404 || (err as any)?.constructor?.name === 'Error404') continue;
+          throw err;
+        }
       }
 
       await SequelizeRepository.commitTransaction(
