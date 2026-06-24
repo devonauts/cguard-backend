@@ -107,8 +107,8 @@ async function attachFile(
   const { tenantId, clientId, userId, column, tmp } = opts;
   const name = `${column}-${Date.now()}.${tmp.ext}`;
   const privateUrl = `tenant/${tenantId}/clientAccount/${clientId}/${name}`;
+  let size = 0; try { size = fs.statSync(tmp.path).size; } catch { /* ignore */ } // before upload (it may move the temp)
   await FileStorage.upload(tmp.path, privateUrl);
-  let size = 0; try { size = fs.statSync(tmp.path).size; } catch { /* ignore */ }
   await db.file.create({
     belongsTo: db.clientAccount.getTableName(),
     belongsToId: clientId,
