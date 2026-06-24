@@ -224,6 +224,24 @@ export default class ClientAccountService {
             );
             // onboardingStatus stays 'not_invited'. Admin can retry via "Enviar acceso".
           }
+
+          // ── Additional access people (persona encargada / family members) ──────
+          // Each extra contact with an email becomes a customer user linked to the
+          // SAME client via the pivot, so they ALSO get the app (CEO + encargado,
+          // or titular + son/mom). Best-effort, independent of the primary invite.
+          const extras = Array.isArray(data.additionalContacts) ? data.additionalContacts : [];
+          if (extras.length) {
+            const identity = new CustomerIdentityService(this.options);
+            for (const c of extras) {
+              const email = (c && c.email ? String(c.email).trim() : '');
+              if (!email || email.toLowerCase() === String(data.email || '').toLowerCase()) continue;
+              try {
+                await identity.provisionAdditionalAccess(record, { name: c.name, email, phone: c.phone || c.phoneNumber || null });
+              } catch (err) {
+                console.error('[ClientAccountService] additional access provisioning failed for', email, err && (err as any).message ? (err as any).message : err);
+              }
+            }
+          }
         }
       }
 
