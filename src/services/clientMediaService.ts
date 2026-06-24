@@ -82,9 +82,21 @@ function metaContent(html: string, props: string[]): string | null {
   }
   return null;
 }
+function decodeEntities(s: string): string {
+  return s.replace(/&amp;/gi, '&').replace(/&#x2f;/gi, '/').replace(/&#47;/g, '/');
+}
 function absUrl(maybe: string | null, base: string): string | null {
   if (!maybe) return null;
-  try { return new URL(maybe, base).toString(); } catch { return null; }
+  try { return new URL(decodeEntities(maybe), base).toString(); } catch { return null; }
+}
+/** Best site icon for a logo: apple-touch-icon (usually 180px) → any rel*="icon". */
+function pickIcon(html: string): string | null {
+  const apple = html.match(/<link[^>]+rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*href=["']([^"']+)["']/i)
+    || html.match(/<link[^>]+href=["']([^"']+)["'][^>]*rel=["'][^"']*apple-touch-icon/i);
+  if (apple?.[1]) return apple[1];
+  const icon = html.match(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]*href=["']([^"']+)["']/i)
+    || html.match(/<link[^>]+href=["']([^"']+)["'][^>]*rel=["'][^"']*icon/i);
+  return icon?.[1] || null;
 }
 
 /** Upload a temp image and attach it to the clientAccount as `column` (logoUrl/placePictureUrl). */
@@ -128,11 +140,18 @@ export async function enrichClientMedia(
     const { tenantId, clientAccountId, userId = null } = opts;
     const site = siteUrl(opts.website);
     const domain = domainOf(opts.website);
+    // Fetch the site HTML ONCE — both the logo (icon links) and the header
+    // (og:image) come from it.
+    const html = site ? await fetchHtml(site) : null;
 
-    // ── Logo (website only) ────────────────────────────────────────────────
+    // ── Logo: site apple-touch-icon/icon → Google favicon (website only) ───
     if (!opts.hasLogo && domain) {
       try {
-        let tmp = await fetchImageToTemp(`https://logo.clearbit.com/${encodeURIComponent(domain)}?size=256&format=png`, 'logo');
+        let tmp: any = null;
+        if (html && site) {
+          const iconAbs = absUrl(pickIcon(html), site);
+          if (iconAbs) tmp = await fetchImageToTemp(iconAbs, 'logo');
+        }
         if (!tmp) tmp = await fetchImageToTemp(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`, 'logo');
         if (tmp) { await attachFile(db, { tenantId, clientId: clientAccountId, userId, column: 'logoUrl', tmp }); fs.unlink(tmp.path, () => {}); }
       } catch (e: any) { console.warn('[clientMedia] logo failed:', e?.message || e); }
@@ -141,10 +160,9 @@ export async function enrichClientMedia(
     // ── Header: site og:image, else Street View of the location ────────────
     if (!opts.hasHeader) {
       let stored = false;
-      if (site) {
+      if (html && site) {
         try {
-          const html = await fetchHtml(site);
-          const og = html ? absUrl(metaContent(html, ['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src']), site) : null;
+          const og = absUrl(metaContent(html, ['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src']), site);
           if (og) {
             const tmp = await fetchImageToTemp(og, 'header');
             if (tmp) { await attachFile(db, { tenantId, clientId: clientAccountId, userId, column: 'placePictureUrl', tmp }); fs.unlink(tmp.path, () => {}); stored = true; }
