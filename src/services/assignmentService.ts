@@ -61,7 +61,10 @@ export async function createAssignment(
 
   const isAdhoc = !input.positionId;
   const positionId: string | null = input.positionId || null;
-  let rotationStyleId: string | null = input.rotationStyleId || null;
+  // The patrón de rotación belongs to the STATION (station.rotationStyleId) and is
+  // inherited at shift generation — a guard assignment never carries its own.
+  // Any incoming input.rotationStyleId is intentionally ignored.
+  const rotationStyleId: string | null = null;
   let platoonOffset = 0;
   let isRelief = !!input.isRelief;
 
@@ -89,14 +92,13 @@ export async function createAssignment(
       );
     }
 
-    if (!rotationStyleId) {
-      const station = await database.station.findByPk(stationId, { attributes: ['rotationStyleId'] });
-      rotationStyleId = station?.rotationStyleId || null;
-      if (!rotationStyleId) {
-        throw new AssignmentValidationError(
-          'La estación no tiene un estilo de rotación configurado. Configúrela primero.',
-        );
-      }
+    // The station must have a patrón de rotación configured (shift generation
+    // inherits it). We only validate it exists — we never copy it onto the assignment.
+    const station = await database.station.findByPk(stationId, { attributes: ['rotationStyleId'] });
+    if (!station?.rotationStyleId) {
+      throw new AssignmentValidationError(
+        'La estación no tiene un patrón de rotación configurado. Configúralo en la estación (Horario del turno) antes de asignar.',
+      );
     }
 
     platoonOffset = input.platoonOffset != null

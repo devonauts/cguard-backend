@@ -195,7 +195,7 @@ export async function computeShiftsForAssignment(
   const genStart = startDate > today ? startDate : today;
   const tz = await tenantTz(database, tenantId);
 
-  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId'] });
+  const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId', 'rotationStyleId'] });
   const postSiteId = station?.postSiteId || null;
 
   // ─── AD-HOC (manual, non-rotation) ──────────────────────────────────────
@@ -225,7 +225,10 @@ export async function computeShiftsForAssignment(
     return rows;
   }
 
-  const rotationStyle = await database.rotationStyle.findByPk(assignment.rotationStyleId);
+  // Rotation is a STATION property — inherit it. Fall back to the assignment's
+  // own value only for legacy rows that still carry one.
+  const rotationStyleId = station?.rotationStyleId || assignment.rotationStyleId;
+  const rotationStyle = await database.rotationStyle.findByPk(rotationStyleId);
   if (!rotationStyle) {
     console.error('[shiftGen] Rotation style not found:', assignment.rotationStyleId);
     return [];
