@@ -16,7 +16,7 @@
  * Resolution uses associations (not raw FK names): station → `stationOrigin`
  * (clientAccount) and station.postSiteId → businessInfo → `clientAccount`.
  */
-import { pushToUser, PushPayload } from './pushService';
+import { pushToClientAccounts, PushPayload } from './pushService';
 import { storePlatformEvent } from '../lib/platformEventStore';
 
 export interface ClientRef {
@@ -25,9 +25,19 @@ export interface ClientRef {
   stationId?: string | null;
 }
 
-/** Collect the distinct client user.id(s) to notify for a given site reference. */
-async function resolveClientUserIds(db: any, tenantId: string, ref: ClientRef): Promise<string[]> {
+export interface ClientRecipients {
+  userIds: string[];
+  clientAccountIds: string[];
+}
+
+/**
+ * Collect the distinct client recipients for a site reference: both the clientAccount
+ * id(s) (what the client app registers its device with) and any linked user.id(s).
+ * Push resolves by either, so delivery no longer depends on clientAccount.userId.
+ */
+async function resolveClientRecipients(db: any, tenantId: string, ref: ClientRef): Promise<ClientRecipients> {
   const userIds = new Set<string>();
+  const clientAccountIds = new Set<string>();
 
   const addAccount = async (clientAccountId?: string | null) => {
     if (!clientAccountId) return;
@@ -35,7 +45,10 @@ async function resolveClientUserIds(db: any, tenantId: string, ref: ClientRef): 
       where: { id: clientAccountId, tenantId, deletedAt: null },
       attributes: ['id', 'userId'],
     });
-    if (ca && ca.userId) userIds.add(ca.userId);
+    if (ca) {
+      clientAccountIds.add(ca.id);
+      if (ca.userId) userIds.add(ca.userId);
+    }
   };
 
   await addAccount(ref.clientAccountId);
@@ -49,7 +62,10 @@ async function resolveClientUserIds(db: any, tenantId: string, ref: ClientRef): 
       include: [{ model: db.clientAccount, as: 'stationOrigin', attributes: ['id', 'userId'], required: false }],
     });
     if (st) {
-      if (st.stationOrigin && st.stationOrigin.userId) userIds.add(st.stationOrigin.userId);
+      if (st.stationOrigin) {
+        clientAccountIds.add(st.stationOrigin.id);
+        if (st.stationOrigin.userId) userIds.add(st.stationOrigin.userId);
+      }
       if (!postSiteId && st.postSiteId) postSiteId = st.postSiteId;
     }
   }
@@ -60,10 +76,13 @@ async function resolveClientUserIds(db: any, tenantId: string, ref: ClientRef): 
       attributes: ['id'],
       include: [{ model: db.clientAccount, as: 'clientAccount', attributes: ['id', 'userId'], required: false }],
     });
-    if (bi && bi.clientAccount && bi.clientAccount.userId) userIds.add(bi.clientAccount.userId);
+    if (bi && bi.clientAccount) {
+      clientAccountIds.add(bi.clientAccount.id);
+      if (bi.clientAccount.userId) userIds.add(bi.clientAccount.userId);
+    }
   }
 
-  return [...userIds];
+  return { userIds: [...userIds], clientAccountIds: [...clientAccountIds] };
 }
 
 /**
@@ -78,15 +97,20 @@ export async function notifyClient(
 ): Promise<number> {
   try {
     if (!tenantId) return 0;
-    const userIds = await resolveClientUserIds(db, tenantId, ref);
-    if (!userIds.length) return 0;
+    const { userIds, clientAccountIds } = await resolveClientRecipients(db, tenantId, ref);
+    if (!userIds.length && !clientAccountIds.length) return 0;
     const payload: PushPayload = {
       title: opts.title,
       body: opts.body,
       data: { ...(opts.data || {}), type: opts.eventType },
     };
+
+    // Single FCM send resolving devices by clientAccountId OR userId (bulletproof,
+    // deduped) — delivers even when clientAccount.userId was never linked.
+    pushToClientAccounts(db, tenantId, clientAccountIds, userIds, payload).catch(() => {});
+
+    // In-app platform events still need a recipient user id (best-effort).
     for (const uid of userIds) {
-      pushToUser(db, tenantId, uid, payload).catch(() => {});
       storePlatformEvent(db, {
         tenantId,
         eventType: opts.eventType,
@@ -98,7 +122,7 @@ export async function notifyClient(
         sourceEntityId: opts.sourceEntityId,
       }).catch(() => {});
     }
-    return userIds.length;
+    return clientAccountIds.length || userIds.length;
   } catch (e: any) {
     console.warn('[clientNotify] failed:', e?.message || e);
     return 0;

@@ -86,7 +86,7 @@ export const customerMessageRead = async (req, res) => {
  */
 export const customerDeviceToken = async (req, res) => {
   try {
-    const { db, tenantId, userId } = customerCtx(req);
+    const { db, tenantId, userId, clientAccountId } = customerCtx(req);
     const b = req.body?.data || req.body || {};
     const token = (b.deviceId || b.token || b.pushToken || '').toString().trim();
     if (!token) return ApiResponseHandler.error(req, res, new Error('deviceId requerido'));
@@ -97,6 +97,9 @@ export const customerDeviceToken = async (req, res) => {
       lastSeenAt: new Date(),
       updatedById: userId,
     };
+    // Link the device to the client account directly so push can resolve it by
+    // clientAccountId, independent of clientAccount.userId being set.
+    if (clientAccountId) fields.clientAccountId = clientAccountId;
     if (b.platform) fields.platform = String(b.platform).slice(0, 40);
     if (b.model) fields.model = String(b.model).slice(0, 120);
     if (b.osVersion) fields.osVersion = String(b.osVersion).slice(0, 60);
@@ -108,6 +111,21 @@ export const customerDeviceToken = async (req, res) => {
     } else {
       await db.deviceIdInformation.create({ ...fields, userId, tenantId, createdById: userId });
     }
+
+    // Link the clientAccount to this user so the push-notify path
+    // (clientNotifyService → pushToUser, keyed by clientAccount.userId) resolves
+    // THIS device. A clientAccount matched via the tenantUser pivot can have an
+    // unset userId, which otherwise silently drops every client push even though
+    // the token is stored — i.e. "no device token registered" from the push side.
+    try {
+      if (clientAccountId) {
+        const ca = await db.clientAccount.findOne({ where: { id: clientAccountId, tenantId } });
+        if (ca && !ca.userId) await ca.update({ userId });
+      }
+    } catch (e: any) {
+      console.warn('[customerDeviceToken] clientAccount link failed:', e?.message || e);
+    }
+
     await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };

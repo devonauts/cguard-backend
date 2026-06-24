@@ -8,6 +8,8 @@
  * The mobile app registers its FCM token via POST /guard/me/device-token, stored
  * in deviceIdInformation; tokens are resolved here per tenant.
  */
+import { Op } from 'sequelize';
+
 let _admin: any = null;
 let _initialized = false;
 
@@ -47,6 +49,14 @@ export interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
+  /**
+   * Mark the alert as time-sensitive (iOS) / max priority (Android). This lets it
+   * break through Focus / Do-Not-Disturb and lights the screen immediately — used
+   * for the pase de novedades, where the guard only has ~1 minute to respond.
+   * Requires the `com.apple.developer.usernotifications.time-sensitive`
+   * entitlement on the iOS app (added to App.entitlements).
+   */
+  timeSensitive?: boolean;
 }
 
 export async function sendToTokens(tokens: string[], payload: PushPayload) {
@@ -54,14 +64,28 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
   const unique = Array.from(new Set((tokens || []).filter(Boolean)));
   if (!admin || unique.length === 0) return { sent: 0, skipped: true };
   try {
+    const aps: Record<string, any> = { sound: 'default' };
+    // Time-sensitive interruption level pierces Focus modes and shows even when
+    // the phone is locked/silenced (iOS 15+). Falls back gracefully on older iOS.
+    if (payload.timeSensitive) aps['interruption-level'] = 'time-sensitive';
     const res = await admin.messaging().sendEachForMulticast({
       tokens: unique,
       notification: { title: payload.title, body: payload.body },
       data: payload.data || {},
       // High priority so a BACKGROUNDED device wakes and shows the alert promptly
       // (critical for the radio pase — it nudges the guard to open the app).
-      android: { priority: 'high', notification: { sound: 'default', priority: 'high', channelId: 'default' } },
-      apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
+      android: {
+        priority: 'high',
+        notification: { sound: 'default', priority: 'high', channelId: 'default', defaultVibrateTimings: true },
+      },
+      // apns-push-type 'alert' is REQUIRED for an alert push to be delivered on
+      // iOS 13+ (FCM omits it otherwise, which silently drops the banner on some
+      // builds). apns-priority 10 = deliver immediately. content-available also
+      // wakes the app so the in-app popup can refresh from the poll.
+      apns: {
+        headers: { 'apns-priority': '10', 'apns-push-type': 'alert' },
+        payload: { aps },
+      },
     });
     return { sent: res.successCount, failed: res.failureCount };
   } catch (e: any) {
@@ -95,6 +119,36 @@ export async function pushToUser(db: any, tenantId: string, userId: string, payl
     return sendToTokens(tokens, payload);
   } catch (e: any) {
     console.warn('[push] pushToUser failed:', e?.message || e);
+    return { sent: 0, error: true };
+  }
+}
+
+/**
+ * Bulletproof customer push: resolve device tokens by `clientAccountId` (what the
+ * client app registers with) OR `userId`, deduped, and send once. Works even when
+ * `clientAccount.userId` was never linked.
+ */
+export async function pushToClientAccounts(
+  db: any,
+  tenantId: string,
+  clientAccountIds: string[],
+  userIds: string[],
+  payload: PushPayload,
+) {
+  try {
+    const cas = Array.from(new Set((clientAccountIds || []).filter(Boolean)));
+    const uids = Array.from(new Set((userIds || []).filter(Boolean)));
+    if (!cas.length && !uids.length) return { sent: 0, skipped: true };
+
+    const or: any[] = [];
+    if (cas.length) or.push({ clientAccountId: { [Op.in]: cas } });
+    if (uids.length) or.push({ userId: { [Op.in]: uids } });
+
+    const rows = await db.deviceIdInformation.findAll({ where: { tenantId, [Op.or]: or } });
+    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
+    return sendToTokens(tokens, payload);
+  } catch (e: any) {
+    console.warn('[push] pushToClientAccounts failed:', e?.message || e);
     return { sent: 0, error: true };
   }
 }

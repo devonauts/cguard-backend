@@ -19,6 +19,8 @@ export class AppChannelAdapter implements RadioChannelAdapter {
           // Guide the guard to OPEN the app and report — works even when the app
           // is backgrounded/closed (the radio channel can't run in the background).
           body: `Abre la app para reportar tu novedad${payload.stationName ? ` en ${payload.stationName}` : ''}. Tienes 1 minuto.`,
+          // A pase has a hard ~60s window — break through Focus/silent so it lands.
+          timeSensitive: true,
           data: {
             type: 'radio.check_request',
             sessionId: payload.sessionId,

@@ -67,6 +67,13 @@ export default function (sequelize) {
       foreignKey: 'userId',
     });
 
+    // The client account whose app registered this device (customer push). Lets push
+    // resolve tokens by clientAccountId directly, independent of clientAccount.userId.
+    models.deviceIdInformation.belongsTo(models.clientAccount, {
+      as: 'clientAccount',
+      foreignKey: 'clientAccountId',
+    });
+
     models.deviceIdInformation.belongsTo(models.user, {
       as: 'createdBy',
     });
