@@ -55,7 +55,7 @@ export async function createAssignment(
   const { userId: guardUserId } = await resolveGuardUserId(database, tenantId, guardId);
   if (!guardUserId) {
     throw new AssignmentValidationError(
-      'El guardia seleccionado no es válido o no pertenece a este inquilino.',
+      'El vigilante seleccionado no es válido o no pertenece a este inquilino.',
     );
   }
 
@@ -88,7 +88,7 @@ export async function createAssignment(
       const st = await database.station.findByPk(existingRotation.stationId, { attributes: ['stationName'] });
       const roleTxt = existingRotation.isRelief ? 'Sacafranco' : 'Fijo';
       throw new AssignmentValidationError(
-        `Este guardia ya tiene una asignación activa (${roleTxt} en "${st?.stationName || 'otra estación'}"). Un guardia solo puede tener una asignación de rotación a la vez.`,
+        `Este vigilante ya tiene una asignación activa (${roleTxt} en "${st?.stationName || 'otra estación'}"). Un vigilante solo puede tener una asignación de rotación a la vez.`,
       );
     }
 
