@@ -239,7 +239,9 @@ async function notifyRecipients(db: any, tenantId: string, conversation: any, me
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { storePlatformEvent } = require('../lib/platformEventStore');
-    const { pushToUser } = require('./pushService');
+    const { pushToUser, pushToClientAccounts } = require('./pushService');
+
+    const pushPayload = { title, body: displayBody, data: { type: 'message.new', ...payload } };
 
     for (const r of recipients) {
       try {
@@ -255,13 +257,20 @@ async function notifyRecipients(db: any, tenantId: string, conversation: any, me
             sourceEntityId: String(conversation.id),
             payload,
           });
+          // Also push to the staffer's device(s) so supervisors in the field are
+          // alerted even when they don't have the CRM open. No-op if no token.
+          await pushToUser(db, tenantId, r.userId, pushPayload);
+        } else if (r.type === 'client') {
+          // The client app registers its FCM token by clientAccountId (it never
+          // reliably sets userId), so a plain pushToUser resolves zero tokens.
+          // Resolve by clientAccountId OR userId so customers actually get the push.
+          const caIds = conversation.recipientClientAccountId
+            ? [String(conversation.recipientClientAccountId)]
+            : [];
+          await pushToClientAccounts(db, tenantId, caIds, r.userId ? [r.userId] : [], pushPayload);
         } else {
-          // Guard/client → device push.
-          await pushToUser(db, tenantId, r.userId, {
-            title,
-            body: displayBody,
-            data: { type: 'message.new', ...payload },
-          });
+          // Guard → device push.
+          await pushToUser(db, tenantId, r.userId, pushPayload);
         }
       } catch (e: any) {
         console.warn('[message] notify recipient failed:', e?.message || e);
