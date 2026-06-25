@@ -27,6 +27,8 @@ export default (app) => {
   // Client-app messaging (scoped to the JWT's clientAccount). Client UI lives in
   // a separate project; these endpoints are the contract it connects to.
   app.get('/customer/messages', require('./customerMessages').customerMessagesList);
+  // Client starts a NEW thread with the office (lands in CRM "Mensajes de Clientes").
+  app.post('/customer/messages', require('./customerMessages').customerMessageCreate);
   app.get('/customer/messages/:conversationId', require('./customerMessages').customerMessageThread);
   app.post('/customer/messages/:conversationId', require('./customerMessages').customerMessageReply);
   app.post('/customer/messages/:conversationId/read', require('./customerMessages').customerMessageRead);

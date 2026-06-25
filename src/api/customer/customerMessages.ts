@@ -14,10 +14,12 @@ import Error400 from '../../errors/Error400';
 import {
   listConversations,
   getConversation,
+  getOrCreateConversation,
   listMessages,
   sendMessage,
   markRead,
 } from '../../services/messageService';
+import { resolveSupervisorUserIds } from '../../services/communication/operationalRecipients';
 
 const customerCtx = (req: any) => {
   const u = req.currentUser;
@@ -43,6 +45,40 @@ export const customerMessagesList = async (req, res) => {
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
 
+// Client starts a new message to the office. Mirrors guardMessageCreate: we reuse
+// the client's existing admin↔client thread when one exists, otherwise open one
+// owned by an office admin so it lands in the CRM "Mensajes de Clientes" inbox and
+// that owner gets the bell. The client is always the conversation recipient, so
+// the thread also shows in their own app. Supports text and/or attachments.
+export const customerMessageCreate = async (req, res) => {
+  try {
+    const { db, tenantId, userId, clientAccountId } = customerCtx(req);
+    const body = req.body?.data || req.body || {};
+    if ((!body.body || !String(body.body).trim()) && !(Array.isArray(body.attachments) && body.attachments.length)) {
+      const e: any = new Error('El mensaje no puede estar vacío'); e.code = 400; throw e;
+    }
+    const officeAdmins = await resolveSupervisorUserIds(db, tenantId);
+    const ownerId = officeAdmins[0] || userId;
+    const conversation = await getOrCreateConversation(db, tenantId, ownerId, {
+      recipientType: 'client',
+      recipientId: clientAccountId,
+      subject: body.subject ? String(body.subject).slice(0, 200) : 'Mensaje al equipo',
+    });
+    const message = await sendMessage(db, tenantId, {
+      conversation,
+      senderUserId: userId,
+      senderType: 'client',
+      body: body.body,
+      clientMsgId: body.clientMsgId,
+      attachments: body.attachments,
+    });
+    await ApiResponseHandler.success(req, res, {
+      conversationId: conversation.id,
+      message: message.get ? message.get({ plain: true }) : message,
+    });
+  } catch (error) { await ApiResponseHandler.error(req, res, error); }
+};
+
 export const customerMessageThread = async (req, res) => {
   try {
     const { db, tenantId, userId, clientAccountId } = customerCtx(req);
@@ -61,7 +97,7 @@ export const customerMessageReply = async (req, res) => {
     const convo = await ownedConvo(db, tenantId, req.params.conversationId, userId, clientAccountId);
     if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
     const body = req.body?.data || req.body || {};
-    const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'client', body: body.body, clientMsgId: body.clientMsgId });
+    const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'client', body: body.body, clientMsgId: body.clientMsgId, attachments: body.attachments });
     await ApiResponseHandler.success(req, res, { message: message.get ? message.get({ plain: true }) : message });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
