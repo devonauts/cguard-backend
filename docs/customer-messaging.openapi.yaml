@@ -24,7 +24,7 @@ paths:
   /auth/sign-in-customer:
     post:
       summary: Sign in (client app) → JWT
-      description: Returns a JWT whose payload includes `id`, `tenantId`, `clientAccountId`. Use it as `Authorization: Bearer <token>` on every other call. Rate-limited.
+      description: "Returns a JWT whose payload includes id, tenantId, clientAccountId. Use it as `Authorization: Bearer <token>` on every other call. Rate-limited."
       security: []
       tags: [Auth]
       requestBody:
