@@ -987,6 +987,60 @@ export default class TenantUserRepository {
       throw e;
     }
 
+    // Auto-provision a draft securityGuard record when the membership ends up
+    // with the `securityGuard` role. A guard is only visible in the CRM
+    // (securityGuardList → securityGuards table) when it has a securityGuards
+    // row; the generic user-invite / role-assignment path used to grant the role
+    // WITHOUT creating that row, leaving guards invisible. Mirror the customer →
+    // clientAccount provisioning. Idempotent: skip when ANY row already exists
+    // (incl. soft-deleted) so we never duplicate or resurrect an archived guard.
+    // Best-effort — must never break the role assignment itself.
+    try {
+      const finalRolesLower = (newRoles || []).map((r) => String(r).toLowerCase());
+      if (finalRolesLower.includes('securityguard')) {
+        const existingGuard = await options.database.securityGuard.findOne({
+          where: { guardId: user.id, tenantId: resolvedTenantId },
+          attributes: ['id'],
+          paranoid: false,
+          transaction,
+        });
+        if (!existingGuard) {
+          const currentUser = SequelizeRepository.getCurrentUser(options);
+          const actorId = (currentUser && currentUser.id) || user.id;
+          const derivedName =
+            (user.fullName && String(user.fullName).trim()) ||
+            [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+            'PENDING NAME';
+          const now = new Date();
+          await retryOnLock(() =>
+            options.database.securityGuard.create(
+              {
+                governmentId: 'PENDING',
+                fullName: derivedName,
+                gender: 'Masculino',
+                isOnDuty: false,
+                bloodType: 'O+',
+                birthDate: new Date('1970-01-01'),
+                maritalStatus: 'Soltero',
+                academicInstruction: 'Secundaria',
+                guardType: 'titular',
+                guardId: user.id,
+                tenantId: resolvedTenantId,
+                createdById: actorId,
+                updatedById: actorId,
+                createdAt: now,
+                updatedAt: now,
+              },
+              { transaction },
+            ),
+          );
+          console.log('[tenantUserRepository.updateRoles] auto-provisioned draft securityGuard for user', user.id, 'tenant', resolvedTenantId);
+        }
+      }
+    } catch (e) {
+      console.error('[tenantUserRepository.updateRoles] failed to auto-provision draft securityGuard (non-fatal):', e && (e as any).message ? (e as any).message : e);
+    }
+
     await AuditLogRepository.log(
       {
         entityName: 'user',

@@ -11,7 +11,7 @@ export default function (sequelize) {
       },
       governmentId: {
         type: DataTypes.STRING(50),
-        allowNull: false,
+        allowNull: true, // draft/invited guards fill this on registration
         validate: {
           len: [0, 50],
           notEmpty: true,
@@ -43,7 +43,7 @@ export default function (sequelize) {
       },
       gender: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: true, // draft/invited guards fill this on registration
         validate: {
           notEmpty: true,
           isIn: [[
@@ -59,7 +59,7 @@ export default function (sequelize) {
       },
       bloodType: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: true, // draft/invited guards fill this on registration
         validate: {
           notEmpty: true,
           isIn: [[
@@ -91,7 +91,7 @@ export default function (sequelize) {
                 .format('YYYY-MM-DD')
             : null;
         },
-        allowNull: false,
+        allowNull: true, // draft/invited guards fill this on registration
       },
       birthPlace: {
         type: DataTypes.STRING(50),
@@ -101,7 +101,7 @@ export default function (sequelize) {
       },
       maritalStatus: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: true, // draft/invited guards fill this on registration
         validate: {
           notEmpty: true,
           isIn: [[
@@ -114,7 +114,7 @@ export default function (sequelize) {
       },
       academicInstruction: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: true, // draft/invited guards fill this on registration
         validate: {
           notEmpty: true,
           isIn: [[
