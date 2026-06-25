@@ -59,6 +59,11 @@ export interface PushPayload {
   timeSensitive?: boolean;
 }
 
+/** True when FCM credentials are present and firebase-admin initialised. */
+export function isPushConfigured(): boolean {
+  return !!getAdmin();
+}
+
 export async function sendToTokens(tokens: string[], payload: PushPayload) {
   const admin = getAdmin();
   const unique = Array.from(new Set((tokens || []).filter(Boolean)));
@@ -68,15 +73,14 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
     // Time-sensitive interruption level pierces Focus modes and shows even when
     // the phone is locked/silenced (iOS 15+). Falls back gracefully on older iOS.
     if (payload.timeSensitive) aps['interruption-level'] = 'time-sensitive';
-    const res = await admin.messaging().sendEachForMulticast({
-      tokens: unique,
+    const message = {
       notification: { title: payload.title, body: payload.body },
       data: payload.data || {},
       // High priority so a BACKGROUNDED device wakes and shows the alert promptly
       // (critical for the radio pase — it nudges the guard to open the app).
       android: {
-        priority: 'high',
-        notification: { sound: 'default', priority: 'high', channelId: 'default', defaultVibrateTimings: true },
+        priority: 'high' as const,
+        notification: { sound: 'default', priority: 'high' as const, channelId: 'default', defaultVibrateTimings: true },
       },
       // apns-push-type 'alert' is REQUIRED for an alert push to be delivered on
       // iOS 13+ (FCM omits it otherwise, which silently drops the banner on some
@@ -86,8 +90,19 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
         headers: { 'apns-priority': '10', 'apns-push-type': 'alert' },
         payload: { aps },
       },
-    });
-    return { sent: res.successCount, failed: res.failureCount };
+    };
+    // FCM caps sendEachForMulticast at 500 tokens/call. Single-tenant/user sends
+    // are well under that, but a platform-wide broadcast is not — so chunk and
+    // aggregate the counts.
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < unique.length; i += 500) {
+      const batch = unique.slice(i, i + 500);
+      const res = await admin.messaging().sendEachForMulticast({ tokens: batch, ...message });
+      sent += res.successCount;
+      failed += res.failureCount;
+    }
+    return { sent, failed };
   } catch (e: any) {
     console.warn('[push] send failed:', e?.message || e);
     return { sent: 0, error: true };
@@ -103,6 +118,35 @@ export async function pushToTenant(db: any, tenantId: string, payload: PushPaylo
     return sendToTokens(tokens, payload);
   } catch (e: any) {
     console.warn('[push] pushToTenant failed:', e?.message || e);
+    return { sent: 0, error: true };
+  }
+}
+
+/** Count every registered device token across ALL tenants (no tenant filter). */
+export async function countAllDevices(db: any) {
+  try {
+    const rows = await db.deviceIdInformation.findAll({ attributes: ['pushToken', 'deviceId'] });
+    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
+    return { devices: tokens.length, uniqueTokens: new Set(tokens).size };
+  } catch (e: any) {
+    console.warn('[push] countAllDevices failed:', e?.message || e);
+    return { devices: 0, uniqueTokens: 0, error: true };
+  }
+}
+
+/**
+ * Platform-wide broadcast: resolve EVERY registered device token across all
+ * tenants and push to them. Deliberately unfiltered — used only by the superadmin
+ * broadcast console. sendToTokens dedupes and chunks into FCM's 500-token batches.
+ */
+export async function pushToAll(db: any, payload: PushPayload) {
+  try {
+    const rows = await db.deviceIdInformation.findAll({ attributes: ['pushToken', 'deviceId'] });
+    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
+    const result = await sendToTokens(tokens, payload);
+    return { ...result, devices: tokens.length };
+  } catch (e: any) {
+    console.warn('[push] pushToAll failed:', e?.message || e);
     return { sent: 0, error: true };
   }
 }
