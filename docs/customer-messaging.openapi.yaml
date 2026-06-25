@@ -1,0 +1,285 @@
+openapi: 3.0.3
+info:
+  title: C-Guard Pro — Client App Messaging API
+  version: "1.0.0"
+  description: >
+    Customer-facing messaging contract for the **client app (Mi Seguridad)**.
+    A customer talks to the tenant's office; the same threads appear in the CRM
+    under **Mensajería › Mensajes de Clientes**.
+
+    All endpoints are scoped by the customer JWT (it carries `tenantId` +
+    `clientAccountId`), so most paths take no tenant id. Responses are returned
+    **raw** (the JSON object shown under each 200 — no `{ data: ... }` envelope).
+
+    Guard/supervisor parity (worker app) uses the same shapes under
+    `/tenant/{tenantId}/guard/me/messages` — see the note at the bottom.
+servers:
+  - url: https://api.cguardpro.com/api
+    description: Production
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/sign-in-customer:
+    post:
+      summary: Sign in (client app) → JWT
+      description: Returns a JWT whose payload includes `id`, `tenantId`, `clientAccountId`. Use it as `Authorization: Bearer <token>` on every other call. Rate-limited.
+      security: []
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string, description: JWT bearer token }
+                  user: { type: object, description: The signed-in user (id, email, tenant, roles…) }
+        "401": { description: Invalid credentials }
+
+  /customer/messages:
+    get:
+      summary: List my conversations
+      tags: [Customer Messaging]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 25 } }
+        - { name: cursor, in: query, schema: { type: string, format: date-time }, description: "Keyset cursor — pass the previous `nextCursor` (by lastMessageAt)." }
+      responses:
+        "200":
+          description: Inbox page (newest conversation first)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows: { type: array, items: { $ref: "#/components/schemas/Conversation" } }
+                  nextCursor: { type: string, format: date-time, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Start a NEW conversation with the office
+      description: >
+        Opens (or reuses) the client↔office thread and posts the first message.
+        Lands in the CRM "Mensajes de Clientes" inbox and rings the office bell.
+        Must carry text and/or at least one attachment.
+      tags: [Customer Messaging]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrReplyBody" }
+      responses:
+        "200":
+          description: Created/sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversationId: { type: string }
+                  message: { $ref: "#/components/schemas/Message" }
+        "400": { description: Empty message }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /customer/messages/{conversationId}:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get a thread (messages)
+      tags: [Customer Messaging]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 30 } }
+        - { name: before, in: query, schema: { type: string, format: date-time }, description: "Load older — pass the oldest loaded message's createdAt." }
+      responses:
+        "200":
+          description: Thread page. **rows are newest-first — reverse for display.**
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      subject: { type: string, nullable: true }
+                      isOneWay: { type: boolean, description: "true = read-only broadcast; replies are rejected." }
+                  rows: { type: array, items: { $ref: "#/components/schemas/Message" } }
+                  nextCursor: { type: string, format: date-time, nullable: true }
+        "404": { description: Conversation not found / not yours }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Reply in a thread
+      description: Rejected (400) if the conversation is `isOneWay`.
+      tags: [Customer Messaging]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrReplyBody" }
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { $ref: "#/components/schemas/Message" }
+        "400": { description: Empty message or read-only conversation }
+        "404": { description: Conversation not found / not yours }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /customer/messages/{conversationId}/read:
+    post:
+      summary: Mark a thread's inbound messages read
+      tags: [Customer Messaging]
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200":
+          description: Marked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  markedCount: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /customer/me/device-id-information:
+    post:
+      summary: Register the device FCM push token
+      description: Call after login and on token refresh. Links the device to the client account so CRM→client push (new-message alerts) is deliverable. Keyed by (tenant, user) — a refreshed token overwrites the old row.
+      tags: [Customer Messaging]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId]
+              properties:
+                deviceId: { type: string, description: "FCM token (also accepts `token`/`pushToken`)." }
+                platform: { type: string, enum: [android, ios] }
+                model: { type: string }
+                osVersion: { type: string }
+                appVersion: { type: string }
+      responses:
+        "200":
+          description: Registered
+          content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /tenant/{tenantId}/file/credentials:
+    get:
+      summary: Get upload credentials for a message attachment
+      description: >
+        Step 1 of attaching media. `messageAttachments` allows any authenticated
+        guard/customer (bypasses storage-permission checks). Use the `tenantId`
+        from the JWT. Then upload the file to `uploadCredentials.url` with
+        `uploadCredentials.fields`, and send the message with the returned
+        `downloadUrl` as the attachment `url`.
+      tags: [Attachments]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string } }
+        - { name: storageId, in: query, required: true, schema: { type: string, enum: [messageAttachments] } }
+        - { name: filename, in: query, required: true, schema: { type: string }, description: "Unique filename (e.g. `<uuid>.jpg`). Max 100 MB." }
+      responses:
+        "200":
+          description: Credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  privateUrl: { type: string }
+                  fileToken: { type: string, description: "Encrypted handle for the privateUrl." }
+                  downloadUrl: { type: string, description: "Use as the attachment `url`." }
+                  uploadCredentials:
+                    type: object
+                    properties:
+                      url: { type: string }
+                      fields: { type: object, additionalProperties: true, description: "Multipart fields to POST alongside the file (presigned-POST style)." }
+        "403": { description: Not authenticated / unknown storageId }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Missing/invalid customer JWT
+  schemas:
+    Attachment:
+      type: object
+      properties:
+        url: { type: string }
+        type: { type: string, enum: [image, video, audio], default: image }
+        name: { type: string, nullable: true }
+        sizeInBytes: { type: integer, nullable: true }
+    CreateOrReplyBody:
+      type: object
+      description: "Body for create + reply. Also accepts a `{ data: { ... } }` wrapper. Provide text and/or attachments."
+      properties:
+        body: { type: string, description: "Message text." }
+        subject: { type: string, description: "Only used when creating (optional)." }
+        clientMsgId: { type: string, description: "Client-generated UUID for idempotency — a retry with the same id returns the existing message." }
+        attachments:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/Attachment" }
+    Conversation:
+      type: object
+      properties:
+        id: { type: string }
+        recipientType: { type: string, enum: [guard, client] }
+        recipientName: { type: string }
+        subject: { type: string, nullable: true }
+        kind: { type: string, enum: [direct, group] }
+        isGroup: { type: boolean }
+        memberCount: { type: integer, nullable: true }
+        isOneWay: { type: boolean }
+        lastMessageAt: { type: string, format: date-time, nullable: true }
+        lastMessagePreview: { type: string, nullable: true }
+        unreadCount: { type: integer }
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        senderUserId: { type: string }
+        senderType: { type: string, enum: [staff, guard, client] }
+        senderName: { type: string }
+        body: { type: string }
+        attachments:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/Attachment" }
+        createdAt: { type: string, format: date-time }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Worker app (guards/supervisors) parity — same shapes, tenant in the path:
+#   GET  /tenant/{tenantId}/guard/me/messages
+#   POST /tenant/{tenantId}/guard/me/messages                 (start a thread)
+#   GET  /tenant/{tenantId}/guard/me/messages/{conversationId}
+#   POST /tenant/{tenantId}/guard/me/messages/{conversationId} (reply)
+#   POST /tenant/{tenantId}/guard/me/messages/{conversationId}/read
+# Auth = the guard JWT from /auth/sign-in (worker login).
+# ─────────────────────────────────────────────────────────────────────────────
