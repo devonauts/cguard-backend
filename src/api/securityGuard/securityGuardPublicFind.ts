@@ -108,8 +108,9 @@ export default async (req, res, next) => {
         guardId: record.id,
         governmentId: record.governmentId
       });
-      const err = new Error('El usuario ya fue creado y no puede ser modificado nuevamente.');
+      const err: any = new Error('El usuario ya fue creado y no puede ser modificado nuevamente.');
       err.name = 'GuardAlreadyCreated';
+      err.code = 400; // user-facing message → 400, not a generic 500
       return await ApiResponseHandler.error(req, res, err);
     }
 

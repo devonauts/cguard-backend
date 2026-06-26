@@ -127,7 +127,7 @@ export default function (router) {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
       const currentUser = (req as any).currentUser;
       const record = await req.database.siteTour.findOne({ where: { id: req.params.id, tenantId: req.currentTenant.id } });
-      if (!record) throw new Error('Not found');
+      if (!record) throw Object.assign(new Error('Not found'), { code: 404 });
       const updateData = {
         name: req.body.name,
         description: req.body.description,
@@ -152,7 +152,7 @@ export default function (router) {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
       const currentUser = (req as any).currentUser;
       const record = await req.database.siteTour.findOne({ where: { id: req.params.id, tenantId: req.currentTenant.id } });
-      if (!record) throw new Error('Not found');
+      if (!record) throw Object.assign(new Error('Not found'), { code: 404 });
       const updateData: any = { updatedById: currentUser && currentUser.id };
       // allow stationId through patch
       Object.assign(updateData, req.body);
@@ -168,7 +168,7 @@ export default function (router) {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteDestroy || Permissions.values.postSiteEdit);
       const record = await req.database.siteTour.findOne({ where: { id: req.params.id, tenantId: req.currentTenant.id } });
-      if (!record) throw new Error('Not found');
+      if (!record) throw Object.assign(new Error('Not found'), { code: 404 });
       await record.destroy();
       await ApiResponseHandler.success(req, res, {});
     } catch (error: any) {
@@ -308,7 +308,7 @@ export default function (router) {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
       const tag = await req.database.siteTourTag.findOne({ where: { id: req.params.tagId, siteTourId: req.params.tourId, tenantId: req.currentTenant.id } });
-      if (!tag) throw new Error('Not found');
+      if (!tag) throw Object.assign(new Error('Not found'), { code: 404 });
       const updateData: any = {};
       Object.assign(updateData, req.body);
       await tag.update(updateData);
@@ -322,7 +322,7 @@ export default function (router) {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
       const tag = await req.database.siteTourTag.findOne({ where: { id: req.params.tagId, siteTourId: req.params.tourId, tenantId: req.currentTenant.id } });
-      if (!tag) throw new Error('Not found');
+      if (!tag) throw Object.assign(new Error('Not found'), { code: 404 });
       await tag.update(req.body);
       await ApiResponseHandler.success(req, res, tag);
     } catch (error: any) {
@@ -335,7 +335,7 @@ export default function (router) {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteDestroy || Permissions.values.postSiteEdit);
       const tag = await req.database.siteTourTag.findOne({ where: { id: req.params.tagId, siteTourId: req.params.tourId, tenantId: req.currentTenant.id } });
-      if (!tag) throw new Error('Not found');
+      if (!tag) throw Object.assign(new Error('Not found'), { code: 404 });
       await tag.destroy();
       await ApiResponseHandler.success(req, res, {});
     } catch (error: any) {

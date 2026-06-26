@@ -27,7 +27,7 @@ export default async (req, res, next) => {
     // which user/tenant we are allowed to act on; we never resolve identity
     // from a securityGuardId or any other client-supplied id.
     if (!providedToken) {
-      return await ApiResponseHandler.error(req, res, new Error('Invalid invitation token'));
+      return await ApiResponseHandler.error(req, res, Object.assign(new Error('Invalid invitation token'), { code: 400 }));
     }
 
     try {
@@ -60,7 +60,7 @@ export default async (req, res, next) => {
         if (typeof originalCurrentTenant !== 'undefined') req.currentTenant = originalCurrentTenant;
         if (req && req.allowSelfRoleUpdate) delete req.allowSelfRoleUpdate;
       } catch (e) {}
-      return await ApiResponseHandler.error(req, res, new Error('Invalid invitation token'));
+      return await ApiResponseHandler.error(req, res, Object.assign(new Error('Invalid invitation token'), { code: 400 }));
     }
 
     let incoming = _incomingRaw;
@@ -70,7 +70,7 @@ export default async (req, res, next) => {
     }
 
     if (!incoming) {
-      throw new Error('Empty payload');
+      throw Object.assign(new Error('Empty payload'), { code: 400 });
     }
 
     // The guard is ALWAYS the token's user. We never accept a client-supplied

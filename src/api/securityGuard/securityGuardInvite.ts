@@ -27,7 +27,7 @@ export default async (req, res, next) => {
     }
 
     if (!incoming) {
-      return await ApiResponseHandler.error(req, res, new Error('Empty invite payload'));
+      return await ApiResponseHandler.error(req, res, Object.assign(new Error('Empty invite payload'), { code: 400 }));
     }
 
     // Detect simple resend requests: payloads that only include guard/contact and optional names
@@ -101,7 +101,7 @@ export default async (req, res, next) => {
         }
 
         if (!tenantUser) {
-          throw new Error('No tenantUser found to resend invitation');
+          throw Object.assign(new Error('No tenantUser found to resend invitation'), { code: 400 });
         }
 
         if (!(tenantUser as any).invitationToken) {
@@ -214,7 +214,7 @@ export default async (req, res, next) => {
           return await ApiResponseHandler.success(req, res, { resent: true });
         }
 
-        throw new Error('No recipient email available for resend');
+        throw Object.assign(new Error('No recipient email available for resend'), { code: 400 });
       } catch (e) {
         console.error('Failed to resend invitation (securityGuard):', e && (e as any).message ? (e as any).message : e);
         if (e && (e as any).stack) console.error((e as any).stack);
@@ -263,7 +263,7 @@ export default async (req, res, next) => {
 
           invitedUser = await UserRepository.findByEmailWithoutAvatar(contact, req);
           if (!invitedUser) {
-            throw new Error('Unable to create or find user for contact ' + contact);
+            throw Object.assign(new Error('Unable to create or find user for contact ' + contact), { code: 400 });
           }
         }
         // Ensure there's a tenantUser record for this invited user so that
