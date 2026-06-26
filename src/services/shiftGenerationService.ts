@@ -424,7 +424,7 @@ export async function generateShiftsForAssignment(
 
   if (computed.length === 0) return;
 
-  const rows = computed.map((c) => ({
+  let rows = computed.map((c) => ({
     guardId: c.guardId,
     stationId: c.stationId,
     positionId: c.positionId,
@@ -436,6 +436,42 @@ export async function generateShiftsForAssignment(
     createdById: userId,
     updatedById: userId,
   }));
+
+  // No double-booking — the universal backstop. Drop any computed shift that would
+  // overlap an existing shift for the SAME guard from ANOTHER assignment. This
+  // assignment's own future shifts were purged above, so what remains is "other
+  // assignments" (incl. a sacafranco wrongly assigned to two stations at once, or
+  // the auto-assign bulk path). A guard can't be two places at once — a coverage
+  // gap is preferable to a physically-impossible double-booking.
+  if (assignment.guardId && rows.length) {
+    const winStart = rows.reduce((m, r) => (r.startTime < m ? r.startTime : m), rows[0].startTime);
+    const winEnd = rows.reduce((m, r) => (r.endTime > m ? r.endTime : m), rows[0].endTime);
+    const existing = await database.shift.findAll({
+      where: {
+        tenantId,
+        guardId: assignment.guardId,
+        startTime: { [Op.lt]: winEnd },
+        endTime: { [Op.gt]: winStart },
+      },
+      attributes: ['startTime', 'endTime', 'guardAssignmentId'],
+    });
+    const ex = (existing || [])
+      .filter((e: any) => String(e.guardAssignmentId) !== String(assignment.id))
+      .map((e: any) => ({ s: new Date(e.startTime).getTime(), e: new Date(e.endTime).getTime() }));
+    if (ex.length) {
+      const before = rows.length;
+      rows = rows.filter((r) => {
+        const rs = new Date(r.startTime).getTime();
+        const re = new Date(r.endTime).getTime();
+        return !ex.some((x) => rs < x.e && x.s < re);
+      });
+      if (rows.length !== before) {
+        console.warn(`[shiftGen] dropped ${before - rows.length} overlapping shift(s) for guard ${assignment.guardId} (assignment ${assignment.id})`);
+      }
+    }
+  }
+
+  if (!rows.length) return;
   await database.shift.bulkCreate(rows, { ignoreDuplicates: true });
   console.log(`[shiftGen] Created ${rows.length} shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
 }
