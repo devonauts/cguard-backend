@@ -33,6 +33,23 @@ export default async (req: any, res: any) => {
       throw new Error400(req.language, 'guard.profileNotFound');
     }
 
+    // Idempotency: a double-submit (same guard, type, dates, still pending) must
+    // not insert a duplicate request. Return the existing one instead.
+    const duplicate = await db.timeOffRequest.findOne({
+      where: {
+        tenantId,
+        guardId: securityGuard.id,
+        type,
+        startDate,
+        endDate,
+        status: 'pending',
+        deletedAt: null,
+      },
+    });
+    if (duplicate) {
+      return ApiResponseHandler.success(req, res, duplicate.get({ plain: true }));
+    }
+
     const record = await db.timeOffRequest.create({
       guardId: securityGuard.id,
       guardName: securityGuard.fullName,

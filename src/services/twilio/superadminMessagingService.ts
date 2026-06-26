@@ -85,6 +85,19 @@ export interface RecordInboundArgs {
  * and emit 'twilio:sms:inbound'. Returns { conversation, message }.
  */
 export async function recordInbound(database: any, args: RecordInboundArgs) {
+  // Idempotency: Twilio retries inbound webhooks. Dedup on the message SID so a
+  // retry doesn't duplicate the row, re-bump unreadCount, or re-fire the event.
+  if (args.twilioSid) {
+    const existing = await database.twilioMessage.findOne({ where: { twilioSid: args.twilioSid } });
+    if (existing) {
+      const conv = await database.twilioConversation.findByPk(existing.conversationId).catch(() => null);
+      return {
+        conversation: conv ? serializeConversation(conv) : null,
+        message: serializeMessage(existing),
+        duplicate: true,
+      };
+    }
+  }
   const conv = await getOrCreateConversation(database, args.from, args.to);
   const message = await database.twilioMessage.create({
     conversationId: conv.id,

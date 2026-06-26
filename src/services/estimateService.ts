@@ -286,6 +286,16 @@ export default class EstimateService {
       throw Object.assign(new Error('Estimate not found'), { code: 404 });
     }
 
+    // Idempotency / no-duplicate: if this estimate was already converted, return
+    // the existing invoice instead of creating a second one (double-click/retry).
+    const alreadyConverted = await this.options.database.invoice.findOne({
+      where: { referenceEstimateId: estimate.id, tenantId: estimate.tenantId },
+    });
+    if (alreadyConverted) {
+      try { await EstimateRepository.destroy(estimate.id, this.options); } catch (e) { /* already gone */ }
+      return alreadyConverted.get ? alreadyConverted.get({ plain: true }) : alreadyConverted;
+    }
+
     const invoicePayload: any = {
       clientId: estimate.clientId || null,
       postSiteId: estimate.postSiteId || null,

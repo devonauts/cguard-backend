@@ -33,11 +33,11 @@ export default async (req: any, res: any) => {
       // (rondas/alarms/memos) reach it and never the Mi Seguridad client app.
       await device.update({ pushToken: String(token), app: 'worker', updatedById: currentUser.id });
     } else {
-      const existing = await db.deviceIdInformation.findOne({
+      // findOrCreate (not find-then-create) so two concurrent registrations of
+      // the same token don't insert duplicate device rows.
+      await db.deviceIdInformation.findOrCreate({
         where: { deviceId: String(token), tenantId },
-      });
-      if (!existing) {
-        await db.deviceIdInformation.create({
+        defaults: {
           deviceId: String(token),
           pushToken: String(token),
           app: 'worker',
@@ -45,8 +45,8 @@ export default async (req: any, res: any) => {
           userId: currentUser.id,
           createdById: currentUser.id,
           updatedById: currentUser.id,
-        });
-      }
+        },
+      });
     }
     return ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) {

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { IServiceOptions } from './IServiceOptions';
 import InvoiceRepository from '../database/repositories/invoiceRepository';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
@@ -22,9 +23,19 @@ export default class PaymentService {
       const invoice = await InvoiceRepository.findById(data.invoiceId, { ...this.options, transaction });
 
       const currentUser = SequelizeRepository.getCurrentUser(this.options) || null;
+      const tenant = SequelizeRepository.getCurrentTenant(this.options);
+
+      // Lock the invoice row for this read-modify-write so two concurrent payment
+      // posts can't both read the same payments array (lost update) or jointly
+      // bypass the over-total check.
+      const lockedInvoice = await this.options.database.invoice.findOne({
+        where: { id: data.invoiceId, tenantId: tenant.id },
+        lock: transaction.LOCK.UPDATE,
+        transaction,
+      });
 
       const newPayment = {
-        id: (Math.random().toString(36).slice(2, 10)),
+        id: crypto.randomUUID(),
         invoiceId: data.invoiceId,
         amount: Number(data.amount || 0),
         date: data.date || new Date().toISOString(),
@@ -35,7 +46,9 @@ export default class PaymentService {
         updatedAt: new Date(),
       };
 
-      const existing = Array.isArray(invoice.payments) ? invoice.payments : [];
+      const existing = Array.isArray(lockedInvoice && lockedInvoice.payments)
+        ? lockedInvoice.payments
+        : (Array.isArray(invoice.payments) ? invoice.payments : []);
       // Prevent creating a payment that would make total payments exceed the invoice total
       const existingSum = existing.reduce((acc, p) => acc + Number(p.amount || p.total || p.paid || 0), 0);
       const invoiceTotal = Number(invoice.total || 0);
