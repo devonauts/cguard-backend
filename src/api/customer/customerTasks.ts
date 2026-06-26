@@ -29,22 +29,38 @@ export const customerTaskCreate = async (req, res) => {
     const { db, tenantId, userId, clientAccountId } = customerCtx(req);
     const b = req.body?.data || req.body || {};
     const taskToDo = String(b.taskToDo || b.task || '').trim();
-    const stationId = b.stationId || b.taskBelongsToStation || null;
-    const dateToDoTheTask = b.dateToDoTheTask ? new Date(b.dateToDoTheTask) : null;
+    let stationId = b.stationId || b.taskBelongsToStation || null;
+    // dateToDoTheTask defaults to +1 day so the existing client app (which may not
+    // send one) still works.
+    const dateToDoTheTask = b.dateToDoTheTask ? new Date(b.dateToDoTheTask) : new Date(Date.now() + 86400000);
 
     if (!taskToDo) return ApiResponseHandler.error(req, res, new Error('taskToDo requerido'));
-    if (!stationId) return ApiResponseHandler.error(req, res, new Error('stationId requerido'));
-    if (!dateToDoTheTask || isNaN(dateToDoTheTask.getTime())) {
+    if (isNaN(dateToDoTheTask.getTime())) {
       return ApiResponseHandler.error(req, res, new Error('dateToDoTheTask inválido'));
     }
 
-    // Security: the station must belong to THIS client (its stationOrigin clientAccount).
-    const station = await db.station.findOne({
-      where: { id: stationId, tenantId, deletedAt: null },
-      include: [{ model: db.clientAccount, as: 'stationOrigin', attributes: ['id'], required: false }],
+    // The client's own stations (stationOrigin = this clientAccount). Resolved via
+    // the association so we don't depend on the raw FK column name.
+    const myStations = await db.station.findAll({
+      where: { tenantId, deletedAt: null },
+      attributes: ['id'],
+      include: [{
+        model: db.clientAccount, as: 'stationOrigin', attributes: ['id'],
+        required: true, where: { id: clientAccountId },
+      }],
     });
-    if (!station || !station.stationOrigin || String(station.stationOrigin.id) !== String(clientAccountId)) {
-      return ApiResponseHandler.error(req, res, new Error('Estación no válida para este cliente'));
+    const myStationIds = (myStations || []).map((s: any) => String(s.id));
+    if (!myStationIds.length) {
+      return ApiResponseHandler.error(req, res, new Error('No hay estaciones asociadas a este cliente'));
+    }
+    if (stationId) {
+      // Explicit station must belong to this client.
+      if (!myStationIds.includes(String(stationId))) {
+        return ApiResponseHandler.error(req, res, new Error('Estación no válida para este cliente'));
+      }
+    } else {
+      // None provided (current client app) → default to the client's (only) station.
+      stationId = myStationIds[0];
     }
 
     const priority = ['alta', 'media', 'baja'].includes(b.priority) ? b.priority : 'media';
