@@ -156,29 +156,57 @@ export async function pushToTenant(db: any, tenantId: string, payload: PushPaylo
   }
 }
 
-/** Count every registered device token across ALL tenants (no tenant filter). */
+export type BroadcastApp = 'worker' | 'client';
+
+/** WHERE clause for an app filter (worker counts NULL app as worker; client is explicit). */
+function appWhere(app?: BroadcastApp): any {
+  if (app === 'worker') return { [Op.or]: [{ app: { [Op.ne]: 'client' } }, { app: null }] };
+  if (app === 'client') return { app: 'client' };
+  return {};
+}
+
+/**
+ * Count deliverable devices across ALL tenants, broken down by app + transport, so the
+ * superadmin broadcast console can show the blast radius per app.
+ *   worker → C-Guard Pro (FCM)   client → Mi Seguridad (APNs, or FCM fallback)
+ */
 export async function countAllDevices(db: any) {
   try {
-    const rows = await db.deviceIdInformation.findAll({ attributes: ['pushToken', 'deviceId'] });
-    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
-    return { devices: tokens.length, uniqueTokens: new Set(tokens).size };
+    const rows = await db.deviceIdInformation.findAll({
+      attributes: ['pushToken', 'deviceId', 'apnsToken', 'app'],
+    });
+    let worker = 0, client = 0, apns = 0, fcm = 0;
+    for (const r of rows || []) {
+      const hasApns = !!r.apnsToken;
+      const hasFcm = !!(r.pushToken || r.deviceId);
+      if (!hasApns && !hasFcm) continue;
+      if (r.app === 'client') client++; else worker++;
+      if (hasApns) apns++; else fcm++;
+    }
+    return { total: worker + client, worker, client, apns, fcm };
   } catch (e: any) {
     console.warn('[push] countAllDevices failed:', e?.message || e);
-    return { devices: 0, uniqueTokens: 0, error: true };
+    return { total: 0, worker: 0, client: 0, apns: 0, fcm: 0, error: true };
   }
 }
 
 /**
- * Platform-wide broadcast: resolve EVERY registered device token across all
- * tenants and push to them. Deliberately unfiltered — used only by the superadmin
- * broadcast console. sendToTokens dedupes and chunks into FCM's 500-token batches.
+ * Platform-wide broadcast across all tenants — superadmin console only. Routes each
+ * device by transport (client APNs token → direct APNs, worker FCM token → FCM) via
+ * deliverToDevices, so BOTH apps are reached through their correct channel. `app`
+ * optionally restricts to one app ('worker' | 'client'); omit for both.
  */
-export async function pushToAll(db: any, payload: PushPayload) {
+export async function pushToAll(db: any, payload: PushPayload, app?: BroadcastApp) {
   try {
-    const rows = await db.deviceIdInformation.findAll({ attributes: ['pushToken', 'deviceId'] });
-    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
-    const result = await sendToTokens(tokens, payload);
-    return { ...result, devices: tokens.length };
+    const rows = await db.deviceIdInformation.findAll({
+      where: appWhere(app),
+      attributes: ['pushToken', 'deviceId', 'apnsToken', 'app'],
+    });
+    const deliverable = (rows || []).filter(
+      (r: any) => r.apnsToken || r.pushToken || r.deviceId,
+    );
+    const result: any = await deliverToDevices(rows, payload);
+    return { ...result, devices: deliverable.length };
   } catch (e: any) {
     console.warn('[push] pushToAll failed:', e?.message || e);
     return { sent: 0, error: true };
