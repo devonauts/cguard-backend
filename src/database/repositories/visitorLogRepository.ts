@@ -379,11 +379,12 @@ class VisitorLogRepository {
       }
     }
 
-    if (!assignedPostSiteIds.length && !assignedStationIds.length) {
-      return { hasAssigned: false };
-    }
-
-    const allowedClauses: any[] = [];
+    // A non-admin can ALWAYS see visitor logs they themselves registered — even
+    // when the visit's station/post falls outside their assigned scope (e.g. a
+    // guard on duty via the schedule rather than a permanent post/station
+    // assignment). Without this, a guard who just registered a visit is bounced
+    // to an empty "no visitors logged yet" list.
+    const allowedClauses: any[] = [{ createdById: currentUser.id }];
     if (assignedPostSiteIds.length) {
       allowedClauses.push({ postSiteId: { [Op.in]: assignedPostSiteIds } });
     }
