@@ -28,7 +28,7 @@ export default async (req, res) => {
 
     const file = (req as any).file;
     if (!file) {
-      throw new Error('File is required');
+      throw Object.assign(new Error('File is required'), { code: 400 });
     }
 
     const storageConfig = Storage.values['userAvatarsProfiles'];

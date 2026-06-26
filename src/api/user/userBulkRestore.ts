@@ -17,7 +17,7 @@ export default async (req, res) => {
     const ids = req.body && Array.isArray(req.body.ids) ? req.body.ids : [];
 
     if (!ids.length) {
-      throw new Error('No ids provided');
+      throw Object.assign(new Error('No ids provided'), { code: 400 });
     }
 
     for (const userId of ids) {
@@ -28,11 +28,11 @@ export default async (req, res) => {
       );
 
       if (!tenantUser) {
-        throw new Error('TenantUser not found');
+        throw Object.assign(new Error('TenantUser not found'), { code: 404 });
       }
 
       if (tenantUser.status !== 'archived') {
-        throw new Error('Only archived users can be restored');
+        throw Object.assign(new Error('Only archived users can be restored'), { code: 400 });
       }
 
       // Decide restoration status based on whether the user's email is verified.

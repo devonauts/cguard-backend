@@ -12,7 +12,7 @@ export default async (req, res) => {
     const assignmentId = req.params.assignmentId;
 
     if (!assignmentId) {
-      throw new Error('assignmentId required');
+      throw Object.assign(new Error('assignmentId required'), { code: 400 });
     }
 
     // Prefer deleting a Shift record (canonical source). If not found, fall back to deleting the pivot row.

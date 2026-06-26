@@ -29,7 +29,7 @@ export default async (req, res) => {
     );
 
     if (!tenantUser) {
-      throw new Error('TenantUser not found');
+      throw Object.assign(new Error('TenantUser not found'), { code: 404 });
     }
 
     tenantUser.status = 'archived';

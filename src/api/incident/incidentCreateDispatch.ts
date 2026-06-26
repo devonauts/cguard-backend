@@ -15,7 +15,7 @@ export default async (req, res, next) => {
 
     const { id } = req.params;
     if (!id) {
-      throw new Error('Incident id is required');
+      throw Object.assign(new Error('Incident id is required'), { code: 400 });
     }
 
     // load incident

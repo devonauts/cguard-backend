@@ -57,7 +57,7 @@ export async function getOrCreateConversation(
   input: { recipientType: RecipientType; recipientId: string; subject?: string | null; isOneWay?: boolean },
 ): Promise<any> {
   const resolved = await resolveRecipient(db, tenantId, input.recipientType, input.recipientId);
-  if (!resolved) throw new Error('Destinatario no válido para este inquilino');
+  if (!resolved) throw Object.assign(new Error('Destinatario no válido para este inquilino'), { code: 400 });
 
   const where: any = { tenantId, recipientType: input.recipientType, archived: false, deletedAt: null };
   if (input.recipientType === 'guard') where.recipientSecurityGuardId = resolved.recipientSecurityGuardId;
@@ -114,7 +114,7 @@ export async function sendMessage(
 
   // A message must carry text OR at least one attachment.
   if ((!body || !String(body).trim()) && attachments.length === 0) {
-    throw new Error('El mensaje no puede estar vacío');
+    throw Object.assign(new Error('El mensaje no puede estar vacío'), { code: 400 });
   }
 
   // Guards/clients cannot reply to a one-way (broadcast) conversation.

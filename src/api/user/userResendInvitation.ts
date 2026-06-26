@@ -26,11 +26,11 @@ export default async (req, res) => {
     );
 
     if (!tenantUser) {
-      throw new Error('TenantUser not found');
+      throw Object.assign(new Error('TenantUser not found'), { code: 404 });
     }
 
     if (tenantUser.status !== 'invited' && tenantUser.status !== 'pending') {
-      throw new Error('User has already accepted the invitation');
+      throw Object.assign(new Error('User has already accepted the invitation'), { code: 400 });
     }
 
     if (!tenantUser.invitationToken) {

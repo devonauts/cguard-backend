@@ -43,12 +43,12 @@ export default async (req, res, next) => {
 
           if (!tenant) {
             console.warn('[securityGuardPublicFind] tenantUser exists but tenant is null');
-            throw new Error('Invalid tenant for invitation');
+            throw Object.assign(new Error('Invalid tenant for invitation'), { code: 400 });
           }
 
           if (!user) {
             console.warn('[securityGuardPublicFind] tenantUser exists but user is null');
-            throw new Error('Invalid user for invitation');
+            throw Object.assign(new Error('Invalid user for invitation'), { code: 400 });
           }
 
           // Find draft security guard for this invited user

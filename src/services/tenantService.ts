@@ -246,7 +246,7 @@ export default class TenantService {
         const digits = (data.taxNumber || '').toString().replace(/\D/g, '');
         // Skip validation for non-numeric placeholders (e.g. 'PENDING')
         if (digits.length > 0 && !validateCedulaOrRuc(digits)) {
-          throw new Error('INVALID_RUC');
+          throw Object.assign(new Error('INVALID_RUC'), { code: 400 });
         }
       }
     } catch (err) {
@@ -323,7 +323,7 @@ export default class TenantService {
           const digits = (data.taxNumber || '').toString().replace(/\D/g, '');
           // Skip validation for non-numeric placeholders (e.g. 'PENDING')
           if (digits.length > 0 && !validateCedulaOrRuc(digits)) {
-            throw new Error('INVALID_RUC');
+            throw Object.assign(new Error('INVALID_RUC'), { code: 400 });
           }
         }
       } catch (err) {

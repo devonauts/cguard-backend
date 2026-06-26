@@ -45,7 +45,7 @@ export default async (req: any, res: any) => {
     try {
       targetRecord = await SecurityGuardRepository.findById(targetId, req);
       if (!targetRecord) {
-        throw new Error('Registro de securityGuard no encontrado');
+        throw Object.assign(new Error('Registro de securityGuard no encontrado'), { code: 404 });
       }
     } catch (errResolve) {
       console.error('[ERROR][onDutyPatch] findById failed for targetId=', targetId, (errResolve as any) && (errResolve as any).stack ? (errResolve as any).stack : errResolve);

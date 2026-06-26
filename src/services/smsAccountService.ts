@@ -120,7 +120,7 @@ export async function credit(
   amountCents: number,
   opts: { reference?: string; description?: string; currency?: string } = {},
 ): Promise<{ balanceAfterCents: number; duplicated?: boolean }> {
-  if (!(amountCents > 0)) throw new Error('amountCents must be positive');
+  if (!(amountCents > 0)) throw Object.assign(new Error('amountCents must be positive'), { code: 400 });
 
   const t = await db.sequelize.transaction();
   try {

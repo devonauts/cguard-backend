@@ -276,7 +276,7 @@ export async function publishProposal(
 ) {
   const { Op } = db.Sequelize;
   const proposal = await db.scheduleProposal.findOne({ where: { id: proposalId, tenantId } });
-  if (!proposal) throw new Error('Proposal not found');
+  if (!proposal) throw Object.assign(new Error('Proposal not found'), { code: 404 });
   if (proposal.status !== 'draft') throw new Error(`Proposal is ${proposal.status}, cannot publish`);
 
   // Coverage gate (Phase 7): refuse to publish a schedule that leaves puestos
@@ -488,8 +488,8 @@ export async function getImplementationPlan(db: any, tenantId: string, proposalI
 /** Discard a draft proposal (no effect on live shifts). */
 export async function discardProposal(db: any, tenantId: string, userId: string, proposalId: string) {
   const proposal = await db.scheduleProposal.findOne({ where: { id: proposalId, tenantId } });
-  if (!proposal) throw new Error('Proposal not found');
-  if (proposal.status === 'published') throw new Error('Cannot discard a published proposal');
+  if (!proposal) throw Object.assign(new Error('Proposal not found'), { code: 404 });
+  if (proposal.status === 'published') throw Object.assign(new Error('Cannot discard a published proposal'), { code: 400 });
   await proposal.update({ status: 'discarded' });
   return { discarded: true };
 }

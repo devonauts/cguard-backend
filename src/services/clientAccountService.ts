@@ -36,7 +36,7 @@ export default class ClientAccountService {
       if (data && data.rucNumber) {
         const digits = (data.rucNumber || '').toString().replace(/\D/g, '');
         if (!validateEcuadorRuc(digits)) {
-          throw new Error('INVALID_RUC');
+          throw Object.assign(new Error('INVALID_RUC'), { code: 400 });
         }
       }
     } catch (err) {
@@ -273,7 +273,7 @@ export default class ClientAccountService {
         if (data && data.rucNumber) {
           const digits = (data.rucNumber || '').toString().replace(/\D/g, '');
           if (!validateEcuadorRuc(digits)) {
-            throw new Error('INVALID_RUC');
+            throw Object.assign(new Error('INVALID_RUC'), { code: 400 });
           }
         }
       } catch (err) {

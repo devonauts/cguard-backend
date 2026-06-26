@@ -219,7 +219,7 @@ export default async (req, res, next) => {
 
       // guard id is required (FK cannot be null) — surface clear error
       if (!entry || !entry.guard) {
-        throw new Error('Guard id is required to create a security guard');
+        throw Object.assign(new Error('Guard id is required to create a security guard'), { code: 400 });
       }
 
       // Validate governmentId length (frontend sends up to 30 chars)

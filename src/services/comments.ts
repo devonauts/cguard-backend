@@ -22,7 +22,7 @@ async function createComment(requestId: string, text: string, author: any, attac
   const db = models();
   const rec = await db.incident.findByPk(requestId);
   if (!rec) {
-    throw new Error('Incident not found');
+    throw Object.assign(new Error('Incident not found'), { code: 404 });
   }
 
   const comment = {

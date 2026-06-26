@@ -23,11 +23,11 @@ export default async (req, res) => {
     );
 
     if (!tenantUser) {
-      throw new Error('TenantUser not found');
+      throw Object.assign(new Error('TenantUser not found'), { code: 404 });
     }
 
     if (tenantUser.status !== 'archived') {
-      throw new Error('Only archived users can be restored');
+      throw Object.assign(new Error('Only archived users can be restored'), { code: 400 });
     }
 
     // Decide restoration status based on whether the user's email is verified.

@@ -38,7 +38,7 @@ export async function registerGuardDevice(
   input: DeviceInput,
 ): Promise<RegisterResult> {
   const deviceId = String(input.deviceId || '').trim();
-  if (!deviceId) throw new Error('deviceId required');
+  if (!deviceId) throw Object.assign(new Error('deviceId required'), { code: 400 });
 
   const now = new Date();
   const meta = {
