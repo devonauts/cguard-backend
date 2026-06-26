@@ -14,3 +14,8 @@ dist/
 *firebase-adminsdk*.json
 firebase-service-account*.json
 uploads/
+# APNs / push credentials — never commit secrets
+pushNotificationCredentials/*.p8
+pushNotificationCredentials/*.p12
+pushNotificationCredentials/*.cer
+pushNotificationCredentials/*.pem

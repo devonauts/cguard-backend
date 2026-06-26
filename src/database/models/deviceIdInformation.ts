@@ -21,6 +21,9 @@ export default function (sequelize) {
       osVersion: { type: DataTypes.STRING(60), allowNull: true },
       appVersion: { type: DataTypes.STRING(40), allowNull: true },
       pushToken: { type: DataTypes.TEXT, allowNull: true },
+      // Raw APNs device token (hex) for the native Mi Seguridad client app —
+      // delivered direct via node-apn (apnsService), not FCM.
+      apnsToken: { type: DataTypes.TEXT, allowNull: true },
       isBound: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       flagged: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       lastSeenAt: { type: DataTypes.DATE, allowNull: true },

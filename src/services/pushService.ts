@@ -189,8 +189,28 @@ export async function pushToClientAccounts(
     if (uids.length) or.push({ userId: { [Op.in]: uids } });
 
     const rows = await db.deviceIdInformation.findAll({ where: { tenantId, [Op.or]: or } });
-    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
-    return sendToTokens(tokens, payload);
+    // The native Mi Seguridad client app registers a RAW APNs token → deliver direct
+    // via node-apn (apnsService). Every other client device uses FCM. Split on
+    // apnsToken so each device is delivered exactly once (no FCM+APNs double-send).
+    const apnsTokens = (rows || []).map((r: any) => r.apnsToken).filter(Boolean);
+    const fcmTokens = (rows || [])
+      .filter((r: any) => !r.apnsToken)
+      .map((r: any) => r.pushToken || r.deviceId)
+      .filter(Boolean);
+
+    const fcmRes: any = await sendToTokens(fcmTokens, payload);
+
+    let apnsRes: any = { sent: 0, skipped: true };
+    if (apnsTokens.length) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { sendApns } = require('./apnsService');
+        apnsRes = await sendApns(apnsTokens, { title: payload.title, body: payload.body, data: payload.data });
+      } catch (e: any) {
+        console.warn('[push] apns path failed:', e?.message || e);
+      }
+    }
+    return { sent: (fcmRes.sent || 0) + (apnsRes.sent || 0), fcm: fcmRes, apns: apnsRes };
   } catch (e: any) {
     console.warn('[push] pushToClientAccounts failed:', e?.message || e);
     return { sent: 0, error: true };

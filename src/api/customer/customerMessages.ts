@@ -125,14 +125,21 @@ export const customerDeviceToken = async (req, res) => {
     const { db, tenantId, userId, clientAccountId } = customerCtx(req);
     const b = req.body?.data || req.body || {};
     const token = (b.deviceId || b.token || b.pushToken || '').toString().trim();
-    if (!token) return ApiResponseHandler.error(req, res, new Error('deviceId requerido'));
+    // The native Mi Seguridad app also posts its RAW APNs token (hex) for direct
+    // APNs delivery. It may arrive in its own request (separate from the FCM token),
+    // so accept a post that carries only apnsToken.
+    const apnsToken = (b.apnsToken || '').toString().trim();
+    if (!token && !apnsToken) return ApiResponseHandler.error(req, res, new Error('deviceId o apnsToken requerido'));
 
     const fields: any = {
-      deviceId: token,
-      pushToken: token,
       lastSeenAt: new Date(),
       updatedById: userId,
     };
+    if (token) {
+      fields.deviceId = token;
+      fields.pushToken = token;
+    }
+    if (apnsToken) fields.apnsToken = apnsToken;
     // Link the device to the client account directly so push can resolve it by
     // clientAccountId, independent of clientAccount.userId being set.
     if (clientAccountId) fields.clientAccountId = clientAccountId;
