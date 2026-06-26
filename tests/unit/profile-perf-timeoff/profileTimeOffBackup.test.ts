@@ -217,7 +217,7 @@ describe('Guard time-off — create + dedup', () => {
     assert.strictEqual(db.timeOffRows.length, 1);
     const row = db.timeOffRows[0];
     assert.strictEqual(row.status, 'pending');
-    assert.strictEqual(row.guardId, SG_ID, 'snapshots the securityGuard id');
+    assert.strictEqual(row.guardId, USER_ID, 'uses the canonical user id (matches CRM + model FK)');
     assert.strictEqual(row.guardName, 'Juan Pérez');
     assert.strictEqual(row.tenantId, TENANT_A);
     const body = res._getData();
@@ -231,7 +231,7 @@ describe('Guard time-off — create + dedup', () => {
         {
           id: 'to-existing',
           tenantId: TENANT_A,
-          guardId: SG_ID,
+          guardId: USER_ID,
           type: 'vacation',
           startDate: '2026-07-01',
           endDate: '2026-07-05',
@@ -319,9 +319,9 @@ describe('Guard time-off — create + dedup', () => {
     const db = buildDb({
       securityGuard: SG,
       timeOff: [
-        { id: 'a', tenantId: TENANT_A, guardId: SG_ID, status: 'pending', createdAt: new Date('2026-06-01') },
-        { id: 'b', tenantId: TENANT_A, guardId: SG_ID, status: 'approved', createdAt: new Date('2026-06-10') },
-        { id: 'other', tenantId: TENANT_A, guardId: 'sg-OTHER', status: 'pending', createdAt: new Date('2026-06-20') },
+        { id: 'a', tenantId: TENANT_A, guardId: USER_ID, status: 'pending', createdAt: new Date('2026-06-01') },
+        { id: 'b', tenantId: TENANT_A, guardId: USER_ID, status: 'approved', createdAt: new Date('2026-06-10') },
+        { id: 'other', tenantId: TENANT_A, guardId: 'user-OTHER', status: 'pending', createdAt: new Date('2026-06-20') },
       ],
     });
     const { req, res } = reqRes(db, { method: 'GET' });
@@ -335,7 +335,7 @@ describe('Guard time-off — create + dedup', () => {
     assert.ok(!rows.some((r: any) => r.id === 'other'), 'other guards are excluded');
   });
 
-  it('7 — GET returns { rows: [] } when the caller has no securityGuard profile', async () => {
+  it('7 — GET returns { rows: [] } when the caller has no requests', async () => {
     const db = buildDb({ securityGuard: null });
     const { req, res } = reqRes(db, { method: 'GET' });
 

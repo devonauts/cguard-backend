@@ -33,12 +33,17 @@ export default async (req: any, res: any) => {
       throw new Error400(req.language, 'guard.profileNotFound');
     }
 
+    // timeOffRequest.guardId is the USER id (the model FK → user, the CRM create,
+    // and shift.guardId all use the user id). The worker previously wrote
+    // securityGuard.id into the same column, which split identity: the CRM showed
+    // "—" for the requester and the backup/volunteer pool never matched. Use
+    // currentUser.id so worker and CRM rows are the same shape.
     // Idempotency: a double-submit (same guard, type, dates, still pending) must
     // not insert a duplicate request. Return the existing one instead.
     const duplicate = await db.timeOffRequest.findOne({
       where: {
         tenantId,
-        guardId: securityGuard.id,
+        guardId: userId,
         type,
         startDate,
         endDate,
@@ -51,7 +56,7 @@ export default async (req: any, res: any) => {
     }
 
     const record = await db.timeOffRequest.create({
-      guardId: securityGuard.id,
+      guardId: userId,
       guardName: securityGuard.fullName,
       type,
       startDate,

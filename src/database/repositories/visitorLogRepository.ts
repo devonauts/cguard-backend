@@ -38,6 +38,7 @@ class VisitorLogRepository {
         'birthDate',
         'idExpiry',
         'tagNumber',
+        'archived',
       ]),
     };
 
@@ -245,6 +246,7 @@ class VisitorLogRepository {
         'birthDate',
         'idExpiry',
         'tagNumber',
+        'archived',
       ]),
     };
 
@@ -559,6 +561,31 @@ class VisitorLogRepository {
         // allow filter.station or filter.stationId
         const stationVal = (filter as any).stationId ?? (filter as any).station;
         whereAnd.push({ ['stationId']: SequelizeFilterUtils.uuid(stationVal) });
+      }
+
+      // These were sent by the CRM but never applied (staff saw unfiltered results
+      // that looked filtered).
+      if ((filter as any).clientId) {
+        whereAnd.push({ ['clientId']: SequelizeFilterUtils.uuid((filter as any).clientId) });
+      }
+      if ((filter as any).postSiteId) {
+        whereAnd.push({ ['postSiteId']: SequelizeFilterUtils.uuid((filter as any).postSiteId) });
+      }
+      if ((filter as any).guardId) {
+        // the registering guard — createdById holds that user id.
+        whereAnd.push({ ['createdById']: SequelizeFilterUtils.uuid((filter as any).guardId) });
+      }
+      if ((filter as any).tag) {
+        whereAnd.push(SequelizeFilterUtils.ilikeIncludes('visitorLog', 'tagNumber', (filter as any).tag));
+      }
+
+      // Archive filter: hide archived rows by default; show only archived when
+      // explicitly requested (the CRM archived tab sends filter[archived]=true).
+      const archivedVal = (filter as any).archived;
+      if (archivedVal === true || archivedVal === 'true') {
+        whereAnd.push({ archived: true });
+      } else if (archivedVal !== 'all') {
+        whereAnd.push({ [Op.or]: [{ archived: false }, { archived: null }] });
       }
 
       // Support a generic text query that searches multiple fields (firstName, lastName, idNumber)

@@ -105,6 +105,11 @@ export default function (sequelize) {
         type: DataTypes.STRING(50),
         allowNull: true,
       },
+      archived: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
       phone: {
         type: DataTypes.STRING(30),
         allowNull: true,

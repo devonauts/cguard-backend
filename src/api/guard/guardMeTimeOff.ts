@@ -15,17 +15,9 @@ export default async (req: any, res: any) => {
     const userId = currentUser.id;
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
 
-    const securityGuard = await db.securityGuard.findOne({
-      where: { guardId: userId, tenantId, deletedAt: null },
-      attributes: ['id'],
-    });
-
-    if (!securityGuard) {
-      return ApiResponseHandler.success(req, res, { rows: [] });
-    }
-
+    // guardId is the USER id (canonical — see guardMeTimeOffCreate).
     const rows = await db.timeOffRequest.findAll({
-      where: { guardId: securityGuard.id, tenantId },
+      where: { guardId: userId, tenantId },
       order: [['createdAt', 'DESC']],
       limit: 100,
     });
