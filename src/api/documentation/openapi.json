@@ -17,6 +17,48 @@
         "scheme": "bearer",
         "bearerFormat": "JWT"
       }
+    },
+    "schemas": {
+      "CustomerTask": {
+        "type": "object",
+        "description": "A task a client created for one of their stations.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "taskToDo": { "type": "string", "maxLength": 300 },
+          "status": {
+            "type": "string",
+            "enum": ["pending_approval", "approved", "rejected", "completed", "cancelled"],
+            "description": "Approval/lifecycle state."
+          },
+          "source": { "type": "string", "enum": ["client", "staff"] },
+          "priority": { "type": "string", "enum": ["alta", "media", "baja"] },
+          "wasItDone": { "type": "boolean" },
+          "dateToDoTheTask": { "type": "string", "format": "date-time", "description": "Deadline." },
+          "dateCompletedTask": { "type": "string", "format": "date-time", "nullable": true },
+          "approvalNotes": { "type": "string", "nullable": true, "description": "Rejection reason / decision notes." },
+          "clientAccountId": { "type": "string", "format": "uuid", "nullable": true },
+          "taskBelongsToStationId": { "type": "string", "format": "uuid", "nullable": true },
+          "taskBelongsToStation": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": { "type": "string" },
+              "stationName": { "type": "string" }
+            }
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CustomerTaskCreate": {
+        "type": "object",
+        "required": ["taskToDo"],
+        "properties": {
+          "taskToDo": { "type": "string", "maxLength": 300, "description": "What needs to be done." },
+          "stationId": { "type": "string", "format": "uuid", "description": "Optional — one of the client's stations. Defaults to the client's station when omitted; must belong to the client when provided." },
+          "dateToDoTheTask": { "type": "string", "format": "date-time", "description": "Optional deadline (ISO 8601). Defaults to +1 day." },
+          "priority": { "type": "string", "enum": ["alta", "media", "baja"], "default": "media" }
+        }
+      }
     }
   },
   "security": [
@@ -8668,6 +8710,193 @@
           },
           "404": {
             "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/customer/tasks": {
+      "get": {
+        "tags": [
+          "customer"
+        ],
+        "summary": "GET /customer/tasks — list the client's own tasks (with approval status)",
+        "description": "Returns the authenticated client's tasks (newest first), each with its approval `status`. Tenant + client are resolved from the customer JWT (issued by POST /auth/sign-in-customer); no tenantId in the path.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Max rows (1–200, default 100).",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The client's tasks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CustomerTask"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "rows": [
+                    {
+                      "id": "0b2f1c4e-9a1d-4f0e-bb3a-1c2d3e4f5a6b",
+                      "taskToDo": "Revisar extintores del lobby",
+                      "status": "approved",
+                      "priority": "alta",
+                      "wasItDone": false,
+                      "dateToDoTheTask": "2026-07-01T18:00:00.000Z",
+                      "dateCompletedTask": null,
+                      "approvalNotes": null,
+                      "taskBelongsToStationId": "9f7a2b10-1234-4abc-9def-0123456789ab",
+                      "taskBelongsToStation": {
+                        "id": "9f7a2b10-1234-4abc-9def-0123456789ab",
+                        "stationName": "Edificio Torre Norte"
+                      },
+                      "createdAt": "2026-06-26T15:00:00.000Z"
+                    },
+                    {
+                      "id": "7c3e2d1f-aa22-4bb3-8c44-5566778899aa",
+                      "taskToDo": "Cambiar foco del parqueadero",
+                      "status": "pending_approval",
+                      "priority": "media",
+                      "wasItDone": false,
+                      "dateToDoTheTask": "2026-06-30T12:00:00.000Z",
+                      "dateCompletedTask": null,
+                      "approvalNotes": null,
+                      "taskBelongsToStationId": "9f7a2b10-1234-4abc-9def-0123456789ab",
+                      "taskBelongsToStation": {
+                        "id": "9f7a2b10-1234-4abc-9def-0123456789ab",
+                        "stationName": "Edificio Torre Norte"
+                      },
+                      "createdAt": "2026-06-26T14:10:00.000Z"
+                    }
+                  ],
+                  "count": 2
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid customer token)"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "customer"
+        ],
+        "summary": "POST /customer/tasks — create a task for the client's station (pending approval)",
+        "description": "Creates a to-do for one of the client's stations. The task lands as `status: \"pending_approval\"` and notifies the CRM. After CRM approval it is pushed to the station's guards. `stationId` is optional — when omitted the server uses the client's station (validated to belong to the client when provided). `dateToDoTheTask` is optional and defaults to +1 day. Tenant + client from the JWT.",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Bearer token. Example: \"Bearer <token>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "$ref": "#/components/schemas/CustomerTaskCreate"
+                  }
+                }
+              },
+              "examples": {
+                "full": {
+                  "summary": "With station, deadline and priority",
+                  "value": {
+                    "data": {
+                      "taskToDo": "Revisar extintores del lobby",
+                      "stationId": "9f7a2b10-1234-4abc-9def-0123456789ab",
+                      "dateToDoTheTask": "2026-07-01T18:00:00.000Z",
+                      "priority": "alta"
+                    }
+                  }
+                },
+                "minimal": {
+                  "summary": "Minimal (station + deadline auto-resolved)",
+                  "value": {
+                    "data": {
+                      "taskToDo": "Cambiar foco del parqueadero"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task created (pending approval).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerTask"
+                },
+                "example": {
+                  "id": "7c3e2d1f-aa22-4bb3-8c44-5566778899aa",
+                  "taskToDo": "Revisar extintores del lobby",
+                  "status": "pending_approval",
+                  "source": "client",
+                  "priority": "alta",
+                  "wasItDone": false,
+                  "dateToDoTheTask": "2026-07-01T18:00:00.000Z",
+                  "clientAccountId": "ad5c8963-70aa-4350-828b-1f8c3e079cf2",
+                  "taskBelongsToStationId": "9f7a2b10-1234-4abc-9def-0123456789ab",
+                  "createdAt": "2026-06-26T15:30:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (e.g. taskToDo requerido, or Estación no válida para este cliente)"
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid customer token)"
           }
         },
         "security": [
