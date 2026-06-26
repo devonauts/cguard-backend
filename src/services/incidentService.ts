@@ -151,11 +151,21 @@ export default class IncidentService {
         const tenantId = this.options.currentTenant?.id;
         const { notifyClient } = require('./clientNotifyService');
         const siteName = record.postSite?.name || record.site?.name || 'su sitio';
+        // Incident evidence photo (imageUrl file relation) → notification image.
+        const imgs = Array.isArray(record.imageUrl) ? record.imageUrl : [];
+        const photoUrl = (imgs[0] && (imgs[0].downloadUrl || imgs[0].publicUrl)) || '';
         await notifyClient(db, tenantId, { clientAccountId: record.clientId, postSiteId: record.postSiteId, stationId: record.stationId }, {
           eventType: 'incident.created',
           title: 'Nuevo incidente',
           body: `${record.title || 'Incidente'} — ${siteName}.`,
-          data: { incidentId: String(record.id || ''), stationId: String(record.stationId || ''), postSiteId: String(record.postSiteId || '') },
+          image: photoUrl || undefined,
+          data: {
+            incidentId: String(record.id || ''),
+            incidentTitle: String(record.title || ''),
+            photoUrl: String(photoUrl || ''),
+            stationId: String(record.stationId || ''),
+            postSiteId: String(record.postSiteId || ''),
+          },
           sourceEntityType: 'incident',
           sourceEntityId: String(record.id),
         });

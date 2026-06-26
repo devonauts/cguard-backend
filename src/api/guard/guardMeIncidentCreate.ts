@@ -153,6 +153,41 @@ export default async (req: any, res: any) => {
           sourceEntityId: incident.id,
         },
       ).catch(() => {});
+
+      // Notify the owning CLIENT (Mi Seguridad app) that an incident was reported at
+      // their site — with the evidence photo when present. Best-effort.
+      try {
+        const { notifyClient } = require('../../services/clientNotifyService');
+        let photoUrl = '';
+        try {
+          const imgFiles = await db.file.findAll({
+            where: { belongsTo: 'incident', belongsToColumn: 'imageUrl', belongsToId: incident.id },
+          });
+          const filled = await FileRepository.fillDownloadUrl(imgFiles);
+          photoUrl = (filled[0] && (filled[0].downloadUrl || filled[0].publicUrl)) || '';
+        } catch { /* photo optional */ }
+
+        await notifyClient(db, tenantId, { postSiteId, stationId }, {
+          eventType: 'incident.created',
+          title: isPanic ? '🚨 Alerta de pánico' : 'Nuevo incidente',
+          body: `${title}${stationName ? ` — ${stationName}` : ''}.`,
+          image: photoUrl || undefined,
+          data: {
+            incidentId: String(incident.id || ''),
+            incidentTitle: String(title || ''),
+            stationName: String(stationName || ''),
+            guardName: securityGuard ? String(securityGuard.fullName || '') : '',
+            priority: String(data.priority || (isPanic ? 'critical' : 'medium')),
+            photoUrl: String(photoUrl || ''),
+            stationId: String(stationId || ''),
+            postSiteId: String(postSiteId || ''),
+          },
+          sourceEntityType: 'incident',
+          sourceEntityId: String(incident.id),
+        });
+      } catch (e) {
+        console.warn('[guardIncident] client notify failed:', (e as any)?.message || e);
+      }
     } catch (e) {
       console.warn('[guardIncident] dispatch failed', (e as any)?.message || e);
     }
