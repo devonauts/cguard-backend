@@ -20,36 +20,44 @@
 import path from 'path';
 import fs from 'fs';
 
-let _provider: any = null;
-let _initialized = false;
+// One provider per APNs environment. A .p8 Auth Key authenticates to BOTH, but a
+// device TOKEN is valid in exactly one — production (TestFlight/App Store) or
+// sandbox (dev builds from Xcode). We send to the preferred env and fall back to
+// the other on BadDeviceToken, so dev and TestFlight devices both deliver.
+const _providers: Record<'prod' | 'sandbox', any> = { prod: undefined as any, sandbox: undefined as any };
 
-function getProvider(): any {
-  if (_initialized) return _provider;
-  _initialized = true;
+function getProvider(production: boolean): any {
+  const slot: 'prod' | 'sandbox' = production ? 'prod' : 'sandbox';
+  if (_providers[slot] !== undefined) return _providers[slot];
   try {
     const keyPath =
       process.env.APN_KEY_PATH ||
       path.join(__dirname, '..', '..', 'pushNotificationCredentials', 'AuthKey_74XKD54T23.p8');
     if (!fs.existsSync(keyPath)) {
       console.warn('[apns] key file not found — APNs disabled:', keyPath);
+      _providers[slot] = null;
       return null;
     }
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const apn = require('@parse/node-apn');
-    _provider = new apn.Provider({
+    _providers[slot] = new apn.Provider({
       token: {
         key: keyPath,
         keyId: process.env.APN_KEY_ID || '74XKD54T23',
         teamId: process.env.APN_TEAM_ID || 'CT355863NH',
       },
-      // TestFlight / App Store builds use the PRODUCTION APNs environment.
-      production: process.env.APN_PRODUCTION !== 'false',
+      production,
     });
   } catch (e: any) {
     console.warn('[apns] provider init failed — APNs disabled:', e?.message || e);
-    _provider = null;
+    _providers[slot] = null;
   }
-  return _provider;
+  return _providers[slot];
+}
+
+/** Preferred environment first (production unless APN_PRODUCTION='false'). */
+function preferProduction(): boolean {
+  return process.env.APN_PRODUCTION !== 'false';
 }
 
 export interface ApnsPayload {
@@ -66,39 +74,64 @@ export interface ApnsPayload {
 
 /** True when the .p8 is present and the provider initialised. */
 export function isApnsConfigured(): boolean {
-  return !!getProvider();
+  return !!getProvider(preferProduction());
 }
 
-/** Send an alert push to raw APNs device tokens. Dedupes; node-apn handles batching. */
+/** Send an alert push to raw APNs device tokens. Dedupes; node-apn handles batching.
+ *  Tokens rejected as BadDeviceToken (wrong environment) are retried on the other
+ *  APNs host so dev (sandbox) and TestFlight (production) builds both deliver. */
 export async function sendApns(tokens: string[], payload: ApnsPayload) {
-  const provider = getProvider();
   const unique = Array.from(new Set((tokens || []).filter(Boolean)));
-  if (!provider || unique.length === 0) return { sent: 0, skipped: true };
+  const prefer = preferProduction();
+  const primary = getProvider(prefer);
+  if (!primary || unique.length === 0) return { sent: 0, skipped: true };
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const apn = require('@parse/node-apn');
-    const note = new apn.Notification();
-    note.topic = process.env.APN_TOPIC || 'com.miseguridad';
-    note.pushType = 'alert';
-    note.priority = 10; // deliver immediately
-    note.sound = 'default';
-    note.alert = { title: payload.title, body: payload.body };
-    note.payload = { ...(payload.data || {}), ...(payload.image ? { image: payload.image } : {}) };
-    // mutable-content lets the app's notification-service extension fetch + attach the image.
-    if (payload.image) note.mutableContent = 1;
+    const buildNote = () => {
+      const note = new apn.Notification();
+      note.topic = process.env.APN_TOPIC || 'com.miseguridad';
+      note.pushType = 'alert';
+      note.priority = 10; // deliver immediately
+      note.sound = 'default';
+      note.alert = { title: payload.title, body: payload.body };
+      note.payload = { ...(payload.data || {}), ...(payload.image ? { image: payload.image } : {}) };
+      // mutable-content lets the app's notification-service extension fetch + attach the image.
+      if (payload.image) note.mutableContent = 1;
+      return note;
+    };
 
-    const res = await provider.send(note, unique);
-    if (res.failed && res.failed.length) {
+    const res = await primary.send(buildNote(), unique);
+    let sent = res.sent.length;
+    let failures = res.failed || [];
+
+    // Wrong-environment tokens (BadDeviceToken) → retry on the other APNs host.
+    const wrongEnv = failures
+      .filter((f: any) => (f.response && f.response.reason) === 'BadDeviceToken')
+      .map((f: any) => f.device);
+    if (wrongEnv.length) {
+      const secondary = getProvider(!prefer);
+      if (secondary) {
+        const res2 = await secondary.send(buildNote(), wrongEnv);
+        sent += res2.sent.length;
+        // Drop the retried tokens from primary failures; add any that still failed.
+        failures = failures
+          .filter((f: any) => !wrongEnv.includes(f.device))
+          .concat(res2.failed || []);
+      }
+    }
+
+    if (failures.length) {
       console.warn(
         '[apns] failures:',
-        res.failed.map((f: any) => ({
+        failures.map((f: any) => ({
           device: String(f.device || '').slice(0, 10),
           status: f.status,
           reason: (f.response && f.response.reason) || (f.error && f.error.message),
         })),
       );
     }
-    return { sent: res.sent.length, failed: res.failed.length };
+    return { sent, failed: failures.length };
   } catch (e: any) {
     console.warn('[apns] send failed:', e?.message || e);
     return { sent: 0, error: true };
