@@ -91,6 +91,11 @@ export default class VisitorLogService {
             [record.firstName, record.lastName].filter(Boolean).join(' ').trim() || 'Un visitante';
           const stationName = record.stationName || record.station?.stationName || 'el sitio';
           const visited = record.personVisited ? ` · visita a ${record.personVisited}` : '';
+          // The visitor's face photo is stored as a `facePhoto` file relation; findById
+          // returns it with a fetchable downloadUrl. Shown as the notification image.
+          const faceFiles = Array.isArray(record.facePhoto) ? record.facePhoto : [];
+          const visitorPhotoUrl =
+            (faceFiles[0] && (faceFiles[0].downloadUrl || faceFiles[0].publicUrl)) || '';
           await notifyClient(
             db,
             tenantId,
@@ -99,6 +104,7 @@ export default class VisitorLogService {
               eventType: 'visitor.registered',
               title: 'Nuevo visitante',
               body: `${visitorName} se registró en ${stationName}${visited}.`,
+              image: visitorPhotoUrl || undefined,
               data: {
                 visitorLogId: String(record.id || ''),
                 visitorName,
@@ -106,6 +112,7 @@ export default class VisitorLogService {
                 personVisited: String(record.personVisited || ''),
                 company: String(record.company || ''),
                 vehiclePlate: String(record.vehiclePlate || ''),
+                photoUrl: String(visitorPhotoUrl || ''),
                 stationId: String(record.stationId || ''),
                 postSiteId: String(record.postSiteId || ''),
               },
