@@ -98,14 +98,20 @@ class SecurityGuardRepository {
           ? [data.firstName, data.lastName].filter(Boolean).join(' ')
           : null);
 
-        // governmentId has max length 20 in the model; use a short placeholder when not provided
-        createPayload.governmentId = createPayload.governmentId || 'PENDING';
+        // fullName is the denormalized identity cache and is NOT NULL, so it must
+        // carry a value. The onboarding fields, however, are now NULLABLE
+        // (migration z20260624): leave them NULL when not provided instead of
+        // seeding placeholder values (gender 'Masculino', bloodType 'O+', etc.).
+        // Those placeholders used to surface in the edit form as if they were the
+        // vigilante's real data ("shows other data not related"). They are filled
+        // when the tenant edits the profile or the guard completes registration.
         createPayload.fullName = createPayload.fullName || incomingFullName || userFullName || 'PENDING NAME';
-        createPayload.gender = createPayload.gender || 'Masculino';
-        createPayload.bloodType = createPayload.bloodType || 'O+';
-        createPayload.birthDate = createPayload.birthDate || new Date('1970-01-01');
-        createPayload.maritalStatus = createPayload.maritalStatus || 'Soltero';
-        createPayload.academicInstruction = createPayload.academicInstruction || 'Secundaria';
+        createPayload.governmentId = createPayload.governmentId || null;
+        createPayload.gender = createPayload.gender || null;
+        createPayload.bloodType = createPayload.bloodType || null;
+        createPayload.birthDate = createPayload.birthDate || null;
+        createPayload.maritalStatus = createPayload.maritalStatus || null;
+        createPayload.academicInstruction = createPayload.academicInstruction || null;
       } catch (err) {
         // If something goes wrong getting the user, rethrow a clearer error
         const message =
@@ -259,6 +265,19 @@ class SecurityGuardRepository {
       const bd = toDateOnlyOrNull(payloadToUpdate.birthDate);
       if (bd) payloadToUpdate.birthDate = bd;
       else delete payloadToUpdate.birthDate;
+    }
+
+    // These fields are nullable but carry notEmpty/isIn validators, so an empty
+    // string from the edit form (a not-yet-filled draft) would fail validation.
+    // Coerce blank → null so a partially-completed profile can still be saved.
+    for (const f of ['governmentId', 'gender', 'bloodType', 'maritalStatus', 'academicInstruction']) {
+      if (
+        Object.prototype.hasOwnProperty.call(payloadToUpdate, f) &&
+        (payloadToUpdate[f] === '' ||
+          (typeof payloadToUpdate[f] === 'string' && payloadToUpdate[f].trim() === ''))
+      ) {
+        payloadToUpdate[f] = null;
+      }
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'guard')) {

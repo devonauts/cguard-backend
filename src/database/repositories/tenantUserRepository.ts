@@ -1015,15 +1015,19 @@ export default class TenantUserRepository {
           await retryOnLock(() =>
             options.database.securityGuard.create(
               {
-                governmentId: 'PENDING',
+                // Only fullName (NOT NULL identity cache) + safe defaults are set.
+                // The onboarding fields are nullable (migration z20260624) and are
+                // left NULL so the edit form shows blank, not placeholder data that
+                // looks like the vigilante's real info. Filled on edit/registration.
                 fullName: derivedName,
-                gender: 'Masculino',
-                isOnDuty: false,
-                bloodType: 'O+',
-                birthDate: new Date('1970-01-01'),
-                maritalStatus: 'Soltero',
-                academicInstruction: 'Secundaria',
                 guardType: 'titular',
+                isOnDuty: false,
+                governmentId: null,
+                gender: null,
+                bloodType: null,
+                birthDate: null,
+                maritalStatus: null,
+                academicInstruction: null,
                 guardId: user.id,
                 tenantId: resolvedTenantId,
                 createdById: actorId,
