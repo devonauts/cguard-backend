@@ -121,6 +121,35 @@ export async function createAssignment(
     }
   }
 
+  // No double-booking via the ADHOC path. Rotation assignments are guarded above
+  // (one active rotation per guard); adhoc previously bypassed every check, so a
+  // guard could be assigned to two stations at once. Reject when the guard
+  // already has an active assignment at a DIFFERENT station whose date range
+  // overlaps this one. (Range overlap: existing.start <= new.end AND
+  // (existing.end IS NULL OR existing.end >= new.start).)
+  if (isAdhoc) {
+    const Op = database.Sequelize.Op;
+    const newStart = startDate;
+    const newEnd = input.endDate || startDate;
+    const conflict = await database.guardAssignment.findOne({
+      where: {
+        guardId: guardUserId,
+        tenantId,
+        status: 'active',
+        deletedAt: null,
+        stationId: { [Op.ne]: stationId },
+        startDate: { [Op.lte]: newEnd },
+        [Op.or]: [{ endDate: null }, { endDate: { [Op.gte]: newStart } }],
+      },
+    });
+    if (conflict) {
+      const st = await database.station.findByPk(conflict.stationId, { attributes: ['stationName'] });
+      throw new AssignmentValidationError(
+        `Este vigilante ya tiene una asignación activa en "${st?.stationName || 'otra estación'}" que se solapa con estas fechas. Un vigilante no puede tener dos asignaciones al mismo tiempo.`,
+      );
+    }
+  }
+
   const record = await database.guardAssignment.create({
     guardId: guardUserId,
     stationId,

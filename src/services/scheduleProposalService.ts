@@ -11,6 +11,7 @@ import { computeShiftsForAssignment, ComputedShift } from './shiftGenerationServ
 import { getCostSettings, computeShiftsCost } from './scheduleCostService';
 import { detectRestWarnings, detectSfStyleInconsistencies } from './scheduleValidation';
 import { computeCoverage, requiredHalves } from './scheduleCoverageService';
+import { findGuardShiftOverlap } from './shiftOverlap';
 
 type Scope = 'station' | 'postSite' | 'tenant';
 
@@ -314,11 +315,24 @@ export async function publishProposal(
       if (r.action === 'remove' && r.targetShiftId) {
         await db.shift.destroy({ where: { id: r.targetShiftId, tenantId }, force: true, transaction });
       } else if (r.action === 'change' && r.targetShiftId) {
+        // No double-booking: the new (guard, time) must not overlap another shift.
+        const conflict = await findGuardShiftOverlap(db, tenantId, r.guardId, r.startTime, r.endTime, { excludeShiftId: r.targetShiftId, transaction });
+        if (conflict) {
+          const err: any = new Error('No se puede publicar: la propuesta asignaría a un vigilante dos turnos que se solapan.');
+          err.code = 'double_bookings';
+          throw err;
+        }
         await db.shift.update(
           { guardId: r.guardId, positionId: r.positionId, startTime: r.startTime, endTime: r.endTime, updatedById: userId },
           { where: { id: r.targetShiftId, tenantId }, transaction },
         );
       } else if (r.action === 'add') {
+        const conflict = await findGuardShiftOverlap(db, tenantId, r.guardId, r.startTime, r.endTime, { transaction });
+        if (conflict) {
+          const err: any = new Error('No se puede publicar: la propuesta asignaría a un vigilante dos turnos que se solapan.');
+          err.code = 'double_bookings';
+          throw err;
+        }
         await db.shift.create(
           {
             guardId: r.guardId,

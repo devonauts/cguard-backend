@@ -219,6 +219,22 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // No double-booking: a guard may hold only ONE open clock-in at a time,
+    // anywhere. findOpenOrShiftRecord below is scoped to THIS station, so it
+    // misses an open session at a DIFFERENT station — which previously let a
+    // guard open a second concurrent shift (and clock-out closed only one).
+    const openElsewhere = await db.guardShift.findOne({
+      where: { tenantId, guardNameId: securityGuard.id, punchOutTime: null },
+    });
+    if (openElsewhere && String(openElsewhere.stationNameId) !== String(stationId)) {
+      return ApiResponseHandler.success(req, res, {
+        success: false,
+        error: 'already_clocked_in_elsewhere',
+        message: 'Ya tienes una entrada activa en otra estación. Marca salida antes de iniciar otra.',
+        activeClockIn: openElsewhere.get({ plain: true }),
+      });
+    }
+
     const existing = await findOpenOrShiftRecord(db, {
       securityGuardId: securityGuard.id,
       stationId,
