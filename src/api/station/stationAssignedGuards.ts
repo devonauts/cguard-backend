@@ -1,10 +1,13 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+import { assertLocationAccess } from '../../services/user/assertLocationAccess';
 
 export default async (req, res) => {
   try {
     new PermissionChecker(req).validateHas(Permissions.values.userRead);
+    // A customer may only read the roster for a station they own.
+    await assertLocationAccess(req, req.params.stationId);
 
     const tenantId = req.params.tenantId;
     const stationId = req.params.stationId;

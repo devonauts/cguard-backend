@@ -2,12 +2,15 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import BusinessInfoService from '../../services/businessInfoService';
+import assertClientAccess from '../../services/user/assertClientAccess';
 
 export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(
       Permissions.values.businessInfoRead,
     );
+    // A customer may only read their OWN client's post sites.
+    await assertClientAccess(req, req.params.id);
 
     const args: any = {};
 

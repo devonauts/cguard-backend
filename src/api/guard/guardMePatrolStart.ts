@@ -34,8 +34,9 @@ export default async (req: any, res: any) => {
     });
 
     // Reuse the active assignment for this tour, else create one for this guard.
+    // Scope by tenant so a cross-tenant tourId/tag collision can't attach here.
     let assignment = await db.tourAssignment.findOne({
-      where: { siteTourId: tourId, status: 'assigned' },
+      where: { siteTourId: tourId, status: 'assigned', tenantId },
     });
     if (!assignment) {
       assignment = await db.tourAssignment.create({

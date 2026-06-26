@@ -1,11 +1,14 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
+import assertClientAccess from '../../services/user/assertClientAccess';
 import { Op } from 'sequelize';
 
 export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(Permissions.values.businessInfoRead);
+    // A customer may only read overview metrics for their OWN client.
+    await assertClientAccess(req, req.params.id);
 
     const tenantId = req.currentTenant && req.currentTenant.id;
     const clientAccountId = req.params.id;

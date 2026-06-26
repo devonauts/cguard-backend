@@ -63,20 +63,30 @@ export default class SiteTourService {
    * Attempts to find the SiteTourTag by `tagIdentifier` and the active assignment for the guard.
    */
   async recordTagScan({ tagIdentifier, securityGuardId, latitude, longitude, scannedData, stationId }) {
+    const tenantId = this.options.currentTenant && this.options.currentTenant.id;
+    if (!tenantId) {
+      const err: any = new Error('Tenant context required');
+      err.code = 400;
+      throw err;
+    }
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
     try {
-      const tag = await this.options.database.siteTourTag.findOne({ where: { tagIdentifier }, transaction });
+      // tagIdentifier is only unique PER TENANT, so scope by tenantId — otherwise a
+      // colliding code resolves another tenant's tag and the scan is written
+      // against (and stamps) a foreign tenant's tour (cross-tenant IDOR).
+      const tag = await this.options.database.siteTourTag.findOne({ where: { tagIdentifier, tenantId }, transaction });
       if (!tag) {
         const err: any = new Error('Tag not found');
         err.code = 404;
         throw err;
       }
 
-      // Find an active assignment for this tour (no longer scoped to a specific guard)
+      // Find an active assignment for this tour, scoped to the tenant.
       const assignment = await this.options.database.tourAssignment.findOne({
         where: {
           siteTourId: tag.siteTourId,
           status: 'assigned',
+          tenantId,
         },
         transaction,
       });

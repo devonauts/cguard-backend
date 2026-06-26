@@ -71,41 +71,19 @@ export default async (req, res, next) => {
       }
     }
 
-    // Fallback: if token not provided or invalid, allow fetching by securityGuardId
-    if (!record && securityGuardId) {
-      const tenantIdParam = req.params && req.params.tenantId;
-
-      const whereClause: any = { id: securityGuardId };
-      if (tenantIdParam) {
-        whereClause.tenantId = tenantIdParam;
-      }
-
-      console.log('Searching securityGuard by id:', securityGuardId, 'whereClause:', whereClause);
-
+    // Fallback by securityGuardId — ONLY when a VALID invitation token already
+    // resolved the tenant but the draft securityGuard row wasn't found by guardId.
+    // A bare securityGuardId lookup WITHOUT a token-verified tenant is forbidden:
+    // it previously ran with no tenant constraint (the public route has no
+    // :tenantId), leaking any guard's PII cross-tenant by guessing a UUID.
+    if (!record && securityGuardId && tenant && tenant.id) {
       record = await db.securityGuard.findOne({
-        where: whereClause,
+        where: { id: securityGuardId, tenantId: tenant.id },
       });
-
-      console.log('securityGuard record found by id:', !!record);
-
-      // If not found by id, try by guardId
       if (!record) {
-        const whereClauseGuard: any = { guardId: securityGuardId };
-        if (tenantIdParam) {
-          whereClauseGuard.tenantId = tenantIdParam;
-        }
-
-        console.log('Searching securityGuard by guardId:', securityGuardId, 'whereClause:', whereClauseGuard);
-
         record = await db.securityGuard.findOne({
-          where: whereClauseGuard,
+          where: { guardId: securityGuardId, tenantId: tenant.id },
         });
-
-        console.log('securityGuard record found by guardId:', !!record);
-      }
-
-      if (record) {
-        tenant = await db.tenant.findByPk(record.tenantId);
       }
     }
 
@@ -116,16 +94,12 @@ export default async (req, res, next) => {
         hasTenantUser: !!tenantUser
       });
       
-      // Return a more specific error message
-      if (token && !tenantUser && !securityGuardId) {
-        const err = new Error('Token de invitación inválido o expirado. Por favor solicita una nueva invitación.');
-        err.name = 'InvalidInvitationToken';
-        // Mark as client error so ApiResponseHandler returns 400 instead of 500
-        (err as any).code = 400;
-        return await ApiResponseHandler.error(req, res, err);
-      }
-      
-      throw new Error('No se encontró un registro de guardia para esta invitación o ID');
+      // No record resolved → the invitation is invalid/expired (or the id didn't
+      // belong to the token's tenant). Always a 400 client error, never a 500.
+      const err: any = new Error('Token de invitación inválido o expirado. Por favor solicita una nueva invitación.');
+      err.name = 'InvalidInvitationToken';
+      err.code = 400;
+      return await ApiResponseHandler.error(req, res, err);
     }
     
     // Si el guardia ya existe y no es borrador, enviar error especial

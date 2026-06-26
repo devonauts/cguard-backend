@@ -3,12 +3,15 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import SecurityGuardService from '../../services/securityGuardService';
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
+import assertClientAccess from '../../services/user/assertClientAccess';
 
 export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(
       Permissions.values.securityGuardRead,
     );
+    // A customer may only read the guard roster for their OWN client.
+    await assertClientAccess(req, req.params.id);
 
     const tenant = SequelizeRepository.getCurrentTenant(req);
     const clientId = req.params.id;

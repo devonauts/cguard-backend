@@ -65,9 +65,14 @@ export default async (req, res) => {
         invitation: true,
       });
 
-      const recipient = req.body.email || req.body.to || (tenantUser && tenantUser.user && tenantUser.user.email);
+      // Always send to the invited user's OWN email. Never honor a client-supplied
+      // recipient (req.body.email/to) — that would redirect a valid invitation
+      // token to an attacker mailbox, an account-takeover primitive.
+      const recipient = tenantUser && tenantUser.user && tenantUser.user.email;
       if (!recipient) {
-        throw new Error('No recipient email for invitation');
+        const err: any = new Error('No recipient email for invitation');
+        err.code = 400;
+        throw err;
       }
 
       await sender.sendTo(recipient);
