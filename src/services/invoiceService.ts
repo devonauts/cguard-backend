@@ -234,12 +234,12 @@ export default class InvoiceService {
 
   async exportToFile(id, format = 'pdf') {
     if (!['pdf'].includes(format)) {
-      throw new Error('Formato no soportado');
+      throw Object.assign(new Error('Formato no soportado'), { code: 400 });
     }
 
     const invoice = await InvoiceRepository.findById(id, { ...this.options, bypassPermissionValidation: true });
 
-    if (!invoice) throw new Error('Invoice not found');
+    if (!invoice) throw Object.assign(new Error('Invoice not found'), { code: 404 });
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const buffers: any[] = [];
@@ -496,7 +496,7 @@ export default class InvoiceService {
     const record = await InvoiceRepository.findById(id, this.options);
 
     if (!record) {
-      throw new Error('Invoice not found');
+      throw Object.assign(new Error('Invoice not found'), { code: 404 });
     }
 
     // Validation skipped: allow sending invoice even if not fully paid.

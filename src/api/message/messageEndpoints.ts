@@ -37,7 +37,7 @@ export const messageCreate = async (req, res) => {
     const { db, tenantId, userId } = ctx(req);
     const body = req.body?.data || req.body || {};
     if (!body.recipientType || !body.recipientId) {
-      return ApiResponseHandler.error(req, res, new Error('recipientType y recipientId son obligatorios'));
+      return ApiResponseHandler.error(req, res, Object.assign(new Error('recipientType y recipientId son obligatorios'), { code: 400 }));
     }
     const conversation = await getOrCreateConversation(db, tenantId, userId, {
       recipientType: body.recipientType, recipientId: body.recipientId, subject: body.subject, isOneWay: body.isOneWay,
@@ -53,7 +53,7 @@ export const messageGet = async (req, res) => {
     new PermissionChecker(req).validateHas(Permissions.values.messageRead);
     const { db, tenantId } = ctx(req);
     const convo = await getConversation(db, tenantId, req.params.conversationId, undefined, true);
-    if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
+    if (!convo) return ApiResponseHandler.error(req, res, Object.assign(new Error('Conversación no encontrada'), { code: 404 }));
     await ApiResponseHandler.success(req, res, convo.get({ plain: true }));
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
@@ -76,7 +76,7 @@ export const messageReply = async (req, res) => {
     const { db, tenantId, userId } = ctx(req);
     const body = req.body?.data || req.body || {};
     const convo = await getConversation(db, tenantId, req.params.conversationId, undefined, true);
-    if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
+    if (!convo) return ApiResponseHandler.error(req, res, Object.assign(new Error('Conversación no encontrada'), { code: 404 }));
     const message = await sendMessage(db, tenantId, { conversation: convo, senderUserId: userId, senderType: 'staff', body: body.body, clientMsgId: body.clientMsgId, attachments: body.attachments });
     await ApiResponseHandler.success(req, res, { message: message.get ? message.get({ plain: true }) : message });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
@@ -99,7 +99,7 @@ export const messagePatch = async (req, res) => {
     const { db, tenantId, userId } = ctx(req);
     const body = req.body?.data || req.body || {};
     const convo = await getConversation(db, tenantId, req.params.conversationId, undefined, true);
-    if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
+    if (!convo) return ApiResponseHandler.error(req, res, Object.assign(new Error('Conversación no encontrada'), { code: 404 }));
     const patch: any = { updatedById: userId };
     if (typeof body.isOneWay === 'boolean') patch.isOneWay = body.isOneWay;
     if (typeof body.archived === 'boolean') patch.archived = body.archived;
@@ -118,7 +118,7 @@ export const messageDelete = async (req, res) => {
     const { db, tenantId } = ctx(req);
     const conversationId = req.params.conversationId;
     const convo = await getConversation(db, tenantId, conversationId, undefined, true);
-    if (!convo) return ApiResponseHandler.error(req, res, new Error('Conversación no encontrada'));
+    if (!convo) return ApiResponseHandler.error(req, res, Object.assign(new Error('Conversación no encontrada'), { code: 404 }));
     // Soft-delete the whole thread (models are paranoid → recoverable).
     await db.messageReceipt.destroy({ where: { tenantId, conversationId } });
     await db.message.destroy({ where: { tenantId, conversationId } });

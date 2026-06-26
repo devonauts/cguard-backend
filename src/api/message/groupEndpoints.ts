@@ -30,10 +30,10 @@ export const groupCreate = async (req, res) => {
     const { db, tenantId, userId } = ctx(req);
     const body = req.body?.data || req.body || {};
     if (!body.name || !String(body.name).trim()) {
-      return ApiResponseHandler.error(req, res, new Error('El nombre del grupo es obligatorio'));
+      return ApiResponseHandler.error(req, res, Object.assign(new Error('El nombre del grupo es obligatorio'), { code: 400 }));
     }
     if (!body.anchorId && !(Array.isArray(body.extraMemberUserIds) && body.extraMemberUserIds.length)) {
-      return ApiResponseHandler.error(req, res, new Error('Selecciona un puesto/estación o añade miembros'));
+      return ApiResponseHandler.error(req, res, Object.assign(new Error('Selecciona un puesto/estación o añade miembros'), { code: 400 }));
     }
 
     const conversation = await createGroupConversation(db, tenantId, userId, {
@@ -85,7 +85,7 @@ export const groupMembersAdd = async (req, res) => {
     await loadGroup(db, tenantId, req.params.conversationId);
     const body = req.body?.data || req.body || {};
     const ids: string[] = Array.isArray(body.userIds) ? body.userIds : (body.userId ? [body.userId] : []);
-    if (!ids.length) return ApiResponseHandler.error(req, res, new Error('userIds es obligatorio'));
+    if (!ids.length) return ApiResponseHandler.error(req, res, Object.assign(new Error('userIds es obligatorio'), { code: 400 }));
     for (const uid of ids.filter(Boolean)) {
       const cls = await classifyMember(db, tenantId, String(uid));
       await upsertParticipant(db, tenantId, req.params.conversationId, String(uid), { ...cls, role: 'member', source: 'manual', actorId: userId });

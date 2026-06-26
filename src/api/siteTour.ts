@@ -153,9 +153,13 @@ export default function (router) {
       const currentUser = (req as any).currentUser;
       const record = await req.database.siteTour.findOne({ where: { id: req.params.id, tenantId: req.currentTenant.id } });
       if (!record) throw Object.assign(new Error('Not found'), { code: 404 });
+      // Whitelist editable columns — never let the body set tenantId/createdById/
+      // id (mass-assignment let a client re-parent a ronda to another tenant/client).
+      const SITE_TOUR_EDITABLE = ['name', 'description', 'scheduledDays', 'postSiteId', 'stationId', 'securityGuardId', 'continuous', 'timeMode', 'selectTime', 'maxDuration', 'active'];
       const updateData: any = { updatedById: currentUser && currentUser.id };
-      // allow stationId through patch
-      Object.assign(updateData, req.body);
+      for (const k of SITE_TOUR_EDITABLE) {
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, k)) updateData[k] = req.body[k];
+      }
       await record.update(updateData);
       await ApiResponseHandler.success(req, res, record);
     } catch (error: any) {
@@ -309,8 +313,12 @@ export default function (router) {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
       const tag = await req.database.siteTourTag.findOne({ where: { id: req.params.tagId, siteTourId: req.params.tourId, tenantId: req.currentTenant.id } });
       if (!tag) throw Object.assign(new Error('Not found'), { code: 404 });
+      // Whitelist editable columns — never let the body set tenantId/id.
+      const TAG_EDITABLE = ['name', 'tagType', 'tagIdentifier', 'location', 'instructions', 'latitude', 'longitude', 'showGeoFence', 'geofenceRadius', 'postSiteId', 'stationId'];
       const updateData: any = {};
-      Object.assign(updateData, req.body);
+      for (const k of TAG_EDITABLE) {
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, k)) updateData[k] = req.body[k];
+      }
       await tag.update(updateData);
       await ApiResponseHandler.success(req, res, tag);
     } catch (error: any) {
@@ -323,7 +331,13 @@ export default function (router) {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
       const tag = await req.database.siteTourTag.findOne({ where: { id: req.params.tagId, siteTourId: req.params.tourId, tenantId: req.currentTenant.id } });
       if (!tag) throw Object.assign(new Error('Not found'), { code: 404 });
-      await tag.update(req.body);
+      // Whitelist editable columns — never let the body set tenantId/id.
+      const TAG_EDITABLE = ['name', 'tagType', 'tagIdentifier', 'location', 'instructions', 'latitude', 'longitude', 'showGeoFence', 'geofenceRadius', 'postSiteId', 'stationId'];
+      const updateData: any = {};
+      for (const k of TAG_EDITABLE) {
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, k)) updateData[k] = req.body[k];
+      }
+      await tag.update(updateData);
       await ApiResponseHandler.success(req, res, tag);
     } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);

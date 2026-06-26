@@ -13,7 +13,7 @@ export default class PaymentService {
   // This avoids creating a separate `payments` table. The invoice must exist.
   async create(data) {
     if (!data || !data.invoiceId) {
-      throw new Error('invoiceId is required');
+      throw Object.assign(new Error('invoiceId is required'), { code: 400 });
     }
 
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
@@ -42,7 +42,7 @@ export default class PaymentService {
       const proposedSum = existingSum + Number(newPayment.amount || 0);
       // allow tiny rounding epsilon
       if (proposedSum > invoiceTotal + 0.005) {
-        throw new Error('El total de los pagos no puede exceder el total de la factura');
+        throw Object.assign(new Error('El total de los pagos no puede exceder el total de la factura'), { code: 400 });
       }
 
       const updatedPayments = [newPayment, ...existing];

@@ -175,7 +175,7 @@ export default class EstimateService {
     const record = await EstimateRepository.findById(id, this.options);
 
     if (!record) {
-      throw new Error('Estimate not found');
+      throw Object.assign(new Error('Estimate not found'), { code: 404 });
     }
 
     // Try to generate PDF (non-fatal)
@@ -283,7 +283,7 @@ export default class EstimateService {
     const estimate = await EstimateRepository.findById(id, this.options);
 
     if (!estimate) {
-      throw new Error('Estimate not found');
+      throw Object.assign(new Error('Estimate not found'), { code: 404 });
     }
 
     const invoicePayload: any = {
@@ -319,12 +319,12 @@ export default class EstimateService {
 
   async exportToFile(id, format = 'pdf') {
     if (!['pdf'].includes(format)) {
-      throw new Error('Formato no soportado');
+      throw Object.assign(new Error('Formato no soportado'), { code: 400 });
     }
 
     const estimate = await EstimateRepository.findById(id, this.options);
 
-    if (!estimate) throw new Error('Estimate not found');
+    if (!estimate) throw Object.assign(new Error('Estimate not found'), { code: 404 });
     // Build a PDF that mirrors the preview layout: header, client/site cards, items table, totals
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const buffers: any[] = [];
