@@ -393,6 +393,35 @@ export async function generateShiftsForAssignment(
   if ((assignment as any).positionId) destroyWhere[Op.or].push({ positionId: (assignment as any).positionId });
   await database.shift.destroy({ where: destroyWhere, force: true });
 
+  // Enterprise guarantee — no double-booking: a guard holds at most ONE active
+  // assignment, so any of their FUTURE shifts tied to a DIFFERENT, non-active
+  // (ended/replaced) assignment are stale leftovers that would overlap this one.
+  // Purge them whenever the guard's live assignment regenerates. Scoped to
+  // ended/non-active OTHER assignments, so active adhoc/rotation shifts are kept.
+  if (assignment.guardId) {
+    const staleAssignments = await database.guardAssignment.findAll({
+      where: {
+        tenantId,
+        guardId: assignment.guardId,
+        id: { [Op.ne]: assignment.id },
+        status: { [Op.ne]: 'active' },
+      },
+      attributes: ['id'],
+    });
+    const staleIds = (staleAssignments || []).map((a: any) => a.id).filter(Boolean);
+    if (staleIds.length) {
+      await database.shift.destroy({
+        where: {
+          tenantId,
+          guardId: assignment.guardId,
+          startTime: { [Op.gte]: genStart },
+          guardAssignmentId: { [Op.in]: staleIds },
+        },
+        force: true,
+      });
+    }
+  }
+
   if (computed.length === 0) return;
 
   const rows = computed.map((c) => ({

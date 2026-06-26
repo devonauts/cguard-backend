@@ -46,6 +46,47 @@ class VisitorLogRepository {
       toCreate.exitTime = null;
     }
 
+    // ── Attribution: every visit a guard registers must roll up to the post they
+    // are actually working — station → postSite → client. The worker-app only
+    // knows a station when the guard has a PERMANENT junction assignment; guards
+    // assigned via the scheduler send nothing, leaving the visit unattributed and
+    // invisible to the client. So when station/post are missing, derive them from
+    // the guard's CURRENT scheduled shift, then complete the chain
+    // (station → postSite → client) from whichever link we have.
+    try {
+      const { Op } = options.database.Sequelize;
+      if (!toCreate.stationId && !toCreate.postSiteId && currentUser && currentUser.id) {
+        const now = new Date();
+        const currentShift = await options.database.shift.findOne({
+          where: {
+            guardId: currentUser.id,
+            tenantId: tenant.id,
+            startTime: { [Op.lte]: now },
+            endTime: { [Op.gte]: now },
+          },
+          order: [['startTime', 'DESC']],
+          attributes: ['stationId', 'postSiteId'],
+          transaction,
+        });
+        if (currentShift) {
+          if (currentShift.stationId) toCreate.stationId = currentShift.stationId;
+          if (currentShift.postSiteId) toCreate.postSiteId = currentShift.postSiteId;
+        }
+      }
+      // station → postSite
+      if (toCreate.stationId && !toCreate.postSiteId) {
+        const st = await options.database.station.findByPk(toCreate.stationId, { attributes: ['postSiteId'], transaction }).catch(() => null);
+        if (st && st.postSiteId) toCreate.postSiteId = st.postSiteId;
+      }
+      // postSite → client
+      if (toCreate.postSiteId && !toCreate.clientId) {
+        const bi = await options.database.businessInfo.findByPk(toCreate.postSiteId, { attributes: ['clientAccountId'], transaction }).catch(() => null);
+        if (bi && bi.clientAccountId) toCreate.clientId = bi.clientAccountId;
+      }
+    } catch (e) {
+      console.warn('[visitorLog.create] attribution lookup failed (non-fatal):', (e && (e as any).message) || e);
+    }
+
     // Determine denormalized stationName (if not provided) from the station record
     let denormStationName = toCreate.stationName;
     if (!denormStationName && toCreate.stationId) {

@@ -229,15 +229,10 @@ export async function guardAssignmentDelete(req, res) {
     if (!record) { res.status(404).send({ message: 'Assignment not found' }); return; }
     await record.update({ status: 'ended', endDate: new Date().toISOString().slice(0, 10) });
 
-    // Delete future auto-generated shifts for this assignment
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Remove ALL generated shifts for this assignment (past + future) so removing
+    // a vigilante leaves no lingering turnos. Attendance (guardShift) is separate.
     await req.database.shift.destroy({
-      where: {
-        guardAssignmentId: id,
-        tenantId,
-        startTime: { [req.database.Sequelize.Op.gte]: today },
-      },
+      where: { guardAssignmentId: id, tenantId },
     });
 
     await ApiResponseHandler.success(req, res, { ok: true });
