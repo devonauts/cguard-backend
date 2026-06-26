@@ -83,7 +83,13 @@ export default class ApiResponseHandler {
       }
 
       console.error(error);
-      res.status(500).json({ message, code: 500 });
+      // Never echo the raw internal message to the client on the 500 path — it
+      // leaks DB/Sequelize/stack internals. Return a generic message (the real
+      // error is logged above). Handlers that need a user-facing message must
+      // throw a typed Error400/401/403/404 (handled by the structured branch).
+      const isEs = (req && req.language && String(req.language).startsWith('es')) || !req || !req.language;
+      const genericMessage = isEs ? 'Error interno del servidor' : 'Internal server error';
+      res.status(500).json({ message: genericMessage, code: 500 });
     }
   }
 }

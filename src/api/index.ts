@@ -2,6 +2,7 @@ import express from 'express';
 import https from 'https';
 import cors from 'cors';
 import { authMiddleware } from '../middlewares/authMiddleware';
+import ApiResponseHandler from './apiResponseHandler';
 import { tenantMiddleware } from '../middlewares/tenantMiddleware';
 import { databaseMiddleware } from '../middlewares/databaseMiddleware';
 import bodyParser from 'body-parser';
@@ -340,6 +341,21 @@ app.use((err: any, req: any, res: any, next: any) => {
     return res.status(400).json({ message: 'Invalid JSON body', details: err.message });
   }
   return next(err);
+});
+
+// Terminal safety net: any error reaching here (a handler that threw without its
+// own try/catch, or one that called next(err)) is normalized through
+// ApiResponseHandler — structured 4xx body for typed errors, generic 500
+// otherwise — instead of Express's default HTML stack-trace leak.
+app.use((err: any, req: any, res: any, next: any) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  try {
+    return ApiResponseHandler.error(req, res, err);
+  } catch (e) {
+    return res.status(500).json({ message: 'Internal server error', code: 500 });
+  }
 });
 
 export default app;
