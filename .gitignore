@@ -19,3 +19,9 @@ pushNotificationCredentials/*.p8
 pushNotificationCredentials/*.p12
 pushNotificationCredentials/*.cer
 pushNotificationCredentials/*.pem
+
+# Worker-app push credentials — never commit secrets
+pushNotificationsOperations/*.p8
+pushNotificationsOperations/*.p12
+pushNotificationsOperations/*.cer
+pushNotificationsOperations/*.pem
