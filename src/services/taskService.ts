@@ -19,6 +19,15 @@ export default class TaskService {
     try {
       data.taskBelongsToStation = await StationRepository.filterIdInTenant(data.taskBelongsToStation, { ...this.options, transaction });
 
+      // Staff (CRM) created tasks skip approval — they're auto-approved and assigned.
+      const currentUser = SequelizeRepository.getCurrentUser(this.options);
+      if (!data.status) data.status = 'approved';
+      if (!data.source) data.source = 'staff';
+      if (data.status === 'approved') {
+        data.approvedById = currentUser.id;
+        data.approvedAt = new Date();
+      }
+
       const record = await TaskRepository.create(data, {
         ...this.options,
         transaction,
@@ -27,6 +36,21 @@ export default class TaskService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+
+      // Approved on creation → push the station guards + notify the client. Best-effort.
+      if (record && record.status === 'approved') {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { notifyTaskApproved } = require('./taskNotify');
+          notifyTaskApproved(
+            this.options.database,
+            this.options.currentTenant?.id,
+            record.get ? record.get({ plain: true }) : record,
+          ).catch(() => undefined);
+        } catch (e: any) {
+          console.warn('[task] staff-create notify failed:', e?.message || e);
+        }
+      }
 
       return record;
     } catch (error) {

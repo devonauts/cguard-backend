@@ -22,6 +22,9 @@ export type EventType =
   | 'timeoff.requested'
   | 'timeoff.approved'
   | 'timeoff.rejected'
+  | 'task.pending_approval'
+  | 'task.approved'
+  | 'task.rejected'
   | 'task.completed'
   | 'task.overdue'
   | 'dispatch.created'
@@ -313,12 +316,61 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     targetRoles: TARGET_ROLES.SPECIFIC,
     sendEmail: false,
   },
+  'task.pending_approval': {
+    title: (d) => `🆕 Tarea por aprobar: ${d.taskName || ''}`,
+    body: (d) =>
+      `Un cliente creó una tarea${d.stationName ? ` para ${d.stationName}` : ''}. Requiere aprobación.`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Nueva tarea de cliente por aprobar`,
+    emailHtml: (d) => `
+      <h2>🆕 Tarea de cliente por aprobar</h2>
+      ${d.taskName ? `<p><strong>Tarea:</strong> ${esc(d.taskName)}</p>` : ''}
+      ${d.stationName ? `<p><strong>Puesto:</strong> ${esc(d.stationName)}</p>` : ''}
+      <p>Revísala y apruébala o recházala en el CRM (Tareas → Aprobaciones).</p>
+    `,
+  },
+  'task.approved': {
+    title: (d) => `✅ Tarea aprobada: ${d.taskName || ''}`,
+    body: (d) =>
+      `La tarea fue aprobada${d.stationName ? ` para ${d.stationName}` : ''}${d.deadline ? ` (antes de ${d.deadline})` : ''}.`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Tarea aprobada: ${d.taskName || ''}`,
+    emailHtml: (d) => `
+      <h2>✅ Tarea aprobada</h2>
+      ${d.taskName ? `<p><strong>Tarea:</strong> ${esc(d.taskName)}</p>` : ''}
+      ${d.stationName ? `<p><strong>Puesto:</strong> ${esc(d.stationName)}</p>` : ''}
+      ${d.deadline ? `<p><strong>Fecha límite:</strong> ${esc(d.deadline)}</p>` : ''}
+    `,
+  },
+  'task.rejected': {
+    title: (d) => `❌ Tarea rechazada: ${d.taskName || ''}`,
+    body: (d) =>
+      `La tarea fue rechazada${d.reason ? `: ${d.reason}` : '.'}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Tarea rechazada: ${d.taskName || ''}`,
+    emailHtml: (d) => `
+      <h2>❌ Tarea rechazada</h2>
+      ${d.taskName ? `<p><strong>Tarea:</strong> ${esc(d.taskName)}</p>` : ''}
+      ${d.stationName ? `<p><strong>Puesto:</strong> ${esc(d.stationName)}</p>` : ''}
+      ${d.reason ? `<p><strong>Motivo:</strong> ${esc(d.reason)}</p>` : ''}
+    `,
+  },
   'task.completed': {
     title: (d) => `✅ Tarea completada: ${d.taskName || ''}`,
     body: (d) =>
       `${d.guardName || 'Guardia'} completó "${d.taskName || 'tarea'}"${d.siteName ? ` en ${d.siteName}` : ''}`,
     targetRoles: TARGET_ROLES.SUPERVISORS,
-    sendEmail: false,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Tarea completada: ${d.taskName || ''}`,
+    emailHtml: (d) => `
+      <h2>✅ Tarea completada</h2>
+      ${d.taskName ? `<p><strong>Tarea:</strong> ${esc(d.taskName)}</p>` : ''}
+      ${d.guardName ? `<p><strong>Completada por:</strong> ${esc(d.guardName)}</p>` : ''}
+      ${d.siteName ? `<p><strong>Puesto:</strong> ${esc(d.siteName)}</p>` : ''}
+    `,
   },
   'task.overdue': {
     title: (d) => `⏰ Tarea vencida: ${d.taskName || ''}`,

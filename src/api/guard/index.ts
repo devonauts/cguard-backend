@@ -61,6 +61,16 @@ export default (app) => {
     require('./guardMeOrderComplete').default,
   );
 
+  // Client-requested tasks for my station(s) (approved) + completion
+  app.get(
+    `/tenant/:tenantId/guard/me/tasks`,
+    require('./guardMeTasks').guardMeTasksList,
+  );
+  app.post(
+    `/tenant/:tenantId/guard/me/tasks/:id/complete`,
+    require('./guardMeTasks').guardMeTaskComplete,
+  );
+
   // Recent site activity (on-duty home feed)
   app.get(
     `/tenant/:tenantId/guard/me/activity`,

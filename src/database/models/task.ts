@@ -29,6 +29,16 @@ export default function (sequelize) {
       dateCompletedTask: {
         type: DataTypes.DATE,
       },
+      // ── Approval workflow (client task → CRM approval → worker shift to-do) ──
+      // pending_approval | approved | rejected | completed | cancelled
+      status: { type: DataTypes.STRING(30), allowNull: true, defaultValue: 'pending_approval' },
+      source: { type: DataTypes.STRING(20), allowNull: true }, // 'client' | 'staff'
+      priority: { type: DataTypes.STRING(10), allowNull: true, defaultValue: 'media' }, // alta|media|baja
+      approvedById: { type: DataTypes.UUID, allowNull: true },
+      approvedAt: { type: DataTypes.DATE, allowNull: true },
+      approvalNotes: { type: DataTypes.TEXT, allowNull: true },
+      clientAccountId: { type: DataTypes.UUID, allowNull: true }, // client who created it
+      completedByGuardId: { type: DataTypes.UUID, allowNull: true }, // guard who completed it
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    

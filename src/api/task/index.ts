@@ -19,6 +19,19 @@ export default (app) => {
     `/tenant/:tenantId/task/autocomplete`,
     require('./taskAutocomplete').default,
   );
+  // CRM approval queue + decisions (registered BEFORE /task/:id so it isn't shadowed).
+  app.get(
+    `/tenant/:tenantId/task/approvals`,
+    require('./taskApprovalsList').default,
+  );
+  app.post(
+    `/tenant/:tenantId/task/:id/approve`,
+    require('./taskDecide').taskApprove,
+  );
+  app.post(
+    `/tenant/:tenantId/task/:id/reject`,
+    require('./taskDecide').taskReject,
+  );
   app.get(
     `/tenant/:tenantId/task`,
     require('./taskList').default,

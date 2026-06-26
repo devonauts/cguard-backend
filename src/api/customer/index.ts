@@ -38,4 +38,9 @@ export default (app) => {
   // legacy alias, so existing builds keep working.
   app.post('/customer/me/device-id-information', require('./customerMessages').customerDeviceToken);
   app.post('/customer/device-token', require('./customerMessages').customerDeviceToken);
+
+  // Client tasks: create a to-do for one of the client's stations (pending CRM
+  // approval) + list the client's own tasks with status.
+  app.post('/customer/tasks', require('./customerTasks').customerTaskCreate);
+  app.get('/customer/tasks', require('./customerTasks').customerTaskList);
 };
