@@ -374,15 +374,27 @@ export default async (req: any, res: any) => {
       console.error('[clockIn] notification dispatch failed:', (notifyErr as any)?.message || notifyErr);
     }
 
-    // Notify the owning client that a guard started a shift at their site.
+    // Notify the owning client (Mi Seguridad app) that a guard started a shift at
+    // their site — with the guard's name, station name and clock-in selfie so the
+    // client sees WHO is on duty. The selfie renders as the notification image.
     try {
       const { notifyClient } = require('../../services/clientNotifyService');
       const stationName = (station && (station.stationName || station.nickname)) || 'el puesto';
+      const guardName = securityGuard.fullName || 'Un guardia';
+      const selfieUrl = punchMeta.photo || guardShiftRecord.punchInPhoto || '';
       await notifyClient(db, tenantId, { stationId, postSiteId: station && station.postSiteId }, {
         eventType: 'guard.checkin',
         title: 'Inicio de turno',
-        body: `${securityGuard.fullName || 'Un guardia'} inició turno en ${stationName}.`,
-        data: { stationId: String(stationId || ''), guardId: String(securityGuard.id || ''), guardShiftId: String(guardShiftRecord.id || '') },
+        body: `${guardName} inició turno en ${stationName}.`,
+        image: selfieUrl || undefined,
+        data: {
+          stationId: String(stationId || ''),
+          stationName,
+          guardId: String(securityGuard.id || ''),
+          guardName,
+          guardShiftId: String(guardShiftRecord.id || ''),
+          selfieUrl: String(selfieUrl || ''),
+        },
         sourceEntityType: 'guardShift',
         sourceEntityId: String(guardShiftRecord.id),
       });

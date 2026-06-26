@@ -50,6 +50,12 @@ export interface PushPayload {
   body: string;
   data?: Record<string, string>;
   /**
+   * Optional image URL shown in the notification (e.g. the guard's clock-in selfie).
+   * FCM renders it natively; on direct-APNs it sets mutable-content so the client
+   * app's notification-service extension can attach it. Must be a public HTTPS URL.
+   */
+  image?: string;
+  /**
    * Mark the alert as time-sensitive (iOS) / max priority (Android). This lets it
    * break through Focus / Do-Not-Disturb and lights the screen immediately — used
    * for the pase de novedades, where the guard only has ~1 minute to respond.
@@ -74,7 +80,11 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
     // the phone is locked/silenced (iOS 15+). Falls back gracefully on older iOS.
     if (payload.timeSensitive) aps['interruption-level'] = 'time-sensitive';
     const message = {
-      notification: { title: payload.title, body: payload.body },
+      notification: {
+        title: payload.title,
+        body: payload.body,
+        ...(payload.image ? { imageUrl: payload.image } : {}),
+      },
       data: payload.data || {},
       // High priority so a BACKGROUNDED device wakes and shows the alert promptly
       // (critical for the radio pase — it nudges the guard to open the app).
@@ -130,7 +140,12 @@ async function deliverToDevices(rows: any[], payload: PushPayload) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { sendApns } = require('./apnsService');
-      apnsRes = await sendApns(apnsTokens, { title: payload.title, body: payload.body, data: payload.data });
+      apnsRes = await sendApns(apnsTokens, {
+        title: payload.title,
+        body: payload.body,
+        data: payload.data,
+        image: payload.image,
+      });
     } catch (e: any) {
       console.warn('[push] apns path failed:', e?.message || e);
     }

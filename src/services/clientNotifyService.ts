@@ -93,7 +93,7 @@ export async function notifyClient(
   db: any,
   tenantId: string,
   ref: ClientRef,
-  opts: { eventType: string; title: string; body: string; data?: Record<string, string>; sourceEntityType?: string; sourceEntityId?: string },
+  opts: { eventType: string; title: string; body: string; data?: Record<string, string>; image?: string; sourceEntityType?: string; sourceEntityId?: string },
 ): Promise<number> {
   try {
     if (!tenantId) return 0;
@@ -103,6 +103,7 @@ export async function notifyClient(
       title: opts.title,
       body: opts.body,
       data: { ...(opts.data || {}), type: opts.eventType },
+      image: opts.image,
     };
 
     // Single FCM send resolving devices by clientAccountId OR userId (bulletproof,

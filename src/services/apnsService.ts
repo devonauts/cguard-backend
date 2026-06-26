@@ -56,6 +56,12 @@ export interface ApnsPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
+  /**
+   * Public HTTPS image URL (e.g. the guard's clock-in selfie). Sets mutable-content
+   * so the app's notification-service extension can download + attach it; the URL is
+   * also carried in the payload under `image` for the in-app render.
+   */
+  image?: string;
 }
 
 /** True when the .p8 is present and the provider initialised. */
@@ -77,7 +83,9 @@ export async function sendApns(tokens: string[], payload: ApnsPayload) {
     note.priority = 10; // deliver immediately
     note.sound = 'default';
     note.alert = { title: payload.title, body: payload.body };
-    if (payload.data) note.payload = payload.data;
+    note.payload = { ...(payload.data || {}), ...(payload.image ? { image: payload.image } : {}) };
+    // mutable-content lets the app's notification-service extension fetch + attach the image.
+    if (payload.image) note.mutableContent = 1;
 
     const res = await provider.send(note, unique);
     if (res.failed && res.failed.length) {
