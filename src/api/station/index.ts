@@ -94,45 +94,8 @@ export default (app) => {
     require('../postSite/postSiteAssignedGuards').default,
   );
 
-  // Backwards-compatibility aliases to serve businessInfo (post-site) data
-  // so frontend calling /stations receives businessInfo rows.
-  app.post(
-    `/tenant/:tenantId/stations`,
-    require('../businessInfo/businessInfoCreate').default,
-  );
-
-  app.put(
-    `/tenant/:tenantId/stations/:id`,
-    require('../businessInfo/businessInfoUpdate').default,
-  );
-
-  app.post(
-    `/tenant/:tenantId/stations/import`,
-    require('../businessInfo/businessInfoFileImport').default,
-  );
-
-  app.delete(
-    `/tenant/:tenantId/stations`,
-    require('../businessInfo/businessInfoDestroy').default,
-  );
-
-  app.get(
-    `/tenant/:tenantId/stations/autocomplete`,
-    require('../businessInfo/businessInfoAutocomplete').default,
-  );
-
-  app.get(
-    `/tenant/:tenantId/stations/export`,
-    require('../businessInfo/businessInfoExport').default,
-  );
-
-  app.get(
-    `/tenant/:tenantId/stations`,
-    require('../businessInfo/businessInfoList').default,
-  );
-
-  app.get(
-    `/tenant/:tenantId/stations/:id`,
-    require('../businessInfo/businessInfoFind').default,
-  );
+  // NOTE: a former block here re-registered the same /stations paths as
+  // businessInfo aliases. It was DEAD — the real /stations station handlers above
+  // are registered first, so Express always matched those and the aliases never
+  // ran. Removed to avoid the misleading duplicate (no runtime change).
 };
