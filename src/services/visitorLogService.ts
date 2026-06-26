@@ -78,6 +78,46 @@ export default class VisitorLogService {
         }
       })();
 
+      // Notify the owning CLIENT (Mi Seguridad app) that a visitor was registered at
+      // their site — so the client sees arrivals in real time. Resolves the client
+      // from the visitor's clientId / postSiteId / stationId. Best-effort.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { notifyClient } = require('./clientNotifyService');
+        const db = this.options.database;
+        const tenantId = this.options.currentTenant?.id;
+        if (tenantId) {
+          const visitorName =
+            [record.firstName, record.lastName].filter(Boolean).join(' ').trim() || 'Un visitante';
+          const stationName = record.stationName || record.station?.stationName || 'el sitio';
+          const visited = record.personVisited ? ` · visita a ${record.personVisited}` : '';
+          await notifyClient(
+            db,
+            tenantId,
+            { clientAccountId: record.clientId, postSiteId: record.postSiteId, stationId: record.stationId },
+            {
+              eventType: 'visitor.registered',
+              title: 'Nuevo visitante',
+              body: `${visitorName} se registró en ${stationName}${visited}.`,
+              data: {
+                visitorLogId: String(record.id || ''),
+                visitorName,
+                stationName: String(stationName),
+                personVisited: String(record.personVisited || ''),
+                company: String(record.company || ''),
+                vehiclePlate: String(record.vehiclePlate || ''),
+                stationId: String(record.stationId || ''),
+                postSiteId: String(record.postSiteId || ''),
+              },
+              sourceEntityType: 'visitorLog',
+              sourceEntityId: String(record.id),
+            },
+          );
+        }
+      } catch (e: any) {
+        console.warn('[visitor] client notify failed:', e?.message || e);
+      }
+
       return record;
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(transaction);
