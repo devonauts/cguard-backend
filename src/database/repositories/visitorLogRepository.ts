@@ -47,19 +47,27 @@ class VisitorLogRepository {
     }
 
     // ── Attribution: every visit a guard registers must roll up to the post they
-    // are actually working — station → postSite → client. The worker-app only
-    // knows a station when the guard has a PERMANENT junction assignment; guards
-    // assigned via the scheduler send nothing, leaving the visit unattributed and
-    // invisible to the client. So when station/post are missing, derive them from
-    // the guard's CURRENT scheduled shift, then complete the chain
-    // (station → postSite → client) from whichever link we have.
+    // are actually working — station → postSite → client. Without it the visit is
+    // orphaned and invisible to the client + post-scoped staff (only admins, who
+    // see every tenant row, can find it). The worker-app only sends a station when
+    // the guard has a PERMANENT junction assignment AND the dashboard fetch that
+    // feeds it succeeded; guards working via the scheduler, clocked in ad-hoc, or
+    // whose dashboard call failed send nothing. So when station/post are missing,
+    // resolve them server-side from — in priority order — the guard's CURRENT
+    // scheduled shift, their ACTIVE clock-in (where they physically are right
+    // now), their permanent station junction, then any assigned post site. Each
+    // step is best-effort; we then complete the chain (station → postSite →
+    // client) from whichever link we landed.
     try {
       const { Op } = options.database.Sequelize;
-      if (!toCreate.stationId && !toCreate.postSiteId && currentUser && currentUser.id) {
-        const now = new Date();
+      const userId = currentUser && currentUser.id;
+      const now = new Date();
+
+      // 1) Current scheduled shift (exact now-window) — most precise.
+      if (!toCreate.stationId && !toCreate.postSiteId && userId) {
         const currentShift = await options.database.shift.findOne({
           where: {
-            guardId: currentUser.id,
+            guardId: userId,
             tenantId: tenant.id,
             startTime: { [Op.lte]: now },
             endTime: { [Op.gte]: now },
@@ -73,6 +81,71 @@ class VisitorLogRepository {
           if (currentShift.postSiteId) toCreate.postSiteId = currentShift.postSiteId;
         }
       }
+
+      // The next two fallbacks key off the guard's securityGuard row / user id.
+      let securityGuardId: string | null = null;
+      if (!toCreate.stationId && !toCreate.postSiteId && userId) {
+        const sg = await options.database.securityGuard
+          .findOne({ where: { guardId: userId, tenantId: tenant.id, deletedAt: null }, attributes: ['id'], transaction })
+          .catch(() => null);
+        securityGuardId = sg && sg.id;
+      }
+
+      // 2) Active clock-in (guardShift still open) — where the guard physically is.
+      if (!toCreate.stationId && !toCreate.postSiteId && securityGuardId) {
+        const activeClockIn = await options.database.guardShift
+          .findOne({
+            where: { guardNameId: securityGuardId, punchOutTime: null, tenantId: tenant.id },
+            order: [['punchInTime', 'DESC']],
+            attributes: ['stationNameId', 'postSiteId'],
+            transaction,
+          })
+          .catch(() => null);
+        if (activeClockIn) {
+          if (activeClockIn.stationNameId) toCreate.stationId = activeClockIn.stationNameId;
+          if (activeClockIn.postSiteId) toCreate.postSiteId = activeClockIn.postSiteId;
+        }
+      }
+
+      // 3) Permanent station junction (station ⇄ guard) — safety net for when the
+      // worker-app dashboard that normally supplies this didn't load.
+      if (!toCreate.stationId && !toCreate.postSiteId && userId) {
+        const st = await options.database.station
+          .findOne({
+            where: { tenantId: tenant.id, deletedAt: null },
+            attributes: ['id', 'postSiteId'],
+            include: [{
+              model: options.database.user,
+              as: 'assignedGuards',
+              where: { id: userId },
+              attributes: [],
+              through: { attributes: [] },
+              required: true,
+            }],
+            order: [['createdAt', 'DESC']],
+            transaction,
+          })
+          .catch(() => null);
+        if (st) {
+          if (st.id) toCreate.stationId = st.id;
+          if (st.postSiteId) toCreate.postSiteId = st.postSiteId;
+        }
+      }
+
+      // 4) Assigned post site (tenant_user ⇄ businessInfo) — last resort, gives at
+      // least the post/client even when no specific station is known.
+      if (!toCreate.postSiteId && userId) {
+        const tu = await options.database.tenantUser
+          .findOne({
+            where: { userId, tenantId: tenant.id },
+            include: [{ model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+            transaction,
+          })
+          .catch(() => null);
+        const firstPost = tu && tu.assignedPostSites && tu.assignedPostSites[0];
+        if (firstPost && firstPost.id) toCreate.postSiteId = firstPost.id;
+      }
+
       // station → postSite
       if (toCreate.stationId && !toCreate.postSiteId) {
         const st = await options.database.station.findByPk(toCreate.stationId, { attributes: ['postSiteId'], transaction }).catch(() => null);
