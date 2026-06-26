@@ -6,6 +6,7 @@
  *   POST /customer/tasks   { taskToDo, dateToDoTheTask, stationId, priority? }
  *   GET  /customer/tasks
  */
+import { Op } from 'sequelize';
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import Error400 from '../../errors/Error400';
@@ -39,28 +40,35 @@ export const customerTaskCreate = async (req, res) => {
       return ApiResponseHandler.error(req, res, new Error('dateToDoTheTask inválido'));
     }
 
-    // The client's own stations (stationOrigin = this clientAccount). Resolved via
-    // the association so we don't depend on the raw FK column name.
-    const myStations = await db.station.findAll({
-      where: { tenantId, deletedAt: null },
-      attributes: ['id'],
-      include: [{
-        model: db.clientAccount, as: 'stationOrigin', attributes: ['id'],
-        required: true, where: { id: clientAccountId },
-      }],
-    });
-    const myStationIds = (myStations || []).map((s: any) => String(s.id));
-    if (!myStationIds.length) {
-      return ApiResponseHandler.error(req, res, new Error('No hay estaciones asociadas a este cliente'));
+    // The client's stations come from TWO places: stations linked directly
+    // (stationOrigin = this client) AND stations under the client's post-sites
+    // (businessInfo.clientAccountId → station.postSiteId). We accept both.
+    const [originStations, postSites] = await Promise.all([
+      db.station.findAll({ where: { tenantId, stationOriginId: clientAccountId, deletedAt: null }, attributes: ['id'] }),
+      db.businessInfo.findAll({ where: { tenantId, clientAccountId, deletedAt: null }, attributes: ['id'] }),
+    ]);
+    const myStationIds = new Set<string>((originStations || []).map((s: any) => String(s.id)));
+    const postSiteIds = (postSites || []).map((b2: any) => String(b2.id));
+    if (postSiteIds.length) {
+      const psStations = await db.station.findAll({
+        where: { tenantId, postSiteId: { [Op.in]: postSiteIds }, deletedAt: null },
+        attributes: ['id'],
+      });
+      for (const s of psStations || []) myStationIds.add(String(s.id));
     }
+
     if (stationId) {
       // Explicit station must belong to this client.
-      if (!myStationIds.includes(String(stationId))) {
+      if (!myStationIds.has(String(stationId))) {
         return ApiResponseHandler.error(req, res, new Error('Estación no válida para este cliente'));
       }
+    } else if (myStationIds.size) {
+      // None provided (current client app) → use the client's first station.
+      stationId = Array.from(myStationIds)[0];
     } else {
-      // None provided (current client app) → default to the client's (only) station.
-      stationId = myStationIds[0];
+      // Client has no resolvable station → create a station-less task (the CRM can
+      // assign a station/guards on approval). Never block the client here.
+      stationId = null;
     }
 
     const priority = ['alta', 'media', 'baja'].includes(b.priority) ? b.priority : 'media';
