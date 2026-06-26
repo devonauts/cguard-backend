@@ -24,6 +24,9 @@ export default function (sequelize) {
       // Raw APNs device token (hex) for the native Mi Seguridad client app —
       // delivered direct via node-apn (apnsService), not FCM.
       apnsToken: { type: DataTypes.TEXT, allowNull: true },
+      // Which app registered this device: 'worker' (C-Guard Pro / FCM) or
+      // 'client' (Mi Seguridad / APNs). Routes events to the correct app.
+      app: { type: DataTypes.STRING(20), allowNull: true },
       isBound: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       flagged: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       lastSeenAt: { type: DataTypes.DATE, allowNull: true },

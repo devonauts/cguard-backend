@@ -109,13 +109,47 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
   }
 }
 
-/** Resolve a tenant's registered device tokens and push to them. */
+/**
+ * Deliver to a set of device rows via the RIGHT transport per device, so the two
+ * apps each get push through their own channel:
+ *   - rows with a raw APNs token  → native Mi Seguridad CLIENT app, direct via APNs (node-apn)
+ *   - everything else (pushToken) → WORKER app (+ FCM-based clients) via FCM
+ * Split on apnsToken so each physical device is delivered exactly once (no double-send).
+ */
+async function deliverToDevices(rows: any[], payload: PushPayload) {
+  const apnsTokens = (rows || []).map((r: any) => r.apnsToken).filter(Boolean);
+  const fcmTokens = (rows || [])
+    .filter((r: any) => !r.apnsToken)
+    .map((r: any) => r.pushToken || r.deviceId)
+    .filter(Boolean);
+
+  const fcmRes: any = await sendToTokens(fcmTokens, payload);
+
+  let apnsRes: any = { sent: 0, skipped: true };
+  if (apnsTokens.length) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { sendApns } = require('./apnsService');
+      apnsRes = await sendApns(apnsTokens, { title: payload.title, body: payload.body, data: payload.data });
+    } catch (e: any) {
+      console.warn('[push] apns path failed:', e?.message || e);
+    }
+  }
+  return { sent: (fcmRes.sent || 0) + (apnsRes.sent || 0), fcm: fcmRes, apns: apnsRes };
+}
+
+/**
+ * Worker-app broadcast to a tenant (alarms, rondas, memos, orders, video dispatch).
+ * Targets WORKER devices ONLY — client-app (Mi Seguridad) devices are excluded so
+ * customers never receive worker events. `app` is stamped at registration; a NULL
+ * `app` (legacy rows) is treated as worker.
+ */
 export async function pushToTenant(db: any, tenantId: string, payload: PushPayload) {
   try {
-    const rows = await db.deviceIdInformation.findAll({ where: { tenantId } });
-    // The FCM token lives in `pushToken`; `deviceId` is a legacy fallback.
-    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
-    return sendToTokens(tokens, payload);
+    const rows = await db.deviceIdInformation.findAll({
+      where: { tenantId, [Op.or]: [{ app: { [Op.ne]: 'client' } }, { app: null }] },
+    });
+    return deliverToDevices(rows, payload);
   } catch (e: any) {
     console.warn('[push] pushToTenant failed:', e?.message || e);
     return { sent: 0, error: true };
@@ -158,9 +192,10 @@ export async function pushToUser(db: any, tenantId: string, userId: string, payl
     // Device tokens are keyed by the `userId` column (see guardMeDeviceToken) and
     // the FCM token lives in `pushToken`. The old query used `createdById`/
     // `deviceId`, which resolved zero tokens for guards — fixed here.
+    // Resolve THIS user's own devices and deliver each via its own transport
+    // (a guard's worker device → FCM; a client user's Mi Seguridad device → APNs).
     const rows = await db.deviceIdInformation.findAll({ where: { tenantId, userId } });
-    const tokens = (rows || []).map((r: any) => r.pushToken || r.deviceId).filter(Boolean);
-    return sendToTokens(tokens, payload);
+    return deliverToDevices(rows, payload);
   } catch (e: any) {
     console.warn('[push] pushToUser failed:', e?.message || e);
     return { sent: 0, error: true };
@@ -188,29 +223,11 @@ export async function pushToClientAccounts(
     if (cas.length) or.push({ clientAccountId: { [Op.in]: cas } });
     if (uids.length) or.push({ userId: { [Op.in]: uids } });
 
+    // Client-app push: resolve the client's devices (the native Mi Seguridad app
+    // registers a raw APNs token → delivered direct via APNs; an FCM-based client
+    // device → FCM). deliverToDevices routes each to the correct transport.
     const rows = await db.deviceIdInformation.findAll({ where: { tenantId, [Op.or]: or } });
-    // The native Mi Seguridad client app registers a RAW APNs token → deliver direct
-    // via node-apn (apnsService). Every other client device uses FCM. Split on
-    // apnsToken so each device is delivered exactly once (no FCM+APNs double-send).
-    const apnsTokens = (rows || []).map((r: any) => r.apnsToken).filter(Boolean);
-    const fcmTokens = (rows || [])
-      .filter((r: any) => !r.apnsToken)
-      .map((r: any) => r.pushToken || r.deviceId)
-      .filter(Boolean);
-
-    const fcmRes: any = await sendToTokens(fcmTokens, payload);
-
-    let apnsRes: any = { sent: 0, skipped: true };
-    if (apnsTokens.length) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { sendApns } = require('./apnsService');
-        apnsRes = await sendApns(apnsTokens, { title: payload.title, body: payload.body, data: payload.data });
-      } catch (e: any) {
-        console.warn('[push] apns path failed:', e?.message || e);
-      }
-    }
-    return { sent: (fcmRes.sent || 0) + (apnsRes.sent || 0), fcm: fcmRes, apns: apnsRes };
+    return deliverToDevices(rows, payload);
   } catch (e: any) {
     console.warn('[push] pushToClientAccounts failed:', e?.message || e);
     return { sent: 0, error: true };

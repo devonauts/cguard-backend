@@ -132,6 +132,7 @@ export const customerDeviceToken = async (req, res) => {
     if (!token && !apnsToken) return ApiResponseHandler.error(req, res, new Error('deviceId o apnsToken requerido'));
 
     const fields: any = {
+      app: 'client', // this endpoint only serves the Mi Seguridad client app
       lastSeenAt: new Date(),
       updatedById: userId,
     };

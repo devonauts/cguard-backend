@@ -29,7 +29,9 @@ export default async (req: any, res: any) => {
       });
     }
     if (device) {
-      await device.update({ pushToken: String(token), updatedById: currentUser.id });
+      // 'worker' tags this as a C-Guard Pro operaciones device so tenant broadcasts
+      // (rondas/alarms/memos) reach it and never the Mi Seguridad client app.
+      await device.update({ pushToken: String(token), app: 'worker', updatedById: currentUser.id });
     } else {
       const existing = await db.deviceIdInformation.findOne({
         where: { deviceId: String(token), tenantId },
@@ -38,6 +40,7 @@ export default async (req: any, res: any) => {
         await db.deviceIdInformation.create({
           deviceId: String(token),
           pushToken: String(token),
+          app: 'worker',
           tenantId,
           userId: currentUser.id,
           createdById: currentUser.id,
