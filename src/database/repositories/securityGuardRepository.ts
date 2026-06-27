@@ -1157,10 +1157,11 @@ class SecurityGuardRepository {
       paranoid: includeDeleted ? false : undefined,
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN list path: the guards table renders name/email/phone/status/assignment
+    // — NO photos, memos, requests or tutoriales. The old per-row _fill ran ~7
+    // queries + 3 file-signings PER ROW (and the CRM fetches all guards), i.e.
+    // ~7N queries over the whole table. _fillForList does it in 1 batched query.
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -1274,6 +1275,68 @@ class SecurityGuardRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN enricher for the LIST path. Builds the same `guard` shape the CRM list
+   * consumes (name/email/phone/status/hasPassword/invitationTokenExpiresAt) +
+   * top-level status/archived/phoneNumber, but in ONE batched tenantUser query
+   * for ALL rows — no per-row tenantUser/file/memo/request/tutorial lookups, and
+   * no photo signing (the list renders none). The full detail enrichment stays in
+   * findById → _fillWithRelationsAndFiles.
+   */
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+    const tenant = SequelizeRepository.getCurrentTenant(options);
+    const transaction = SequelizeRepository.getTransaction(options);
+
+    const outputs = rows.map((r) => r.get({ plain: true }));
+
+    // ONE query for every row's tenantUser status (was 1 per row).
+    const guardUserIds = Array.from(
+      new Set(outputs.map((o) => (o.guard && o.guard.id) || o.guardId).filter(Boolean)),
+    );
+    const tenantUsers = guardUserIds.length
+      ? await options.database.tenantUser.findAll({
+          where: { tenantId: tenant.id, userId: guardUserIds },
+          attributes: ['userId', 'status', 'invitationTokenExpiresAt'],
+          transaction,
+        })
+      : [];
+    const tuByUser = new Map(tenantUsers.map((tu) => [String(tu.userId), tu]));
+
+    for (const output of outputs) {
+      const guardUserId = (output.guard && output.guard.id) || output.guardId;
+      const rawPassword = output.guard && output.guard.password ? output.guard.password : null;
+      const rawLastLoginAt = output.guard && output.guard.lastLoginAt ? output.guard.lastLoginAt : null;
+      const rawMiddleName = output.guard && output.guard.middleName ? output.guard.middleName : null;
+      const rawHomeAddress = output.guard && output.guard.homeAddress ? output.guard.homeAddress : null;
+      const tu: any = guardUserId ? tuByUser.get(String(guardUserId)) : null;
+
+      if (output.guard) {
+        output.guard = {
+          ...UserRepository.cleanupForRelationships(output.guard),
+          status: tu ? tu.status : null,
+          hasPassword: !!rawPassword,
+          lastLoginAt: rawLastLoginAt || null,
+          invitationTokenExpiresAt: tu ? tu.invitationTokenExpiresAt : null,
+          middleName: rawMiddleName,
+          homeAddress: rawHomeAddress,
+        };
+      }
+
+      output.archived = Boolean(output.deletedAt);
+      output.status = output.guard && output.guard.status ? output.guard.status : null;
+      if (output.archived) output.status = 'archived';
+      output.phoneNumber = output.guard && output.guard.phoneNumber ? output.guard.phoneNumber : null;
+
+      // List renders no images/relations — keep the keys present (same shape) but empty.
+      output.profileImage = [];
+      output.credentialImage = [];
+      output.recordPolicial = [];
+    }
+
+    return outputs;
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {
