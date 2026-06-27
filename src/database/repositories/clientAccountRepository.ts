@@ -1,6 +1,7 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import FileRepository from '../../database/repositories/fileRepository';
+import { batchSignFiles } from '../../database/utils/listQuery';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
@@ -955,15 +956,17 @@ class ClientAccountRepository {
   static async _fillForList(rows, options: IRepositoryOptions) {
     if (!rows || !rows.length) return rows;
 
-    return rows.map((record) => {
+    const outputs = rows.map((record) => {
       const output: any = record.get({ plain: true });
-      // Keep the keys present (same shape as detail) but empty — the list signs
-      // no files and resolves no categories.
-      output.logoUrl = [];
-      output.placePictureUrl = [];
-      output.categories = [];
+      output.categories = output.categories || [];
       return output;
     });
+    // The clients list renders the logo (and place picture) — sign both for ALL
+    // rows in ONE file query each (batched), not the old per-row N+1.
+    const table = options.database.clientAccount.getTableName();
+    await batchSignFiles(options.database, outputs, table, 'logoUrl');
+    await batchSignFiles(options.database, outputs, table, 'placePictureUrl');
+    return outputs;
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

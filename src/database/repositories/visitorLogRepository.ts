@@ -759,12 +759,13 @@ class VisitorLogRepository {
       output.station = output.stationId ? (stationById.get(String(output.stationId)) || null) : null;
     }
 
-    // 4) Photos — ONE batched file query each, signed, only for the worker-app.
-    //    The CRM never renders these, so it skips signing entirely.
-    if (wantPhotos) {
-      await batchSignFiles(options.database, outputs, 'visitorLog', 'idPhoto');
-      await batchSignFiles(options.database, outputs, 'visitorLog', 'facePhoto');
-    }
+    // 4) Photos — ALWAYS attach the visitor's idPhoto + facePhoto. The list must
+    //    carry the images (CRM + worker both render them). This stays efficient:
+    //    batchSignFiles signs ALL rows' photos in ONE query per column (2 total),
+    //    not the old per-row N+1. (wantPhotos is retained for callers that may
+    //    want to skip, but the default is to include them.)
+    await batchSignFiles(options.database, outputs, 'visitorLog', 'idPhoto');
+    await batchSignFiles(options.database, outputs, 'visitorLog', 'facePhoto');
 
     return outputs;
   }

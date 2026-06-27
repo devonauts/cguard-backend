@@ -4,6 +4,7 @@ import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import FileRepository from './fileRepository';
+import { batchSignFiles } from '../utils/listQuery';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -437,7 +438,7 @@ class BillingRepository {
     // renders as a thumbnail. _fillForList preserves the row shape (keeps the
     // `bill` key present but empty) and drops that per-row signing. The full,
     // signed `bill` file stays on findById → _fillWithRelationsAndFiles.
-    rows = this._fillForList(rows);
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -523,13 +524,13 @@ class BillingRepository {
    * `bill` key (present but empty; the list renders no file thumbnail) and does
    * ZERO per-row file signing. Full signed `bill` stays in findById.
    */
-  static _fillForList(rows) {
+  static async _fillForList(rows, options: IRepositoryOptions) {
     if (!rows || !rows.length) return rows;
-    return rows.map((record) => {
-      const output: any = record.get({ plain: true });
-      output.bill = [];
-      return output;
-    });
+    const outputs = rows.map((record) => record.get({ plain: true }));
+    // The billing list links the bill file — sign it for ALL rows in ONE file
+    // query (batched), not the old per-row N+1.
+    await batchSignFiles(options.database, outputs, options.database.billing.getTableName(), 'bill');
+    return outputs;
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

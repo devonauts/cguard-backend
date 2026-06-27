@@ -4,6 +4,7 @@ import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import FileRepository from './fileRepository';
+import { batchSignFiles } from '../utils/listQuery';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -393,7 +394,7 @@ class InsuranceRepository {
     // _fillForList preserves the row shape (keeps the `document` key present but
     // empty) and drops that per-row signing. The full signed `document` stays on
     // findById → _fillWithRelationsAndFiles.
-    rows = this._fillForList(rows);
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -485,13 +486,13 @@ class InsuranceRepository {
    * but empty; the list renders no file thumbnail) and does ZERO per-row file
    * signing. Full signed `document` stays in findById.
    */
-  static _fillForList(rows) {
+  static async _fillForList(rows, options: IRepositoryOptions) {
     if (!rows || !rows.length) return rows;
-    return rows.map((record) => {
-      const output: any = record.get({ plain: true });
-      output.document = [];
-      return output;
-    });
+    const outputs = rows.map((record) => record.get({ plain: true }));
+    // The insurance list links the document — sign it for ALL rows in ONE file
+    // query (batched), not the old per-row N+1.
+    await batchSignFiles(options.database, outputs, options.database.insurance.getTableName(), 'document');
+    return outputs;
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

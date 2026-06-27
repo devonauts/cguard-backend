@@ -6,6 +6,7 @@ import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
 import FileRepository from './fileRepository';
+import { batchSignFiles } from '../utils/listQuery';
 
 const Op = Sequelize.Op;
 
@@ -183,7 +184,7 @@ class VehicleRepository {
     // (vehicleService.find → findById) and the edit page (also .find). The old
     // per-row _fill ran a file.findAll + signed URL PER ROW for an image the list
     // never shows. _fillForList drops that signing entirely; detail keeps it.
-    const filledRows = this._fillForList(rows);
+    const filledRows = await this._fillForList(rows, options);
 
     return { rows: filledRows, count };
   }
@@ -198,13 +199,13 @@ class VehicleRepository {
    * but empty, since the list renders no thumbnail) and does ZERO per-row file
    * signing. Full image enrichment stays in findById → _fillWithRelationsAndFiles.
    */
-  static _fillForList(rows) {
+  static async _fillForList(rows, options: IRepositoryOptions) {
     if (!rows || !rows.length) return rows;
-    return rows.map((record) => {
-      const output: any = record.get({ plain: true });
-      output.imageUrl = [];
-      return output;
-    });
+    const outputs = rows.map((record) => record.get({ plain: true }));
+    // The vehicles list renders the vehicle photo — sign it for ALL rows in ONE
+    // file query (batched), not the old per-row N+1.
+    await batchSignFiles(options.database, outputs, options.database.vehicle.getTableName(), 'imageUrl');
+    return outputs;
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

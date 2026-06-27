@@ -5,6 +5,7 @@ import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Error400 from '../../errors/Error400';
 import Sequelize from 'sequelize';import FileRepository from './fileRepository';
+import { batchSignFiles } from '../utils/listQuery';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -560,7 +561,7 @@ class ServiceRepository {
     // per-row _fill ran TWO file.findAll + signed-URL calls PER ROW (iconImage +
     // serviceImages) for files no surface in either app reads. _fillForList drops
     // both signings; full enrichment stays in findById → _fillWithRelationsAndFiles.
-    rows = this._fillForList(rows);
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -653,14 +654,15 @@ class ServiceRepository {
    * keys present but empty; the list renders no thumbnails) and does ZERO per-row
    * file signing. Full file enrichment stays in findById.
    */
-  static _fillForList(rows) {
+  static async _fillForList(rows, options: IRepositoryOptions) {
     if (!rows || !rows.length) return rows;
-    return rows.map((record) => {
-      const output: any = record.get({ plain: true });
-      output.iconImage = [];
-      output.serviceImages = [];
-      return output;
-    });
+    const outputs = rows.map((record) => record.get({ plain: true }));
+    // The services list renders the icon + service images — sign each for ALL
+    // rows in ONE file query (batched), not the old per-row N+1.
+    const table = options.database.service.getTableName();
+    await batchSignFiles(options.database, outputs, table, 'iconImage');
+    await batchSignFiles(options.database, outputs, table, 'serviceImages');
+    return outputs;
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

@@ -5,6 +5,7 @@ import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import UserRepository from './userRepository';
 import FileRepository from './fileRepository';
+import { batchSignFiles } from '../utils/listQuery';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -1330,11 +1331,14 @@ class SecurityGuardRepository {
       if (output.archived) output.status = 'archived';
       output.phoneNumber = output.guard && output.guard.phoneNumber ? output.guard.phoneNumber : null;
 
-      // List renders no images/relations — keep the keys present (same shape) but empty.
-      output.profileImage = [];
+      // Credential/record scans are detail-only (large ID document images, not
+      // shown in a list row). The avatar (profileImage) IS rendered in the list.
       output.credentialImage = [];
       output.recordPolicial = [];
     }
+
+    // Sign the avatar for ALL rows in ONE file query (batched), not per-row.
+    await batchSignFiles(options.database, outputs, options.database.securityGuard.getTableName(), 'profileImage');
 
     return outputs;
   }
