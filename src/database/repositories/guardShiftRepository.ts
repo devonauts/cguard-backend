@@ -622,6 +622,12 @@ class GuardShiftRepository {
     } = await options.database.guardShift.findAndCountAll({
       where,
       include,
+      // LEAN list: do NOT ship the base64 clock-in/out selfies or the device
+      // metadata in every row (each photo is a large TEXT blob → a 100-row page
+      // could be tens of MB). The Nómina table renders neither; the selfie/detail
+      // is loaded from GET /attendance/:id when a row is opened. `sessions` is
+      // kept (the table shows the session count).
+      attributes: { exclude: ['punchInPhoto', 'punchOutPhoto', 'deviceInfo'] },
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
       order: orderBy
