@@ -534,10 +534,14 @@ class StationRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN list path. The old per-row _fill ran ~8 queries/row (getAssignedGuards
+    // + getTasks/Reports/Incidents/Checkpoints/Patrol + postSite findByPk + a
+    // scheduled-shift group) — and the CRM fetches stations with limit=999, i.e.
+    // ~8,000 queries for one render. The station list ONLY consumes
+    // assignedGuards + guardsCount (+ postSite name); _fillForList computes those
+    // in 3 batched queries for ALL rows and drops the unused tasks/reports/
+    // incidents/checkpoints/patrol arrays. Full enrichment stays on findById.
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -628,6 +632,89 @@ class StationRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN list enricher — same fields the station list consumes (assignedGuards,
+   * guardsCount, postSite {id,businessName}), computed in 3 BATCHED queries for
+   * all rows instead of ~8 per row. Drops the tasks/reports/incidents/
+   * checkpoints/patrol arrays the list never reads. Detail stays on findById.
+   */
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+    const tenant = SequelizeRepository.getCurrentTenant(options);
+    const transaction = SequelizeRepository.getTransaction(options);
+
+    const outputs = rows.map((r) => r.get({ plain: true }));
+    const ids = outputs.map((o) => o.id).filter(Boolean);
+
+    // 1) Assigned guards (junction) for ALL stations in one query.
+    const withGuards = await options.database.station.findAll({
+      where: { id: ids },
+      attributes: ['id'],
+      include: [{
+        model: options.database.user,
+        as: 'assignedGuards',
+        attributes: { exclude: ['password', 'emailVerificationToken', 'passwordResetToken', 'importHash'] },
+        through: { attributes: [] },
+      }],
+      transaction,
+    });
+    const guardsByStation = new Map<string, any[]>();
+    for (const s of withGuards) {
+      const plain = s.get({ plain: true });
+      guardsByStation.set(String(plain.id), plain.assignedGuards || []);
+    }
+
+    // 2) Distinct scheduled guards per station in one grouped query.
+    const scheduled = ids.length
+      ? await options.database.shift.findAll({
+          where: { stationId: ids, tenantId: tenant.id, guardId: { [Op.ne]: null } },
+          attributes: ['stationId', 'guardId'],
+          group: ['stationId', 'guardId'],
+          transaction,
+        })
+      : [];
+    const schedByStation = new Map<string, Set<string>>();
+    for (const s of scheduled) {
+      const k = String(s.stationId);
+      if (!schedByStation.has(k)) schedByStation.set(k, new Set());
+      if (s.guardId) schedByStation.get(k)!.add(String(s.guardId));
+    }
+
+    // 3) Post-site names (only those referenced) in one query.
+    const postSiteIds = Array.from(new Set(outputs.map((o) => o.postSiteId).filter(Boolean)));
+    const posts = postSiteIds.length
+      ? await options.database.businessInfo.findAll({
+          where: { id: postSiteIds },
+          attributes: ['id', 'businessName', 'companyName', 'name'],
+          transaction,
+        })
+      : [];
+    const postById = new Map(posts.map((p: any) => [String(p.id), p]));
+
+    for (const output of outputs) {
+      const sid = String(output.id);
+      const assigned = guardsByStation.get(sid) || [];
+      output.assignedGuards = UserRepository.cleanupForRelationships(assigned);
+      output.assignedGuardsCount = assigned.length;
+
+      const set = new Set(
+        (Array.isArray(assigned) ? assigned : []).map((g: any) => g && g.id).filter(Boolean).map(String),
+      );
+      for (const gid of schedByStation.get(sid) || []) set.add(gid);
+      output.scheduledGuardsCount = (schedByStation.get(sid) || new Set()).size;
+      output.guardsCount = set.size;
+
+      if (output.postSite) {
+        output.postSite = { id: output.postSite.id, businessName: output.postSite.businessName || output.postSite.name || null };
+      } else if (output.postSiteId) {
+        const p: any = postById.get(String(output.postSiteId));
+        output.postSite = p ? { id: p.id, businessName: p.businessName || p.companyName || p.name || null } : null;
+      }
+    }
+
+    return outputs;
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {
