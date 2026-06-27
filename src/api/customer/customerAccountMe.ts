@@ -145,6 +145,10 @@ export default async (req: any, res: any) => {
 
     console.debug('[customerAccountMe] stationsRaw count:', Array.isArray(stationsRaw) ? stationsRaw.length : 0);
 
+    // Shifts are keyed by stationId (the canonical link — see customerPostSiteActiveStatus),
+    // NOT postSiteId, so resolve the station ids up-front for the shift/inventory/patrol queries.
+    const stationIds = stationsRaw.map((s: any) => s.id);
+
     const stationsByPostSite: Record<string, any[]> = {};
     for (const s of stationsRaw) {
       const sp = s.get({ plain: true });
@@ -188,24 +192,37 @@ export default async (req: any, res: any) => {
            FROM securityGuards sg
            WHERE sg.deletedAt IS NULL
              ${tenantId ? 'AND sg.tenantId = :tenantId' : ''}
-             AND (
-               sg.guardId IN (
-                 SELECT tu.userId
-                 FROM tenant_user_client_accounts tuca
-                 JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
-                 WHERE tuca.clientAccountId = :clientAccountId
-                   AND tuca.deletedAt IS NULL
-                   AND tu.deletedAt IS NULL
-               )
-               OR sg.guardId IN (
-                 SELECT s.guardId
-                 FROM shifts s
-                 JOIN businessInfos b ON b.id = s.postSiteId
-                 WHERE b.clientAccountId = :clientAccountId
-                   AND s.guardId IS NOT NULL
-                   AND s.endTime >= NOW()
-                   AND s.startTime <= DATE_ADD(NOW(), INTERVAL 7 DAY)
-               )
+             AND sg.guardId IN (
+               -- (1) explicitly linked via the client pivot
+               SELECT tu.userId
+               FROM tenant_user_client_accounts tuca
+               JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
+               WHERE tuca.clientAccountId = :clientAccountId
+                 AND tuca.deletedAt IS NULL
+                 AND tu.deletedAt IS NULL
+               UNION
+               -- (2) ACTIVELY ASSIGNED to one of the client's stations — same source as
+               --     the CRM "vigilantes asignados", so an empty station shows no guards.
+               SELECT ga.guardId
+               FROM guardAssignments ga
+               JOIN stations st ON st.id = ga.stationId
+               JOIN businessInfos b ON b.id = st.postSiteId
+               WHERE b.clientAccountId = :clientAccountId
+                 AND ga.status = 'active'
+                 AND ga.deletedAt IS NULL
+                 AND ga.guardId IS NOT NULL
+               UNION
+               -- (3) covering one of the client's stations via an upcoming shift, e.g. a
+               --     GLOBAL sacafranco whose home assignment is on another station.
+               SELECT s.guardId
+               FROM shifts s
+               JOIN stations st ON st.id = s.stationId
+               JOIN businessInfos b ON b.id = st.postSiteId
+               WHERE b.clientAccountId = :clientAccountId
+                 AND s.guardId IS NOT NULL
+                 AND s.endTime >= NOW()
+                 AND s.startTime <= DATE_ADD(NOW(), INTERVAL 7 DAY)
+                 AND s.deletedAt IS NULL
              )`,
           { replacements: { clientAccountId, tenantId } },
         );
@@ -276,19 +293,19 @@ export default async (req: any, res: any) => {
 
     // ── 5. Active / upcoming shifts ──────────────────────────────────────────
     let activeShifts: any[] = [];
-    if (shouldInclude('activeShifts') && postSiteIds.length) {
+    if (shouldInclude('activeShifts') && stationIds.length) {
       try {
-        console.debug('[customerAccountMe] fetching shifts postSiteIds:', postSiteIds, 'tenantId:', tenantId);
+        console.debug('[customerAccountMe] fetching shifts stationIds:', stationIds, 'tenantId:', tenantId);
         const now = new Date();
         const sevenDaysAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         const rows = await db.shift.findAll({
           where: {
-            postSiteId: postSiteIds,
+            stationId: stationIds,
             ...(tenantId ? { tenantId } : {}),
             startTime: { [Op.lte]: sevenDaysAhead },
             endTime: { [Op.gte]: now },
           },
-          attributes: ['id', 'startTime', 'endTime', 'postSiteId', 'guardId', 'tenantUserId'],
+          attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId', 'guardId', 'tenantUserId'],
           order: [['startTime', 'ASC']],
           limit: 100,
         });
@@ -301,7 +318,6 @@ export default async (req: any, res: any) => {
 
     // ── 6. Inventory items per station ───────────────────────────────────────
     let inventory: any[] = [];
-    const stationIds = stationsRaw.map((s: any) => s.id);
     if (shouldInclude('inventory') && stationIds.length) {
       try {
         console.debug('[customerAccountMe] fetching inventory stationIds:', stationIds, 'tenantId:', tenantId);
