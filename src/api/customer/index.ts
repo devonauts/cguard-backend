@@ -1,3 +1,10 @@
+import multer from 'multer';
+
+// Memory-storage multipart parser for customer file uploads. `multipartParser`
+// in src/api/index.ts is module-local and not exported, so we instantiate our
+// own (same `multer()` default) and apply it per-route.
+const multipartParser = multer();
+
 export default (app) => {
   /**
    * GET /api/customer/me/account
@@ -39,8 +46,25 @@ export default (app) => {
   app.post('/customer/me/device-id-information', require('./customerMessages').customerDeviceToken);
   app.post('/customer/device-token', require('./customerMessages').customerDeviceToken);
 
+  // Client uploads/replaces their own profile picture → becomes the
+  // clientAccount's logoUrl (avatar in the Mi Seguridad header). multipart/form-data
+  // with a single `file` field. Returns { success, downloadUrl }.
+  app.post(
+    '/customer/me/profile-picture',
+    multipartParser.single('file'),
+    require('./customerProfilePicture').default,
+  );
+
   // Client tasks: create a to-do for one of the client's stations (pending CRM
   // approval) + list the client's own tasks with status.
   app.post('/customer/tasks', require('./customerTasks').customerTaskCreate);
   app.get('/customer/tasks', require('./customerTasks').customerTaskList);
+
+  // Client asks for a visitor to be REMOVED from one of their installations.
+  // Creates a pending_approval task (worker app + CRM) and pushes the station's
+  // guards. Mirrors POST /customer/tasks registration.
+  app.post(
+    '/customer/visitor-log/:id/request-removal',
+    require('./visitorRemovalRequest').customerVisitorRemovalRequest,
+  );
 };
