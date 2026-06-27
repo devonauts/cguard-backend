@@ -305,6 +305,8 @@ class DeviceIdInformationRepository {
     } = await options.database.deviceIdInformation.findAndCountAll({
       where,
       include,
+      // Never ship the push credentials in a list payload.
+      attributes: { exclude: ['pushToken', 'apnsToken'] },
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
       order: orderBy

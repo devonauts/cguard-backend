@@ -179,6 +179,8 @@ class MemosRepository {
       {
         model: options.database.user,
         as: 'createdBy',
+        // Never SELECT * a user into a payload — strip the secrets.
+        attributes: { exclude: ['password', 'emailVerificationToken', 'passwordResetToken', 'importHash'] },
       },
     ];
 
@@ -280,6 +282,8 @@ class MemosRepository {
       {
         model: options.database.user,
         as: 'createdBy',
+        // Never SELECT * a user into a payload — strip the secrets.
+        attributes: { exclude: ['password', 'emailVerificationToken', 'passwordResetToken', 'importHash'] },
       },
     ];
 

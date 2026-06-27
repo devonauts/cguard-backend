@@ -26,7 +26,8 @@ export default async (req, res) => {
 
     const cameras = await db.videoCamera.findAll({
       where,
-      include: [{ model: db.videoDevice, as: 'device', required: false }],
+      // Never ship the device credential in a list payload (even encrypted).
+      include: [{ model: db.videoDevice, as: 'device', required: false, attributes: { exclude: ['password'] } }],
       order: [['channel', 'ASC']],
     });
 
