@@ -27,6 +27,9 @@ import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
 import { Op } from 'sequelize';
 import FileRepository from '../../database/repositories/fileRepository';
+import BannerSuperiorAppService from '../../services/bannerSuperiorAppService';
+import CertificationService from '../../services/certificationService';
+import ServiceService from '../../services/serviceService';
 
 export default async (req: any, res: any) => {
   try {
@@ -68,6 +71,15 @@ export default async (req: any, res: any) => {
       patrols: 'patrols',
       patrol: 'patrols',
       rondas: 'patrols',
+      banner: 'banner',
+      banners: 'banner',
+      certifications: 'certifications',
+      certification: 'certifications',
+      certs: 'certifications',
+      mobileservices: 'mobileServices',
+      mobileservice: 'mobileServices',
+      services: 'mobileServices',
+      service: 'mobileServices',
     };
 
     const includeSet = new Set<string>();
@@ -350,11 +362,41 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // ── 8. Company dashboard assets: banner + certifications + mobile services ──
+    // FULL objects (with signed images) so the dashboard renders in ONE call —
+    // no buried ids + N follow-up fetches. Tenant-scoped via the same services the
+    // CRM uses. Each is best-effort: a failure yields [] without breaking the call.
+    if (tenantId) req.currentTenant = { id: tenantId };
+    let banner: any[] = [];
+    let certifications: any[] = [];
+    let mobileServices: any[] = [];
+    if (tenantId && shouldInclude('banner')) {
+      try {
+        const r = await new BannerSuperiorAppService(req).findAndCountAll({ filter: {}, limit: 0 });
+        banner = Array.isArray(r.rows) ? r.rows : [];
+      } catch (e) { banner = []; }
+    }
+    if (tenantId && shouldInclude('certifications')) {
+      try {
+        const r = await new CertificationService(req).findAndCountAll({ filter: {}, limit: 0 });
+        certifications = Array.isArray(r.rows) ? r.rows : [];
+      } catch (e) { certifications = []; }
+    }
+    if (tenantId && shouldInclude('mobileServices')) {
+      try {
+        const r = await new ServiceService(req).findAndCountAll({ filter: {}, limit: 0 });
+        mobileServices = Array.isArray(r.rows) ? r.rows : [];
+      } catch (e) { mobileServices = []; }
+    }
+
     // Build response object. `clientAccount` always present. Other keys
     // returned only if requested (or when no include param provided).
     const response: any = { clientAccount: plain };
     if (shouldInclude('postSites')) response.postSites = postSites;
     if (shouldInclude('guards')) response.guards = guards;
+    if (shouldInclude('banner')) response.banner = banner;
+    if (shouldInclude('certifications')) response.certifications = certifications;
+    if (shouldInclude('mobileServices')) response.mobileServices = mobileServices;
     if (shouldInclude('incidents')) response.incidents = incidents;
     if (shouldInclude('activeShifts')) response.activeShifts = activeShifts;
     if (shouldInclude('inventory')) response.inventory = inventory;
