@@ -687,7 +687,7 @@ class StationRepository {
     const posts = postSiteIds.length
       ? await options.database.businessInfo.findAll({
           where: { id: postSiteIds },
-          attributes: ['id', 'businessName', 'companyName', 'name'],
+          attributes: ['id', 'companyName'],
           transaction,
         })
       : [];
@@ -706,11 +706,10 @@ class StationRepository {
       output.scheduledGuardsCount = (schedByStation.get(sid) || new Set()).size;
       output.guardsCount = set.size;
 
-      if (output.postSite) {
-        output.postSite = { id: output.postSite.id, businessName: output.postSite.businessName || output.postSite.name || null };
-      } else if (output.postSiteId) {
+      if (output.postSiteId) {
         const p: any = postById.get(String(output.postSiteId));
-        output.postSite = p ? { id: p.id, businessName: p.businessName || p.companyName || p.name || null } : null;
+        // Preserve the existing {id, businessName} shape (businessName ← companyName).
+        output.postSite = p ? { id: p.id, businessName: p.companyName || null } : null;
       }
     }
 
