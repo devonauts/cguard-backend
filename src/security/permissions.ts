@@ -324,7 +324,7 @@ class Permissions {
       inventoryCreate: createPermission('inventoryCreate', SUPERVISOR_ROLES),
       inventoryEdit: createPermission('inventoryEdit', SUPERVISOR_ROLES),
       inventoryDestroy: createPermission('inventoryDestroy', SUPERVISOR_ROLES),
-      inventoryRead: createPermission('inventoryRead', ALL_STAFF_ROLES),
+      inventoryRead: createPermission('inventoryRead', [...ALL_STAFF_ROLES, roles.customer]),
       inventoryAutocomplete: createPermission('inventoryAutocomplete', ALL_STAFF_ROLES),
 
       // === INVENTORY ITEM (global catalog) ===

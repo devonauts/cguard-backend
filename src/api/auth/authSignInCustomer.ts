@@ -11,6 +11,12 @@ import SequelizeRepository from '../../database/repositories/sequelizeRepository
 import jwt from 'jsonwebtoken'
 import { getConfig } from '../../config'
 
+// Customer sign-in diagnostics carry userId / clientAccountId / assignedClients — PII
+// that should not land in production logs. Gate behind an explicit debug flag.
+const dbg = (...args: any[]) => {
+  if (process.env.AUTH_DEBUG === 'true') console.warn(...args)
+}
+
 export default async (req: any, res: any) => {
   try {
     // Reuse signin logic to authenticate and obtain token + user
@@ -64,7 +70,7 @@ export default async (req: any, res: any) => {
           trimmed.certificationIds = Array.isArray(certs.rows) ? certs.rows.map((r: any) => r.id) : [];
           trimmed.serviceIds = Array.isArray(services.rows) ? services.rows.map((r: any) => r.id) : [];
         } catch (err) {
-          console.warn('authSignInCustomer: could not load tenant assets', (err && (err as any).message) ? (err as any).message : err);
+          dbg('authSignInCustomer: could not load tenant assets', (err && (err as any).message) ? (err as any).message : err);
           trimmed.bannerIds = trimmed.bannerIds || [];
           trimmed.certificationIds = trimmed.certificationIds || [];
           trimmed.serviceIds = trimmed.serviceIds || [];
@@ -113,7 +119,7 @@ export default async (req: any, res: any) => {
       } catch (e) {
         // If DB check fails, surface the original DB error or roleNotCustomer
         if (e instanceof Error400) throw e;
-        console.warn('authSignInCustomer: tenantUser lookup failed', e && (e as any).message ? (e as any).message : e);
+        dbg('authSignInCustomer: tenantUser lookup failed', e && (e as any).message ? (e as any).message : e);
       }
     }
     // Attach clientAccount id if this user is linked to a clientAccount (always attempt)
@@ -128,7 +134,7 @@ export default async (req: any, res: any) => {
         }
 
         const db = (req && (req as any).database) ? (req as any).database : (req && req.app && req.app.locals && (req.app.locals as any).database) ? (req.app.locals as any).database : undefined;
-        console.warn('authSignInCustomer: diagnostic', {
+        dbg('authSignInCustomer: diagnostic', {
           userId: payload.user.id,
           tenantIdCandidate: tenantIdCandidate,
           dbPresent: !!db,
@@ -160,7 +166,7 @@ export default async (req: any, res: any) => {
                   const assigned = tenantUser && tenantUser.assignedClients ? tenantUser.assignedClients.map((c: any) => c.id) : [];
                   if (assigned.includes(clientReqRec.id)) valid = true;
                 } catch (e) {
-                  console.warn('authSignInCustomer: tenantUser check failed', e && (e as any).message ? (e as any).message : e);
+                  dbg('authSignInCustomer: tenantUser check failed', e && (e as any).message ? (e as any).message : e);
                 }
               }
 
@@ -175,7 +181,7 @@ export default async (req: any, res: any) => {
               payload.user.clientAccountId = clientReqRec.id;
             } catch (e) {
               if (e instanceof Error400) throw e;
-              console.warn('authSignInCustomer: requested clientAccount validation failed', e && (e as any).message ? (e as any).message : e);
+              dbg('authSignInCustomer: requested clientAccount validation failed', e && (e as any).message ? (e as any).message : e);
               throw new Error400(req.language, 'auth.clientAccountInvalid');
             }
           } else {
@@ -184,7 +190,7 @@ export default async (req: any, res: any) => {
               const where: any = { userId: payload.user.id };
               if (tenantIdCandidate) where.tenantId = tenantIdCandidate;
               const clientRec = await db.clientAccount.findOne({ where });
-              console.warn('authSignInCustomer: clientAccount lookup result', { where, found: !!clientRec, clientId: clientRec ? clientRec.id : null });
+              dbg('authSignInCustomer: clientAccount lookup result', { where, found: !!clientRec, clientId: clientRec ? clientRec.id : null });
               if (clientRec) {
                 payload.user.clientAccountId = clientRec.id;
               } else {
@@ -195,13 +201,13 @@ export default async (req: any, res: any) => {
                   if (tenantIdCandidate) tenantUserWhere.tenantId = tenantIdCandidate;
                   const tenantUser = await db.tenantUser.findOne({ where: tenantUserWhere, include: [{ model: db.clientAccount, as: 'assignedClients', attributes: ['id'] }] });
                   const assigned = tenantUser && tenantUser.assignedClients ? tenantUser.assignedClients.map((c: any) => c.id) : [];
-                  console.warn('authSignInCustomer: tenantUser fallback', { where: tenantUserWhere, found: !!tenantUser, assignedClients: assigned });
+                  dbg('authSignInCustomer: tenantUser fallback', { where: tenantUserWhere, found: !!tenantUser, assignedClients: assigned });
                   if (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.length) {
                     payload.user.clientAccountId = tenantUser.assignedClients[0].id;
                     foundViaFallback = true;
                   }
                 } catch (e) {
-                  console.warn('authSignInCustomer: tenantUser fallback error', e && (e as any).message ? (e as any).message : e);
+                  dbg('authSignInCustomer: tenantUser fallback error', e && (e as any).message ? (e as any).message : e);
                 }
                 // Fallback 2: match by email — handles clientAccount where userId was never set
                 if (!foundViaFallback && payload.user.email) {
@@ -210,28 +216,28 @@ export default async (req: any, res: any) => {
                     if (tenantIdCandidate) emailWhere.tenantId = tenantIdCandidate;
                     const emailRec = await db.clientAccount.findOne({ where: emailWhere });
                     if (emailRec) {
-                      console.warn('authSignInCustomer: email fallback found clientAccount', { id: emailRec.id });
+                      dbg('authSignInCustomer: email fallback found clientAccount', { id: emailRec.id });
                       payload.user.clientAccountId = emailRec.id;
                       // Heal the data: set userId so future lookups skip this fallback
                       try {
                         await emailRec.update({ userId: payload.user.id });
                       } catch (healErr) {
-                        console.warn('authSignInCustomer: could not heal clientAccount.userId', healErr && (healErr as any).message ? (healErr as any).message : healErr);
+                        dbg('authSignInCustomer: could not heal clientAccount.userId', healErr && (healErr as any).message ? (healErr as any).message : healErr);
                       }
                     }
                   } catch (e) {
-                    console.warn('authSignInCustomer: email fallback error', e && (e as any).message ? (e as any).message : e);
+                    dbg('authSignInCustomer: email fallback error', e && (e as any).message ? (e as any).message : e);
                   }
                 }
               }
             } catch (e) {
-              console.warn('authSignInCustomer: clientAccount lookup error', e && (e as any).message ? (e as any).message : e);
+              dbg('authSignInCustomer: clientAccount lookup error', e && (e as any).message ? (e as any).message : e);
             }
           }
         }
       }
     } catch (err) {
-      console.warn('authSignInCustomer: could not lookup clientAccount', (err && (err as any).message) ? (err as any).message : err);
+      dbg('authSignInCustomer: could not lookup clientAccount', (err && (err as any).message) ? (err as any).message : err);
     }
 
     // If we resolved a clientAccountId during signin (server-side), ensure the token contains it.
@@ -244,7 +250,7 @@ export default async (req: any, res: any) => {
           const newToken = jwt.sign(tokenPayload, getConfig().AUTH_JWT_SECRET, { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN });
           payload.token = newToken;
         } catch (e) {
-          console.warn('authSignInCustomer: could not re-sign token with clientAccountId', e && (e as any).message ? (e as any).message : e);
+          dbg('authSignInCustomer: could not re-sign token with clientAccountId', e && (e as any).message ? (e as any).message : e);
         }
       }
     } catch (e) {

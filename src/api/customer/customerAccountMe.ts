@@ -9,11 +9,15 @@
  * Response shape:
  * {
  *   clientAccount: { id, name, email, phone, address, onboardingStatus, logoUrl: [...], placePictureUrl: [...] },
- *   postSites: [{ id, name, address, lat, lng, stations: [{ id, stationName, lat, lng }] }],
+ *   postSites: [{ id, name, address, lat, lng, stations: [{ id, stationName, lat, lng,
+ *                stationSchedule, startingTimeInDay, finishTimeInDay, numberOfGuardsInStation }] }],
  *   guards: [{ id, fullName, isOnDuty, phone, photo }],
  *   incidents: [{ id, title, description, incidentAt, severity, postSiteId }],
  *   activeShifts: [{ id, startTime, endTime, guardId, postSiteId }],
- *   inventory: [{ id, name, quantity, stationId }],
+ *   inventory: [{ id, name, belongsToStation, radio, radioType, radioSerialNumber,
+ *                gun, gunType, gunSerialNumber, armor, armorType, armorSerialNumber,
+ *                armorExpirationDate, tolete, pito, linterna, vitacora, cintoCompleto,
+ *                ponchoDeAguas, detectorDeMetales, caseta, observations, transportation }],
  *   patrols: [{ id, scheduledTime, completionTime, status, completed, station, assignedGuard }],
  * }
  */
@@ -219,11 +223,19 @@ export default async (req: any, res: any) => {
               { createdAt: { [Op.gte]: thirtyDaysAgo } },
             ],
           },
-          attributes: ['id', 'title', 'description', 'incidentAt', 'date', 'severity', 'postSiteId', 'createdAt'],
+          // NOTE: the incident model has NO `severity` column — the severity-like
+          // field is `priority`. Selecting `severity` here threw a "column does not
+          // exist" error that the catch below swallowed, so incidents ALWAYS came
+          // back as []. Select `priority` and surface it as `severity` for clients.
+          attributes: ['id', 'title', 'description', 'incidentAt', 'date', 'priority', 'postSiteId', 'createdAt'],
           order: [['createdAt', 'DESC']],
           limit: 50,
         });
-        incidents = rows.map((r: any) => r.get({ plain: true }));
+        incidents = rows.map((r: any) => {
+          const p = r.get({ plain: true });
+          p.severity = p.priority ?? null;
+          return p;
+        });
         console.debug('[customerAccountMe] incidents count:', incidents.length);
       } catch (e) {
         incidents = [];
@@ -276,24 +288,42 @@ export default async (req: any, res: any) => {
     }
 
     // ── 7. Recent patrols (last 7 days) ──────────────────────────────────────
+    // The patrol FK column is `stationId` (the `station` belongsTo alias), NOT
+    // `station`. Filter by it and attach a nested `station` object so the apps
+    // can render station name + coordinates (PatrolModel.station.stationName).
     let patrols: any[] = [];
     if (shouldInclude('patrols') && stationIds.length) {
       try {
+        const stationById: Record<string, any> = {};
+        for (const s of stationsRaw) {
+          const sp = s.get({ plain: true });
+          stationById[sp.id] = {
+            id: sp.id,
+            stationName: sp.stationName,
+            latitud: sp.latitud,
+            longitud: sp.longitud,
+          };
+        }
+
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const rows = await db.patrol.findAll({
           where: {
-            station: stationIds,
+            stationId: stationIds,
             ...(tenantId ? { tenantId } : {}),
             [Op.or]: [
               { scheduledTime: { [Op.gte]: sevenDaysAgo } },
               { createdAt: { [Op.gte]: sevenDaysAgo } },
             ],
           },
-          attributes: ['id', 'scheduledTime', 'completionTime', 'status', 'completed', 'station', 'assignedGuard'],
+          attributes: ['id', 'scheduledTime', 'completionTime', 'status', 'completed', 'stationId', 'assignedGuardId', 'updatedAt'],
           order: [['scheduledTime', 'DESC']],
           limit: 100,
         });
-        patrols = rows.map((r: any) => r.get({ plain: true }));
+        patrols = rows.map((r: any) => {
+          const p = r.get({ plain: true });
+          p.station = stationById[p.stationId] || null;
+          return p;
+        });
         console.debug('[customerAccountMe] patrols count:', patrols.length);
       } catch (e) {
         patrols = [];

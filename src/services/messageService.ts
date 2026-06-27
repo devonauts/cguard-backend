@@ -224,6 +224,13 @@ async function notifyRecipients(db: any, tenantId: string, conversation: any, me
       senderName = (u && (u.fullName || u.firstName)) || 'Mensaje';
     } catch { /* ignore */ }
     const atts = Array.isArray(message.attachments) ? message.attachments : [];
+    // First image attachment → rich-notification image. FCM renders it natively;
+    // direct-APNs sets mutable-content so the iOS service extension attaches it,
+    // and both apps persist it into the in-app feed's image/imageUrl field.
+    const firstImage = atts.find(
+      (a: any) => a && typeof a.url === 'string' && a.url && (a.type === 'image' || !a.type),
+    );
+    const imageUrl = firstImage && /^https?:\/\//i.test(firstImage.url) ? String(firstImage.url) : undefined;
     const body = String(message.body || '').slice(0, 150) || attachmentLabel(atts);
     // For groups, prefix the sender so the recipient knows who wrote in the group.
     const isGroup = conversation.kind === 'group';
@@ -241,7 +248,7 @@ async function notifyRecipients(db: any, tenantId: string, conversation: any, me
     const { storePlatformEvent } = require('../lib/platformEventStore');
     const { pushToUser, pushToClientAccounts } = require('./pushService');
 
-    const pushPayload = { title, body: displayBody, data: { type: 'message.new', ...payload } };
+    const pushPayload = { title, body: displayBody, data: { type: 'message.new', ...payload }, ...(imageUrl ? { image: imageUrl } : {}) };
 
     for (const r of recipients) {
       try {

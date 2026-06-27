@@ -24,18 +24,21 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   const auth = req.headers.authorization || ''
   const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : null
   const cookie = (req as any).cookies?.__session
-  // Avoid logging full token. Decode payload (without verifying) to help debugging.
-  try {
-    const tokenToInspect = bearer || cookie;
-    if (tokenToInspect) {
-      const decoded = jwt.decode(tokenToInspect) as any;
-      const short = tokenToInspect && tokenToInspect.length > 8 ? `${tokenToInspect.slice(0,6)}...${tokenToInspect.slice(-6)}` : tokenToInspect;
-      console.log('🔐 authMiddleware — Authorization token:', short, 'decoded:', decoded ? { id: decoded.id, iat: decoded.iat, exp: decoded.exp } : null, 'cookie __session present:', !!cookie);
-    } else {
-      console.log('🔐 authMiddleware — No bearer token, cookie __session:', !!cookie);
+  // Token diagnostics leak user ids / token fragments into prod logs — gate behind an
+  // explicit debug flag (set AUTH_DEBUG=true to re-enable locally).
+  if (process.env.AUTH_DEBUG === 'true') {
+    try {
+      const tokenToInspect = bearer || cookie;
+      if (tokenToInspect) {
+        const decoded = jwt.decode(tokenToInspect) as any;
+        const short = tokenToInspect && tokenToInspect.length > 8 ? `${tokenToInspect.slice(0,6)}...${tokenToInspect.slice(-6)}` : tokenToInspect;
+        console.log('🔐 authMiddleware — Authorization token:', short, 'decoded:', decoded ? { id: decoded.id, iat: decoded.iat, exp: decoded.exp } : null, 'cookie __session present:', !!cookie);
+      } else {
+        console.log('🔐 authMiddleware — No bearer token, cookie __session:', !!cookie);
+      }
+    } catch (e) {
+      console.log('🔐 authMiddleware — token decode failed', e);
     }
-  } catch (e) {
-    console.log('🔐 authMiddleware — token decode failed', e);
   }
   if (!bearer && !cookie) return next()
   const idToken = bearer || cookie
