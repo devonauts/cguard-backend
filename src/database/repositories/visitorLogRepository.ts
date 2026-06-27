@@ -483,9 +483,21 @@ class VisitorLogRepository {
     }
 
     if (!assignedPostSiteIds.length && !assignedStationIds.length) {
-      // If user has clientAccountId (customer), allow posts belonging to that client
+      // If user is a customer, allow posts belonging to their client account.
       try {
-        const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+        let clientAccountId = currentUser && (currentUser as any).clientAccountId;
+        // The per-request auth doesn't always carry clientAccountId on currentUser
+        // (only the sign-in path sets it), so resolve it from the user link as a
+        // fallback. Without this a customer only saw visits THEY created — and guard-
+        // created visits made the "Control de Visitas" list look empty.
+        if (!clientAccountId) {
+          const ca = await options.database.clientAccount.findOne({
+            where: { userId: currentUser.id, tenantId: currentTenant.id },
+            attributes: ['id'],
+            transaction,
+          });
+          clientAccountId = ca && ca.id;
+        }
         if (clientAccountId) {
           const posts = await options.database.businessInfo.findAll({ where: { tenantId: currentTenant.id, clientAccountId }, attributes: ['id'], transaction });
           assignedPostSiteIds = (posts || []).map((p) => p && p.id).filter(Boolean);
