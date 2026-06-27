@@ -19,7 +19,7 @@ export interface CreateAssignmentInput {
   stationId: string;
   positionId?: string | null;      // present ⇒ rotation; absent ⇒ adhoc
   rotationStyleId?: string | null;
-  startDate: string;               // YYYY-MM-DD
+  startDate?: string;              // YYYY-MM-DD (optional ⇒ defaults to today; phase comes from the position)
   endDate?: string | null;         // YYYY-MM-DD (null ⇒ indefinite rotation / single-day adhoc)
   startTime?: string | null;       // HH:mm (adhoc only)
   endTime?: string | null;         // HH:mm (adhoc only)
@@ -42,10 +42,14 @@ export async function createAssignment(
   userId: string,
   input: CreateAssignmentInput,
 ) {
-  const { guardId, stationId, startDate } = input;
-  if (!guardId || !stationId || !startDate) {
-    throw new AssignmentValidationError('guardId, stationId and startDate are required');
+  const { guardId, stationId } = input;
+  if (!guardId || !stationId) {
+    throw new AssignmentValidationError('guardId and stationId are required');
   }
+  // The rotation PHASE comes from the station position, not from a start date, so a
+  // start date is no longer required — a guard "dropped into" a station follows the
+  // station's horario from today. startDate only bounds when shifts begin.
+  const startDate = input.startDate || new Date().toISOString().slice(0, 10);
 
   // Resolve the incoming guard reference (a user id OR a securityGuard id from
   // the autocomplete) to the underlying users.id. The assignment and every
@@ -101,9 +105,12 @@ export async function createAssignment(
       );
     }
 
-    platoonOffset = input.platoonOffset != null
-      ? parseInt(String(input.platoonOffset))
-      : (position?.platoonOffset || 0);
+    // The phase is ALWAYS the station position's staggered offset — never a
+    // date-derived value from the request. This guarantees the two fijos of a 24h
+    // station are opposite (Fijo 1 day ⇄ Fijo 2 night, swapping each cycle) and they
+    // can never overlap on the same turno. (Old bug: the UI sent a start-date-derived
+    // platoonOffset that clobbered Fijo 2's offset to 0, double-staffing the day.)
+    platoonOffset = position?.platoonOffset || 0;
 
     // Idempotent: one active assignment per (guard, station, position). Re-assigning
     // the same slot reuses the existing row (and refreshes its shifts) instead of
