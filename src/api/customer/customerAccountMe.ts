@@ -160,6 +160,12 @@ export default async (req: any, res: any) => {
     if (shouldInclude('guards')) {
       try {
         const sequelize = db.sequelize;
+        // A client's guards are those EITHER explicitly linked via the
+        // tenant_user_client_accounts pivot OR actually working at the client's
+        // post-sites (a current/upcoming shift). The pivot is frequently empty
+        // because guards are assigned through the scheduling engine (shifts), not
+        // that pivot — so relying on it alone returned ZERO guards even when guards
+        // were on duty. Union both sources so "guardias trabajando" always shows.
         const [guardRows] = await sequelize.query(
           `SELECT DISTINCT
              sg.id, sg.fullName, sg.isOnDuty, sg.gender, sg.governmentId,
@@ -167,14 +173,28 @@ export default async (req: any, res: any) => {
              sg.academicInstruction, sg.address, sg.guardCredentials,
              sg.hiringContractDate, sg.availability, sg.languages, sg.skills,
              sg.guardId
-           FROM tenant_user_client_accounts tuca
-           JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
-           JOIN securityGuards sg ON sg.guardId = tu.userId
-           WHERE tuca.clientAccountId = :clientAccountId
-             AND tuca.deletedAt IS NULL
-             AND tu.deletedAt IS NULL
-             AND sg.deletedAt IS NULL
-             ${tenantId ? 'AND tu.tenantId = :tenantId' : ''}`,
+           FROM securityGuards sg
+           WHERE sg.deletedAt IS NULL
+             ${tenantId ? 'AND sg.tenantId = :tenantId' : ''}
+             AND (
+               sg.guardId IN (
+                 SELECT tu.userId
+                 FROM tenant_user_client_accounts tuca
+                 JOIN tenantUsers tu ON tu.id = tuca.tenantUserId
+                 WHERE tuca.clientAccountId = :clientAccountId
+                   AND tuca.deletedAt IS NULL
+                   AND tu.deletedAt IS NULL
+               )
+               OR sg.guardId IN (
+                 SELECT s.guardId
+                 FROM shifts s
+                 JOIN businessInfos b ON b.id = s.postSiteId
+                 WHERE b.clientAccountId = :clientAccountId
+                   AND s.guardId IS NOT NULL
+                   AND s.endTime >= NOW()
+                   AND s.startTime <= DATE_ADD(NOW(), INTERVAL 7 DAY)
+               )
+             )`,
           { replacements: { clientAccountId, tenantId } },
         );
         const rawGuards = Array.isArray(guardRows) ? guardRows : [];
