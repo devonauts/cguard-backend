@@ -235,6 +235,11 @@ export async function guardAssignmentDelete(req, res) {
       where: { guardAssignmentId: id, tenantId },
     });
 
+    // Soft-delete the assignment row itself (paranoid → sets deletedAt). Marking it
+    // only 'ended' left the row visible to any query that didn't filter status, so
+    // removed guards kept reappearing. Now removal takes them out everywhere.
+    await record.destroy();
+
     await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
