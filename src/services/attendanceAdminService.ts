@@ -539,11 +539,40 @@ export default class AttendanceAdminService {
       ? new Date(query.from)
       : new Date(to.getTime() - 14 * 24 * 3600 * 1000);
 
-    // ACL-scoped punches in range.
-    const { rows } = await GuardShiftRepository.findAndCountAll(
-      { filter: { punchInTimeRange: [from.toISOString(), to.toISOString()] }, limit: 100000, offset: 0 },
-      this.options,
-    );
+    // LEAN payroll fetch. The old path called GuardShiftRepository.findAndCountAll
+    // with limit:100000, which (a) SELECT *'d full guardShift rows incl. the base64
+    // punch-photo blobs and full station/securityGuard includes, and (b) ran a 2N
+    // per-row enrich (getPatrolsDone + getDailyIncidents) the summary never reads.
+    // Here we run ONE query with only the scalars the aggregation consumes
+    // (hoursWorked, overtimeMinutes, status, lateMinutes, id, guardNameId) plus a
+    // scoped guardName include, while preserving the same post-site ACL the list
+    // applies for non-admins.
+    const aclWhere = await this.payrollAclWhere();
+    if (aclWhere === null) {
+      // Non-admin with no accessible post-sites — same empty result the list returns.
+      const settingsEmpty = await getNominaSettings(db, tenantId);
+      return {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        rows: [],
+        totals: { shifts: 0, regularHours: 0, overtimeHours: 0, totalHours: 0, lateCount: 0, noShows: 0, grossPay: null },
+        currency: settingsEmpty.payroll.currency,
+        ratesEnabled: false,
+      };
+    }
+
+    const rows = (await db.guardShift.findAll({
+      where: {
+        tenantId,
+        punchInTime: { [Op.gte]: from, [Op.lte]: to },
+        ...aclWhere,
+      },
+      attributes: ['id', 'guardNameId', 'hoursWorked', 'overtimeMinutes', 'status', 'lateMinutes'],
+      include: [
+        { model: db.securityGuard, as: 'guardName', attributes: ['id', 'fullName'] },
+      ],
+      order: [['punchInTime', 'ASC']],
+    })).map((r: any) => r.get({ plain: true }));
 
     type Agg = {
       guardId: string;
@@ -717,6 +746,62 @@ export default class AttendanceAdminService {
       lockedCount: locked,
     });
     return { lockedCount: locked, cutoff: cutoff.toISOString() };
+  }
+
+  /**
+   * Post-site ACL for the lean payroll query. Mirrors the non-admin restriction
+   * in GuardShiftRepository.findAndCountAll exactly:
+   *   - admin                       → {} (no postSite restriction)
+   *   - non-admin w/ assigned posts → { postSiteId: { [Op.in]: ids } }
+   *   - non-admin (customer) w/ a clientAccountId → that client's post-sites
+   *   - non-admin with no accessible posts → null  (caller returns empty)
+   */
+  private async payrollAclWhere(): Promise<Record<string, any> | null> {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(this.options);
+      let isAdmin = false;
+      if (currentUser && (currentUser as any).tenants) {
+        const tenantUserRec = (currentUser as any).tenants.find(
+          (t: any) => t.tenant.id === tenantId && t.status === 'active',
+        );
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes((await import('../security/roles')).default.values.admin);
+        }
+      }
+      if (isAdmin) return {};
+
+      const tenantUser = await db.tenantUser.findOne({
+        where: { tenantId, userId: currentUser.id },
+        include: [{ model: db.businessInfo, as: 'assignedPostSites', attributes: ['id'] }],
+      });
+      let allowedIds: any[] =
+        (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c: any) => c.id)) || [];
+
+      if (!allowedIds.length) {
+        const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+        if (clientAccountId) {
+          const posts = await db.businessInfo.findAll({
+            where: { tenantId, clientAccountId },
+            attributes: ['id'],
+          });
+          allowedIds = (posts || []).map((p: any) => p.id).filter(Boolean);
+        }
+      }
+
+      if (!allowedIds.length) return null;
+      return { postSiteId: { [Op.in]: allowedIds } };
+    } catch (e) {
+      // On any ACL resolution error, fail closed to the prior behavior: the list
+      // path swallows errors and proceeds unrestricted, so match that (no filter).
+      return {};
+    }
   }
 
   /** Throw if the record is payroll-locked (and locking is enforced). */

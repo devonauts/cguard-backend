@@ -295,15 +295,22 @@ class ShiftRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list path. The shift list (shiftService.ShiftRecord + the post-site /
+    // dispatcher consumers) only reads the guard's display fields and the
+    // station's {id, stationName}. Scope both includes so the list no longer
+    // ships the station geofencePolygon/stationSchedule/nickname TEXT blobs nor
+    // the full user row. findById keeps the unscoped includes.
     let include = [
       {
         model: options.database.station,
         as: 'station',
+        attributes: ['id', 'stationName'],
       },
       {
         model: options.database.user,
         as: 'guard',
-      },      
+        attributes: ['id', 'fullName', 'firstName', 'lastName', 'email', 'phoneNumber'],
+      },
     ];
 
     whereAnd.push({
@@ -419,6 +426,12 @@ class ShiftRepository {
       count,
     } = await options.database.shift.findAndCountAll({
       where,
+      // Exclude the heavy JSON blobs (siteTours/tasks/postOrders/checklists/
+      // skillSet/remindersSent) from the list — they're edit/detail-only and no
+      // shift-list consumer reads them. Kept on findById.
+      attributes: {
+        exclude: ['siteTours', 'tasks', 'postOrders', 'checklists', 'skillSet', 'remindersSent'],
+      },
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,

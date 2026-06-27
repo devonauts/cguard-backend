@@ -9,7 +9,6 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import BusinessInfoService from '../../services/businessInfoService';
-import ClientAccountService from '../../services/clientAccountService';
 import Roles from '../../security/roles';
 
 export default async (req, res, next) => {
@@ -72,29 +71,15 @@ export default async (req, res, next) => {
       req,
     ).findAndCountAll(query);
 
-    // Attach client account name (name + lastName) when clientAccountId present
+    // Attach legacy aliases the frontend list mapping reads. The repository's
+    // _fillForList already attached the batched `clientAccount` ({id,name,
+    // lastName,email}) and `clientAccountName`; here we add the remaining
+    // legacy keys (`name`, `clientId`, `client`, lat/long/phone/email aliases)
+    // without re-querying per row.
     try {
       if (payload && Array.isArray(payload.rows) && payload.rows.length) {
-        const clientService = new ClientAccountService(req);
-        const ids = Array.from(new Set(payload.rows
-          .filter((r) => r.clientAccountId)
-          .map((r) => r.clientAccountId),
-        ));
-
-        const clientsById = {};
-        await Promise.all(ids.map(async (id) => {
-          try {
-            const c = await clientService.findById(id);
-            clientsById[id] = c;
-          } catch (e) {
-            clientsById[id] = null;
-          }
-        }));
-
         payload.rows = payload.rows.map((r) => {
-          const client = r.clientAccountId ? clientsById[r.clientAccountId] : null;
-          const clientName = client ? `${client.name || ''} ${client.lastName || ''}`.trim() : null;
-
+          const client = r.clientAccount || null;
           // legacy compatibility: frontend originally expects `name`, `clientId`, and `client` object
           const legacyClient = client
             ? {
@@ -107,7 +92,6 @@ export default async (req, res, next) => {
 
           return {
             ...r,
-            clientAccountName: clientName,
             // legacy keys
             name: r.companyName,
             clientId: r.clientAccountId,
@@ -121,51 +105,7 @@ export default async (req, res, next) => {
         });
       }
     } catch (e) {
-      console.error('Error logging businessInfoList payload:', e);
-    }
-
-    // Attach related counts (assignments, shifts, guardShifts) without
-    // replacing the primary businessInfo data. This is a "union"-style
-    // augmentation so frontend can show guard-related metrics per post site.
-    try {
-      if (payload && Array.isArray(payload.rows) && payload.rows.length) {
-        const ids = payload.rows.map((r) => r.id).filter(Boolean);
-        const replacements = { ids, tenantId: req.params.tenantId };
-
-        // Count assignments using `shifts` as canonical source. Count any shift that
-        // references the businessInfo via postSiteId OR via stationId.
-        const shiftsSql = `
-          SELECT COALESCE(postSiteId, stationId) as businessInfoId, COUNT(*) as shiftsCount
-          FROM shifts
-          WHERE (postSiteId IN (:ids) OR stationId IN (:ids))
-            AND tenantId = :tenantId
-          GROUP BY COALESCE(postSiteId, stationId)
-        `;
-
-        // Count guardShifts referencing stationNameId = businessInfo id
-        const guardShiftsSql = `
-          SELECT stationNameId as businessInfoId, COUNT(*) as guardShiftsCount
-          FROM guardShifts
-          WHERE stationNameId IN (:ids)
-            AND tenantId = :tenantId
-          GROUP BY stationNameId
-        `;
-
-        const shiftRows = await req.database.sequelize.query(shiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
-        const gShiftRows = await req.database.sequelize.query(guardShiftsSql, { replacements, type: req.database.sequelize.QueryTypes.SELECT });
-        const shiftMap = (shiftRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.shiftsCount); return acc; }, {});
-        const gShiftMap = (gShiftRows || []).reduce((acc, cur) => { acc[cur.businessInfoId] = Number(cur.guardShiftsCount); return acc; }, {});
-
-        payload.rows = payload.rows.map((r) => ({
-          ...r,
-          // `assignmentsCount` now derived from shifts (primary source) plus guardShifts
-          assignmentsCount: (shiftMap[r.id] || 0) + (gShiftMap[r.id] || 0),
-          shiftsCount: shiftMap[r.id] || 0,
-          guardShiftsCount: gShiftMap[r.id] || 0,
-        }));
-      }
-    } catch (e) {
-      console.error('Error augmenting businessInfoList with station/assignment counts:', e);
+      console.error('Error augmenting businessInfoList payload:', e);
     }
 
     // Temporary debug: log payload size to help diagnose frontend empty list issue

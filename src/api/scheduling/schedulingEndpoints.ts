@@ -321,6 +321,10 @@ export async function schedulerOverview(req, res) {
         startTime: { [req.database.Sequelize.Op.gte]: new Date(startDate) },
         endTime: { [req.database.Sequelize.Op.lte]: new Date(endDate + 'T23:59:59') },
       },
+      // The scheduler grid only reads id/guardId/stationId/positionId/start+end
+      // (+ the scoped guard). Whitelist those so the overview no longer ships the
+      // siteTours/tasks/postOrders/checklists/skillSet/remindersSent JSON blobs.
+      attributes: ['id', 'guardId', 'stationId', 'positionId', 'startTime', 'endTime'],
       include: [
         { model: req.database.user, as: 'guard', attributes: ['id', 'firstName', 'lastName'] },
       ],

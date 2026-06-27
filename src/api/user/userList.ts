@@ -16,33 +16,14 @@ export default async (req, res) => {
       Permissions.values.userRead,
     );
 
+    // securityGuard users are now excluded inside the repository WHERE (so the
+    // `count` returned by findAndCountAll already matches the rows). The previous
+    // JS post-filter here ALSO did `payload.count = filteredRows.length`, which
+    // corrupted pagination on multi-page result sets — removed.
     const payload = await UserRepository.findAndCountAll(
       req.query,
       req,
     );
-
-    // Exclude users that have the `securityGuard` role in the current tenant
-    try {
-      const tenantId = req.params.tenantId;
-      if (payload && Array.isArray(payload.rows)) {
-        const filteredRows = payload.rows.filter((user) => {
-          try {
-            if (!user) return true;
-            const roles = Array.isArray(user.roles)
-              ? user.roles
-              : (typeof user.roles === 'string' ? JSON.parse(user.roles) : []);
-            return !roles.includes('securityGuard');
-          } catch (e) {
-            return true;
-          }
-        });
-
-        payload.rows = filteredRows;
-        payload.count = filteredRows.length;
-      }
-    } catch (e) {
-      // ignore filtering errors and return original payload
-    }
 
     await ApiResponseHandler.success(req, res, payload);
   } catch (error) {

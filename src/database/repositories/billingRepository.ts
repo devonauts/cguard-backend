@@ -431,10 +431,13 @@ class BillingRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN list path: the clientsInvoiced relation is already eager-loaded via the
+    // `include` above. The old per-row _fill additionally ran a file.findAll +
+    // signed-URL (getBill) PER ROW for the invoice file, which the list never
+    // renders as a thumbnail. _fillForList preserves the row shape (keeps the
+    // `bill` key present but empty) and drops that per-row signing. The full,
+    // signed `bill` file stays on findById → _fillWithRelationsAndFiles.
+    rows = this._fillForList(rows);
 
     return { rows, count };
   }
@@ -513,6 +516,20 @@ class BillingRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN list enricher — keeps the eager-loaded clientsInvoiced relation and the
+   * `bill` key (present but empty; the list renders no file thumbnail) and does
+   * ZERO per-row file signing. Full signed `bill` stays in findById.
+   */
+  static _fillForList(rows) {
+    if (!rows || !rows.length) return rows;
+    return rows.map((record) => {
+      const output: any = record.get({ plain: true });
+      output.bill = [];
+      return output;
+    });
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

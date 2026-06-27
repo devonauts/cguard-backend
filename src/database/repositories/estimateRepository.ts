@@ -147,9 +147,22 @@ class EstimateRepository {
   static async findAndCountAll({ filter, limit = 0, offset = 0, orderBy = '' }, options: IRepositoryOptions) {
     const tenant = SequelizeRepository.getCurrentTenant(options);
     let whereAnd: Array<any> = [];
+    // LEAN list. List rows render header/meta + client & site name only; the big
+    // items JSON and notes blob are loaded on row-open via findById (kept FULL).
+    // Scope includes to identity columns and drop the businessInfo description/
+    // serviceConfig blobs. Attributes verified against the model files.
     let include = [
-      { model: options.database.clientAccount, as: 'client' },
-      { model: options.database.postSite, as: 'postSite' },
+      {
+        model: options.database.clientAccount,
+        as: 'client',
+        attributes: ['id', 'name', 'lastName', 'commercialName', 'email', 'phoneNumber'],
+      },
+      {
+        // database.postSite is an alias for businessInfo (see models/index.ts).
+        model: options.database.postSite,
+        as: 'postSite',
+        attributes: ['id', 'companyName', 'contactEmail', 'contactPhone'],
+      },
     ];
 
     whereAnd.push({ tenantId: tenant.id });
@@ -170,6 +183,11 @@ class EstimateRepository {
 
     const { rows, count } = await options.database.estimate.findAndCountAll({
       where,
+      // Drop the big JSON/text blobs from the LIST SELECT: items (line-item JSON)
+      // and the notes text. Never rendered in a list row; findById keeps them.
+      attributes: {
+        exclude: ['items', 'notes'],
+      },
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,

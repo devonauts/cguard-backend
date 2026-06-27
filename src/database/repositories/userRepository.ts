@@ -927,19 +927,57 @@ export default class UserRepository {
       options,
     );
 
+    // LEAN list: scoped attribute sets reused across every `tenants` include so we
+    // never SELECT * on tenantUser / clientAccount / businessInfo, and we eager-load
+    // the `tenant` (id only) so _mapUserForTenant can match without re-querying.
+    const tenantUserListInclude = () => [
+      { model: options.database.tenant, as: 'tenant', attributes: ['id'], required: false },
+      { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [] } },
+      { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [] } },
+    ];
+    const tenantUserListAttributes = ['id', 'userId', 'tenantId', 'roles', 'status', 'invitationTokenExpiresAt'];
+
+    // Exclude users whose current-tenant tenantUser has the `securityGuard` role.
+    // This was previously a JS filter in userList.ts that ALSO overwrote
+    // `count = filteredRows.length` (corrupting pagination). Push it into the
+    // tenantUser WHERE so both rows and count are correct. `roles` is a JSON
+    // string-array (mysql) / TEXT[] (postgres); negate the contains check.
+    const excludeSecurityGuardRole = () => {
+      if (getConfig().DATABASE_DIALECT === 'mysql') {
+        // IFNULL(...,0)=0 so users with NULL/empty roles stay visible (the old JS
+        // filter kept unparseable roles); only an explicit securityGuard is dropped.
+        return Sequelize.where(
+          Sequelize.fn(
+            'IFNULL',
+            Sequelize.fn(
+              'JSON_CONTAINS',
+              Sequelize.col('tenants.roles'),
+              '"securityGuard"',
+            ),
+            0,
+          ),
+          0,
+        );
+      }
+      return {
+        roles: { [Op.not]: { [Op.contains]: ['securityGuard'] } },
+      } as any;
+    };
+
     // Always include tenantUser relation for the current tenant and eagerly load
     // assignedClients and assignedPostSites so the frontend receives pivot data.
     if (!filter || (!filter.role && !filter.status)) {
       include.push({
         model: options.database.tenantUser,
         as: 'tenants',
+        attributes: tenantUserListAttributes,
         where: {
-          ['tenantId']: currentTenant.id,
+          [Op.and]: [
+            { ['tenantId']: currentTenant.id },
+            excludeSecurityGuardRole(),
+          ],
         },
-        include: [
-          { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-          { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-        ],
+        include: tenantUserListInclude(),
       });
     }
 
@@ -985,14 +1023,16 @@ export default class UserRepository {
           ),
         );
 
+        // Even when a role filter is supplied, never surface securityGuard users
+        // in the office-users list (keeps count consistent with the unfiltered path).
+        innerWhereAnd.push(excludeSecurityGuardRole());
+
         include.push({
           model: options.database.tenantUser,
           as: 'tenants',
+          attributes: tenantUserListAttributes,
           where: { [Op.and]: innerWhereAnd },
-            include: [
-            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-          ],
+          include: tenantUserListInclude(),
         });
       }
 
@@ -1000,14 +1040,14 @@ export default class UserRepository {
         include.push({
           model: options.database.tenantUser,
           as: 'tenants',
+          attributes: tenantUserListAttributes,
           where: {
-            ['tenantId']: currentTenant.id,
-            status: filter.status,
+            [Op.and]: [
+              { ['tenantId']: currentTenant.id, status: filter.status },
+              excludeSecurityGuardRole(),
+            ],
           },
-            include: [
-            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-          ],
+          include: tenantUserListInclude(),
         });
       }
 
@@ -1046,6 +1086,16 @@ export default class UserRepository {
       rows,
       count,
     } = await options.database.user.findAndCountAll({
+      // LEAN list: explicit root attributes — never SELECT *. Excludes the big
+      // providerId(2KB)/token/password columns (password/tokens have undefined
+      // getters anyway) and avoids selecting columns that may not exist in every
+      // DB (e.g. isSuperadmin). These are exactly what the office-users list +
+      // _mapUserForTenant consume. findById keeps the full row.
+      attributes: [
+        'id', 'fullName', 'firstName', 'lastName', 'middleName',
+        'email', 'emailVerified', 'phoneNumber', 'homeAddress',
+        'lastLoginAt', 'importHash', 'createdAt', 'updatedAt',
+      ],
       where,
       include,
       limit: limit ? Number(limit) : undefined,
@@ -1056,10 +1106,11 @@ export default class UserRepository {
       transaction,
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN enrichment: build the consumed shape from the ALREADY eager-loaded
+    // `tenants` include — no per-row getTenants() re-fetch (was 3N: tenant +
+    // settings + assignedClients/PostSites per row), no per-row avatar signing
+    // (the list renders no avatars). findById still uses _fillWithRelationsAndFiles.
+    rows = this._fillForList(rows);
 
     rows = this._mapUserForTenantForRows(
       rows,
@@ -1067,6 +1118,88 @@ export default class UserRepository {
     );
 
     return { rows, count };
+  }
+
+  /**
+   * Dedicated LEAN reader for the CSV/PDF/Excel export. The export only renders
+   * Name / Email / Phone / Roles, so we skip the whole list enrichment pipeline
+   * (no avatars, no settings, no assignedClients/PostSites, no per-row re-fetch).
+   * One query: users joined to their current-tenant tenantUser (excluding
+   * securityGuard), selecting just the four exported columns + roles.
+   */
+  static async findAllForExport(
+    { filter }: { filter?: any },
+    options: IRepositoryOptions,
+  ) {
+    const transaction = SequelizeRepository.getTransaction(options);
+    const currentTenant = SequelizeRepository.getCurrentTenant(options);
+
+    const excludeSecurityGuardRole = () => {
+      if (getConfig().DATABASE_DIALECT === 'mysql') {
+        return Sequelize.where(
+          Sequelize.fn(
+            'IFNULL',
+            Sequelize.fn(
+              'JSON_CONTAINS',
+              Sequelize.col('tenants.roles'),
+              '"securityGuard"',
+            ),
+            0,
+          ),
+          0,
+        );
+      }
+      return { roles: { [Op.not]: { [Op.contains]: ['securityGuard'] } } } as any;
+    };
+
+    const whereAnd: Array<any> = [];
+    if (filter) {
+      if (filter.fullName) {
+        whereAnd.push(SequelizeFilterUtils.ilikeIncludes('user', 'fullName', filter.fullName));
+      }
+      if (filter.email) {
+        whereAnd.push(SequelizeFilterUtils.ilikeIncludes('user', 'email', filter.email));
+      }
+    }
+
+    const rows = await options.database.user.findAll({
+      attributes: ['id', 'fullName', 'firstName', 'lastName', 'email', 'phoneNumber'],
+      where: { [Op.and]: whereAnd },
+      include: [
+        {
+          model: options.database.tenantUser,
+          as: 'tenants',
+          attributes: ['userId', 'roles'],
+          required: true,
+          where: {
+            [Op.and]: [
+              { tenantId: currentTenant.id },
+              excludeSecurityGuardRole(),
+            ],
+          },
+        },
+      ],
+      order: [['email', 'ASC']],
+      transaction,
+    });
+
+    return rows.map((record) => {
+      const plain: any = record.get({ plain: true });
+      const tenantUser = Array.isArray(plain.tenants) ? plain.tenants[0] : null;
+      let roles: any = tenantUser ? tenantUser.roles : [];
+      if (typeof roles === 'string') {
+        try { roles = JSON.parse(roles); } catch (e) { roles = []; }
+      }
+      return {
+        id: plain.id,
+        fullName: plain.fullName,
+        firstName: plain.firstName,
+        lastName: plain.lastName,
+        email: plain.email,
+        phoneNumber: plain.phoneNumber,
+        roles: Array.isArray(roles) ? roles : [],
+      };
+    });
   }
 
   static async findAllAutocomplete(
@@ -1629,6 +1762,26 @@ export default class UserRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN enricher for the office-users LIST path. The `tenants` relation (with
+   * tenant{id}, assignedClients{id,name}, assignedPostSites{id,companyName}) is
+   * already eager-loaded by findAndCountAll's include, so we just serialize each
+   * row to plain — NO per-row getTenants()/getAvatars() round-trips and NO file
+   * signing. _mapUserForTenant then reduces this to the consumed shape. The full
+   * per-row enrichment (avatars, tenant settings) stays in findById.
+   */
+  static _fillForList(rows) {
+    if (!rows) {
+      return rows;
+    }
+    return rows.map((record) => {
+      const output: any = record.get({ plain: true });
+      // tenants already populated by the eager include; ensure the key exists.
+      output.tenants = output.tenants || [];
+      return output;
+    });
   }
 
   static async _fillWithRelationsAndFiles(

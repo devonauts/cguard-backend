@@ -72,13 +72,27 @@ export async function listTenants(req: Request): Promise<any> {
   });
 
   // Seats per tenant = number of tenantUser rows (one billable seat each).
-  const rows = await Promise.all(
-    tenants.map(async (t: any) => {
-      const seats = await database.tenantUser.count({
-        where: { tenantId: t.id },
-      });
-      return toTenantRow(t, seats);
-    }),
+  // Previously this ran one count() PER tenant (N+1). Now it's ONE grouped
+  // count over just the page's tenant ids, mapped back in JS.
+  const ids = tenants.map((t: any) => t.id);
+  const seatsById: Record<string, number> = {};
+  if (ids.length) {
+    const grouped = await database.tenantUser.findAll({
+      attributes: [
+        'tenantId',
+        [database.Sequelize.fn('COUNT', database.Sequelize.col('id')), 'cnt'],
+      ],
+      where: { tenantId: { [Op.in]: ids } },
+      group: ['tenantId'],
+      raw: true,
+    });
+    for (const g of grouped as any[]) {
+      seatsById[g.tenantId] = Number(g.cnt) || 0;
+    }
+  }
+
+  const rows = tenants.map((t: any) =>
+    toTenantRow(t, seatsById[t.id] || 0),
   );
 
   return {
@@ -98,10 +112,28 @@ async function findTenantOr404(req: Request, id: string): Promise<any> {
 }
 
 /**
- * Count rows of every tenant-scoped model for a tenant. We iterate all loaded
- * Sequelize models and, for each that declares a `tenantId` attribute, run a
- * scoped count. Counting is best-effort — any model that errors is skipped so
- * one bad table never breaks the whole detail view.
+ * The handful of tenant-scoped models worth counting in the detail view. The
+ * previous implementation iterated EVERY loaded Sequelize model (~80+) and ran
+ * a scoped count on each that had a `tenantId` column — dozens of COUNT queries
+ * per detail open, most of them noise (pivots, audit logs, config tables). This
+ * curated allow-list covers the meaningful entities and keeps the `counts`
+ * shape, at a fraction of the query cost.
+ */
+const COUNT_MODELS = [
+  'tenantUser',
+  'securityGuard',
+  'station',
+  'businessInfo',
+  'incident',
+  'videoCamera',
+  'alarmPanel',
+  'alarmCase',
+] as const;
+
+/**
+ * Count rows of the curated tenant-scoped models for a tenant. Counting is
+ * best-effort — any model that is missing or errors is skipped so one bad
+ * table never breaks the whole detail view.
  */
 async function tenantScopedCounts(
   database: any,
@@ -109,8 +141,9 @@ async function tenantScopedCounts(
 ): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
   const models = database.sequelize?.models || {};
-  for (const name of Object.keys(models)) {
+  for (const name of COUNT_MODELS) {
     const model = models[name];
+    if (!model) continue;
     try {
       const attrs = model.getAttributes ? model.getAttributes() : {};
       if (!('tenantId' in attrs)) continue;
@@ -140,17 +173,29 @@ export async function getTenantDetail(req: Request, id: string): Promise<any> {
   return {
     ...row,
     phone: tenant.phone ?? null,
+    landline: tenant.landline ?? null,
     address: tenant.address ?? null,
+    addressLine2: tenant.addressLine2 ?? null,
+    postalCode: tenant.postalCode ?? null,
     city: tenant.city ?? null,
     country: tenant.country ?? null,
+    latitude: tenant.latitude ?? null,
+    longitude: tenant.longitude ?? null,
     timezone: tenant.timezone ?? null,
     taxNumber: tenant.taxNumber ?? null,
     businessTitle: tenant.businessTitle ?? null,
+    licenseNumber: tenant.licenseNumber ?? null,
     website: tenant.website ?? null,
+    extraLines: tenant.extraLines ?? null,
+    logoId: tenant.logoId ?? null,
+    // The detail modal reads planStripeCustomerId directly; keep the legacy
+    // stripeCustomerId alias too so existing consumers don't break.
+    planStripeCustomerId: tenant.planStripeCustomerId ?? null,
     stripeCustomerId: tenant.planStripeCustomerId ?? null,
     stripeSubscriptionId: tenant.stripeSubscriptionId ?? null,
     implementationPaidAt: tenant.implementationPaidAt ?? null,
     suspensionReason: tenant.suspensionReason ?? null,
+    updatedAt: tenant.updatedAt ?? null,
     counts,
     billing,
   };

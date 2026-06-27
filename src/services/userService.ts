@@ -10,14 +10,12 @@ export default class UserService {
   }
 
   async exportToFile(format, filter = {}) {
-    const { rows } = await UserRepository.findAndCountAll(
-      { filter, limit: 0, offset: 0, orderBy: 'email_ASC' },
+    // LEAN export: dedicated reader that fetches only Name/Email/Phone/Roles and
+    // already excludes securityGuard users in the WHERE — no list enrichment,
+    // no avatars/settings/pivot re-fetch, no JS post-filter.
+    const filteredRows = await UserRepository.findAllForExport(
+      { filter },
       this.options,
-    );
-
-    // Exclude security guards from exports
-    const filteredRows = (rows || []).filter(
-      (r) => !((r.roles || []).includes('securityGuard')),
     );
 
     if (format === 'pdf') {

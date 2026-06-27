@@ -5,6 +5,7 @@ import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import Roles from '../../security/roles';import FileRepository from './fileRepository';
 import { IRepositoryOptions } from './IRepositoryOptions';
+import { batchSignFiles } from '../utils/listQuery';
 
 const Op = Sequelize.Op;
 
@@ -533,8 +534,12 @@ class VisitorLogRepository {
     return options.database.visitorLog.count({ where: { ...filter, tenantId: tenant.id }, transaction });
   }
 
-  static async findAndCountAll({ filter, limit = 0, offset = 0, orderBy = '' }, options: IRepositoryOptions) {
+  static async findAndCountAll({ filter, limit = 0, offset = 0, orderBy = '', withPhotos = undefined }: any, options: IRepositoryOptions) {
     const tenant = SequelizeRepository.getCurrentTenant(options);
+    // The worker-app visitor list renders idPhoto/facePhoto thumbnails AND opens the
+    // full detail straight from the list row (no per-row findById), so it opts in via
+    // ?withPhotos=1. The CRM list shows NO photos, so we skip signing entirely there.
+    const wantPhotos = withPhotos === '1' || withPhotos === 1 || withPhotos === true || withPhotos === 'true';
 
     let whereAnd: Array<any> = [];
     let include = [];
@@ -642,13 +647,23 @@ class VisitorLogRepository {
     let { rows, count } = await options.database.visitorLog.findAndCountAll({
       where,
       include,
+      // Explicit whitelist (never SELECT *). Every column here is rendered by the
+      // CRM list/export and/or the worker-app visitor card; importHash is the only
+      // non-rendered scalar and is intentionally dropped from the list.
+      attributes: [
+        'id', 'visitDate', 'lastName', 'firstName', 'idNumber', 'reason',
+        'exitTime', 'numPeople', 'clientId', 'postSiteId', 'stationId',
+        'stationName', 'placeType', 'idType', 'personVisited', 'company',
+        'vehiclePlate', 'vehicleType', 'tagNumber', 'archived', 'phone',
+        'birthDate', 'idExpiry', 'createdById', 'createdAt',
+      ],
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
       order: orderBy ? [orderBy.split('_')] : [['createdAt', 'DESC']],
       transaction: SequelizeRepository.getTransaction(options),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(rows, options);
+    rows = await this._fillForList(rows, wantPhotos, options);
 
     return { rows, count };
   }
@@ -691,6 +706,67 @@ class VisitorLogRepository {
     }
 
     await AuditLogRepository.log({ entityName: 'visitorLog', entityId: record.id, action, values }, options);
+  }
+
+  // LEAN list fill (see backend/docs/payload-perf-plan.md). Replaces the per-row
+  // file.findAll x2 + clientAccount/businessInfo/station findByPk x3 (the ~5N N+1
+  // the old _fillWithRelationsAndFilesForRows ran). Here every relation is fetched
+  // in ONE batched query over all row ids and grouped in JS; photos are signed in
+  // one batched query ONLY when the caller opts in (worker-app ?withPhotos=1).
+  // The CRM list renders no thumbnails, so it pays nothing for files.
+  static async _fillForList(rows, wantPhotos: boolean, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+    const transaction = SequelizeRepository.getTransaction(options);
+
+    const outputs = rows.map((r) => r.get({ plain: true }));
+
+    // 1) Client labels — only columns the CRM list reads (name/lastName/commercialName).
+    const clientIds = Array.from(new Set(outputs.map((o) => o.clientId).filter(Boolean)));
+    const clients = clientIds.length
+      ? await options.database.clientAccount.findAll({
+          where: { id: { [Op.in]: clientIds } },
+          attributes: ['id', 'name', 'lastName', 'commercialName'],
+          transaction,
+        })
+      : [];
+    const clientById = new Map(clients.map((c: any) => [String(c.id), c.get({ plain: true })]));
+
+    // 2) Post-site labels — companyName is the only field the list label uses.
+    const postSiteIds = Array.from(new Set(outputs.map((o) => o.postSiteId).filter(Boolean)));
+    const posts = postSiteIds.length
+      ? await options.database.businessInfo.findAll({
+          where: { id: { [Op.in]: postSiteIds } },
+          attributes: ['id', 'companyName', 'clientAccountId'],
+          transaction,
+        })
+      : [];
+    const postById = new Map(posts.map((p: any) => [String(p.id), p.get({ plain: true })]));
+
+    // 3) Station labels — stationName is the only field the list/detail reads.
+    const stationIds = Array.from(new Set(outputs.map((o) => o.stationId).filter(Boolean)));
+    const stations = stationIds.length
+      ? await options.database.station.findAll({
+          where: { id: { [Op.in]: stationIds } },
+          attributes: ['id', 'stationName', 'postSiteId'],
+          transaction,
+        })
+      : [];
+    const stationById = new Map(stations.map((s: any) => [String(s.id), s.get({ plain: true })]));
+
+    for (const output of outputs) {
+      output.client = output.clientId ? (clientById.get(String(output.clientId)) || null) : null;
+      output.postSite = output.postSiteId ? (postById.get(String(output.postSiteId)) || null) : null;
+      output.station = output.stationId ? (stationById.get(String(output.stationId)) || null) : null;
+    }
+
+    // 4) Photos — ONE batched file query each, signed, only for the worker-app.
+    //    The CRM never renders these, so it skips signing entirely.
+    if (wantPhotos) {
+      await batchSignFiles(options.database, outputs, 'visitorLog', 'idPhoto');
+      await batchSignFiles(options.database, outputs, 'visitorLog', 'facePhoto');
+    }
+
+    return outputs;
   }
 
   static async _fillWithRelationsAndFilesForRows(rows, options: IRepositoryOptions) {

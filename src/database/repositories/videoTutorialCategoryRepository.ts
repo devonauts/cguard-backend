@@ -247,8 +247,21 @@ class VideoTutorialCategoryRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list: EAGER-LOAD videosInCategory here (scoped) so the list no longer
+    // calls record.getVideosInCategory() once per row (N+1). findById keeps the
+    // unscoped per-record getter.
     let include = [
-      
+      {
+        model: options.database.videoTutorial,
+        as: 'videosInCategory',
+        attributes: [
+          'id',
+          'videoTutorialName',
+          'videoTutorialLink',
+          'videoTutorialCategoryId',
+        ],
+        required: false,
+      },
     ];
 
     whereAnd.push({
@@ -308,6 +321,7 @@ class VideoTutorialCategoryRepository {
       count,
     } = await options.database.videoTutorialCategory.findAndCountAll({
       where,
+      attributes: ['id', 'categoryName', 'createdAt', 'updatedAt'],
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
@@ -319,12 +333,20 @@ class VideoTutorialCategoryRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN: videosInCategory is eager-loaded above (ONE query) instead of one
+    // getVideosInCategory() per row. Same { ..., videosInCategory } shape.
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
+  }
+
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+    return rows.map((r) => {
+      const output: any = r.get({ plain: true });
+      if (!output.videosInCategory) output.videosInCategory = [];
+      return output;
+    });
   }
 
   static async findAllAutocomplete(query, limit, options: IRepositoryOptions) {

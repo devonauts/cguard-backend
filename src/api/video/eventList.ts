@@ -15,9 +15,31 @@ export default async (req, res) => {
     if (req.query && req.query.deviceId) where.videoDeviceId = req.query.deviceId;
     if (req.query && req.query.type) where.type = req.query.type;
 
+    // Lean list: explicit columns, and DROP the `camera` include — the events
+    // page resolves camera names from a separate cameras() fetch keyed by
+    // videoCameraId, so the joined camera object was never read.
     const rows = await db.videoEvent.findAll({
       where,
-      include: [{ model: db.videoCamera, as: 'camera', required: false }],
+      attributes: [
+        'id',
+        'videoCameraId',
+        'videoDeviceId',
+        'type',
+        'severity',
+        'at',
+        'title',
+        'description',
+        'status',
+        'acknowledgedById',
+        'incidentId',
+        'videoClipId',
+        'stationId',
+        'postSiteId',
+        'tenantId',
+        'createdById',
+        'createdAt',
+        'updatedAt',
+      ],
       order: [['at', 'DESC']],
     });
 

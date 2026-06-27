@@ -387,10 +387,13 @@ class InsuranceRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN list path: the insurance list renders provider/policyNumber/validFrom/
+    // validUntil. The old per-row _fill ran a file.findAll + signed-URL (getDocument)
+    // PER ROW for the policy document, which the list never renders as a thumbnail.
+    // _fillForList preserves the row shape (keeps the `document` key present but
+    // empty) and drops that per-row signing. The full signed `document` stays on
+    // findById → _fillWithRelationsAndFiles.
+    rows = this._fillForList(rows);
 
     return { rows, count };
   }
@@ -475,6 +478,20 @@ class InsuranceRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN list enricher — preserves the row shape (keeps the `document` key present
+   * but empty; the list renders no file thumbnail) and does ZERO per-row file
+   * signing. Full signed `document` stays in findById.
+   */
+  static _fillForList(rows) {
+    if (!rows || !rows.length) return rows;
+    return rows.map((record) => {
+      const output: any = record.get({ plain: true });
+      output.document = [];
+      return output;
+    });
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

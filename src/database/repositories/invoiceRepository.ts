@@ -197,9 +197,25 @@ class InvoiceRepository {
   static async findAndCountAll({ filter, limit = 0, offset = 0, orderBy = '' }, options: IRepositoryOptions) {
     const tenant = SequelizeRepository.getCurrentTenant(options);
     let whereAnd: Array<any> = [];
+    // LEAN list. The list row only renders header/meta + client & site name; it
+    // never reads the big items/payments JSON or the notes blob (those are loaded
+    // on row-open via findById, which stays FULL). Scope the includes to the
+    // identity columns and drop the businessInfo `description`/`serviceConfig`
+    // blobs. Every attribute below is verified against the model files.
     let include = [
-      { model: options.database.clientAccount, as: 'client', paranoid: false },
-      { model: options.database.postSite, as: 'postSite', paranoid: false },
+      {
+        model: options.database.clientAccount,
+        as: 'client',
+        paranoid: false,
+        attributes: ['id', 'name', 'lastName', 'commercialName', 'email', 'phoneNumber'],
+      },
+      {
+        // database.postSite is an alias for businessInfo (see models/index.ts).
+        model: options.database.postSite,
+        as: 'postSite',
+        paranoid: false,
+        attributes: ['id', 'companyName', 'contactEmail', 'contactPhone'],
+      },
     ];
 
     whereAnd.push({ tenantId: tenant.id });
@@ -220,6 +236,12 @@ class InvoiceRepository {
 
     const { rows, count } = await options.database.invoice.findAndCountAll({
       where,
+      // Drop the big JSON/text blobs from the LIST SELECT: items + payments
+      // (DataTypes.JSON line-item / payment arrays) and the notes text. They are
+      // never rendered in a list row; findById keeps them for the detail view.
+      attributes: {
+        exclude: ['items', 'payments', 'notes'],
+      },
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,

@@ -6,6 +6,7 @@ import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';
 import FileRepository from './fileRepository';
 import FileStorage from '../../services/file/fileStorage';
+import { batchSignFiles } from '../utils/listQuery';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -431,6 +432,19 @@ class CertificationRepository {
       rows,
       count,
     } = await options.database.certification.findAndCountAll({
+      // LEAN list: explicit attribute whitelist (was SELECT *, which shipped
+      // legacy imageUrl/iconUrl STRING(2083) columns + importHash the table
+      // never renders). The CRM Mobil page renders only these fields plus the
+      // image/icon thumbnails (signed below, batched).
+      attributes: [
+        'id',
+        'title',
+        'code',
+        'description',
+        'acquisitionDate',
+        'expirationDate',
+        'createdAt',
+      ],
       where,
       include,
       limit: limit ? Number(limit) : undefined,
@@ -443,12 +457,35 @@ class CertificationRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // Was per-row getImage()/getIcon() + fillDownloadUrl (N+1, ~2N queries).
+    // _fillForList signs both thumbnails in 2 BATCHED file queries total.
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
+  }
+
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+
+    const outputs = rows.map((r) => r.get({ plain: true }));
+
+    // The CRM Mobil certifications table renders both the image and icon as
+    // clickable thumbnails, so keep both — but sign them in ONE file query each
+    // over all row ids (batchSignFiles) instead of per row.
+    await batchSignFiles(
+      options.database,
+      outputs,
+      options.database.certification.getTableName(),
+      'image',
+    );
+    await batchSignFiles(
+      options.database,
+      outputs,
+      options.database.certification.getTableName(),
+      'icon',
+    );
+
+    return outputs;
   }
 
   static async findAllAutocomplete(query, limit, options: IRepositoryOptions) {

@@ -14,10 +14,35 @@ export default async (req, res) => {
     if (req.query && req.query.deviceId) where.videoDeviceId = req.query.deviceId;
     if (req.query && req.query.status) where.status = req.query.status;
 
+    // Lean list: explicit columns, drop the unused `camera` include, and never
+    // ship the share secret (shareToken/shareExpiresAt) in a list payload — the
+    // public viewer route looks clips up by token directly. Cap the result set.
+    const rawLimit = parseInt(String((req.query || {}).limit), 10);
+    const limit =
+      Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 200;
+
     const rows = await db.videoClip.findAll({
       where,
-      include: [{ model: db.videoCamera, as: 'camera', required: false }],
+      attributes: [
+        'id',
+        'videoCameraId',
+        'videoDeviceId',
+        'startAt',
+        'endAt',
+        'durationSec',
+        'url',
+        'thumbnailUrl',
+        'label',
+        'status',
+        'incidentId',
+        'alarmCaseId',
+        'createdById',
+        'tenantId',
+        'createdAt',
+        'updatedAt',
+      ],
       order: [['createdAt', 'DESC']],
+      limit,
     });
 
     const out = (rows || []).map((r: any) =>

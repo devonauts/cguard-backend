@@ -10,6 +10,102 @@ const Op = Sequelize.Op;
 
 class PatrolLogRepository {
 
+  // Resolve the set of stationIds a non-admin customer is allowed to see, or
+  // `null` when the current user is an admin (no station restriction). A
+  // patrolLog row has no station column of its own — it has `patrolId` (FK to
+  // patrol) and `scannedById` — so customer scoping is applied through the
+  // PARENT patrol's `stationId`. Mirrors reportRepository._resolveAllowedStationIds.
+  static async _resolveAllowedStationIds(options: IRepositoryOptions) {
+    const currentTenant = SequelizeRepository.getCurrentTenant(options);
+    const transaction = SequelizeRepository.getTransaction(options);
+
+    const currentUser = SequelizeRepository.getCurrentUser(options);
+    if (!currentUser) {
+      return null;
+    }
+
+    // Admins are unrestricted.
+    let isAdmin = false;
+    if (currentUser.tenants) {
+      const tenantUserRec = currentUser.tenants.find(
+        (t) => t.tenant && t.tenant.id === currentTenant.id && t.status === 'active',
+      );
+      if (tenantUserRec) {
+        let roles: any = [];
+        if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+        else if (typeof tenantUserRec.roles === 'string') {
+          try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+        }
+        isAdmin = roles.includes(
+          (await import('../../security/roles')).default.values.admin,
+        );
+      }
+    }
+    if (isAdmin) {
+      return null;
+    }
+
+    // Resolve the customer's clientAccountId. Per-request auth may not carry it
+    // on currentUser (only sign-in sets it), so fall back to the user link.
+    let clientAccountId = (currentUser as any).clientAccountId;
+    if (!clientAccountId) {
+      const ca = await options.database.clientAccount.findOne({
+        where: { userId: currentUser.id, tenantId: currentTenant.id },
+        attributes: ['id'],
+        transaction,
+      });
+      clientAccountId = ca && ca.id;
+    }
+
+    // Also honour any explicit tenantUser assignedPostSites / assignedClients.
+    let allowedPostSiteIds: string[] = [];
+    let allowedClientIds: string[] = [];
+    try {
+      const tenantUser = await options.database.tenantUser.findOne({
+        where: { tenantId: currentTenant.id, userId: currentUser.id },
+        include: [
+          { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] },
+          { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] },
+        ],
+        transaction,
+      });
+      allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+      allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+    } catch (e) {
+      // ignore — fall back to clientAccount resolution below
+    }
+
+    if (clientAccountId && !allowedClientIds.includes(clientAccountId)) {
+      allowedClientIds.push(clientAccountId);
+    }
+
+    if (!allowedPostSiteIds.length && allowedClientIds.length) {
+      const posts = await options.database.businessInfo.findAll({
+        where: { tenantId: currentTenant.id, clientAccountId: { [Op.in]: allowedClientIds } },
+        attributes: ['id'],
+        transaction,
+      });
+      allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+    }
+
+    // Collect stations the customer owns: by postSite OR by direct stationOriginId.
+    const stationOr: any[] = [];
+    if (allowedPostSiteIds.length) stationOr.push({ postSiteId: { [Op.in]: allowedPostSiteIds } });
+    if (allowedClientIds.length) stationOr.push({ stationOriginId: { [Op.in]: allowedClientIds } });
+
+    if (!stationOr.length) {
+      return [];
+    }
+
+    const stations = await options.database.station.findAll({
+      where: { tenantId: currentTenant.id, [Op.or]: stationOr },
+      attributes: ['id'],
+      transaction,
+    });
+
+    return (stations || []).map((s) => s.id).filter(Boolean);
+  }
+
   static async create(data, options: IRepositoryOptions) {
     const currentUser = SequelizeRepository.getCurrentUser(
       options,
@@ -189,6 +285,18 @@ class PatrolLogRepository {
       throw new Error404();
     }
 
+    // Customer scoping: a non-admin customer may only open a patrolLog whose
+    // PARENT patrol belongs to one of their stations. Without this the
+    // tenant-only `where` above lets a customer fetch ANY patrolLog by id.
+    const allowedStationIds = await this._resolveAllowedStationIds(options);
+    if (allowedStationIds !== null) {
+      const plain = record.get({ plain: true });
+      const stationId = plain.patrol && plain.patrol.stationId;
+      if (!stationId || !allowedStationIds.includes(stationId)) {
+        throw new Error404();
+      }
+    }
+
     return this._fillWithRelationsAndFiles(record, options);
   }
 
@@ -260,15 +368,32 @@ class PatrolLogRepository {
     );
 
     let whereAnd: Array<any> = [];
+
+    // Customer scoping: restrict a non-admin customer to patrolLogs whose PARENT
+    // patrol belongs to one of their stations. `null` => admin (unrestricted);
+    // `[]` => no accessible stations. patrolLog has no station column of its own,
+    // so we filter via the joined `patrol` association (required: true makes the
+    // join filter rows out without changing the returned row shape).
+    const allowedStationIds = await this._resolveAllowedStationIds(options);
+    if (allowedStationIds !== null && !allowedStationIds.length) {
+      return { rows: [], count: 0 };
+    }
+
     let include = [
       {
         model: options.database.patrol,
         as: 'patrol',
+        ...(allowedStationIds !== null
+          ? {
+              where: { stationId: { [Op.in]: allowedStationIds } },
+              required: true,
+            }
+          : {}),
       },
       {
         model: options.database.user,
         as: 'scannedBy',
-      },      
+      },
     ];
 
     whereAnd.push({

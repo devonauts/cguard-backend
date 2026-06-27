@@ -11,6 +11,38 @@ import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
 
+// Explicit column whitelist for the LEAN list path (see findAndCountAll).
+// Every entry is verified against src/database/models/clientAccount.ts. Only
+// scalars the list/consumers actually read — no big blobs, no file relations.
+const LIST_ATTRIBUTES = [
+  'id',
+  'name',
+  'commercialName',
+  'lastName',
+  'email',
+  'phoneNumber',
+  'personType',
+  'documentNumber',
+  'address',
+  'addressComplement',
+  'zipCode',
+  'city',
+  'country',
+  'faxNumber',
+  'landline',
+  'website',
+  'latitude',
+  'longitude',
+  'useSameAddressForBilling',
+  'userId',
+  'categoryIds',
+  'active',
+  'onboardingStatus',
+  'createdAt',
+  'updatedAt',
+  'deletedAt',
+];
+
 class ClientAccountRepository {
 
   static async create(data, options: IRepositoryOptions) {
@@ -769,6 +801,14 @@ class ClientAccountRepository {
       rows,
       count,
     } = await options.database.clientAccount.findAndCountAll({
+      // Explicit attribute whitelist — never SELECT *. The clients list (CRM
+      // table + mobile cards + the visitor/import client selects) renders
+      // name/commercialName/lastName/email/phoneNumber/address/active/
+      // onboardingStatus; clientService also reads zipCode/addressComplement and
+      // checkCategoryUsage reads categoryIds. We keep only those + cheap scalars,
+      // and DROP the logoUrl/placePictureUrl file relations + the category
+      // findAll (none are rendered in any list surface — they are detail-only).
+      attributes: LIST_ATTRIBUTES,
       where,
       include,
       limit: limit ? Number(limit) : undefined,
@@ -780,10 +820,7 @@ class ClientAccountRepository {
         options,
       ),
     });
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -901,6 +938,32 @@ class ClientAccountRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN enricher for the LIST path. The clients list renders only scalar
+   * fields (name/commercialName/lastName/email/phoneNumber/address/active/
+   * onboardingStatus) + uses categoryIds in checkCategoryUsage — it renders NO
+   * logo/place thumbnails and NO resolved `categories` array. The old per-row
+   * `_fillWithRelationsAndFiles` ran a category.findAll + getLogoUrl (file query
+   * + S3 sign) + getPlacePictureUrl (file query + sign) PER ROW — ~3 queries +
+   * 2 signings per row over a table the CRM fetches whole. This does ZERO extra
+   * queries: just maps each row to plain and keeps the file keys present (empty)
+   * so the response shape is stable. The full detail enrichment (categories +
+   * signed logoUrl/placePictureUrl) stays in findById → _fillWithRelationsAndFiles.
+   */
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+
+    return rows.map((record) => {
+      const output: any = record.get({ plain: true });
+      // Keep the keys present (same shape as detail) but empty — the list signs
+      // no files and resolves no categories.
+      output.logoUrl = [];
+      output.placePictureUrl = [];
+      output.categories = [];
+      return output;
+    });
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

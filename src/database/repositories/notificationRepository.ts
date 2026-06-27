@@ -277,12 +277,13 @@ class NotificationRepository {
     );
 
     let whereAnd: Array<any> = [];
-    let include = [
-      {
-        model: options.database.user,
-        as: 'whoCreatedTheNotification',
-      },      
-    ];
+    // LEAN list: the only consumer of this list is the worker-app GuardNotices
+    // screen (worker-app/src/pages/guard/GuardNotices.tsx via
+    // notificationService.list), which reads title/body/readStatus/createdAt
+    // only. The CRM has NO consumer of this list. So drop the
+    // whoCreatedTheNotification user join, the deviceId M2M getter, and the
+    // imageUrl file signing from the list path (all kept on findById).
+    let include = [];
 
     whereAnd.push({
       tenantId: tenant.id,
@@ -387,6 +388,21 @@ class NotificationRepository {
       rows,
       count,
     } = await options.database.notification.findAndCountAll({
+      // LEAN list: explicit attribute whitelist (was SELECT *). Keep the small
+      // scalar columns that define the notice shape; the consumer (worker
+      // GuardNotices) reads title/body/readStatus/createdAt. targetType/
+      // targetId/deliveryStatus are tiny TEXT columns kept for shape parity.
+      attributes: [
+        'id',
+        'title',
+        'body',
+        'targetType',
+        'targetId',
+        'deliveryStatus',
+        'readStatus',
+        'createdAt',
+        'updatedAt',
+      ],
       where,
       include,
       limit: limit ? Number(limit) : undefined,
@@ -399,10 +415,10 @@ class NotificationRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // Was per-row getDeviceId() (M2M) + getImageUrl()+fillDownloadUrl (file) +
+    // whoCreatedTheNotification cleanup — ~3N queries/page for fields no list
+    // consumer reads. The list now returns the plain scoped rows directly.
+    rows = rows.map((r) => r.get({ plain: true }));
 
     return { rows, count };
   }

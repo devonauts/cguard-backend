@@ -555,10 +555,12 @@ class ServiceRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN list path: the services table (MobilPage.tsx) renders only title/
+    // description/price/publishedOnMobile — NO icon/image thumbnails. The old
+    // per-row _fill ran TWO file.findAll + signed-URL calls PER ROW (iconImage +
+    // serviceImages) for files no surface in either app reads. _fillForList drops
+    // both signings; full enrichment stays in findById → _fillWithRelationsAndFiles.
+    rows = this._fillForList(rows);
 
     return { rows, count };
   }
@@ -644,6 +646,21 @@ class ServiceRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN list enricher — preserves the row shape (keeps the iconImage/serviceImages
+   * keys present but empty; the list renders no thumbnails) and does ZERO per-row
+   * file signing. Full file enrichment stays in findById.
+   */
+  static _fillForList(rows) {
+    if (!rows || !rows.length) return rows;
+    return rows.map((record) => {
+      const output: any = record.get({ plain: true });
+      output.iconImage = [];
+      output.serviceImages = [];
+      return output;
+    });
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

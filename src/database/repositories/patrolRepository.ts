@@ -197,6 +197,94 @@ class PatrolRepository {
       throw new Error404();
     }
 
+    // ── Customer ACL ─────────────────────────────────────────────────────────
+    // Mirror the list-path scoping: a non-admin caller may only open a patrol
+    // whose station belongs to their own client account. Without this the
+    // detail endpoint (/tenant/:tenantId/patrol/:id) leaks any patrol by id.
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && (currentUser as any).tenants) {
+        const tenantUserRec = (currentUser as any).tenants.find(
+          (t) => t.tenant && t.tenant.id === currentTenant.id && t.status === 'active',
+        );
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes(
+            (await import('../../security/roles')).default.values.admin,
+          );
+        }
+      }
+
+      if (!isAdmin) {
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: currentTenant.id, userId: currentUser.id },
+          include: [
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] },
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] },
+          ],
+          transaction,
+        });
+
+        let allowedPostSiteIds =
+          (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        const assignedClientIds =
+          (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+
+        if (!allowedPostSiteIds.length && !assignedClientIds.length) {
+          let clientAccountId = currentUser && (currentUser as any).clientAccountId;
+          if (!clientAccountId) {
+            const ca = await options.database.clientAccount.findOne({
+              where: { userId: currentUser.id, tenantId: currentTenant.id },
+              attributes: ['id'],
+              transaction,
+            });
+            clientAccountId = ca && ca.id;
+          }
+          if (clientAccountId) {
+            const posts = await options.database.businessInfo.findAll({
+              where: { tenantId: currentTenant.id, clientAccountId },
+              attributes: ['id'],
+              transaction,
+            });
+            allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+          }
+        } else if (assignedClientIds.length) {
+          const posts = await options.database.businessInfo.findAll({
+            where: { tenantId: currentTenant.id, clientAccountId: { [Op.in]: assignedClientIds } },
+            attributes: ['id'],
+            transaction,
+          });
+          allowedPostSiteIds = allowedPostSiteIds.concat(
+            (posts || []).map((p) => p.id).filter(Boolean),
+          );
+        }
+
+        let allowedStationIds: any[] = [];
+        if (allowedPostSiteIds.length) {
+          const stations = await options.database.station.findAll({
+            where: { tenantId: currentTenant.id, postSiteId: { [Op.in]: allowedPostSiteIds } },
+            attributes: ['id'],
+            transaction,
+          });
+          allowedStationIds = (stations || []).map((s) => s.id).filter(Boolean);
+        }
+
+        const patrolStationId = (record as any).stationId;
+        if (!patrolStationId || !allowedStationIds.includes(patrolStationId)) {
+          throw new Error404();
+        }
+      }
+    } catch (e) {
+      if (e instanceof Error404) throw e;
+      // Fail closed on unexpected ACL errors.
+      throw new Error404();
+    }
+
     return this._fillWithRelationsAndFiles(record, options);
   }
 
@@ -282,6 +370,106 @@ class PatrolRepository {
     whereAnd.push({
       tenantId: tenant.id,
     });
+
+    // ── Customer ACL ─────────────────────────────────────────────────────────
+    // patrolRead is granted to the `customer` role, but patrols are scoped only
+    // by tenantId above. Without this block a customer calling
+    // GET /tenant/:tenantId/patrol with no filter[station] would see EVERY
+    // client's patrols in the tenant. Patrols link to a client through
+    // station → businessInfo (postSite) → clientAccountId, so for non-admin
+    // callers restrict the result to stations belonging to the caller's own
+    // client account. Admin/staff are unaffected.
+    try {
+      const currentUser = SequelizeRepository.getCurrentUser(options);
+      let isAdmin = false;
+      if (currentUser && (currentUser as any).tenants) {
+        const tenantUserRec = (currentUser as any).tenants.find(
+          (t) => t.tenant && t.tenant.id === tenant.id && t.status === 'active',
+        );
+        if (tenantUserRec) {
+          let roles: any = [];
+          if (Array.isArray(tenantUserRec.roles)) roles = tenantUserRec.roles;
+          else if (typeof tenantUserRec.roles === 'string') {
+            try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
+          }
+          isAdmin = roles.includes(
+            (await import('../../security/roles')).default.values.admin,
+          );
+        }
+      }
+
+      if (!isAdmin) {
+        const transaction = SequelizeRepository.getTransaction(options);
+
+        const tenantUser = await options.database.tenantUser.findOne({
+          where: { tenantId: tenant.id, userId: currentUser.id },
+          include: [
+            { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id'] },
+            { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id'] },
+          ],
+          transaction,
+        });
+
+        let allowedPostSiteIds =
+          (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        const assignedClientIds =
+          (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+
+        // Customers carry no explicit assignedPostSites/assignedClients. Resolve
+        // their clientAccountId (token first, then user link) and expand to the
+        // postSites of that client. Mirrors incidentRepository's fallback.
+        if (!allowedPostSiteIds.length && !assignedClientIds.length) {
+          let clientAccountId = currentUser && (currentUser as any).clientAccountId;
+          if (!clientAccountId) {
+            const ca = await options.database.clientAccount.findOne({
+              where: { userId: currentUser.id, tenantId: tenant.id },
+              attributes: ['id'],
+              transaction,
+            });
+            clientAccountId = ca && ca.id;
+          }
+          if (clientAccountId) {
+            const posts = await options.database.businessInfo.findAll({
+              where: { tenantId: tenant.id, clientAccountId },
+              attributes: ['id'],
+              transaction,
+            });
+            allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+          }
+        } else if (assignedClientIds.length) {
+          // Staff with assigned clients: expand those clients to their postSites.
+          const posts = await options.database.businessInfo.findAll({
+            where: { tenantId: tenant.id, clientAccountId: { [Op.in]: assignedClientIds } },
+            attributes: ['id'],
+            transaction,
+          });
+          allowedPostSiteIds = allowedPostSiteIds.concat(
+            (posts || []).map((p) => p.id).filter(Boolean),
+          );
+        }
+
+        // Map allowed postSites → stations, then constrain patrol.stationId.
+        let allowedStationIds: any[] = [];
+        if (allowedPostSiteIds.length) {
+          const stations = await options.database.station.findAll({
+            where: { tenantId: tenant.id, postSiteId: { [Op.in]: allowedPostSiteIds } },
+            attributes: ['id'],
+            transaction,
+          });
+          allowedStationIds = (stations || []).map((s) => s.id).filter(Boolean);
+        }
+
+        if (!allowedStationIds.length) {
+          // Non-admin with no resolvable stations sees nothing (never all-tenant).
+          return { rows: [], count: 0 };
+        }
+
+        whereAnd.push({ stationId: { [Op.in]: allowedStationIds } });
+      }
+    } catch (e) {
+      // On any ACL resolution error, fail closed for safety rather than leaking.
+      return { rows: [], count: 0 };
+    }
 
     if (filter) {
       if (filter.id) {

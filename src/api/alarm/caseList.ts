@@ -21,9 +21,46 @@ export default async (req, res) => {
     const where: any = { tenantId };
     if (status) where.status = status;
 
+    // Lean list: explicit columns only (drop the stepProgress JSON blob, which
+    // is only rendered in the case detail), and scope the panel include to the
+    // two fields the queue renders (name + accountNumber). No limit clamp — the
+    // queue must show every open case for the chosen status.
     const cases = await db.alarmCase.findAll({
       where,
-      include: [{ model: db.alarmPanel, as: 'panel', required: false }],
+      attributes: [
+        'id',
+        'alarmPanelId',
+        'status',
+        'priority',
+        'category',
+        'title',
+        'assignedOperatorId',
+        'ackAt',
+        'dispatchAt',
+        'resolvedAt',
+        'closedAt',
+        'disposition',
+        'escalatedAt',
+        'slaLevel',
+        'ecvSatisfied',
+        'incidentId',
+        'dispatchId',
+        'postSiteId',
+        'stationId',
+        'customerId',
+        'tenantId',
+        'createdById',
+        'createdAt',
+        'updatedAt',
+      ],
+      include: [
+        {
+          model: db.alarmPanel,
+          as: 'panel',
+          required: false,
+          attributes: ['id', 'name', 'accountNumber'],
+        },
+      ],
       order: [
         ['priority', 'ASC'],
         ['createdAt', 'DESC'],

@@ -4,6 +4,7 @@ import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import FileRepository from './fileRepository';
+import { batchSignFiles } from '../utils/listQuery';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 const Op = Sequelize.Op;
@@ -280,8 +281,34 @@ class IncidentRepository {
           transaction,
         });
 
-        const allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
-        const allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+        let allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
+        let allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
+
+        // Customers have no explicit assignedPostSites/assignedClients. The per-
+        // request auth doesn't carry clientAccountId on currentUser (only sign-in
+        // sets it), so resolve it from the user link. Without this the list shows
+        // an incident (its findAndCountAll has the same fallback) but opening the
+        // detail 404s — the customer sees the row but can't open it.
+        if (!allowedPostSiteIds.length && !allowedClientIds.length) {
+          try {
+            let clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            if (!clientAccountId) {
+              const ca = await options.database.clientAccount.findOne({
+                where: { userId: currentUser.id, tenantId: currentTenant.id },
+                attributes: ['id'],
+                transaction,
+              });
+              clientAccountId = ca && ca.id;
+            }
+            if (clientAccountId) {
+              allowedClientIds = [clientAccountId];
+              const posts = await options.database.businessInfo.findAll({ where: { tenantId: currentTenant.id, clientAccountId }, attributes: ['id'], transaction });
+              allowedPostSiteIds = (posts || []).map((p) => p.id).filter(Boolean);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
 
         const incidentPlain = record.get({ plain: true });
 
@@ -367,30 +394,39 @@ class IncidentRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list (payload-perf-plan): scope every include to only the columns the
+    // CRM dispatcher list/public share view and the worker incident list+detail
+    // sheet actually render. The eager JOIN here already loads the relations, so
+    // the previous per-row `_fillWithRelationsAndFiles` re-fetch (6 getX() + a
+    // file query per row, ~7N queries/page) is pure waste — _fillForList below
+    // reuses these eager rows and signs imageUrl in ONE batched query.
+    // (stationIncidents alias maps to the same stationId as `station`; only
+    // `station` is consumed downstream, so the duplicate include is dropped.)
     let include = [
-      {
-        model: options.database.station,
-        as: 'stationIncidents',
-      },
       {
         model: options.database.incidentType,
         as: 'incidentType',
+        attributes: ['id', 'name'],
       },
       {
         model: options.database.clientAccount,
         as: 'client',
+        attributes: ['id', 'name', 'lastName'],
       },
       {
         model: options.database.station,
         as: 'station',
+        attributes: ['id', 'stationName'],
       },
       {
         model: options.database.businessInfo,
         as: 'site',
+        attributes: ['id', 'companyName', 'address'],
       },
       {
         model: options.database.securityGuard,
         as: 'guardName',
+        attributes: ['id', 'fullName'],
       },
     ];
 
@@ -588,10 +624,23 @@ class IncidentRepository {
         let allowedPostSiteIds = (tenantUser && tenantUser.assignedPostSites && tenantUser.assignedPostSites.map((c) => c.id)) || [];
         let allowedClientIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
 
-        // If no explicit assignments, allow access by token clientAccountId for customers
+        // Customers have no explicit assignedPostSites/assignedClients. The per-
+        // request auth doesn't carry clientAccountId on currentUser (only sign-in
+        // sets it), so resolve it from the user link — same fallback as findById.
+        // Without the clientAccount.findOne fallback the list comes back EMPTY for
+        // a customer whose token lacks clientAccountId, even though the detail path
+        // (with the fallback) would resolve their posts.
         if (!allowedPostSiteIds.length && !allowedClientIds.length) {
           try {
-            const clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            let clientAccountId = currentUser && (currentUser as any).clientAccountId;
+            if (!clientAccountId) {
+              const ca = await options.database.clientAccount.findOne({
+                where: { userId: currentUser.id, tenantId: tenant.id },
+                attributes: ['id'],
+                transaction: SequelizeRepository.getTransaction(options),
+              });
+              clientAccountId = ca && ca.id;
+            }
             if (clientAccountId) {
               allowedClientIds = [clientAccountId];
               const posts = await options.database.businessInfo.findAll({ where: { tenantId: tenant.id, clientAccountId }, attributes: ['id'], transaction: SequelizeRepository.getTransaction(options) });
@@ -627,6 +676,14 @@ class IncidentRepository {
       count,
     } = await options.database.incident.findAndCountAll({
       where,
+      // Drop list-irrelevant TEXT blobs (internalNotes/actionsTaken/action/
+      // importHash) — the CRM list/Excel and worker detail re-read those only
+      // from the full findById/detail fetch, never the list row. Everything the
+      // worker IncidentDetailSheet renders inline (subject/title/description/
+      // content/comments/location/priority/status/dates) is kept.
+      attributes: {
+        exclude: ['internalNotes', 'actionsTaken', 'action', 'importHash'],
+      },
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
@@ -638,12 +695,36 @@ class IncidentRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
+  }
+
+  /**
+   * LEAN list enricher — reuses the eager-loaded (scoped) relations already on
+   * each row and signs the incident evidence photos (imageUrl) for ALL rows in
+   * ONE batched file query, instead of the old per-row `_fillWithRelationsAndFiles`
+   * which re-fetched 6 relations + a file query per row. Keeps the exact consumed
+   * shape: imageUrl + incidentType/client/site/station/guardName.
+   * (The worker IncidentDetailSheet renders imageUrl thumbnails straight off the
+   * list row, so photos MUST be signed here — there is no separate detail fetch.)
+   * findById keeps the full _fillWithRelationsAndFiles.
+   */
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+
+    const outputs = rows.map((r) => r.get({ plain: true }));
+
+    // Sign evidence photos for every row in one file.findAll (batchSignFiles
+    // sets output.imageUrl to the signed descriptors per row id).
+    await batchSignFiles(
+      options.database,
+      outputs as any[],
+      options.database.incident.getTableName(),
+      'imageUrl',
+    );
+
+    return outputs;
   }
 
   static async findAllAutocomplete(query, limit, options: IRepositoryOptions) {

@@ -33,8 +33,19 @@ export default class EstimateService {
         const format = (getConfig() && getConfig().ESTIMATE_NUMBER_FORMAT) || 'numeric';
 
         try {
-          const allResult = await EstimateRepository.findAndCountAll({ filter: null, limit: 0 }, this.options);
-          const rows = (allResult && Array.isArray(allResult.rows)) ? allResult.rows : [];
+          // Lean: select ONLY the estimateNumber column for this tenant instead of
+          // the full findAndCountAll (which runs the client/postSite include joins
+          // and a COUNT just to compute the next number). The numeric/year max is
+          // still derived in JS because the formats aren't expressible as a single
+          // portable SQL MAX (digit-strip / YYYY-NNNN suffix).
+          const currentTenant = SequelizeRepository.getCurrentTenant(this.options);
+          const numberRows = await this.options.database.estimate.findAll({
+            where: { tenantId: currentTenant.id },
+            attributes: ['estimateNumber'],
+            raw: true,
+            transaction,
+          });
+          const rows = Array.isArray(numberRows) ? numberRows : [];
 
           if (format === 'year') {
             const year = (new Date()).getFullYear();

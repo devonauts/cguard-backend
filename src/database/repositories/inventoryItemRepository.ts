@@ -4,6 +4,7 @@ import Error404 from '../../errors/Error404';
 import SequelizeRepository from './sequelizeRepository';
 import AuditLogRepository from './auditLogRepository';
 import FileRepository from './fileRepository';
+import { batchSignFiles } from '../utils/listQuery';
 import { IRepositoryOptions } from './IRepositoryOptions';
 
 export default class InventoryItemRepository {
@@ -133,6 +134,11 @@ export default class InventoryItemRepository {
     const order: any[] = [[field || 'createdAt', direction || 'DESC']];
 
     const { rows, count } = await options.database.inventoryItem.findAndCountAll({
+      attributes: [
+        'id', 'name', 'type', 'brand', 'modelName', 'serialNumber',
+        'condition', 'status', 'notes', 'expirationDate',
+        'createdAt', 'updatedAt',
+      ],
       where,
       order,
       limit: Number(limit),
@@ -141,9 +147,27 @@ export default class InventoryItemRepository {
     });
 
     return {
-      rows: await Promise.all(rows.map((r) => this._fillWithRelationsAndFiles(r, options))),
+      rows: await this._fillForList(rows, options),
       count,
     };
+  }
+
+  /**
+   * LEAN list filler (payload-perf): the GlobalInventoryPage row expander renders
+   * photo thumbnails, so photos are KEPT but signed in ONE batched file query
+   * (batchSignFiles) instead of the per-row file.findAll of
+   * _fillWithRelationsAndFiles. findById keeps the per-row full filler.
+   */
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+    const output = rows.map((r: any) => r.get({ plain: true }));
+    await batchSignFiles(
+      options.database,
+      output,
+      options.database.inventoryItem.getTableName(),
+      'photos',
+    );
+    return output;
   }
 
   static async findAllAutocomplete(search, limit, options: IRepositoryOptions) {

@@ -248,11 +248,15 @@ class VideoTutorialRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list: scope the category include to the rendered columns (drop importHash
+    // + audit/timestamps the list never reads). findById keeps the unscoped detail.
     let include = [
       {
         model: options.database.videoTutorialCategory,
         as: 'videoTutorialCategory',
-      },      
+        attributes: ['id', 'categoryName'],
+        required: false,
+      },
     ];
 
     whereAnd.push({
@@ -330,6 +334,14 @@ class VideoTutorialRepository {
       count,
     } = await options.database.videoTutorial.findAndCountAll({
       where,
+      attributes: [
+        'id',
+        'videoTutorialName',
+        'videoTutorialLink',
+        'videoTutorialCategoryId',
+        'createdAt',
+        'updatedAt',
+      ],
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,

@@ -258,15 +258,23 @@ class CompletionOfTutorialRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list: scope both includes to identity columns only. The old list pulled
+    // the FULL securityGuard row (incl. JSON blobs availability/languages/skills/
+    // workRules + every PII column) and the full tutorial (incl. importHash) for
+    // every completion row. findById keeps the unscoped detail.
     let include = [
       {
         model: options.database.securityGuard,
         as: 'guardName',
+        attributes: ['id', 'fullName', 'governmentId', 'guardId'],
+        required: false,
       },
       {
         model: options.database.tutorial,
         as: 'checkedTutorial',
-      },      
+        attributes: ['id', 'tutorialName'],
+        required: false,
+      },
     ];
 
     whereAnd.push({
@@ -398,6 +406,17 @@ class CompletionOfTutorialRepository {
       count,
     } = await options.database.completionOfTutorial.findAndCountAll({
       where,
+      attributes: [
+        'id',
+        'dateTutorialStarted',
+        'tutorialStarted',
+        'wasCompleted',
+        'dateEndedTutorial',
+        'guardNameId',
+        'checkedTutorialId',
+        'createdAt',
+        'updatedAt',
+      ],
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,

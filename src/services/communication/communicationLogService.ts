@@ -122,6 +122,10 @@ export async function queryLogs(db: any, tenantId: string, q: LogQuery = {}) {
 
   const { rows, count } = await db.communicationLog.findAndCountAll({
     where,
+    // Exclude the heavy `providerResponse` JSON blob from the list payload — the
+    // admin Comunicaciones log feed never renders it (status/errorMessage carry
+    // the surfaced info). Kept in the DB / available to webhooks.
+    attributes: { exclude: ['providerResponse'] },
     order: [['createdAt', 'DESC']],
     limit,
     offset,

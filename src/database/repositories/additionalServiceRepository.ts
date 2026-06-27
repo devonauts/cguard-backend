@@ -254,11 +254,16 @@ class AdditionalServiceRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list: scope the station include to identity columns. The old list pulled
+    // the FULL station row per service — incl. big TEXT blobs (stationSchedule,
+    // geofencePolygon). findById keeps the unscoped detail.
     let include = [
       {
         model: options.database.station,
         as: 'stations',
-      },      
+        attributes: ['id', 'stationName'],
+        required: false,
+      },
     ];
 
     whereAnd.push({
@@ -354,6 +359,17 @@ class AdditionalServiceRepository {
       count,
     } = await options.database.additionalService.findAndCountAll({
       where,
+      attributes: [
+        'id',
+        'stationAditionalServiceName',
+        'dvr',
+        'dvrSerialCode',
+        'juegoDeCamarasInteriores',
+        'juegoDeCamarasExteriores',
+        'stationsId',
+        'createdAt',
+        'updatedAt',
+      ],
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,

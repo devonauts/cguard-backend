@@ -22,8 +22,27 @@ export default async (req, res) => {
     const where: any = { tenantId };
     if (panelId) where.alarmPanelId = panelId;
 
+    // Explicit columns (no SELECT *). `raw` is a TEXT column but the signals
+    // table renders it, so it stays. The limit is already clamped above.
     const signals = await db.alarmSignal.findAll({
       where,
+      attributes: [
+        'id',
+        'alarmPanelId',
+        'accountNumber',
+        'zoneNumber',
+        'partition',
+        'format',
+        'eventCode',
+        'qualifier',
+        'raw',
+        'channel',
+        'receiverId',
+        'receivedAt',
+        'tenantId',
+        'createdAt',
+        'updatedAt',
+      ],
       order: [
         ['receivedAt', 'DESC'],
         ['createdAt', 'DESC'],

@@ -408,19 +408,73 @@ export async function submitReply(db: any, tenantId: string, entryId: string, gu
 
 /** Live console: every station + its on-duty guard + its latest entry status. */
 export async function getConsole(db: any, tenantId: string): Promise<any> {
-  const stations = await resolveStationsForCheck(db, tenantId, 'all');
+  const { Op } = db.Sequelize;
+
+  // LEAN/BATCHED. The previous implementation resolved stations via
+  // resolveStationsForCheck (one securityGuard.findAll PER station) AND then ran
+  // one radioCheckEntry.findOne PER station — i.e. ~2N queries for an N-station
+  // console. This computes the same shape in a fixed number of batched queries:
+  //   1 stations (+assignedGuards) · 1 securityGuard · 1 radioCheckEntry · 1 session.
+
+  // 1) All stations with their assigned guard user ids (one query).
+  const stations = await db.station.findAll({
+    where: { tenantId, deletedAt: null },
+    attributes: ['id', 'stationName'],
+    include: [{ model: db.user, as: 'assignedGuards', attributes: ['id'], through: { attributes: [] }, required: false }],
+    order: [['stationName', 'ASC']],
+  });
+
+  // station.id -> [userId,...]; collect every distinct assigned user id.
+  const userIdsByStation = new Map<string, string[]>();
+  const allUserIds = new Set<string>();
+  for (const st of stations) {
+    const ids = (st.assignedGuards || []).map((u: any) => u.id).filter(Boolean);
+    userIdsByStation.set(String(st.id), ids);
+    for (const uid of ids) allUserIds.add(uid);
+  }
+
+  // 2) On-duty securityGuards for ALL assigned users in ONE query; index by user.
+  const onDutyByUserId = new Map<string, string>(); // userId -> guard display name
+  if (allUserIds.size) {
+    const sgs = await db.securityGuard.findAll({
+      where: { tenantId, deletedAt: null, isOnDuty: true, guardId: { [Op.in]: Array.from(allUserIds) } },
+      attributes: ['id', 'guardId', 'fullName'],
+    });
+    for (const sg of sgs) onDutyByUserId.set(String(sg.guardId), sg.fullName || 'Guardia');
+  }
+
+  // 3) Latest entry per station in ONE query (ordered newest-first; first seen wins).
+  const stationIds = stations.map((s: any) => s.id);
+  const latestByStation = new Map<string, any>();
+  if (stationIds.length) {
+    const entries = await db.radioCheckEntry.findAll({
+      where: { tenantId, stationId: { [Op.in]: stationIds }, deletedAt: null },
+      attributes: [
+        'id', 'sessionId', 'stationId', 'status', 'classification', 'transcript',
+        'transcriptStatus', 'audioUrl', 'respondedAt', 'notifiedAt', 'guardName', 'createdAt',
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+    for (const e of entries) {
+      const k = String(e.stationId);
+      if (!latestByStation.has(k)) latestByStation.set(k, e);
+    }
+  }
+
   const running = await db.radioCheckSession.findOne({
     where: { tenantId, status: 'running', deletedAt: null }, order: [['startedAt', 'DESC']],
   });
+
   const rows: any[] = [];
-  for (const { station, guards } of stations) {
-    const latest = await db.radioCheckEntry.findOne({
-      where: { tenantId, stationId: station.id, deletedAt: null },
-      order: [['createdAt', 'DESC']],
-    });
+  for (const station of stations) {
+    const sid = String(station.id);
+    const onDutyGuards = (userIdsByStation.get(sid) || [])
+      .map((uid) => onDutyByUserId.get(String(uid)))
+      .filter(Boolean) as string[];
+    const latest = latestByStation.get(sid) || null;
     rows.push({
       stationId: station.id, stationName: station.stationName,
-      onDutyGuards: guards.map((g: any) => g.name),
+      onDutyGuards,
       latest: latest ? {
         sessionId: latest.sessionId, entryId: latest.id, status: latest.status,
         classification: latest.classification, transcript: latest.transcript,

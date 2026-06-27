@@ -371,12 +371,11 @@ class BusinessInfoRepository {
     );
 
     let whereAnd: Array<any> = [];
-    let include = [
-      {
-        model: options.database.clientAccount,
-        as: 'clientAccount',
-      },
-    ];
+    // LIST: do not join clientAccount here. The consumed clientAccount shape
+    // (id/name/lastName/email + clientAccountName) is built in one batched
+    // query inside _fillForList. Avoids selecting the full clientAccount row
+    // (with its TEXT/JSON columns) per post-site.
+    let include: Array<any> = [];
 
     whereAnd.push({
       tenantId: tenant.id,
@@ -641,6 +640,10 @@ class BusinessInfoRepository {
     } = await options.database.businessInfo.findAndCountAll({
       where,
       include,
+      // LIST: exclude big blobs never rendered by the list surfaces:
+      //   description (TEXT up to 5000) and serviceConfig (JSON).
+      // findById keeps them (full _fillWithRelationsAndFiles).
+      attributes: { exclude: ['description', 'serviceConfig'] },
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
       order: orderBy
@@ -651,10 +654,7 @@ class BusinessInfoRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -724,6 +724,50 @@ class BusinessInfoRepository {
       },
       options,
     );
+  }
+
+  // LEAN list filler: builds the consumed clientAccount shape for ALL rows in
+  // ONE batched query (id/name/lastName/email + clientAccountName), drops the
+  // per-row logo file signing and the per-row clientAccount file-url signing
+  // that no list surface renders. findById still uses the full
+  // _fillWithRelationsAndFiles. Consumed fields verified against:
+  //   frontend/src/lib/api/postSiteService.ts (list mapping) and the dispatcher
+  //   pages (client.id/name, clientAccount.id, clientAccountName).
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+
+    const transaction = SequelizeRepository.getTransaction(options);
+
+    const outputs = rows.map((r) => r.get({ plain: true }));
+
+    // One batched query for all referenced clientAccounts, scoped attributes.
+    const clientIds = Array.from(
+      new Set(outputs.map((o) => o.clientAccountId).filter(Boolean)),
+    );
+    const clientById = new Map<string, any>();
+    if (clientIds.length) {
+      const clients = await options.database.clientAccount.findAll({
+        where: { id: clientIds },
+        attributes: ['id', 'name', 'lastName', 'email'],
+        transaction,
+      });
+      for (const c of clients) {
+        const plain = (c as any).get({ plain: true });
+        clientById.set(String(plain.id), plain);
+      }
+    }
+
+    for (const output of outputs) {
+      const client = output.clientAccountId
+        ? clientById.get(String(output.clientAccountId)) || null
+        : null;
+      output.clientAccount = client;
+      output.clientAccountName = client
+        ? `${client.name || ''} ${client.lastName || ''}`.trim()
+        : null;
+    }
+
+    return outputs;
   }
 
   static async _fillWithRelationsAndFilesForRows(

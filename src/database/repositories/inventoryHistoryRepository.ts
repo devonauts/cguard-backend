@@ -305,25 +305,43 @@ class InventoryHistoryRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list (payload-perf): scope every include to identifying columns and
+    // EXCLUDE the heavy guardShift blobs (punchIn/OutPhoto, punchInChecklist,
+    // sessions, deviceInfo, approvalNotes — large base64/JSON TEXT). The list has
+    // no consumer reading relation subfields; findById keeps the full objects.
     let include = [
       {
         model: options.database.guardShift,
         as: 'shiftOrigin',
+        required: false,
+        attributes: [
+          'id',
+          'punchInTime',
+          'punchOutTime',
+          'shiftSchedule',
+          'status',
+        ],
       },
       {
         model: options.database.inventory,
         as: 'inventoryOrigin',
-      },      
+        required: false,
+        attributes: ['id', 'name', 'belongsToStation'],
+      },
     ];
 
     include.push({
       model: options.database.patrol,
       as: 'patrol',
+      required: false,
+      attributes: ['id', 'scheduledTime', 'completed', 'status'],
     });
 
     include.push({
       model: options.database.patrolCheckpoint,
       as: 'patrolCheckpoint',
+      required: false,
+      attributes: ['id', 'name', 'latitud', 'longitud'],
     });
 
     whereAnd.push({
@@ -431,6 +449,18 @@ class InventoryHistoryRepository {
       rows,
       count,
     } = await options.database.inventoryHistory.findAndCountAll({
+      attributes: [
+        'id',
+        'inventoryCheckedDate',
+        'isComplete',
+        'observation',
+        'shiftOriginId',
+        'inventoryOriginId',
+        'patrolId',
+        'patrolCheckpointId',
+        'createdAt',
+        'updatedAt',
+      ],
       where,
       include,
       limit: limit ? Number(limit) : undefined,
@@ -443,10 +473,7 @@ class InventoryHistoryRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    rows = this._fillForList(rows);
 
     return { rows, count };
   }
@@ -525,6 +552,20 @@ class InventoryHistoryRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  /**
+   * LEAN list filler (payload-perf): the scoped includes were already loaded in
+   * the single findAndCountAll query, so just flatten to plain objects. No
+   * per-row file signing / extra queries (the list has no consumer that renders
+   * relation subfields). findById keeps _fillWithRelationsAndFiles (full shape).
+   */
+  static _fillForList(rows) {
+    if (!rows) {
+      return rows;
+    }
+
+    return rows.map((record: any) => record.get({ plain: true }));
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

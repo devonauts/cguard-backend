@@ -278,11 +278,15 @@ class MemosRepository {
       {
         model: options.database.securityGuard,
         as: 'guardName',
+        // LIST: the CRM only renders the guard's display name (via fullName)
+        // and id; never SELECT * the whole securityGuard row into the payload.
+        attributes: ['id', 'fullName'],
       },
       {
         model: options.database.user,
         as: 'createdBy',
         // Never SELECT * a user into a payload — strip the secrets.
+        // (createdBy stays scoped as-is; the CRM reads fullName/firstName/lastName/email.)
         attributes: { exclude: ['password', 'emailVerificationToken', 'passwordResetToken', 'importHash'] },
       },
     ];
@@ -402,6 +406,22 @@ class MemosRepository {
       rows,
       count,
     } = await options.database.memos.findAndCountAll({
+      // LIST: explicit attributes (never SELECT *). content stays because the
+      // CRM memos "Ver" dialog + guard-summary feed render it; there are no big
+      // blobs on memos to drop.
+      attributes: [
+        'id',
+        'dateTime',
+        'subject',
+        'content',
+        'wasAccepted',
+        'guardNameId',
+        'createdById',
+        'updatedById',
+        'tenantId',
+        'createdAt',
+        'updatedAt',
+      ],
       where,
       include,
       limit: limit ? Number(limit) : undefined,
@@ -414,10 +434,10 @@ class MemosRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LIST: no per-row file signing. memoDocumentPdf is never rendered by any
+    // CRM/worker memos surface — it is signed only on findById. _fillForList
+    // just flattens rows (keeps guardName + createdBy includes).
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -496,6 +516,16 @@ class MemosRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  // LIST-only flattener: returns the consumed shape (root columns + scoped
+  // guardName + createdBy includes) WITHOUT signing memoDocumentPdf. The
+  // full file enrichment stays on findById.
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows) {
+      return rows;
+    }
+    return rows.map((record) => (record as any).get({ plain: true }));
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

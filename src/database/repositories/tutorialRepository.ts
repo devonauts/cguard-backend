@@ -250,11 +250,26 @@ class TutorialRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LEAN list: scope the category include to the rendered columns (no importHash /
+    // audit fields), and EAGER-LOAD tutorialVideos here (scoped) so the list no
+    // longer calls record.getTutorialVideos() once per row (N+1).
     let include = [
       {
         model: options.database.videoTutorialCategory,
         as: 'tutorialCategory',
-      },      
+        attributes: ['id', 'categoryName'],
+        required: false,
+      },
+      {
+        // NOTE: this M:N association ('tutorialVideos') actually targets
+        // videoTutorialCategory through tutorialTutorialVideosVideoTutorialCategory
+        // (legacy scaffold) — same target the old getTutorialVideos() returned.
+        model: options.database.videoTutorialCategory,
+        as: 'tutorialVideos',
+        attributes: ['id', 'categoryName'],
+        through: { attributes: [] },
+        required: false,
+      },
     ];
 
     whereAnd.push({
@@ -322,6 +337,13 @@ class TutorialRepository {
       count,
     } = await options.database.tutorial.findAndCountAll({
       where,
+      attributes: [
+        'id',
+        'tutorialName',
+        'tutorialCategoryId',
+        'createdAt',
+        'updatedAt',
+      ],
       include,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
@@ -333,12 +355,27 @@ class TutorialRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LEAN: the old per-row _fill called record.getTutorialVideos() once PER ROW
+    // (N+1). tutorialVideos is now eager-loaded above in the main query, so the
+    // list enricher just flattens to plain (same { ..., tutorialVideos } shape).
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
+  }
+
+  /**
+   * LEAN enricher for the LIST path. tutorialVideos is already eager-loaded by the
+   * scoped include in findAndCountAll (ONE query, not one getTutorialVideos() per
+   * row), so this only normalizes each row to plain. findById keeps the full
+   * per-record _fillWithRelationsAndFiles (unscoped detail).
+   */
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows || !rows.length) return rows;
+    return rows.map((r) => {
+      const output: any = r.get({ plain: true });
+      if (!output.tutorialVideos) output.tutorialVideos = [];
+      return output;
+    });
   }
 
   static async findAllAutocomplete(query, limit, options: IRepositoryOptions) {

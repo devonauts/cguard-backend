@@ -302,11 +302,14 @@ class TaskRepository {
     );
 
     let whereAnd: Array<any> = [];
+    // LIST: scope the station include to the only fields rendered
+    // (id + stationName) instead of SELECT *-ing the whole station row.
     let include = [
       {
         model: options.database.station,
         as: 'taskBelongsToStation',
-      },      
+        attributes: ['id', 'stationName'],
+      },
     ];
 
     whereAnd.push({
@@ -426,6 +429,30 @@ class TaskRepository {
       rows,
       count,
     } = await options.database.task.findAndCountAll({
+      // LIST: explicit attributes (never SELECT *). Only the consumed task
+      // fields (TaskTracking / post-site Overview counts) — no big blobs here,
+      // approvalNotes stays because the CRM reads it on rows.
+      attributes: [
+        'id',
+        'taskToDo',
+        'wasItDone',
+        'dateToDoTheTask',
+        'dateCompletedTask',
+        'status',
+        'source',
+        'priority',
+        'approvedById',
+        'approvedAt',
+        'approvalNotes',
+        'clientAccountId',
+        'completedByGuardId',
+        'taskBelongsToStationId',
+        'createdById',
+        'updatedById',
+        'tenantId',
+        'createdAt',
+        'updatedAt',
+      ],
       where,
       include,
       limit: limit ? Number(limit) : undefined,
@@ -438,10 +465,10 @@ class TaskRepository {
       ),
     });
 
-    rows = await this._fillWithRelationsAndFilesForRows(
-      rows,
-      options,
-    );
+    // LIST: no per-row file signing. The CRM task list (TaskTracking) and the
+    // post-site Overview never render imageOptional/taskCompletedImage; those
+    // file blobs are signed only on findById. _fillForList just flattens rows.
+    rows = await this._fillForList(rows, options);
 
     return { rows, count };
   }
@@ -527,6 +554,16 @@ class TaskRepository {
         this._fillWithRelationsAndFiles(record, options),
       ),
     );
+  }
+
+  // LIST-only flattener: returns the consumed shape (root columns +
+  // scoped taskBelongsToStation) WITHOUT signing imageOptional /
+  // taskCompletedImage. findById keeps the full file enrichment.
+  static async _fillForList(rows, options: IRepositoryOptions) {
+    if (!rows) {
+      return rows;
+    }
+    return rows.map((record) => (record as any).get({ plain: true }));
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

@@ -6,6 +6,34 @@ import { haversineDistance } from '../lib/geofence';
  *  than the clock-in default because a QR is a precise, single point. */
 const DEFAULT_CHECKPOINT_RADIUS_M = 75;
 
+/** Process-level cache for the `siteTours.tenantId` column probe used by
+ *  listTagScans. Some deployments lack the column and selecting it would throw,
+ *  so we probe once per Sequelize instance instead of on every (hot) request.
+ *  Keyed by the Sequelize instance so multi-DB setups stay correct. */
+const _siteTourTenantColumnCache = new WeakMap<object, boolean>();
+async function _siteTourHasTenantColumn(sequelize: any): Promise<boolean> {
+  if (!sequelize) return false;
+  if (_siteTourTenantColumnCache.has(sequelize)) {
+    return _siteTourTenantColumnCache.get(sequelize) as boolean;
+  }
+  let has = false;
+  try {
+    const qi = sequelize.getQueryInterface && sequelize.getQueryInterface();
+    if (qi && typeof qi.describeTable === 'function') {
+      const desc = await qi.describeTable('siteTours').catch(() => null);
+      if (desc) {
+        has = Object.keys(desc || {})
+          .map((k) => String(k).toLowerCase())
+          .includes('tenantid');
+      }
+    }
+  } catch (e) {
+    has = false;
+  }
+  _siteTourTenantColumnCache.set(sequelize, has);
+  return has;
+}
+
 export default class SiteTourService {
   options: IServiceOptions;
 
@@ -342,20 +370,12 @@ export default class SiteTourService {
     const where: any = {};
 
     // Only restrict by tenant if the siteTours table actually has a tenantId column.
-    // Some deployments may be missing the column and that would cause SQL errors (unknown column).
-    let siteTourHasTenantColumn = false;
-    try {
-      const qi = this.options.database && this.options.database.sequelize && this.options.database.sequelize.getQueryInterface && this.options.database.sequelize.getQueryInterface();
-      if (qi && typeof qi.describeTable === 'function') {
-        const desc = await qi.describeTable('siteTours').catch(() => null);
-        if (desc) {
-          siteTourHasTenantColumn = Object.keys(desc || {}).map((k) => String(k).toLowerCase()).includes('tenantid');
-        }
-      }
-    } catch (e) {
-      // ignore and treat as missing
-      siteTourHasTenantColumn = false;
-    }
+    // Some deployments may be missing the column and that would cause SQL errors
+    // (unknown column). Probed once per process (see _siteTourHasTenantColumn) so
+    // this hot, limit=1000 surface no longer runs describeTable on every request.
+    const siteTourHasTenantColumn = await _siteTourHasTenantColumn(
+      this.options.database && this.options.database.sequelize,
+    );
 
     if (siteTourHasTenantColumn && this.options.currentTenant && this.options.currentTenant.id) {
       where['$tag.siteTour.tenantId$'] = this.options.currentTenant.id;
@@ -370,19 +390,71 @@ export default class SiteTourService {
     const limit = filter.limit ? parseInt(filter.limit, 10) : 0;
     const offset = filter.offset ? parseInt(filter.offset, 10) : 0;
 
+    // Lean LIST projection: select only the columns the CRM rondas/tag-scans
+    // page and the worker-app patrol surface actually render. Every attribute
+    // below is verified against the model definitions. Big/unused columns
+    // (siteTourTag.instructions TEXT, station.geofencePolygon/stationSchedule,
+    // guard PII, etc.) are excluded here; findById keeps the full shape.
     const include: any[] = [
-      { model: this.options.database.siteTourTag, as: 'tag', include: [{ model: this.options.database.siteTour, as: 'siteTour' }] },
-      { model: this.options.database.tourAssignment, as: 'assignment' },
-      { model: this.options.database.securityGuard, as: 'guard' },
+      {
+        model: this.options.database.siteTourTag,
+        as: 'tag',
+        attributes: ['id', 'name', 'tagIdentifier', 'siteTourId'],
+        include: [
+          {
+            model: this.options.database.siteTour,
+            as: 'siteTour',
+            // tenantId + postSiteId are referenced by the where filters above.
+            attributes: ['id', 'name', 'tenantId', 'postSiteId'],
+          },
+        ],
+      },
+      // assignment: the page only resolves the assignment id (tourAssignmentId is
+      // on the root row); keep the relation present but minimal.
+      {
+        model: this.options.database.tourAssignment,
+        as: 'assignment',
+        attributes: ['id', 'securityGuardId'],
+      },
+      // guard name is rendered from guard.fullName (the only name column that
+      // exists on securityGuard).
+      {
+        model: this.options.database.securityGuard,
+        as: 'guard',
+        attributes: ['id', 'fullName'],
+      },
     ];
 
     // Only include station relation if the model is present (some deployments may not have stations)
     if (this.options.database && this.options.database.station) {
-      include.push({ model: this.options.database.station, as: 'station' });
+      include.push({
+        model: this.options.database.station,
+        as: 'station',
+        attributes: ['id', 'stationName'],
+      });
     }
 
     const rows = await this.options.database.tagScan.findAll({
       where,
+      // Root attributes: keep everything the row + detail modal reads
+      // (scannedData drives the "Etiqueta / Datos" cell + lat/lng/note),
+      // including the FK ids and timestamps the detail panel shows.
+      attributes: [
+        'id',
+        'scannedAt',
+        'scannedData',
+        'validLocation',
+        'distanceMeters',
+        'stationId',
+        'tenantId',
+        'importHash',
+        'siteTourTagId',
+        'tourAssignmentId',
+        'securityGuardId',
+        'createdAt',
+        'updatedAt',
+        'deletedAt',
+      ],
       include,
       order: [['scannedAt', 'DESC']],
       limit: limit || undefined,

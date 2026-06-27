@@ -178,7 +178,12 @@ class VehicleRepository {
       order: [['name', 'ASC']],
     });
 
-    const filledRows = await this._fillWithRelationsAndFilesForRows(rows, options);
+    // LEAN list path: the vehicles table renders only year/make/model/licensePlate/
+    // active (VehiclesPage.tsx). The image is consumed ONLY in the detail dialog
+    // (vehicleService.find → findById) and the edit page (also .find). The old
+    // per-row _fill ran a file.findAll + signed URL PER ROW for an image the list
+    // never shows. _fillForList drops that signing entirely; detail keeps it.
+    const filledRows = this._fillForList(rows);
 
     return { rows: filledRows, count };
   }
@@ -186,6 +191,20 @@ class VehicleRepository {
   static async _fillWithRelationsAndFilesForRows(rows, options: IRepositoryOptions) {
     if (!rows) return rows;
     return Promise.all(rows.map((record) => this._fillWithRelationsAndFiles(record, options)));
+  }
+
+  /**
+   * LEAN list enricher — preserves the row shape (keeps the `imageUrl` key present
+   * but empty, since the list renders no thumbnail) and does ZERO per-row file
+   * signing. Full image enrichment stays in findById → _fillWithRelationsAndFiles.
+   */
+  static _fillForList(rows) {
+    if (!rows || !rows.length) return rows;
+    return rows.map((record) => {
+      const output: any = record.get({ plain: true });
+      output.imageUrl = [];
+      return output;
+    });
   }
 
   static async _fillWithRelationsAndFiles(record, options: IRepositoryOptions) {

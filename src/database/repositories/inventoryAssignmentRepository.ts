@@ -156,13 +156,28 @@ export default class InventoryAssignmentRepository {
     const order: any[] = [[field || 'createdAt', direction || 'DESC']];
 
     const { rows, count } = await options.database.inventoryAssignment.findAndCountAll({
+      // LEAN list (payload-perf): explicit root columns (stationId/postSiteId are
+      // kept for the frontend's client-side station grouping/filter).
+      attributes: [
+        'id', 'inventoryItemId', 'stationId', 'postSiteId', 'assignedToUserId',
+        'assignedAt', 'returnedAt', 'conditionAtCheckout', 'conditionAtReturn',
+        'notes', 'returnNotes', 'createdAt', 'updatedAt',
+      ],
       where,
       order,
       limit: Number(limit),
       offset: Number(offset),
       include: [
-        { model: options.database.inventoryItem, as: 'inventoryItem' },
-        { model: options.database.station, as: 'station', required: false },
+        // Only the item columns the list renders (name/serial/condition/type).
+        {
+          model: options.database.inventoryItem,
+          as: 'inventoryItem',
+          required: false,
+          attributes: ['id', 'name', 'type', 'serialNumber', 'condition', 'status'],
+        },
+        // The full `station` object was never read on assignment rows (the CRM
+        // groups by station via a separate fetch using stationId), so it is
+        // dropped from the list. findById keeps the full station include.
         {
           model: options.database.user,
           as: 'assignedTo',

@@ -11,8 +11,13 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import GuardPerformanceService from '../../services/guardPerformanceService';
 
-const CHUNK = 6;     // guards scored in parallel per batch
-const MAX_GUARDS = 200;
+// Each scored guard runs the full GuardPerformanceService algorithm (~15-20
+// queries). To bound the total DB work per analytics page-load we (a) cap the
+// number of guards scored and (b) score them in bounded-concurrency batches.
+// Both are env-tunable so ops can raise/lower the ceiling per box without a
+// redeploy; defaults preserve the prior behavior (200 guards, 6 in parallel).
+const CHUNK = Math.max(1, Number(process.env.PERF_LEADERBOARD_CHUNK) || 6);
+const MAX_GUARDS = Math.max(1, Number(process.env.PERF_LEADERBOARD_MAX_GUARDS) || 200);
 
 export default async (req, res) => {
   try {
