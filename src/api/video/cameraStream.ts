@@ -59,14 +59,14 @@ export default async (req, res) => {
       const rtsp = relaySrc || camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
       if (rtsp) {
         const name = streamName(camera.id);
-        // go2rtc "smart" codec (#video=h264): PASSES H264 sources THROUGH natively (no
-        // ffmpeg → rock-stable, full quality) and ONLY transcodes the H265 cameras. The
-        // previous forced ffmpeg transcode on the flaky SUB stream was restarting
-        // constantly (exec/i-o timeouts) → the buffering spinner. #media=video drops the
-        // DVR's G.711 audio (can't be muxed to browser). Relay/already-# sources kept.
+        // These DVRs' NATIVE H264 bitstream crashes the browser MSE demuxer
+        // ("CHUNK_DEMUXER_ERROR_APPEND_FAILED: Unrecognized video codec profile") even
+        // though it's avc1.640029 — so passthrough is out. ffmpeg re-encodes to a clean,
+        // MSE-friendly H264. Use the STABLE MAIN stream (the sub stalled → buffering) and
+        // scale to 720p so 9 transcodes fit the box. Relay/already-# sources kept as-is.
         const src = (rtsp.startsWith('ffmpeg:') || rtsp.includes('#'))
           ? rtsp
-          : `${rtsp}#media=video#video=h264`;
+          : `ffmpeg:${rtsp}#video=h264#width=1280#height=720#audio=aac`;
         const ok = await registerWithGo2rtc(name, src);
         const base = GO2RTC_PUBLIC.replace(/\/+$/, '');
         const url = `${base}/api/stream.m3u8?src=${name}`;
