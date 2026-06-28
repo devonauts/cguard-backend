@@ -154,23 +154,53 @@ export const customerSos = async (req: any, res: any) => {
 
     const incidentId = String(incident.id);
 
-    // ── CRM notify (urgent) — the same dispatcher channel the CRM uses for new
-    // incidents. Best-effort.
+    // ── CRM notify: fire the dedicated `panic.alert` (NOT a plain incident.created)
+    // so the dashboard shows the full-screen red PanicAlertOverlay + wails the SOS
+    // siren — the SAME alarm a guard's panic button triggers. Broad (no post-site
+    // scoping) so every operator hears it. Best-effort; never fails the request.
     try {
+      let postSiteInfo: any = null;
+      if (postSiteId) {
+        try {
+          postSiteInfo = await db.businessInfo.findByPk(postSiteId, {
+            attributes: ['companyName', 'address', 'city', 'contactPhone', 'latitud', 'longitud'],
+          });
+        } catch { /* non-fatal */ }
+      }
+      const lat = latitude ?? (station && station.latitud) ?? (postSiteInfo && postSiteInfo.latitud) ?? null;
+      const lng = longitude ?? (station && station.longitud) ?? (postSiteInfo && postSiteInfo.longitud) ?? null;
+      const address = (postSiteInfo && (postSiteInfo.address || postSiteInfo.city)) || null;
+
       dispatch(
-        'incident.created',
+        'panic.alert',
         {
+          incidentId,
           incidentTitle: title,
+          title,
           description,
-          guardName: null,
-          siteName: stationName,
+          source: 'client',
+          clientName,
+          // Shown in the overlay's actor row — labelled as the client, not a guard.
+          guardName: `Cliente: ${clientName}`,
+          stationName,
+          siteName: (postSiteInfo && postSiteInfo.companyName) || stationName,
+          address,
+          phone: (postSiteInfo && postSiteInfo.contactPhone) || null,
+          latitude: lat,
+          longitude: lng,
+          mapsUrl: lat != null && lng != null ? `https://maps.google.com/?q=${lat},${lng}` : null,
+          location:
+            latitude != null && longitude != null && !isNaN(latitude) && !isNaN(longitude)
+              ? `${latitude},${longitude}`
+              : null,
+          priority: 'critical',
+          at: new Date().toISOString(),
         },
         {
           database: db,
           tenantId,
           sourceEntityType: 'incident',
           sourceEntityId: incidentId,
-          ...(postSiteId ? { assignedPostSiteId: postSiteId } : {}),
         },
       ).catch(() => undefined);
     } catch { /* never fail the request on notify */ }
