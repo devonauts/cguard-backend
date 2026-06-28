@@ -204,6 +204,20 @@ export default async (req: any, res: any) => {
       });
     } catch (e) { console.warn('[clockOut] client notify failed:', (e as any)?.message || e); }
 
+    // Coverage-change bridge → the customer app. Fires a `coverage`-typed push
+    // ("Guardia salió de {puesto}", data { type:'coverage', event:'left' }) to the
+    // station's owning customer, alongside the shift-end notify above. Best-effort,
+    // fire-and-forget — wrapped so it NEVER affects the punch flow.
+    (async () => {
+      try {
+        const { notifyClientCoverage } = require('../../services/clientNotifyService');
+        await notifyClientCoverage(
+          db, tenantId, activeClock.stationNameId, securityGuard.id, 'left',
+          { stationName: station && (station.stationName || station.nickname), postSiteId: station && station.postSiteId },
+        );
+      } catch (e) { console.warn('[clockOut] coverage notify failed:', (e as any)?.message || e); }
+    })();
+
     return ApiResponseHandler.success(req, res, {
       success: true,
       clockOut: activeClock.get({ plain: true }),

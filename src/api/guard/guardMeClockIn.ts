@@ -464,6 +464,20 @@ export default async (req: any, res: any) => {
       }
     } catch (e) { console.warn('[clockIn] client notify failed:', (e as any)?.message || e); }
 
+    // Coverage-change bridge → the customer app. Fires a `coverage`-typed push
+    // ("Guardia llegó a {puesto}", data { type:'coverage', event:'arrived' }) to
+    // the station's owning customer, alongside the richer shift-start notify above.
+    // Best-effort, fire-and-forget — wrapped so it NEVER affects the punch flow.
+    (async () => {
+      try {
+        const { notifyClientCoverage } = require('../../services/clientNotifyService');
+        await notifyClientCoverage(
+          db, tenantId, stationId, securityGuard.id, 'arrived',
+          { stationName: station && (station.stationName || station.nickname), postSiteId: station && station.postSiteId },
+        );
+      } catch (e) { console.warn('[clockIn] coverage notify failed:', (e as any)?.message || e); }
+    })();
+
     return ApiResponseHandler.success(req, res, {
       success: true,
       clockIn: guardShiftRecord.get({ plain: true }),

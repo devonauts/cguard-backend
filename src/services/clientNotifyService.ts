@@ -129,3 +129,69 @@ export async function notifyClient(
     return 0;
   }
 }
+
+/**
+ * Coverage-change push to the customer who owns a station: a guard ARRIVED
+ * (clock-in) or LEFT (clock-out). This is the WORKER-app → customer-app bridge:
+ * it resolves the station's owning clientAccount and its registered device(s)
+ * via the same bulletproof path as notifyClient (by clientAccountId OR userId),
+ * then sends a `coverage`-typed push.
+ *
+ * Strictly best-effort — never throws — so it can be called fire-and-forget from
+ * the clock-in / clock-out handlers without ever affecting the punch flow.
+ *
+ * @param event   'arrived' | 'left'
+ * @param ctx     optional extra labels (stationName, guardId) for the payload.
+ */
+export async function notifyClientCoverage(
+  db: any,
+  tenantId: string,
+  stationId: string,
+  guardId: string | null,
+  event: 'arrived' | 'left',
+  ctx: { stationName?: string | null; postSiteId?: string | null } = {},
+): Promise<number> {
+  try {
+    if (!tenantId || !stationId) return 0;
+    let stationName = ctx.stationName || null;
+    let postSiteId = ctx.postSiteId || null;
+    if (!stationName || !postSiteId) {
+      try {
+        const st = await db.station.findOne({
+          where: { id: stationId, tenantId, deletedAt: null },
+          attributes: ['id', 'stationName', 'postSiteId'],
+        });
+        if (st) {
+          if (!stationName) stationName = st.stationName || null;
+          if (!postSiteId) postSiteId = st.postSiteId || null;
+        }
+      } catch { /* non-fatal */ }
+    }
+    const label = stationName || 'el puesto';
+    const title = event === 'arrived' ? 'Guardia llegó' : 'Guardia salió';
+    const body =
+      event === 'arrived' ? `Guardia llegó a ${label}.` : `Guardia salió de ${label}.`;
+
+    return await notifyClient(
+      db,
+      tenantId,
+      { stationId, postSiteId },
+      {
+        eventType: 'coverage',
+        title,
+        body,
+        data: {
+          type: 'coverage',
+          stationId: String(stationId || ''),
+          guardId: String(guardId || ''),
+          event,
+        },
+        sourceEntityType: 'station',
+        sourceEntityId: String(stationId || ''),
+      },
+    );
+  } catch (e: any) {
+    console.warn('[clientNotify] coverage failed:', e?.message || e);
+    return 0;
+  }
+}

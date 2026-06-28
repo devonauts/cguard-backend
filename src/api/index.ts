@@ -258,6 +258,7 @@ require('./patrolCheckpoint').default(routes);
 require('./patrolLog').default(routes);
 require('./patrol').default(routes);
 require('./visitorLog').default(routes);
+require('./visitorPreAuth').default(routes);
 require('./station').default(routes);
 require('./stationOrder').default(routes);
 require('./billing').default(routes);

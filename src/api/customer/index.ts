@@ -77,4 +77,43 @@ export default (app) => {
   app.get('/customer/guard-locations', require('./customerSafety').customerGuardLocations);
   app.get('/customer/clock-ins', require('./customerSafety').customerClockIns);
   app.post('/customer/incident/:id/escalate', require('./customerSafety').customerIncidentEscalate);
+
+  // ── Visitor pre-authorization (QR pass). The customer pre-registers an expected
+  // visitor and receives a qrToken/qrPayload the app renders as a QR image; the
+  // guard app scans it via /tenant/:tenantId/visitor-preauth/scan. Customer-scoped
+  // to the JWT's clientAccount. Mirror the registration of /customer/sos above.
+  app.post('/customer/visitor-preauth', require('./customerVisitorPreAuth').customerVisitorPreAuthCreate);
+  app.get('/customer/visitor-preauth', require('./customerVisitorPreAuth').customerVisitorPreAuthList);
+  app.post('/customer/visitor-preauth/:id/revoke', require('./customerVisitorPreAuth').customerVisitorPreAuthRevoke);
+
+  // Client reports an incident at one of their stations (+ optional photos) →
+  // lands in the CRM incident inbox (callerType:'client'), pushes station guards.
+  // Photos: multipart `file` field(s) (binary) OR JSON `photos:[{url|downloadUrl}]`.
+  // Returns { success, incidentId, photoCount }. GET lists the client's incidents.
+  app.post(
+    '/customer/incidents',
+    multipartParser.array('file'),
+    require('./customerIncidents').customerIncidentCreate,
+  );
+  app.get('/customer/incidents', require('./customerIncidents').customerIncidentList);
+
+  // Client requests a service / extra guard / quote → REUSES the `request` model
+  // (CRM "Solicitudes" inbox) scoped to the clientAccount; notifies supervisors.
+  // GET lists the client's own requests with status.
+  app.post('/customer/service-requests', require('./customerServiceRequests').customerServiceRequestCreate);
+  app.get('/customer/service-requests', require('./customerServiceRequests').customerServiceRequestList);
+
+  // Client rates a guard who is/was on shift at their station (1-5 + comment).
+  // Verifies the shift before accepting; notifies the CRM (guard.rated). GET
+  // returns this client's ratings for the guard (+ average).
+  app.post('/customer/guards/:guardId/rating', require('./customerGuardRatings').customerGuardRatingCreate);
+  app.get('/customer/guards/:guardId/ratings', require('./customerGuardRatings').customerGuardRatingList);
+
+  // ── Customer reporting & analytics (customer-scoped to the JWT's clientAccount).
+  // Exportable reports (CSV built manually / PDF via pdfkit) for incidents, patrols
+  // and hours over a date range; and an analytics dashboard payload (incident trend,
+  // severity split, patrol completion, hours delivered, per-station breakdown).
+  // Both strictly scoped to the customer's own stations.
+  app.get('/customer/reports/export', require('./customerReportsExport').default);
+  app.get('/customer/analytics', require('./customerAnalytics').default);
 };
