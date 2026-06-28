@@ -275,6 +275,27 @@ async function notifyRecipients(db: any, tenantId: string, conversation: any, me
             ? [String(conversation.recipientClientAccountId)]
             : [];
           await pushToClientAccounts(db, tenantId, caIds, r.userId ? [r.userId] : [], pushPayload);
+
+          // Realtime (Mi Seguridad): push the new message live to the customer's
+          // socket room so the app no longer needs to poll. Best-effort — a socket
+          // emit must never affect the committed send. Payload: { conversationId, message }.
+          if (conversation.recipientClientAccountId) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const { emitToClientAccount } = require('../lib/realtime');
+              emitToClientAccount(
+                tenantId,
+                String(conversation.recipientClientAccountId),
+                'message:new',
+                {
+                  conversationId: String(conversation.id),
+                  message: typeof message.get === 'function' ? message.get({ plain: true }) : message,
+                },
+              );
+            } catch (e: any) {
+              console.warn('[message] realtime client emit failed:', e?.message || e);
+            }
+          }
         } else {
           // Guard → device push.
           await pushToUser(db, tenantId, r.userId, pushPayload);

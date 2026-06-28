@@ -669,3 +669,46 @@ async function runRepeatedLatenessScheduler() {
 nodeSetInterval(() => { runRepeatedLatenessScheduler(); }, 60 * 60 * 1000);
 setTimeout(() => runRepeatedLatenessScheduler(), 90000);
 
+/**
+ * Document-expiry alerts (Feature #20) — once a day, scan every tenant's
+ * compliance documents (certifications + insurance) and push the tenant's clients
+ * an alert for any document whose days-to-expiry just crossed 30/15/7/1 days.
+ * Anti-spam: fires only when daysToExpiry is EXACTLY a threshold, so each
+ * (document,threshold) notifies once. Respects per-client mute (category
+ * 'documents') inside clientNotifyService. Best-effort (never throws).
+ */
+async function runDocumentExpiryAlerts() {
+  try {
+    const database = await databaseInit();
+    const { runDocumentExpiryAlerts: run } = require('./services/customerDocumentAlerts');
+    await run(database);
+  } catch (err) {
+    console.error('[docExpiry] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+// Check document expiry once a day.
+nodeSetInterval(() => { runJob("DocumentExpiryAlerts", runDocumentExpiryAlerts); }, 24 * 60 * 60 * 1000);
+setTimeout(() => runDocumentExpiryAlerts(), 75000);
+
+/**
+ * Customer summary digest (Feature #21) — once a day, aggregate each active
+ * client's site activity (incidents, patrols, hours, visits, on-duty changes) and
+ * send a push ('digest.summary') + branded email digest. Cadence lives in
+ * DIGEST_PERIOD_DAYS (digest service) — flip daily↔weekly there. Respects
+ * per-client mute (category 'digest'). Best-effort (never throws).
+ */
+async function runCustomerSummaryDigest() {
+  try {
+    const database = await databaseInit();
+    const { runCustomerSummaryDigest: run } = require('./services/customerSummaryDigest');
+    await run(database);
+  } catch (err) {
+    console.error('[digest] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+// Send the summary digest once a day.
+nodeSetInterval(() => { runJob("CustomerSummaryDigest", runCustomerSummaryDigest); }, 24 * 60 * 60 * 1000);
+setTimeout(() => runCustomerSummaryDigest(), 105000);
+

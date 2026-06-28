@@ -18,6 +18,7 @@
  */
 import { pushToClientAccounts, PushPayload } from './pushService';
 import { storePlatformEvent } from '../lib/platformEventStore';
+import { categoryForType, isCategoryEnabled } from './notificationCategories';
 
 export interface ClientRef {
   clientAccountId?: string | null;
@@ -93,7 +94,7 @@ export async function notifyClient(
   db: any,
   tenantId: string,
   ref: ClientRef,
-  opts: { eventType: string; title: string; body: string; data?: Record<string, string>; image?: string; sourceEntityType?: string; sourceEntityId?: string },
+  opts: { eventType: string; title: string; body: string; data?: Record<string, string>; image?: string; sourceEntityType?: string; sourceEntityId?: string; category?: string },
 ): Promise<number> {
   try {
     if (!tenantId) return 0;
@@ -106,9 +107,32 @@ export async function notifyClient(
       image: opts.image,
     };
 
+    // FEATURE #23 — per-category mute. Derive the mute-able category from the
+    // explicit opts.category or the push type (data.type / eventType), then drop
+    // any clientAccount that has explicitly muted it. FAIL-OPEN: unset/unknown
+    // category or any lookup error → keep the recipient (isCategoryEnabled
+    // defaults to true). Only clientAccountIds carry a preference (that's what the
+    // client app registers + scopes its preferences by); userIds are unaffected.
+    const category = opts.category || categoryForType(opts.data?.type || opts.eventType);
+    let allowedClientAccountIds = clientAccountIds;
+    if (category && clientAccountIds.length) {
+      const checks = await Promise.all(
+        clientAccountIds.map(async (caId) => ({ caId, ok: await isCategoryEnabled(db, caId, category) })),
+      );
+      allowedClientAccountIds = checks.filter((c) => c.ok).map((c) => c.caId);
+      const muted = clientAccountIds.length - allowedClientAccountIds.length;
+      if (muted > 0) {
+        console.log(`[clientNotify] ${muted} clientAccount(s) muted category="${category}" (${opts.eventType}) — skipping their push`);
+      }
+    }
+
     // Single FCM send resolving devices by clientAccountId OR userId (bulletproof,
     // deduped) — delivers even when clientAccount.userId was never linked.
-    pushToClientAccounts(db, tenantId, clientAccountIds, userIds, payload).catch(() => {});
+    // Skip the FCM send entirely when every clientAccount muted it AND there are
+    // no fallback userIds (still log the in-app event below).
+    if (allowedClientAccountIds.length || userIds.length) {
+      pushToClientAccounts(db, tenantId, allowedClientAccountIds, userIds, payload).catch(() => {});
+    }
 
     // In-app platform events still need a recipient user id (best-effort).
     for (const uid of userIds) {

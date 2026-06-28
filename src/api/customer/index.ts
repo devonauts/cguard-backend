@@ -116,4 +116,25 @@ export default (app) => {
   // Both strictly scoped to the customer's own stations.
   app.get('/customer/reports/export', require('./customerReportsExport').default);
   app.get('/customer/analytics', require('./customerAnalytics').default);
+
+  // ── Document vault (Feature #20). Aggregates the tenant compliance documents the
+  // client is entitled to view (certifications + insurance policies) into one
+  // flat list with signed downloadUrls + daysToExpiry. Customer-scoped via the JWT.
+  app.get('/customer/documents', require('./customerDocuments').default);
+
+  // ── Notification preferences (Feature #23). The client mutes/unmutes CATEGORIES
+  // of push notifications (incidents, messages, coverage, visitors, patrols,
+  // support, documents, digest, sos). clientNotifyService respects these before
+  // sending a customer push. Customer-scoped via the JWT's clientAccount.
+  app.get('/customer/notification-preferences', require('./customerNotificationPreferences').customerNotificationPreferencesList);
+  app.put('/customer/notification-preferences', require('./customerNotificationPreferences').customerNotificationPreferencesUpdate);
+
+  // ── In-app support ticketing (Feature #24, replaces the app's hardcoded mailto:).
+  // Customer-scoped to the JWT's clientAccount: create + list + single (with reply
+  // thread) + reply, all CRM-visible (notifies supervisors). Mirror the
+  // registration of /customer/service-requests above.
+  app.post('/customer/support-tickets', require('./customerSupportTickets').customerSupportTicketCreate);
+  app.get('/customer/support-tickets', require('./customerSupportTickets').customerSupportTicketList);
+  app.get('/customer/support-tickets/:id', require('./customerSupportTickets').customerSupportTicketGet);
+  app.post('/customer/support-tickets/:id/reply', require('./customerSupportTickets').customerSupportTicketReply);
 };

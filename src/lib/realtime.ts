@@ -131,11 +131,20 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
         [user.firstName, user.lastName].filter(Boolean).join(' ') ||
         user.email ||
         'Usuario';
+      // Customer (Mi Seguridad client app) connections: the customer JWT carries a
+      // clientAccountId (attached by AuthService.findByToken). We stash it so the
+      // connection can join a per-clientAccount room for live chat/status pushes.
+      // Also honor an explicit handshake clientAccountId, but only if it matches the
+      // token's (never trust a body-supplied id to widen scope).
+      const tokenClientAccountId = (user as any)?.clientAccountId
+        ? String((user as any).clientAccountId)
+        : null;
       (socket.data as any) = {
         userId: user.id,
         tenantId: effectiveTenantId,
         name: displayName,
         roles,
+        clientAccountId: tokenClientAccountId,
         superadmin,
         // Admins / managers / superadmins receive every tenant notification,
         // regardless of an event's targetRoles.
@@ -148,12 +157,17 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
   });
 
   io.on('connection', (socket) => {
-    const { userId, tenantId, roles, seeAll, superadmin } = (socket.data as any) || {};
+    const { userId, tenantId, roles, seeAll, superadmin, clientAccountId } = (socket.data as any) || {};
     if (!tenantId || !userId) return;
     socket.join(`tenant:${tenantId}`);
     socket.join(`tenant:${tenantId}:user:${userId}`);
     (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
     if (seeAll) socket.join(`tenant:${tenantId}:all`);
+
+    // Mi Seguridad customer connections join a per-clientAccount room so the
+    // backend can push live chat messages / coverage / status to a specific
+    // customer without touching the guard/CRM role rooms. Additive + isolated.
+    if (clientAccountId) socket.join(`tenant:${tenantId}:client:${clientAccountId}`);
 
     // Platform phone center: superadmins join a shared 'superadmin' room so the
     // Twilio SMS/voice events fan out to every connected superadmin browser.
@@ -273,4 +287,31 @@ export function emitToTenant(tenantId: string, event: string, payload: any): voi
   }
 }
 
-export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, SOCKET_PATH };
+/**
+ * Emit a real-time event to a single Mi Seguridad customer (every socket that
+ * authenticated with that clientAccount's JWT joined `tenant:<id>:client:<caId>`).
+ * Used to replace the client app's chat/status polling: a `message:new`,
+ * `coverage`, or `status` event lands instantly in the customer's app.
+ *
+ * Event names + payloads emitted to this room (the client app listens for these):
+ *   'message:new' { conversationId, message }
+ *   'coverage'    { ...arbitrary coverage payload }
+ *   'status'      { ...arbitrary status payload }
+ *
+ * No-op if the socket server isn't initialized or ids are missing. Never throws.
+ */
+export function emitToClientAccount(
+  tenantId: string,
+  clientAccountId: string,
+  event: string,
+  payload: any,
+): void {
+  if (!io || !tenantId || !clientAccountId) return;
+  try {
+    io.to(`tenant:${tenantId}:client:${clientAccountId}`).emit(event, payload);
+  } catch (e: any) {
+    console.error('[realtime] client emit failed:', e?.message || e);
+  }
+}
+
+export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, emitToTenant, emitToClientAccount, SOCKET_PATH };
