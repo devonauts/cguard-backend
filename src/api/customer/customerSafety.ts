@@ -205,6 +205,39 @@ export const customerSos = async (req: any, res: any) => {
       ).catch(() => undefined);
     } catch { /* never fail the request on notify */ }
 
+    // ── Persistent Alarm-queue CASE — so the SOS is a real, actionable, acknowledged
+    // case with an audit trail in the Centro de Alarmas, even if no operator had a tab
+    // open at the moment it fired. Highest priority + 'panic' category (ECV-exempt).
+    // Best-effort; never fails the request. emitAlarmEvent lights up the live queue.
+    try {
+      const caseTitle = `🆘 SOS Cliente — ${clientName} · ${stationName}`;
+      const alarmCase = await db.alarmCase.create({
+        status: 'queued',
+        priority: 1,
+        category: 'panic',
+        title: caseTitle.slice(0, 200),
+        incidentId,
+        postSiteId,
+        stationId,
+        customerId: clientAccountId,
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
+      try {
+        const { emitAlarmEvent } = require('../../services/alarm/realtime');
+        await emitAlarmEvent(db, tenantId, {
+          eventType: 'alarm.case.new',
+          title: caseTitle,
+          body: description,
+          caseId: String(alarmCase.id),
+          payload: { source: 'client', clientName, stationName, incidentId, priority: 1, category: 'panic' },
+        });
+      } catch { /* emit is best-effort; the 20s queue poll still picks it up */ }
+    } catch (e) {
+      console.warn('[customerSos] alarm case create failed:', (e as any)?.message || e);
+    }
+
     // ── Guard push (best-effort; never fail the request on a push error).
     (async () => {
       try {
