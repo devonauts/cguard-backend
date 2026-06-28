@@ -79,7 +79,12 @@ export default async (req, res) => {
           try { await camera.update({ streamUrl: url }); } catch { /* ignore */ }
         }
         return ApiResponseHandler.success(req, res, {
-          type: 'go2rtc', src: name, ws, url, mode: 'webrtc,mse,hls', gateway: base,
+          // MSE over the WS works reliably through the nginx proxy (no UDP). WebRTC is
+          // left OUT of the default chain because its ICE/UDP path isn't reachable for
+          // remote browsers (it failed with "addIceCandidate signalingState closed" and
+          // left the <video> src empty). Re-add "webrtc," once a public UDP candidate /
+          // TURN is configured. mp4 is a same-origin HTTP fallback.
+          type: 'go2rtc', src: name, ws, url, mode: 'mse,mp4', gateway: base,
           snapshotUrl, registered: ok,
         });
       }

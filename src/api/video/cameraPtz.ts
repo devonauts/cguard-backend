@@ -23,11 +23,20 @@ export default async (req, res) => {
     });
     if (!camera) throw new Error404();
     const dev = camera.device;
-    if (!dev || !dev.host || !dev.username) {
-      return ApiResponseHandler.error(req, res, new Error('La cámara no tiene un dispositivo/credenciales para PTZ'));
-    }
 
-    const creds: PtzCreds = { host: String(dev.host), username: String(dev.username), password: String(dev.password || '') };
+    // Prefer the device record; fall back to the credentials embedded in the camera's
+    // RTSP url (some cameras are orphaned — their device was deleted but streaming still
+    // works because the rtspUrl carries host + user:pass).
+    let creds: PtzCreds | null = null;
+    if (dev && dev.host && dev.username) {
+      creds = { host: String(dev.host), username: String(dev.username), password: String(dev.password || '') };
+    } else if (camera.rtspUrl) {
+      const m = String(camera.rtspUrl).match(/^rtsps?:\/\/([^:@/]+):([^@/]*)@([^:/]+)/i);
+      if (m) creds = { host: m[3], username: decodeURIComponent(m[1]), password: decodeURIComponent(m[2]) };
+    }
+    if (!creds) {
+      return ApiResponseHandler.error(req, res, new Error('La cámara no tiene credenciales para PTZ'));
+    }
     const token = await profileTokenForChannel(creds, camera.channel);
     if (!token) {
       return ApiResponseHandler.error(req, res, new Error('No se pudo resolver el perfil ONVIF (PTZ no disponible)'));
