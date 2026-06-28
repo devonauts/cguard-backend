@@ -11,16 +11,17 @@ const getId = () => {
   }
 };
 
-async function listComments(requestId: string) {
+async function listComments(requestId: string, tenantId: string) {
     const db = models();
-    const rec = await db.incident.findByPk(requestId);
+    // Tenant-scoped: never resolve an incident by id alone (cross-tenant read).
+    const rec = await db.incident.findOne({ where: { id: requestId, tenantId } });
     if (!rec) return [];
     return rec.comments || [];
 }
 
-async function createComment(requestId: string, text: string, author: any, attachment?: any) {
+async function createComment(requestId: string, tenantId: string, text: string, author: any, attachment?: any) {
   const db = models();
-  const rec = await db.incident.findByPk(requestId);
+  const rec = await db.incident.findOne({ where: { id: requestId, tenantId } });
   if (!rec) {
     throw Object.assign(new Error('Incident not found'), { code: 404 });
   }

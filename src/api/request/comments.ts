@@ -3,10 +3,13 @@ import commentsService from '../../services/comments';
 
 export default function registerCommentsRoutes(routes: Router) {
   // List comments for a request
-  routes.get('/tenant/:tenantId/request/:requestId/comments', async (req, res) => {
+  routes.get('/tenant/:tenantId/request/:requestId/comments', async (req: any, res) => {
     try {
+      if (!req.currentUser) return res.status(401).json({ error: 'Unauthorized' });
+      const tenantId = req.currentTenant && req.currentTenant.id;
+      if (!tenantId) return res.status(403).json({ error: 'Forbidden' });
       const { requestId } = req.params;
-      const rows = await commentsService.listComments(requestId);
+      const rows = await commentsService.listComments(requestId, tenantId);
       return res.json(rows);
     } catch (err) {
       console.error('Error listing comments', err);
@@ -15,8 +18,11 @@ export default function registerCommentsRoutes(routes: Router) {
   });
 
   // Create comment for a request
-  routes.post('/tenant/:tenantId/request/:requestId/comments', async (req, res) => {
+  routes.post('/tenant/:tenantId/request/:requestId/comments', async (req: any, res) => {
     try {
+      if (!req.currentUser) return res.status(401).json({ error: 'Unauthorized' });
+      const tenantId = req.currentTenant && req.currentTenant.id;
+      if (!tenantId) return res.status(403).json({ error: 'Forbidden' });
       const { requestId } = req.params;
       const text = (req.body && (req.body.data?.text || req.body.text)) || '';
       if (!text) return res.status(400).json({ error: 'text is required' });
@@ -42,7 +48,7 @@ export default function registerCommentsRoutes(routes: Router) {
       const attachment = (req.body && (req.body.data?.attachment || req.body.attachment)) || null;
 
       const author = { id: userId || 'system', name: userName || 'Usuario' };
-      const created = await commentsService.createComment(requestId, text, author, attachment);
+      const created = await commentsService.createComment(requestId, tenantId, text, author, attachment);
       return res.status(201).json(created);
     } catch (err) {
       console.error('Error creating comment', err);

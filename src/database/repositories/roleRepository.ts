@@ -191,7 +191,7 @@ export default class RoleRepository {
     const currentUser = SequelizeRepository.getCurrentUser(options);
     const tenant = SequelizeRepository.getCurrentTenant(options);
 
-    let record = await options.database.role.findByPk(id, { transaction });
+    let record = await options.database.role.findOne({ where: { id, tenantId: tenant.id }, transaction });
     if (!record) {
       throw new Error404();
     }
@@ -243,7 +243,7 @@ export default class RoleRepository {
     const currentUser = SequelizeRepository.getCurrentUser(options);
     const tenant = SequelizeRepository.getCurrentTenant(options);
 
-    const record = await options.database.role.findByPk(id, { transaction });
+    const record = await options.database.role.findOne({ where: { id, tenantId: tenant.id }, transaction });
     if (!record) {
       throw new Error404();
     }
@@ -277,8 +277,9 @@ export default class RoleRepository {
 
   static async destroy(id, options) {
     const transaction = SequelizeRepository.getTransaction(options);
+    const tenant = SequelizeRepository.getCurrentTenant(options);
 
-    let record = await options.database.role.findByPk(id, { transaction });
+    let record = await options.database.role.findOne({ where: { id, tenantId: tenant.id }, transaction });
     if (!record) {
       throw new Error404();
     }
@@ -289,7 +290,6 @@ export default class RoleRepository {
     }
 
     // Prevent deleting a role that is currently assigned to any tenantUser in the same tenant
-    const tenant = SequelizeRepository.getCurrentTenant(options);
     try {
       const used = await options.database.tenantUser.findOne({
         where: {
@@ -327,7 +327,8 @@ export default class RoleRepository {
 
   static async findById(id, options) {
     const transaction = SequelizeRepository.getTransaction(options);
-    let record = await options.database.role.findByPk(id, { transaction });
+    const tenant = SequelizeRepository.getCurrentTenant(options);
+    let record = await options.database.role.findOne({ where: { id, tenantId: tenant.id }, transaction });
     if (!record) {
       throw new Error404();
     }

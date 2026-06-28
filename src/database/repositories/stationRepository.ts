@@ -686,7 +686,7 @@ class StationRepository {
     const postSiteIds = Array.from(new Set(outputs.map((o) => o.postSiteId).filter(Boolean)));
     const posts = postSiteIds.length
       ? await options.database.businessInfo.findAll({
-          where: { id: postSiteIds },
+          where: { id: postSiteIds, tenantId: tenant.id },
           attributes: ['id', 'companyName'],
           transaction,
         })
@@ -722,6 +722,8 @@ class StationRepository {
     }
 
     const output = record.get({ plain: true });
+
+    const tenant = SequelizeRepository.getCurrentTenant(options);
 
     const transaction = SequelizeRepository.getTransaction(
       options,
@@ -762,7 +764,7 @@ class StationRepository {
     } else if (output.postSiteId) {
       // fallback: try to load postSite when only id present
       try {
-        const post = await options.database.businessInfo.findByPk(output.postSiteId, { transaction });
+        const post = await options.database.businessInfo.findOne({ where: { id: output.postSiteId, tenantId: tenant.id }, transaction });
         output.postSite = post ? { id: post.id, businessName: post.businessName || post.name || null } : null;
       } catch (e) {
         output.postSite = null;

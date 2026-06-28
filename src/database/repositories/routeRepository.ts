@@ -269,10 +269,11 @@ class RouteRepository {
     try {
       if (output.points && Array.isArray(output.points)) {
         const transaction = SequelizeRepository.getTransaction(options);
+        const tenant = SequelizeRepository.getCurrentTenant(options);
         for (const p of output.points) {
           try {
             if (p && p.siteId) {
-              const site = await options.database.businessInfo.findByPk(p.siteId, { transaction });
+              const site = await options.database.businessInfo.findOne({ where: { id: p.siteId, tenantId: tenant.id }, transaction });
               if (site) {
                 p.siteName = site.companyName || site.name || null;
               }

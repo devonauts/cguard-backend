@@ -50,7 +50,7 @@ export default async (req, res) => {
     //    station, else a post-site (use its first station).
     let stationId: string | null = incoming.stationId || incoming.station_id || null;
     if (!stationId && routeId) {
-      const asStation = await req.database.station.findByPk(routeId, { attributes: ['id'] });
+      const asStation = await req.database.station.findOne({ where: { id: routeId, tenantId: req.currentTenant.id }, attributes: ['id'] });
       if (asStation?.id) {
         stationId = asStation.id;
       } else {
@@ -114,7 +114,8 @@ export default async (req, res) => {
     let schedStart = incoming.startTime || null;
     let schedEnd = incoming.endTime || null;
     try {
-      const station = await req.database.station.findByPk(stationId, {
+      const station = await req.database.station.findOne({
+        where: { id: stationId, tenantId: req.currentTenant.id },
         attributes: ['startingTimeInDay', 'finishTimeInDay', 'stationSchedule'],
       });
       const raw = station?.stationSchedule;

@@ -150,12 +150,12 @@ class VisitorLogRepository {
 
       // station → postSite
       if (toCreate.stationId && !toCreate.postSiteId) {
-        const st = await options.database.station.findByPk(toCreate.stationId, { attributes: ['postSiteId'], transaction }).catch(() => null);
+        const st = await options.database.station.findOne({ where: { id: toCreate.stationId, tenantId: tenant.id }, attributes: ['postSiteId'], transaction }).catch(() => null);
         if (st && st.postSiteId) toCreate.postSiteId = st.postSiteId;
       }
       // postSite → client
       if (toCreate.postSiteId && !toCreate.clientId) {
-        const bi = await options.database.businessInfo.findByPk(toCreate.postSiteId, { attributes: ['clientAccountId'], transaction }).catch(() => null);
+        const bi = await options.database.businessInfo.findOne({ where: { id: toCreate.postSiteId, tenantId: tenant.id }, attributes: ['clientAccountId'], transaction }).catch(() => null);
         if (bi && bi.clientAccountId) toCreate.clientId = bi.clientAccountId;
       }
     } catch (e) {
@@ -165,7 +165,7 @@ class VisitorLogRepository {
     // Determine denormalized stationName (if not provided) from the station record
     let denormStationName = toCreate.stationName;
     if (!denormStationName && toCreate.stationId) {
-      const st = await options.database.station.findByPk(toCreate.stationId).catch(() => null);
+      const st = await options.database.station.findOne({ where: { id: toCreate.stationId, tenantId: tenant.id } }).catch(() => null);
       if (st) denormStationName = st.stationName || st.name || undefined;
     }
 
@@ -259,7 +259,7 @@ class VisitorLogRepository {
     // Determine denormalized stationName for update
     let denormUpdateStationName = toUpdate.stationName;
     if (denormUpdateStationName === undefined && toUpdate.stationId) {
-      const st = await options.database.station.findByPk(toUpdate.stationId).catch(() => null);
+      const st = await options.database.station.findOne({ where: { id: toUpdate.stationId, tenantId: currentTenant.id } }).catch(() => null);
       if (st) denormUpdateStationName = st.stationName || st.name || undefined;
     }
 
