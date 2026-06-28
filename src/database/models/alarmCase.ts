@@ -97,6 +97,13 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      // Origin of the case: where the alarm came from. 'alarm_panel' (hardware
+      // monitoring signal), 'client_app' (Mi Seguridad customer SOS), 'worker_app'
+      // (guard/vigilante panic button), 'manual' (operator-created).
+      source: {
+        type: DataTypes.STRING(16),
+        allowNull: true,
+      },
       tenantId: {
         type: DataTypes.UUID,
         allowNull: false,

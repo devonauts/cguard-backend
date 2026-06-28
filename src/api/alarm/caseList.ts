@@ -48,6 +48,7 @@ export default async (req, res) => {
         'postSiteId',
         'stationId',
         'customerId',
+        'source',
         'tenantId',
         'createdById',
         'createdAt',

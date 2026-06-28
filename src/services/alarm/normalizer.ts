@@ -234,6 +234,7 @@ export async function ingestSignal(
       priority: mapped.priority,
       category: mapped.category,
       title: caseTitle(panel.name, mapped, sig.zoneNumber),
+      source: 'alarm_panel',
       postSiteId: panel.postSiteId || null,
       stationId: panel.stationId || null,
       customerId: panel.customerId || null,

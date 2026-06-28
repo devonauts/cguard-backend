@@ -127,10 +127,39 @@ export default async (req: any, res: any) => {
       const siteAddress =
         postSite?.address || postSite?.city || data.location || null;
 
+      // A worker-app PANIC becomes a persistent Alarm-queue case (origin 'worker_app'),
+      // mirroring the customer SOS — so it's acknowledged/dispatched/resolved with an
+      // audit trail and the overlay's RECONOCER can acknowledge THIS case. Best-effort.
+      let workerCaseId: string | null = null;
+      if (isPanic) {
+        try {
+          const caseTitle = `🚨 Pánico Vigilante — ${securityGuard ? securityGuard.fullName : 'Vigilante'} · ${stationName}`;
+          const ac = await db.alarmCase.create({
+            status: 'queued', priority: 1, category: 'panic', title: caseTitle.slice(0, 200),
+            source: 'worker_app',
+            incidentId: incident.id,
+            postSiteId: postSiteId || station?.postSiteId || null,
+            stationId: stationId || null,
+            tenantId, createdById: userId, updatedById: userId,
+          });
+          workerCaseId = String(ac.id);
+          try {
+            const { emitAlarmEvent } = require('../../services/alarm/realtime');
+            await emitAlarmEvent(db, tenantId, {
+              eventType: 'alarm.case.new', title: caseTitle, body: data.content || title, caseId: workerCaseId,
+              payload: { source: 'worker_app', guardName: securityGuard?.fullName, stationName, incidentId: incident.id, priority: 1, category: 'panic' },
+            });
+          } catch { /* emit best-effort; the 20s queue poll still picks it up */ }
+        } catch (e) {
+          console.warn('[guardPanic] alarm case create failed:', (e as any)?.message || e);
+        }
+      }
+
       dispatch(
         isPanic ? 'panic.alert' : 'incident.created',
         {
           incidentId: incident.id,
+          caseId: workerCaseId,
           incidentTitle: title,
           title,
           description: data.content || data.description || null,

@@ -179,6 +179,7 @@ export const customerSos = async (req: any, res: any) => {
       const caseTitle = `🆘 SOS Cliente — ${clientName} · ${stationName}`;
       const alarmCase = await db.alarmCase.create({
         status: 'queued', priority: 1, category: 'panic', title: caseTitle.slice(0, 200),
+        source: 'client_app',
         incidentId, postSiteId, stationId, customerId: clientAccountId,
         tenantId, createdById: userId, updatedById: userId,
       });
