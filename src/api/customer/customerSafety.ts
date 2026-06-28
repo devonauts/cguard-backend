@@ -154,41 +154,67 @@ export const customerSos = async (req: any, res: any) => {
 
     const incidentId = String(incident.id);
 
-    // ── CRM notify: fire the dedicated `panic.alert` (NOT a plain incident.created)
-    // so the dashboard shows the full-screen red PanicAlertOverlay + wails the SOS
-    // siren — the SAME alarm a guard's panic button triggers. Broad (no post-site
-    // scoping) so every operator hears it. Best-effort; never fails the request.
-    try {
-      let postSiteInfo: any = null;
-      if (postSiteId) {
-        try {
-          postSiteInfo = await db.businessInfo.findByPk(postSiteId, {
-            attributes: ['companyName', 'address', 'city', 'contactPhone', 'latitud', 'longitud'],
-          });
-        } catch { /* non-fatal */ }
-      }
-      const lat = latitude ?? (station && station.latitud) ?? (postSiteInfo && postSiteInfo.latitud) ?? null;
-      const lng = longitude ?? (station && station.longitud) ?? (postSiteInfo && postSiteInfo.longitud) ?? null;
-      const address = (postSiteInfo && (postSiteInfo.address || postSiteInfo.city)) || null;
+    // Shared site context for both the alarm case and the panic.alert payload.
+    let postSiteInfo: any = null;
+    if (postSiteId) {
+      try {
+        postSiteInfo = await db.businessInfo.findByPk(postSiteId, {
+          attributes: ['companyName', 'address', 'city', 'contactPhone', 'latitud', 'longitud'],
+        });
+      } catch { /* non-fatal */ }
+    }
+    const lat = latitude ?? (station && station.latitud) ?? (postSiteInfo && postSiteInfo.latitud) ?? null;
+    const lng = longitude ?? (station && station.longitud) ?? (postSiteInfo && postSiteInfo.longitud) ?? null;
+    const address = (postSiteInfo && (postSiteInfo.address || postSiteInfo.city)) || null;
+    const phone = (postSiteInfo && postSiteInfo.contactPhone) || null;
+    const siteName = (postSiteInfo && postSiteInfo.companyName) || stationName;
+    const mapsUrl = lat != null && lng != null ? `https://maps.google.com/?q=${lat},${lng}` : null;
 
+    // ── Persistent Alarm-queue CASE FIRST — so the SOS is a real, actionable case
+    // with an audit trail in the Centro de Alarmas (even if no operator had a tab
+    // open), and so its caseId can ride along in the panic.alert (RECONOCER must
+    // acknowledge THIS case, not just dismiss a toast). Best-effort.
+    let alarmCaseId: string | null = null;
+    try {
+      const caseTitle = `🆘 SOS Cliente — ${clientName} · ${stationName}`;
+      const alarmCase = await db.alarmCase.create({
+        status: 'queued', priority: 1, category: 'panic', title: caseTitle.slice(0, 200),
+        incidentId, postSiteId, stationId, customerId: clientAccountId,
+        tenantId, createdById: userId, updatedById: userId,
+      });
+      alarmCaseId = String(alarmCase.id);
+      try {
+        const { emitAlarmEvent } = require('../../services/alarm/realtime');
+        await emitAlarmEvent(db, tenantId, {
+          eventType: 'alarm.case.new', title: caseTitle, body: description, caseId: alarmCaseId,
+          payload: { source: 'client', clientName, stationName, incidentId, priority: 1, category: 'panic' },
+        });
+      } catch { /* emit best-effort; the 20s queue poll still picks it up */ }
+    } catch (e) {
+      console.warn('[customerSos] alarm case create failed:', (e as any)?.message || e);
+    }
+
+    // ── CRM panic.alert — full-screen red overlay + SOS siren. Carries the caseId so
+    // RECONOCER acknowledges the alarm case. Broad (all operators). Best-effort.
+    try {
       dispatch(
         'panic.alert',
         {
           incidentId,
+          caseId: alarmCaseId,
           incidentTitle: title,
           title,
           description,
           source: 'client',
           clientName,
-          // Shown in the overlay's actor row — labelled as the client, not a guard.
           guardName: `Cliente: ${clientName}`,
           stationName,
-          siteName: (postSiteInfo && postSiteInfo.companyName) || stationName,
+          siteName,
           address,
-          phone: (postSiteInfo && postSiteInfo.contactPhone) || null,
+          phone,
           latitude: lat,
           longitude: lng,
-          mapsUrl: lat != null && lng != null ? `https://maps.google.com/?q=${lat},${lng}` : null,
+          mapsUrl,
           location:
             latitude != null && longitude != null && !isNaN(latitude) && !isNaN(longitude)
               ? `${latitude},${longitude}`
@@ -196,47 +222,9 @@ export const customerSos = async (req: any, res: any) => {
           priority: 'critical',
           at: new Date().toISOString(),
         },
-        {
-          database: db,
-          tenantId,
-          sourceEntityType: 'incident',
-          sourceEntityId: incidentId,
-        },
+        { database: db, tenantId, sourceEntityType: 'incident', sourceEntityId: incidentId },
       ).catch(() => undefined);
     } catch { /* never fail the request on notify */ }
-
-    // ── Persistent Alarm-queue CASE — so the SOS is a real, actionable, acknowledged
-    // case with an audit trail in the Centro de Alarmas, even if no operator had a tab
-    // open at the moment it fired. Highest priority + 'panic' category (ECV-exempt).
-    // Best-effort; never fails the request. emitAlarmEvent lights up the live queue.
-    try {
-      const caseTitle = `🆘 SOS Cliente — ${clientName} · ${stationName}`;
-      const alarmCase = await db.alarmCase.create({
-        status: 'queued',
-        priority: 1,
-        category: 'panic',
-        title: caseTitle.slice(0, 200),
-        incidentId,
-        postSiteId,
-        stationId,
-        customerId: clientAccountId,
-        tenantId,
-        createdById: userId,
-        updatedById: userId,
-      });
-      try {
-        const { emitAlarmEvent } = require('../../services/alarm/realtime');
-        await emitAlarmEvent(db, tenantId, {
-          eventType: 'alarm.case.new',
-          title: caseTitle,
-          body: description,
-          caseId: String(alarmCase.id),
-          payload: { source: 'client', clientName, stationName, incidentId, priority: 1, category: 'panic' },
-        });
-      } catch { /* emit is best-effort; the 20s queue poll still picks it up */ }
-    } catch (e) {
-      console.warn('[customerSos] alarm case create failed:', (e as any)?.message || e);
-    }
 
     // ── Guard push (best-effort; never fail the request on a push error).
     (async () => {

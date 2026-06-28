@@ -25,6 +25,11 @@ export default async (req, res) => {
     });
     if (!alarmCase) throw new Error404();
 
+    // The operator's recorded action (what they did to handle the SOS) — stored in
+    // history so silencing an alarm always has an accountable, audited reason.
+    const body = (req as any).body?.data || (req as any).body || {};
+    const action = String(body.action || body.note || '').trim().slice(0, 1000);
+
     const now = new Date();
     await alarmCase.update({
       status: 'acknowledged',
@@ -36,7 +41,9 @@ export default async (req, res) => {
     await db.alarmAuditLog.create({
       alarmCaseId: alarmCase.id,
       action: 'acknowledge',
-      detail: 'Caso reconocido por el operador',
+      detail: action
+        ? `Reconocido y silenciado. Acción tomada: ${action}`
+        : 'Caso reconocido por el operador',
       actorId: actorId || null,
       at: now,
       tenantId,
