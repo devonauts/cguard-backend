@@ -56,18 +56,17 @@ export default async (req, res) => {
     // devices, otherwise the brand-aware LAN RTSP) under a stable, opaque name and
     // hand the browser only that name.
     if (GO2RTC_API && GO2RTC_PUBLIC) {
-      let rtsp = relaySrc || camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
+      const rtsp = relaySrc || camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
       if (rtsp) {
         const name = streamName(camera.id);
-        // Browsers can't decode H265/HEVC (which these DVRs output) over MSE — and
-        // WebRTC is H264-only — so the picture stays black. Transcode to H264/AAC via
-        // ffmpeg. Use the lower-res SUB stream (sN/s1) for the live wall so each camera
-        // costs ~10% of a core (9 cams fit comfortably on the box). Relay sources and
-        // already-wrapped (ffmpeg:/#) sources are left as-is.
-        if (!relaySrc) rtsp = rtsp.replace('/s0/live', '/s1/live');
-        const src = (rtsp.startsWith('ffmpeg:') || rtsp.includes('#video='))
+        // go2rtc "smart" codec (#video=h264): PASSES H264 sources THROUGH natively (no
+        // ffmpeg → rock-stable, full quality) and ONLY transcodes the H265 cameras. The
+        // previous forced ffmpeg transcode on the flaky SUB stream was restarting
+        // constantly (exec/i-o timeouts) → the buffering spinner. #media=video drops the
+        // DVR's G.711 audio (can't be muxed to browser). Relay/already-# sources kept.
+        const src = (rtsp.startsWith('ffmpeg:') || rtsp.includes('#'))
           ? rtsp
-          : `ffmpeg:${rtsp}#video=h264#audio=aac`;
+          : `${rtsp}#media=video#video=h264`;
         const ok = await registerWithGo2rtc(name, src);
         const base = GO2RTC_PUBLIC.replace(/\/+$/, '');
         const url = `${base}/api/stream.m3u8?src=${name}`;
