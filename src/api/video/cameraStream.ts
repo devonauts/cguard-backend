@@ -65,11 +65,19 @@ export default async (req, res) => {
         // video plays. (Already-modified relay/# sources are left as-is.)
         const src = rtsp.includes('#') ? rtsp : `${rtsp}#media=video`;
         const ok = await registerWithGo2rtc(name, src);
-        const url = `${GO2RTC_PUBLIC.replace(/\/+$/, '')}/api/stream.m3u8?src=${name}`;
+        const base = GO2RTC_PUBLIC.replace(/\/+$/, '');
+        const url = `${base}/api/stream.m3u8?src=${name}`;
+        // Multi-protocol: the go2rtc player engine negotiates WebRTC → MSE → HLS.
+        // ws is same-origin through the nginx /go2rtc proxy (WebSocket upgrade is on),
+        // so MSE works with no extra ports; WebRTC kicks in when reachable.
+        const ws = `${base.replace(/^http/i, 'ws')}/api/ws?src=${name}`;
         if (!camera.streamUrl || camera.streamUrl !== url) {
           try { await camera.update({ streamUrl: url }); } catch { /* ignore */ }
         }
-        return ApiResponseHandler.success(req, res, { type: 'hls', url, snapshotUrl, registered: ok });
+        return ApiResponseHandler.success(req, res, {
+          type: 'go2rtc', src: name, ws, url, mode: 'webrtc,mse,hls', gateway: base,
+          snapshotUrl, registered: ok,
+        });
       }
     }
 

@@ -26,6 +26,7 @@ export default (app) => {
   app.get('/tenant/:tenantId/video/camera/:id', require('./cameraGet').default);
   app.put('/tenant/:tenantId/video/camera/:id', require('./cameraUpdate').default);
   app.get('/tenant/:tenantId/video/camera/:id/stream', require('./cameraStream').default);
+  app.post('/tenant/:tenantId/video/camera/:id/ptz', require('./cameraPtz').default);
 
   // ---- Events ----
   app.get('/tenant/:tenantId/video/events', require('./eventList').default);
