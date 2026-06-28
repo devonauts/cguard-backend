@@ -77,7 +77,11 @@ export default async (req, res) => {
         if (!camera.streamUrl || camera.streamUrl !== url) {
           try { await camera.update({ streamUrl: url }); } catch { /* ignore */ }
         }
-        return ApiResponseHandler.success(req, res, { type: 'hls', url, snapshotUrl, registered: ok });
+        // webrtcUrl = same-origin WHEP endpoint → sub-second on the LAN. The player tries
+        // it first and falls back to the buffered HLS url when WebRTC can't establish.
+        return ApiResponseHandler.success(req, res, {
+          type: 'hls', url, webrtcUrl: `/rtc/${name}/whep`, snapshotUrl, registered: ok,
+        });
       }
     }
 
