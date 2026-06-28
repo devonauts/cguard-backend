@@ -391,29 +391,77 @@ export default async (req: any, res: any) => {
     }
 
     // Notify the owning client (Mi Seguridad app) that a guard started a shift at
-    // their site — with the guard's name, station name and clock-in selfie so the
-    // client sees WHO is on duty. The selfie renders as the notification image.
+    // their site. If this clock-in RELIEVES a guard who recently clocked out at the
+    // same station (a cambio de turno / relevo), send a richer notification with the
+    // guardia ENTRANTE, the guardia SALIENTE and the saliente's novedades (their
+    // clock-out handover notes). Otherwise send the plain "Inicio de turno".
     try {
       const { notifyClient } = require('../../services/clientNotifyService');
       const stationName = (station && (station.stationName || station.nickname)) || 'el puesto';
       const guardName = securityGuard.fullName || 'Un guardia';
       const selfieUrl = punchMeta.photo || guardShiftRecord.punchInPhoto || '';
-      await notifyClient(db, tenantId, { stationId, postSiteId: station && station.postSiteId }, {
-        eventType: 'guard.checkin',
-        title: 'Inicio de turno',
-        body: `${guardName} inició turno en ${stationName}.`,
-        image: selfieUrl || undefined,
-        data: {
-          stationId: String(stationId || ''),
-          stationName,
-          guardId: String(securityGuard.id || ''),
-          guardName,
-          guardShiftId: String(guardShiftRecord.id || ''),
-          selfieUrl: String(selfieUrl || ''),
+      const baseData: Record<string, string> = {
+        stationId: String(stationId || ''),
+        stationName,
+        guardId: String(securityGuard.id || ''),
+        guardName,
+        guardShiftId: String(guardShiftRecord.id || ''),
+        selfieUrl: String(selfieUrl || ''),
+      };
+
+      // Find the SALIENTE: the most recent guard who clocked OUT at this station
+      // within the relief window, who isn't this guard.
+      const RELIEF_WINDOW_HOURS = 6;
+      const reliefSince = new Date(now.getTime() - RELIEF_WINDOW_HOURS * 60 * 60 * 1000);
+      // Only a FIRST clock-in can be a relevo — a re-entry (same guard reopening
+      // their own session after a break) is never a cambio de turno.
+      const outgoing = isReentry ? null : await db.guardShift.findOne({
+        where: {
+          tenantId,
+          stationNameId: stationId,
+          guardNameId: { [Op.ne]: securityGuard.id },
+          punchOutTime: { [Op.ne]: null, [Op.gte]: reliefSince },
         },
-        sourceEntityType: 'guardShift',
-        sourceEntityId: String(guardShiftRecord.id),
+        order: [['punchOutTime', 'DESC']],
+        attributes: ['id', 'guardNameId', 'observations', 'punchOutTime'],
       });
+
+      if (outgoing) {
+        const outGuard = await db.securityGuard.findByPk(outgoing.guardNameId, { attributes: ['id', 'fullName'] });
+        const outName = (outGuard && outGuard.fullName) || 'Guardia saliente';
+        // The saliente's clock-out observations ARE the pase de novedades. Treat the
+        // system default placeholders as "no news".
+        const raw = (outgoing.observations && String(outgoing.observations).trim()) || '';
+        const isPlaceholder = !raw || /^(entrada|salida) registrada$/i.test(raw);
+        const novedades = isPlaceholder ? '' : raw;
+        const novText = novedades ? `Novedades: ${novedades}` : 'Sin novedades.';
+        await notifyClient(db, tenantId, { stationId, postSiteId: station && station.postSiteId }, {
+          eventType: 'guard.shiftchange',
+          title: `Cambio de turno en ${stationName}`,
+          body: `Guardia entrante: ${guardName}. Guardia saliente: ${outName}. ${novText}`,
+          image: selfieUrl || undefined,
+          data: {
+            ...baseData,
+            incomingGuardId: String(securityGuard.id || ''),
+            incomingGuardName: guardName,
+            outgoingGuardId: String((outGuard && outGuard.id) || outgoing.guardNameId || ''),
+            outgoingGuardName: outName,
+            novedades,
+          },
+          sourceEntityType: 'guardShift',
+          sourceEntityId: String(guardShiftRecord.id),
+        });
+      } else {
+        await notifyClient(db, tenantId, { stationId, postSiteId: station && station.postSiteId }, {
+          eventType: 'guard.checkin',
+          title: 'Inicio de turno',
+          body: `${guardName} inició turno en ${stationName}.`,
+          image: selfieUrl || undefined,
+          data: baseData,
+          sourceEntityType: 'guardShift',
+          sourceEntityId: String(guardShiftRecord.id),
+        });
+      }
     } catch (e) { console.warn('[clockIn] client notify failed:', (e as any)?.message || e); }
 
     return ApiResponseHandler.success(req, res, {
