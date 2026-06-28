@@ -32,29 +32,36 @@ function tcpProbe(host: string, port: number, timeoutMs: number): Promise<boolea
  * Returns a precise status: online | auth_failed | unreachable, or null if no gateway.
  */
 async function rtspProbe(rtsp: string): Promise<{ status: string; message?: string } | null> {
-  if (!GO2RTC_API || !rtsp || typeof (globalThis as any).fetch !== 'function') return null;
+  const f: any = (globalThis as any).fetch;
+  if (!GO2RTC_API || !rtsp || typeof f !== 'function') return null;
   const api = GO2RTC_API.replace(/\/+$/, '');
+  // Video-only: many DVRs (Hiseeu/Sofia) ship G.711/PCMU audio that go2rtc can't mux
+  // into browser HLS — it yields an empty playlist and a misleading "codecs not
+  // matched" error. #media=video drops the audio so we probe what the player actually
+  // plays. (frame.jpeg is unreliable here — go2rtc can't JPEG-encode H264 w/o ffmpeg.)
+  const src = rtsp.includes('#') ? rtsp : `${rtsp}#media=video`;
   const name = `probe_${streamName(rtsp)}_${Date.now()}`.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 60);
   const since = Date.now();
-  const f: any = (globalThis as any).fetch;
-  try {
-    await f(`${api}/api/streams?name=${encodeURIComponent(name)}&src=${encodeURIComponent(rtsp)}`, { method: 'PUT' }).catch(() => {});
-
-    // Trigger a real connection by pulling one frame (bounded).
-    let frameBytes = 0;
+  const get = async (path: string, ms: number): Promise<string> => {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
-    try {
-      const r = await f(`${api}/api/frame.jpeg?src=${encodeURIComponent(name)}`, { signal: ctrl.signal });
-      const buf = await r.arrayBuffer();
-      frameBytes = buf.byteLength;
-    } catch { /* timeout / empty */ } finally { clearTimeout(timer); }
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { const r = await f(`${api}${path}`, { signal: ctrl.signal }); return await r.text(); }
+    catch { return ''; } finally { clearTimeout(timer); }
+  };
+  try {
+    await f(`${api}/api/streams?name=${encodeURIComponent(name)}&src=${encodeURIComponent(src)}`, { method: 'PUT' }).catch(() => {});
 
-    if (frameBytes > 800) return { status: 'online' };
+    // A valid HLS playlist == the source connected and is producing video (this is
+    // exactly what the browser player consumes).
+    for (let i = 0; i < 3; i++) {
+      const body = await get(`/api/stream.m3u8?src=${encodeURIComponent(name)}`, 8000);
+      if (body.includes('#EXTM3U') && body.trim().length > 20) return { status: 'online' };
+      await new Promise((r) => setTimeout(r, 1500));
+    }
 
-    // No frame → classify from go2rtc's recent error log for THIS attempt.
+    // No playlist → classify from go2rtc's recent error log for THIS attempt.
     try {
-      const logTxt = await (await f(`${api}/api/log`)).text();
+      const logTxt = await get('/api/log', 5000);
       const recent = String(logTxt).split('\n')
         .filter((l) => l.includes('"level":"error"'))
         .map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -63,10 +70,10 @@ async function rtspProbe(rtsp: string): Promise<{ status: string; message?: stri
         .join(' | ');
       if (/wrong user\/pass/i.test(recent)) return { status: 'auth_failed', message: 'Credenciales incorrectas: el DVR rechazó el usuario/contraseña.' };
       if (/404|not found/i.test(recent)) return { status: 'unreachable', message: 'Conecta pero la ruta RTSP no existe (revisa marca/canal).' };
-      if (/refused|timeout|no route|unreachable/i.test(recent)) return { status: 'unreachable', message: 'No se pudo conectar al stream RTSP.' };
-      if (recent) return { status: 'unreachable', message: recent.slice(0, 140) };
+      if (/refused|timeout|no route|unreachable|i\/o/i.test(recent)) return { status: 'unreachable', message: 'No se pudo conectar al stream RTSP.' };
+      // "codecs not matched" and similar are transient/audio — not a real failure.
     } catch { /* ignore */ }
-    return { status: 'unreachable', message: 'Sin video (timeout al leer el stream).' };
+    return { status: 'unreachable', message: 'No se pudo obtener video del stream (timeout).' };
   } finally {
     try { await f(`${api}/api/streams?src=${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {}); } catch { /* ignore */ }
   }
