@@ -274,6 +274,20 @@ export default class Storage {
         publicRead: false,
       },
 
+      // Profile photo a guard sets for THEMSELVES from the worker app. Lands in
+      // the same folder the CRM uses for securityGuard.profileImage, but with a
+      // self-service storageId that bypasses the write-permission check (guards
+      // don't hold the securityGuard storage grant). The backend only ever links
+      // the upload to the requesting user's OWN securityGuard, so write access
+      // here stays self-scoped — same pattern as the clock-in selfie.
+      guardProfileSelfie: {
+        id: 'guardProfileSelfie',
+        folder: 'tenant/:tenantId/securityGuard/profileImage',
+        maxSizeInBytes: 10 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
+
       // Evidence (photo / video / audio voice-note) for a completed consigna.
       guardConsignaMedia: {
         id: 'guardConsignaMedia',
