@@ -59,7 +59,12 @@ export default async (req, res) => {
       const rtsp = relaySrc || camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
       if (rtsp) {
         const name = streamName(camera.id);
-        const ok = await registerWithGo2rtc(name, rtsp);
+        // Pull VIDEO ONLY. Many DVRs (e.g. Hiseeu/Sofia) ship G.711/PCMU audio,
+        // which can't be muxed into browser HLS and yields an EMPTY playlist
+        // ("codecs not matched"). #media=video drops the audio track so the H264/H265
+        // video plays. (Already-modified relay/# sources are left as-is.)
+        const src = rtsp.includes('#') ? rtsp : `${rtsp}#media=video`;
+        const ok = await registerWithGo2rtc(name, src);
         const url = `${GO2RTC_PUBLIC.replace(/\/+$/, '')}/api/stream.m3u8?src=${name}`;
         if (!camera.streamUrl || camera.streamUrl !== url) {
           try { await camera.update({ streamUrl: url }); } catch { /* ignore */ }

@@ -13,10 +13,13 @@ function enc(v: any): string {
 }
 
 /** Normalize a brand string to a known vendor key. */
-export function vendorOf(device: any): 'hikvision' | 'dahua' | 'generic' {
+export function vendorOf(device: any): 'hikvision' | 'dahua' | 'hiseeu' | 'generic' {
   const b = `${device?.brand || ''} ${device?.model || ''}`.toLowerCase();
   if (/hik|hikvision|ezviz|hilook/.test(b)) return 'hikvision';
   if (/dahua|amcrest|lorex|imou|easy4ip/.test(b)) return 'dahua';
+  // Hiseeu / Sofia / XMEye family — RTSP path verified via ONVIF GetStreamUri:
+  //   rtsp://host:554/unicast/c<ch>/s<0=main|1=sub>/live
+  if (/hiseeu|sofia|xmeye|xm\b|jennov|anpviz|gadinan/.test(b)) return 'hiseeu';
   return 'generic';
 }
 
@@ -39,6 +42,8 @@ export function buildRtspUrl(device: any, channel: number, sub = false): string 
       return `${base}/Streaming/Channels/${ch}${sub ? '02' : '01'}`;
     case 'dahua':
       return `${base}/cam/realmonitor?channel=${ch}&subtype=${sub ? 1 : 0}`;
+    case 'hiseeu':
+      return `${base}/unicast/c${ch}/s${sub ? 1 : 0}/live`;
     default:
       // Generic fallback — editable by the operator afterward.
       return `${base}/ch${ch}/${sub ? 'sub' : 'main'}`;
