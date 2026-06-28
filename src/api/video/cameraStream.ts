@@ -56,14 +56,18 @@ export default async (req, res) => {
     // devices, otherwise the brand-aware LAN RTSP) under a stable, opaque name and
     // hand the browser only that name.
     if (GO2RTC_API && GO2RTC_PUBLIC) {
-      const rtsp = relaySrc || camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
+      let rtsp = relaySrc || camera.rtspUrl || (camera.device ? buildRtspUrl(camera.device, camera.channel) : null);
       if (rtsp) {
         const name = streamName(camera.id);
-        // Pull VIDEO ONLY. Many DVRs (e.g. Hiseeu/Sofia) ship G.711/PCMU audio,
-        // which can't be muxed into browser HLS and yields an EMPTY playlist
-        // ("codecs not matched"). #media=video drops the audio track so the H264/H265
-        // video plays. (Already-modified relay/# sources are left as-is.)
-        const src = rtsp.includes('#') ? rtsp : `${rtsp}#media=video`;
+        // Browsers can't decode H265/HEVC (which these DVRs output) over MSE — and
+        // WebRTC is H264-only — so the picture stays black. Transcode to H264/AAC via
+        // ffmpeg. Use the lower-res SUB stream (sN/s1) for the live wall so each camera
+        // costs ~10% of a core (9 cams fit comfortably on the box). Relay sources and
+        // already-wrapped (ffmpeg:/#) sources are left as-is.
+        if (!relaySrc) rtsp = rtsp.replace('/s0/live', '/s1/live');
+        const src = (rtsp.startsWith('ffmpeg:') || rtsp.includes('#video='))
+          ? rtsp
+          : `ffmpeg:${rtsp}#video=h264#audio=aac`;
         const ok = await registerWithGo2rtc(name, src);
         const base = GO2RTC_PUBLIC.replace(/\/+$/, '');
         const url = `${base}/api/stream.m3u8?src=${name}`;
