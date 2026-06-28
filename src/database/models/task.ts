@@ -39,6 +39,7 @@ export default function (sequelize) {
       approvalNotes: { type: DataTypes.TEXT, allowNull: true },
       clientAccountId: { type: DataTypes.UUID, allowNull: true }, // client who created it
       completedByGuardId: { type: DataTypes.UUID, allowNull: true }, // guard who completed it
+      completionNotes: { type: DataTypes.TEXT, allowNull: true }, // what the guard reported doing
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    

@@ -108,22 +108,27 @@ export async function notifyTaskRejected(db: any, tenantId: string, task: any, n
 
 /** Task completed by a guard → notify the client (push w/ photo + email) and CRM. */
 export async function notifyTaskCompleted(
-  db: any, tenantId: string, task: any, opts: { guardName?: string; photoUrl?: string } = {},
+  db: any, tenantId: string, task: any, opts: { guardName?: string; photoUrl?: string; notes?: string } = {},
 ): Promise<void> {
   const { name } = await stationMeta(db, task.taskBelongsToStationId);
+  const note = opts.notes && opts.notes.trim() ? opts.notes.trim() : '';
+  const body = note
+    ? `La tarea "${task.taskToDo}" fue completada en ${name}. Reporte: "${note}"`
+    : `La tarea "${task.taskToDo}" fue completada en ${name}.`;
   notifyClient(db, tenantId, { clientAccountId: task.clientAccountId, stationId: task.taskBelongsToStationId }, {
     eventType: 'task.completed',
     title: 'Tarea completada',
-    body: `La tarea "${task.taskToDo}" fue completada en ${name}.`,
+    body,
     image: opts.photoUrl || undefined,
     data: {
       taskId: String(task.id), stationName: name,
       guardName: String(opts.guardName || ''), photoUrl: String(opts.photoUrl || ''),
+      notes: note,
     },
     sourceEntityType: 'task', sourceEntityId: String(task.id),
   }).catch(() => undefined);
 
-  await dispatch('task.completed', { taskName: task.taskToDo, guardName: opts.guardName || null, siteName: name, stationName: name }, {
+  await dispatch('task.completed', { taskName: task.taskToDo, guardName: opts.guardName || null, siteName: name, stationName: name, notes: note || null }, {
     database: db, tenantId,
     sourceEntityType: 'task', sourceEntityId: String(task.id),
     extraEmails: await clientEmail(db, task.clientAccountId),

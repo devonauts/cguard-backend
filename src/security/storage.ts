@@ -191,6 +191,18 @@ export default class Storage {
         folder: 'tenant/:tenantId/task/taskCompletedImage',
         maxSizeInBytes: 100 * 1024 * 1024,
       },
+      // Completion photo a guard attaches from the worker app when finishing a
+      // task. Same folder as taskTaskCompletedImage, but a self-service storageId
+      // that bypasses the write-permission check (guards lack the task storage
+      // grant). The complete endpoint only links it to a task on the guard's OWN
+      // active station — same self-scoped pattern as the clock-in selfie.
+      guardTaskCompletedImage: {
+        id: 'guardTaskCompletedImage',
+        folder: 'tenant/:tenantId/task/taskCompletedImage',
+        maxSizeInBytes: 10 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
 
       notificationImageUrl: {
         id: 'notificationImageUrl',

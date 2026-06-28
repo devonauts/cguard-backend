@@ -3,7 +3,9 @@
  *   GET  /tenant/:tenantId/guard/me/tasks            → approved, not-done tasks for the
  *                                                       guard's active station(s)
  *   POST /tenant/:tenantId/guard/me/tasks/:id/complete { notes?, photo? }
- *                                                     → mark done + notify the client
+ *                                                     → mark done (saves the guard's
+ *                                                       completion note + optional
+ *                                                       photo) + notify the client
  */
 import { Op } from 'sequelize';
 import ApiResponseHandler from '../apiResponseHandler';
@@ -76,11 +78,16 @@ export const guardMeTaskComplete = async (req, res) => {
       attributes: ['id', 'fullName'],
     });
 
+    // What the guard reported doing (free text, capped). Trimmed empty → null.
+    const completionNotes =
+      typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim().slice(0, 1000) : null;
+
     await task.update({
       wasItDone: true,
       status: 'completed',
       dateCompletedTask: new Date(),
       completedByGuardId: securityGuard ? securityGuard.id : null,
+      completionNotes,
       updatedById: currentUser.id,
     });
 
@@ -107,6 +114,7 @@ export const guardMeTaskComplete = async (req, res) => {
     notifyTaskCompleted(db, tenantId, task.get({ plain: true }), {
       guardName: securityGuard ? securityGuard.fullName : undefined,
       photoUrl,
+      notes: completionNotes || undefined,
     }).catch(() => undefined);
 
     await ApiResponseHandler.success(req, res, task.get({ plain: true }));
