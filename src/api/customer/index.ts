@@ -67,4 +67,14 @@ export default (app) => {
     '/customer/visitor-log/:id/request-removal',
     require('./visitorRemovalRequest').customerVisitorRemovalRequest,
   );
+
+  // ── Mi Seguridad safety endpoints (customer-scoped to the JWT's clientAccount).
+  // SOS panic button (creates a HIGH incident + notifies CRM + pushes the
+  // station's on-duty guards), live guard-location map, geofenced clock-in proof
+  // feed, and customer-driven incident escalation. All strictly scoped to the
+  // customer's own stations. Mirror the registration of /customer/tasks above.
+  app.post('/customer/sos', require('./customerSafety').customerSos);
+  app.get('/customer/guard-locations', require('./customerSafety').customerGuardLocations);
+  app.get('/customer/clock-ins', require('./customerSafety').customerClockIns);
+  app.post('/customer/incident/:id/escalate', require('./customerSafety').customerIncidentEscalate);
 };
