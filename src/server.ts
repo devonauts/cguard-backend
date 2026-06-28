@@ -22,21 +22,46 @@ import { startWorkerMetrics } from './lib/workerMetrics';
 import { verifySchemaConsistency } from './database/migrations/verify-schema';
 import { setInterval as nodeRealSetInterval } from 'timers';
 
-// ── Cluster-safe scheduling ─────────────────────────────────────────────────
-// PM2 runs this server file in EVERY cluster instance (2 by default), so any
-// setInterval-based scheduler fires once PER INSTANCE — doubling every digest
-// email, shift reminder, radio check, forced clock-out, etc. Run scheduled jobs
-// on ONE instance only (the leader). PM2 exposes the per-instance ordinal as
-// NODE_APP_INSTANCE ('0','1',…); fork-mode / non-PM2 leaves it undefined → leader.
-const IS_SCHEDULER_LEADER = (process.env.NODE_APP_INSTANCE ?? '0') === '0';
-// Drop-in wrapper used by every scheduler below. On non-leader instances it is a
-// no-op (none of them store/clear the returned handle, so returning undefined is
-// safe) — one line makes ALL the interval schedulers leader-only.
-const nodeSetInterval: typeof nodeRealSetInterval = ((fn: any, ms?: any, ...args: any[]) =>
-  (IS_SCHEDULER_LEADER ? nodeRealSetInterval(fn, ms, ...args) : (undefined as any))) as any;
+// ── Cluster-safe scheduling (single-box leader election) ─────────────────────
+// PM2 runs this server file in EVERY cluster instance, so any setInterval-based
+// scheduler fired once PER INSTANCE — doubling every digest email, shift reminder,
+// radio check, forced clock-out, etc. We must run scheduled jobs on ONE instance.
+// NOTE: we deliberately do NOT trust PM2's NODE_APP_INSTANCE — on this box it is 2/3
+// (global, not 0-based per app), so a "=== 0" leader test would elect NO leader.
+// Instead, a heartbeat LOCK FILE on the shared box decides the leader: whichever
+// instance holds a fresh lock is leader; if it dies, another claims it after the TTL.
+const _leaderFs = require('fs');
+const _leaderPath = require('path').join(process.cwd(), '.scheduler-leader.lock');
+const LEADER_TTL_MS = 30_000;
+let _amLeader = false;
+function _heartbeatLeader() {
+  const now = Date.now();
+  try {
+    let owner: any = null;
+    try { owner = JSON.parse(_leaderFs.readFileSync(_leaderPath, 'utf8')); } catch { /* no/garbage lock */ }
+    const fresh = owner && typeof owner.ts === 'number' && (now - owner.ts) < LEADER_TTL_MS;
+    if (owner && owner.pid === process.pid) {
+      _leaderFs.writeFileSync(_leaderPath, JSON.stringify({ pid: process.pid, ts: now })); // renew
+      _amLeader = true;
+    } else if (!fresh) {
+      _leaderFs.writeFileSync(_leaderPath, JSON.stringify({ pid: process.pid, ts: now })); // claim
+      try { _amLeader = JSON.parse(_leaderFs.readFileSync(_leaderPath, 'utf8')).pid === process.pid; } catch { _amLeader = false; }
+    } else {
+      _amLeader = false; // someone else holds a fresh lock
+    }
+  } catch { /* keep prior state on FS error */ }
+}
+_heartbeatLeader();
+nodeRealSetInterval(_heartbeatLeader, 10_000); // contend/renew every 10s (runs in all instances)
+const isSchedulerLeader = () => _amLeader;
+
+// Drop-in wrappers used by every scheduler below. Leadership is checked at FIRE time
+// (it can change if the leader dies), so a non-leader instance simply skips the tick.
+const nodeSetInterval: typeof nodeRealSetInterval = ((fn: any, ms?: any) =>
+  nodeRealSetInterval(() => { if (isSchedulerLeader()) (fn as any)(); }, ms)) as any;
 // Same gate for the one-shot "kick the scheduler shortly after boot" timers — they
 // ran on EVERY reload in EVERY instance, re-firing reminders/checks each deploy.
-const leaderTimeout = (fn: () => void, ms: number) => { if (IS_SCHEDULER_LEADER) setTimeout(fn, ms); };
+const leaderTimeout = (fn: () => void, ms: number) => { setTimeout(() => { if (isSchedulerLeader()) fn(); }, ms); };
 
 // Process-level safety net. Without these, a single unhandled promise rejection or
 // uncaught exception anywhere (a route, a scheduler, a stray await) crashes the
