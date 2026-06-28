@@ -79,6 +79,10 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
     // Time-sensitive interruption level pierces Focus modes and shows even when
     // the phone is locked/silenced (iOS 15+). Falls back gracefully on older iOS.
     if (payload.timeSensitive) aps['interruption-level'] = 'time-sensitive';
+    // mutable-content lets the iOS Notification Service Extension run to fetch + attach
+    // the rich image. Without this the extension never fires and the banner shows no image,
+    // even though notification.imageUrl (→ fcm_options.image) is set below.
+    if (payload.image) aps['mutable-content'] = 1;
     const message = {
       notification: {
         title: payload.title,
