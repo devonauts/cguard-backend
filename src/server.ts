@@ -20,7 +20,23 @@ import { syncGuardDutyStatus } from './services/dutySync';
 import { runJob } from './lib/jobsMonitor';
 import { startWorkerMetrics } from './lib/workerMetrics';
 import { verifySchemaConsistency } from './database/migrations/verify-schema';
-import { setInterval as nodeSetInterval } from 'timers';
+import { setInterval as nodeRealSetInterval } from 'timers';
+
+// ── Cluster-safe scheduling ─────────────────────────────────────────────────
+// PM2 runs this server file in EVERY cluster instance (2 by default), so any
+// setInterval-based scheduler fires once PER INSTANCE — doubling every digest
+// email, shift reminder, radio check, forced clock-out, etc. Run scheduled jobs
+// on ONE instance only (the leader). PM2 exposes the per-instance ordinal as
+// NODE_APP_INSTANCE ('0','1',…); fork-mode / non-PM2 leaves it undefined → leader.
+const IS_SCHEDULER_LEADER = (process.env.NODE_APP_INSTANCE ?? '0') === '0';
+// Drop-in wrapper used by every scheduler below. On non-leader instances it is a
+// no-op (none of them store/clear the returned handle, so returning undefined is
+// safe) — one line makes ALL the interval schedulers leader-only.
+const nodeSetInterval: typeof nodeRealSetInterval = ((fn: any, ms?: any, ...args: any[]) =>
+  (IS_SCHEDULER_LEADER ? nodeRealSetInterval(fn, ms, ...args) : (undefined as any))) as any;
+// Same gate for the one-shot "kick the scheduler shortly after boot" timers — they
+// ran on EVERY reload in EVERY instance, re-firing reminders/checks each deploy.
+const leaderTimeout = (fn: () => void, ms: number) => { if (IS_SCHEDULER_LEADER) setTimeout(fn, ms); };
 
 // Process-level safety net. Without these, a single unhandled promise rejection or
 // uncaught exception anywhere (a route, a scheduler, a stray await) crashes the
@@ -169,7 +185,7 @@ nodeSetInterval(() => {
 nodeSetInterval(() => { runJob("DutySync", syncGuardDutyStatus); }, 5 * 60 * 1000);
 
 // Run once on startup after a short delay
-setTimeout(() => syncGuardDutyStatus(), 10000);
+leaderTimeout(() => syncGuardDutyStatus(), 10000);
 
 /**
  * Consigna scheduler — every minute, find active station consignas whose
@@ -240,7 +256,7 @@ async function runConsignaScheduler() {
 
 // Check due consignas every minute
 nodeSetInterval(() => { runJob("Consigna", runConsignaScheduler); }, 60 * 1000);
-setTimeout(() => runConsignaScheduler(), 20000);
+leaderTimeout(() => runConsignaScheduler(), 20000);
 
 /**
  * Radio check (pase de novedades) scheduler. Two jobs each minute:
@@ -300,7 +316,7 @@ async function runRadioCheckScheduler() {
 }
 
 nodeSetInterval(() => { runJob("RadioCheck", runRadioCheckScheduler); }, 60 * 1000);
-setTimeout(() => runRadioCheckScheduler(), 35000);
+leaderTimeout(() => runRadioCheckScheduler(), 35000);
 
 /**
  * Forced clock-out — auto-closes shifts whose scheduled end passed (+grace) while
@@ -319,7 +335,7 @@ async function runForcedClockOutScheduler() {
 }
 
 nodeSetInterval(() => { runJob("ForcedClockOut", runForcedClockOutScheduler); }, 60 * 1000);
-setTimeout(() => runForcedClockOutScheduler(), 45000);
+leaderTimeout(() => runForcedClockOutScheduler(), 45000);
 
 /**
  * Shift reminders — push notifications to whoever is assigned a station turno
@@ -338,7 +354,7 @@ async function runShiftReminderScheduler() {
 }
 
 nodeSetInterval(() => { runJob("ShiftReminders", runShiftReminderScheduler); }, 5 * 60 * 1000);
-setTimeout(() => runShiftReminderScheduler(), 60000);
+leaderTimeout(() => runShiftReminderScheduler(), 60000);
 
 /**
  * Trial scheduler — sends reminder emails as a tenant's 14-day trial winds down
@@ -435,7 +451,7 @@ async function runTrialScheduler() {
 
 // Check trials a few times a day.
 nodeSetInterval(() => { runJob("TrialBilling", runTrialScheduler); }, 6 * 60 * 60 * 1000);
-setTimeout(() => runTrialScheduler(), 30000);
+leaderTimeout(() => runTrialScheduler(), 30000);
 
 /**
  * Seat reconciliation — once a day, push each active tenant's current
@@ -457,7 +473,7 @@ async function runSeatReconcile() {
 
 // Reconcile seats once a day.
 nodeSetInterval(() => { runJob("SeatReconcile", runSeatReconcile); }, 24 * 60 * 60 * 1000);
-setTimeout(() => runSeatReconcile(), 60000);
+leaderTimeout(() => runSeatReconcile(), 60000);
 
 /**
  * Attendance detection (Nómina) — every 5 minutes, scan recently-started shifts
@@ -601,7 +617,7 @@ async function runAttendanceDetectionScheduler() {
 
 // Detect attendance exceptions every 5 minutes.
 nodeSetInterval(() => { runJob("AttendanceDetection", runAttendanceDetectionScheduler); }, 5 * 60 * 1000);
-setTimeout(() => runAttendanceDetectionScheduler(), 45000);
+leaderTimeout(() => runAttendanceDetectionScheduler(), 45000);
 
 /**
  * Repeated-lateness (Nómina) — hourly, flag guards with 3+ late punches in the
@@ -667,7 +683,7 @@ async function runRepeatedLatenessScheduler() {
 
 // Repeated-lateness check hourly.
 nodeSetInterval(() => { runRepeatedLatenessScheduler(); }, 60 * 60 * 1000);
-setTimeout(() => runRepeatedLatenessScheduler(), 90000);
+leaderTimeout(() => runRepeatedLatenessScheduler(), 90000);
 
 /**
  * Document-expiry alerts (Feature #20) — once a day, scan every tenant's
@@ -689,7 +705,7 @@ async function runDocumentExpiryAlerts() {
 
 // Check document expiry once a day.
 nodeSetInterval(() => { runJob("DocumentExpiryAlerts", runDocumentExpiryAlerts); }, 24 * 60 * 60 * 1000);
-setTimeout(() => runDocumentExpiryAlerts(), 75000);
+leaderTimeout(() => runDocumentExpiryAlerts(), 75000);
 
 /**
  * Customer summary digest (Feature #21) — once a day, aggregate each active
@@ -708,7 +724,10 @@ async function runCustomerSummaryDigest() {
   }
 }
 
-// Send the summary digest once a day.
+// Send the summary digest once a day (leader instance only, via nodeSetInterval).
+// NOTE: removed the boot-time `leaderTimeout(() => runCustomerSummaryDigest(), 105000)`
+// — it fired the digest ~105s after EVERY restart/reload, so every deploy sent a
+// fresh round of "resumen diario" emails (×2 with the cluster). The daily interval
+// + the in-service "already sent today" guard are the single source of cadence now.
 nodeSetInterval(() => { runJob("CustomerSummaryDigest", runCustomerSummaryDigest); }, 24 * 60 * 60 * 1000);
-setTimeout(() => runCustomerSummaryDigest(), 105000);
 

@@ -136,7 +136,35 @@ function loadMailLayer(): { sendMail: any; renderNotificationEmail: any } | null
  * Run the digest for all tenants/clients. `db` is a databaseInit() handle.
  * Returns the number of clients notified (for logging).
  */
+/**
+ * Idempotency: send the digest at most ONCE per period. Persisted to a file so a
+ * restart/reload (or any extra trigger) never re-sends. The period bucket changes
+ * at the period boundary (UTC), so each new period sends exactly once. Fails OPEN
+ * (sends) if the marker can't be read/written — better a possible resend than a
+ * silently-never-sent digest; the cluster-leader gate is the primary dedup anyway.
+ */
+function claimDigestPeriod(): boolean {
+  const fs = require('fs');
+  const path = require('path');
+  const marker = path.join(process.cwd(), '.digest-last-sent');
+  const bucket = String(Math.floor(Date.now() / (DIGEST_PERIOD_DAYS * 86400000)));
+  try {
+    const prev = fs.existsSync(marker) ? String(fs.readFileSync(marker, 'utf8')).trim() : '';
+    if (prev === bucket) return false;
+    fs.writeFileSync(marker, bucket);
+    return true;
+  } catch (e: any) {
+    console.warn('[digest] period marker error (sending anyway):', e?.message || e);
+    return true;
+  }
+}
+
 export async function runCustomerSummaryDigest(db: any): Promise<number> {
+  // Skip if this period's digest already went out (restart/duplicate-trigger safe).
+  if (!claimDigestPeriod()) {
+    console.log('[digest] already sent for the current period — skipping');
+    return 0;
+  }
   let sent = 0;
   const end = new Date();
   const start = new Date(end.getTime() - DIGEST_PERIOD_DAYS * 86400000);
