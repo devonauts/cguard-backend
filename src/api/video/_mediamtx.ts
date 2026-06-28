@@ -12,13 +12,7 @@
  *    demuxer rejected ("Unrecognized video codec profile"), so no transcode needed.
  *  - H265 / unknown → transcode to H264 720p (only the cameras that truly need it).
  */
-import { execFile } from 'child_process';
-
 const MEDIAMTX_API = process.env.MEDIAMTX_API || 'http://127.0.0.1:9997';
-const FFPROBE = process.env.FFPROBE_PATH || '/usr/bin/ffprobe';
-
-// codec is stable per stream; cache so we probe each camera at most once per process.
-const codecCache = new Map<string, string>();
 
 /** Public HLS base, e.g. https://app.cguardpro.com/mediamtx (derived from GO2RTC_PUBLIC if unset). */
 export function mediamtxPublic(): string {
@@ -27,28 +21,17 @@ export function mediamtxPublic(): string {
   return g ? g.replace(/\/go2rtc$/, '/mediamtx') : '';
 }
 
-function probeCodec(rtsp: string): Promise<string> {
-  if (codecCache.has(rtsp)) return Promise.resolve(codecCache.get(rtsp) as string);
-  return new Promise((resolve) => {
-    const args = ['-v', 'error', '-rtsp_transport', 'tcp', '-select_streams', 'v:0',
-      '-show_entries', 'stream=codec_name', '-of', 'default=nw=1:nk=1', rtsp];
-    try {
-      execFile(FFPROBE, args, { timeout: 9000 }, (_err, stdout) => {
-        const codec = String(stdout || '').trim().toLowerCase().split('\n')[0] || '';
-        if (codec) codecCache.set(rtsp, codec);
-        resolve(codec);
-      });
-    } catch { resolve(''); }
-  });
-}
-
-function runOnDemand(rtsp: string, codec: string): string {
+function runOnDemand(rtsp: string): string {
   const out = 'rtsp://localhost:18554/$MTX_PATH';
-  if (codec === 'h264') {
-    return `ffmpeg -rtsp_transport tcp -i ${rtsp} -c:v copy -an -f rtsp ${out}`;
-  }
-  return `ffmpeg -rtsp_transport tcp -i ${rtsp} -c:v libx264 -vf scale=1280:720 ` +
-    `-preset superfast -tune zerolatency -g 50 -pix_fmt yuv420p -an -f rtsp ${out}`;
+  // These XVRs emit a keyframe only every ~12s (they ignore GovLength), so a raw copy
+  // yields 12-second HLS segments → ~12s black before the first frame + high latency.
+  // We re-encode forcing a keyframe every 2s of wall-clock (works at any fps), which makes
+  // HLS segments short → fast start, low latency. ultrafast + capped threads keeps it
+  // ~25% CPU/stream (7 cams ≈ 175% of the 4-core box). libx264 also normalises H265
+  // sources to H264 for the browser. -an drops the G.711 audio (can't mux to TS/browser).
+  return `ffmpeg -rtsp_transport tcp -i ${rtsp} -an -c:v libx264 -preset ultrafast ` +
+    `-tune zerolatency -force_key_frames expr:gte(t,n_forced*2) -sc_threshold 0 ` +
+    `-threads 2 -crf 23 -f rtsp ${out}`;
 }
 
 /**
@@ -64,9 +47,8 @@ export async function ensureMediamtxPath(name: string, rtsp: string): Promise<bo
     if (g && g.ok) return true; // already configured — don't disturb the running stream
   } catch { /* MediaMTX may be down; fall through and try to add */ }
 
-  const codec = await probeCodec(rtsp);
   const body = JSON.stringify({
-    runOnDemand: runOnDemand(rtsp, codec),
+    runOnDemand: runOnDemand(rtsp),
     runOnDemandRestart: true,
     runOnDemandCloseAfter: '30s',
   });
