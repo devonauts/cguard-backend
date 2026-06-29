@@ -132,9 +132,15 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
  */
 async function deliverToDevices(rows: any[], payload: PushPayload) {
   const apnsTokens = (rows || []).map((r: any) => r.apnsToken).filter(Boolean);
+  // The real FCM token lives in `pushToken`. Older rows stored it in `deviceId`
+  // too, so we still honor a deviceId that LOOKS like an FCM token (long string)
+  // — but NEVER a short stable install-id (@capacitor/device getId), which
+  // registerGuardDevice writes to `deviceId`. Sending that as a token guarantees
+  // a failed delivery (and, on a guard with both rows, masked the working one).
+  const looksLikeFcmToken = (s: any) => typeof s === 'string' && s.length > 64;
   const fcmTokens = (rows || [])
     .filter((r: any) => !r.apnsToken)
-    .map((r: any) => r.pushToken || r.deviceId)
+    .map((r: any) => r.pushToken || (looksLikeFcmToken(r.deviceId) ? r.deviceId : null))
     .filter(Boolean);
 
   const fcmRes: any = await sendToTokens(fcmTokens, payload);

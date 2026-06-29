@@ -56,6 +56,7 @@ export async function registerGuardDevice(
   if (record) {
     await record.update({
       userId,
+      app: 'worker',
       ...meta,
       ...(input.pushToken ? { pushToken: String(input.pushToken) } : {}),
       lastSeenAt: now,
@@ -66,6 +67,7 @@ export async function registerGuardDevice(
       deviceId,
       tenantId,
       userId,
+      app: 'worker',
       ...meta,
       pushToken: input.pushToken ? String(input.pushToken) : null,
       lastSeenAt: now,

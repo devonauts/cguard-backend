@@ -1,7 +1,11 @@
 /**
- * POST /api/tenant/:tenantId/guard/me/device-token  { token }
+ * POST /api/tenant/:tenantId/guard/me/device-token  { token, deviceId? }
  *
- * Registers the guard's FCM device token (for push). Idempotent per token.
+ * Registers the guard's FCM device token (for push). When the app sends its
+ * stable `deviceId` (@capacitor/device getId) we key on it — the SAME key
+ * `registerGuardDevice` (/guard/me/device) uses — so the token always lands on
+ * the guard's real device row instead of spawning a duplicate token-keyed row.
+ * Idempotent.
  */
 import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
@@ -13,15 +17,23 @@ export default async (req: any, res: any) => {
     if (!currentUser) throw new Error401();
     const db = req.database;
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
-    const token = (req.body.data || req.body || {}).token;
+    const body = req.body.data || req.body || {};
+    const token = body.token;
+    const deviceId = body.deviceId ? String(body.deviceId) : null;
     if (!token) throw new Error400(req.language, 'device.tokenRequired');
 
-    // Prefer attaching the FCM token to the guard's actual device record (set up
-    // via /guard/me/device). Fall back to the guard's most recent device, then to
-    // a token-keyed placeholder so push keeps working before device registration.
-    let device = await db.deviceIdInformation.findOne({
-      where: { tenantId, userId: currentUser.id, isBound: true },
-    });
+    // Resolve the row to attach the token to, in priority:
+    //  1) the stable device row (same key as /guard/me/device) — no duplicates,
+    //  2) the guard's bound device, 3) their most-recent device.
+    let device: any = null;
+    if (deviceId) {
+      device = await db.deviceIdInformation.findOne({ where: { tenantId, deviceId } });
+    }
+    if (!device) {
+      device = await db.deviceIdInformation.findOne({
+        where: { tenantId, userId: currentUser.id, isBound: true },
+      });
+    }
     if (!device) {
       device = await db.deviceIdInformation.findOne({
         where: { tenantId, userId: currentUser.id },
@@ -31,14 +43,21 @@ export default async (req: any, res: any) => {
     if (device) {
       // 'worker' tags this as a C-Guard Pro operaciones device so tenant broadcasts
       // (rondas/alarms/memos) reach it and never the Mi Seguridad client app.
-      await device.update({ pushToken: String(token), app: 'worker', updatedById: currentUser.id });
+      await device.update({
+        pushToken: String(token),
+        app: 'worker',
+        userId: currentUser.id,
+        lastSeenAt: new Date(),
+        updatedById: currentUser.id,
+      });
     } else {
-      // findOrCreate (not find-then-create) so two concurrent registrations of
-      // the same token don't insert duplicate device rows.
+      // No device row yet (token arrived before /guard/me/device). Create one keyed
+      // by the stable deviceId when known, else by the token. findOrCreate so two
+      // concurrent registrations don't insert duplicates.
       await db.deviceIdInformation.findOrCreate({
-        where: { deviceId: String(token), tenantId },
+        where: { tenantId, deviceId: deviceId || String(token) },
         defaults: {
-          deviceId: String(token),
+          deviceId: deviceId || String(token),
           pushToken: String(token),
           app: 'worker',
           tenantId,
