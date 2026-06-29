@@ -292,8 +292,24 @@ export async function schedulerOverview(req, res) {
     new PermissionChecker(req).validateHas(Permissions.values.stationRead);
     const tenantId = req.currentTenant.id;
 
-    const stations = await req.database.station.findAll({
+    // Only stations under an ACTIVE post-site (or with no post-site at all). A
+    // deleted post-site must not leave orphaned stations showing in the scheduler.
+    const Op = req.database.Sequelize.Op;
+    const activePostSites = await req.database.businessInfo.findAll({
       where: { tenantId, deletedAt: null },
+      attributes: ['id'],
+    });
+    const activePostSiteIds = activePostSites.map((p: any) => p.id);
+
+    const stations = await req.database.station.findAll({
+      where: {
+        tenantId,
+        deletedAt: null,
+        [Op.or]: [
+          { postSiteId: null },
+          { postSiteId: { [Op.in]: activePostSiteIds.length ? activePostSiteIds : ['__none__'] } },
+        ],
+      },
       attributes: ['id', 'stationName', 'scheduleType', 'rotationStyleId', 'postSiteId'],
       order: [['stationName', 'ASC']],
     });

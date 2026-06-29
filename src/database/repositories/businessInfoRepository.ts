@@ -205,6 +205,32 @@ class BusinessInfoRepository {
       transaction,
     });
 
+    // CASCADE: soft-delete the post-site's stations (and their positions) too.
+    // Without this, deleting a post-site orphaned its stations (deletedAt stayed
+    // null), so they lingered forever in the Programador/scheduler + station lists.
+    try {
+      const childStations = await options.database.station.findAll({
+        where: { postSiteId: id, tenantId: currentTenant.id, deletedAt: null },
+        attributes: ['id'],
+        transaction,
+      });
+      const childStationIds = childStations.map((s: any) => s.id);
+      if (childStationIds.length) {
+        if (options.database.stationPosition) {
+          await options.database.stationPosition.destroy({
+            where: { stationId: childStationIds, tenantId: currentTenant.id },
+            transaction,
+          });
+        }
+        await options.database.station.destroy({
+          where: { id: childStationIds, tenantId: currentTenant.id },
+          transaction,
+        });
+      }
+    } catch (err) {
+      console.warn('[businessInfo.destroy] station cascade failed:', (err as any)?.message || err);
+    }
+
     await this._createAuditLog(
       AuditLogRepository.DELETE,
       record,
