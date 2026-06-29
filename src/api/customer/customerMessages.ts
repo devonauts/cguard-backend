@@ -122,6 +122,7 @@ export const customerMessageRead = async (req, res) => {
  */
 export const customerDeviceToken = async (req, res) => {
   try {
+    console.log('[customerDeviceToken] DIAG cu?', !!req.currentUser, 'caId=', req.currentUser?.clientAccountId, 'uid=', req.currentUser?.id, 'tid=', req.currentUser?.tenantId, 'hasBody=', !!req.body, 'bodyKeys=', req.body ? Object.keys(req.body).join(',') : 'none');
     const { db, tenantId, userId, clientAccountId } = customerCtx(req);
     const b = req.body?.data || req.body || {};
     const token = (b.deviceId || b.token || b.pushToken || '').toString().trim();
