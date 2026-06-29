@@ -116,18 +116,41 @@ export const customerGuardRatingCreate = async (req: any, res: any) => {
 
     const shiftId = b.shiftId ? String(b.shiftId) : String(shift.id);
 
-    const created = await db.guardRating.create({
-      clientAccountId,
-      guardId: guardPk,
-      stationId,
-      shiftId,
-      rating,
-      comment: comment || null,
-      tenantId,
-      createdById: userId,
-      updatedById: userId,
+    // ONE rating per (client, guard): if this client already rated this guard, UPDATE
+    // that row instead of creating a duplicate. A client can re-submit to change their
+    // rating/comment, but never stacks multiple reviews for the same guard.
+    const existing = await db.guardRating.findOne({
+      where: {
+        clientAccountId,
+        guardId: guardPk,
+        ...(tenantId ? { tenantId } : {}),
+        deletedAt: null,
+      },
     });
-    const ratingId = String(created.id);
+    let ratingRow: any;
+    if (existing) {
+      await existing.update({
+        stationId,
+        shiftId,
+        rating,
+        comment: comment || null,
+        updatedById: userId,
+      });
+      ratingRow = existing;
+    } else {
+      ratingRow = await db.guardRating.create({
+        clientAccountId,
+        guardId: guardPk,
+        stationId,
+        shiftId,
+        rating,
+        comment: comment || null,
+        tenantId,
+        createdById: userId,
+        updatedById: userId,
+      });
+    }
+    const ratingId = String(ratingRow.id);
 
     // ── CRM notify (in-app, supervisors). Best-effort.
     try {
