@@ -10,17 +10,66 @@
 import { Op } from 'sequelize';
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
+import Error403 from '../../errors/Error403';
 import Error404 from '../../errors/Error404';
 import FileRepository from '../../database/repositories/fileRepository';
 import { notifyTaskCompleted } from '../../services/taskNotify';
 
-/** Station ids the guard is actively assigned to. */
-async function activeStationIds(db: any, tenantId: string, userId: string): Promise<string[]> {
-  const rows = await db.guardAssignment.findAll({
-    where: { tenantId, guardId: userId, status: 'active', deletedAt: null },
-    attributes: ['stationId'],
-  });
-  return Array.from(new Set((rows || []).map((r: any) => String(r.stationId)).filter(Boolean)));
+/**
+ * Every station the guard is effectively working — so tasks SHOW and can be
+ * COMPLETED whether they're tied to the post via an active assignment, the
+ * permanent station junction, the current scheduled shift, OR an open clock-in.
+ * Relying on guardAssignment alone left scheduler/clock-in guards with an empty
+ * task list and a "not assigned to your post" rejection on complete.
+ */
+async function guardStationIds(db: any, tenantId: string, userId: string): Promise<string[]> {
+  const ids = new Set<string>();
+  const add = (v: any) => { if (v) ids.add(String(v)); };
+
+  // 1) Active guard assignments.
+  try {
+    const rows = await db.guardAssignment.findAll({
+      where: { tenantId, guardId: userId, status: 'active', deletedAt: null },
+      attributes: ['stationId'],
+    });
+    for (const r of rows || []) add(r.stationId);
+  } catch (e) { console.warn('[guardTasks] assignment stations failed:', (e as any)?.message || e); }
+
+  // 2) Permanent station junction (station.assignedGuards).
+  try {
+    const sts = await db.station.findAll({
+      where: { tenantId, deletedAt: null },
+      attributes: ['id'],
+      include: [{ model: db.user, as: 'assignedGuards', where: { id: userId }, attributes: [], through: { attributes: [] }, required: true }],
+    });
+    for (const s of sts || []) add(s.id);
+  } catch (e) { console.warn('[guardTasks] junction stations failed:', (e as any)?.message || e); }
+
+  // 3) Current scheduled shift (now within the window).
+  try {
+    const now = new Date();
+    const shift = await db.shift.findOne({
+      where: { guardId: userId, tenantId, startTime: { [Op.lte]: now }, endTime: { [Op.gte]: now } },
+      attributes: ['stationId'],
+      order: [['startTime', 'DESC']],
+    });
+    if (shift) add(shift.stationId);
+  } catch (e) { console.warn('[guardTasks] shift station failed:', (e as any)?.message || e); }
+
+  // 4) Active clock-in (guardShift still open) — where the guard physically is.
+  try {
+    const sg = await db.securityGuard.findOne({ where: { guardId: userId, tenantId, deletedAt: null }, attributes: ['id'] });
+    if (sg) {
+      const cs = await db.guardShift.findOne({
+        where: { guardNameId: sg.id, tenantId, punchOutTime: null },
+        attributes: ['stationNameId'],
+        order: [['punchInTime', 'DESC']],
+      });
+      if (cs) add(cs.stationNameId);
+    }
+  } catch (e) { console.warn('[guardTasks] clock-in station failed:', (e as any)?.message || e); }
+
+  return Array.from(ids);
 }
 
 export const guardMeTasksList = async (req, res) => {
@@ -30,7 +79,7 @@ export const guardMeTasksList = async (req, res) => {
     const db = req.database;
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
 
-    const stationIds = await activeStationIds(db, tenantId, currentUser.id);
+    const stationIds = await guardStationIds(db, tenantId, currentUser.id);
     if (!stationIds.length) {
       return ApiResponseHandler.success(req, res, { rows: [], count: 0 });
     }
@@ -63,14 +112,15 @@ export const guardMeTaskComplete = async (req, res) => {
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
     const b = req.body?.data || req.body || {};
 
-    const stationIds = await activeStationIds(db, tenantId, currentUser.id);
+    const stationIds = await guardStationIds(db, tenantId, currentUser.id);
     const task = await db.task.findOne({
       where: { id: req.params.id, tenantId, deletedAt: null },
     });
     if (!task) throw new Error404();
-    // Only a guard assigned to the task's station may complete it.
+    // Only a guard working the task's station may complete it. (Same resolver as
+    // the list, so any task the guard can SEE is always completable.)
     if (!stationIds.includes(String(task.taskBelongsToStationId))) {
-      return ApiResponseHandler.error(req, res, new Error('Tarea no asignada a tu puesto'));
+      throw new Error403();
     }
 
     const securityGuard = await db.securityGuard.findOne({
