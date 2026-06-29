@@ -304,7 +304,7 @@ export const customerGuardLocations = async (req: any, res: any) => {
     // Profile photos (same source/shape as customerAccountMe guard photos).
     const photoByGuard = new Map<string, string>();
     try {
-      const photos = guardIds.length
+      const photoRecords = guardIds.length
         ? await db.file.findAll({
             where: {
               belongsTo: db.securityGuard.getTableName(),
@@ -315,8 +315,11 @@ export const customerGuardLocations = async (req: any, res: any) => {
             attributes: ['belongsToId', 'publicUrl', 'privateUrl'],
           })
         : [];
+      // Sign each photo into a fetchable URL (the worker-app selfie is private; a raw
+      // privateUrl path won't load in the apps).
+      const photos = await FileRepository.fillDownloadUrl(photoRecords);
       for (const p of photos || []) {
-        const url = p.publicUrl || p.privateUrl || null;
+        const url = (p as any).downloadUrl || p.publicUrl || null;
         if (url && !photoByGuard.has(String(p.belongsToId))) photoByGuard.set(String(p.belongsToId), url);
       }
     } catch { /* non-fatal */ }

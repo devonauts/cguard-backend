@@ -12,6 +12,7 @@
 
 import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
+import FileRepository from '../../database/repositories/fileRepository';
 import Error401 from '../../errors/Error401';
 import Error403 from '../../errors/Error403';
 
@@ -146,7 +147,7 @@ export default async (req: any, res: any) => {
     // Batch load photos
     const allGuardRecordIds = Array.from(guardRecordIdsByUserId.values());
     if (allGuardRecordIds.length) {
-      const photos = await db.file.findAll({
+      const photoRecords = await db.file.findAll({
         where: {
           belongsTo: db.securityGuard.getTableName(),
           belongsToId: allGuardRecordIds,
@@ -155,8 +156,10 @@ export default async (req: any, res: any) => {
         },
         attributes: ['belongsToId', 'publicUrl', 'privateUrl'],
       });
+      // Sign each photo into a fetchable URL (private selfie → signed downloadUrl).
+      const photos = await FileRepository.fillDownloadUrl(photoRecords);
       for (const p of photos) {
-        const url = p.publicUrl || p.privateUrl || null;
+        const url = (p as any).downloadUrl || p.publicUrl || null;
         if (!url) continue;
         // find the guardUserId for this record
         for (const [userId, recId] of guardRecordIdsByUserId.entries()) {
