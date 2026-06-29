@@ -121,6 +121,7 @@ export const customerMessageRead = async (req, res) => {
  * overwrites the old row.
  */
 export const customerDeviceToken = async (req, res) => {
+  console.log('[cdt] ENTER cu=%s authHdr=%s tokTail=%s', !!req.currentUser, String(req.headers?.authorization || '').slice(0, 12), String(req.body?.deviceId || '').slice(-8));
   try {
     const { db, tenantId, userId, clientAccountId } = customerCtx(req);
     const b = req.body?.data || req.body || {};
@@ -187,6 +188,7 @@ export const customerDeviceToken = async (req, res) => {
       console.warn('[customerDeviceToken] clientAccount link failed:', e?.message || e);
     }
 
+    console.log('[cdt] WROTE existing=%s platform=%s', !!existing, platform);
     await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error: any) {
     console.warn('[customerDeviceToken] failed:', error?.message);
