@@ -50,6 +50,13 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: false,
       },
+      // Named icon for templated services (e.g. 'cctv','alarm','patrol'). The app +
+      // CRM preview render it from a shared icon set, so a template can pass an icon
+      // without an uploaded image. Falls back to the uploaded iconImage when absent.
+      iconName: {
+        type: DataTypes.STRING(40),
+        allowNull: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    
