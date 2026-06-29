@@ -163,6 +163,7 @@ export const customerDeviceToken = async (req, res) => {
     // token never landed and no push arrived. Re-assign userId, then fall back to apnsToken,
     // then (user, platform).
     fields.userId = userId;
+    console.log('[customerDeviceToken] DIAG userId=%s platform=%s tokTail=%s apns=%s', userId, platform, token.slice(-10), !!apnsToken);
     let existing: any = null;
     if (token) existing = await db.deviceIdInformation.findOne({ where: { tenantId, deviceId: token } });
     if (!existing && apnsToken) existing = await db.deviceIdInformation.findOne({ where: { tenantId, apnsToken } });
@@ -187,6 +188,10 @@ export const customerDeviceToken = async (req, res) => {
       console.warn('[customerDeviceToken] clientAccount link failed:', e?.message || e);
     }
 
+    console.log('[customerDeviceToken] DIAG wrote ok (existing=%s)', !!existing);
     await ApiResponseHandler.success(req, res, { ok: true });
-  } catch (error) { await ApiResponseHandler.error(req, res, error); }
+  } catch (error: any) {
+    console.error('[customerDeviceToken] DIAG FAILED:', error?.message, '| sql:', error?.parent?.sqlMessage || error?.original?.sqlMessage);
+    await ApiResponseHandler.error(req, res, error);
+  }
 };
