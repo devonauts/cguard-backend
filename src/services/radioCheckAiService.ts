@@ -183,22 +183,42 @@ const statusLabel = (s: string) =>
  */
 function buildBasicSummary(entries: any[]): string {
   const total = entries.length;
-  const responded = entries.filter((e) => e.status === 'responded').length;
-  const incidents = entries.filter((e) => e.classification === 'incident');
-  const novedades = entries.filter((e) => e.classification === 'novedad' && e.transcript);
+  const responded = entries.filter((e) => e.status === 'responded');
   const noResp = entries.filter((e) => e.status === 'no_response');
 
-  const parts: string[] = [`Pase de novedades: ${responded} de ${total} puesto(s) respondieron.`];
-  if (incidents.length) {
+  const fmtTime = (d: any): string => {
+    if (!d) return '';
+    try {
+      return new Intl.DateTimeFormat('es-EC', {
+        timeZone: RADIO_TZ, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      }).format(new Date(d));
+    } catch { return ''; }
+  };
+  // What the guard reported — transcript if AI transcribed it, otherwise a clear
+  // marker so the written report is complete even without OpenAI (out of quota):
+  // a voice note that wasn't transcribed, or a "Sin novedad" reply.
+  const saidOf = (e: any): string => {
+    const t = (e.transcript || '').trim();
+    if (t) return `"${t}"`;
+    if (e.audioUrl) return '(nota de voz — sin transcripción)';
+    return 'Sin novedad';
+  };
+
+  const parts: string[] = [`Pase de novedades: ${responded.length} de ${total} puesto(s) respondieron.`];
+  if (responded.length) {
     parts.push(
-      `\n⚠️ INCIDENTES (${incidents.length}):\n` +
-        incidents.map((e) => `- ${e.stationName || 'Puesto'}: "${(e.transcript || '').trim() || 'reporte de incidente'}"`).join('\n'),
-    );
-  }
-  if (novedades.length) {
-    parts.push(
-      `\nNovedades:\n` +
-        novedades.map((e) => `- ${e.stationName || 'Puesto'}: "${(e.transcript || '').trim()}"`).join('\n'),
+      '\nReportes:\n' +
+        responded
+          .map((e) => {
+            const flag =
+              e.classification === 'incident' ? '⚠️ INCIDENTE — '
+                : e.classification === 'novedad' ? 'NOVEDAD — ' : '';
+            const who = e.guardName ? ` (${e.guardName})` : '';
+            const when = fmtTime(e.respondedAt);
+            const ts = when ? ` [${when}]` : '';
+            return `- ${e.stationName || 'Puesto'}${who}${ts}: ${flag}${saidOf(e)}`;
+          })
+          .join('\n'),
     );
   }
   if (noResp.length) {
@@ -215,30 +235,18 @@ export async function generateSummary(db: any, tenantId: string, sessionId: stri
   // Always have a usable summary ready; AI replaces it on success.
   const fallback = buildBasicSummary(entries);
   const finish = async (summary: string) => {
-    // Voice the closing report (the AI dispatcher "reads out" the pase result).
-    const spoken =
-      'Pase de novedades completado. ' +
-      summary.replace(/[⚠️*#_`>-]/g, ' ').replace(/\s*\n+\s*/g, '. ').replace(/\s{2,}/g, ' ').trim();
-    const summaryAudioUrl = await synthesizeSpeech(`radio-check/${tenantId}/${sessionId}/summary.mp3`, spoken);
+    // PERSIST the written report to the session — the source of truth that lives in
+    // the "historial de pases de turno". NO spoken/TTS readout (the user wants a
+    // written record in the system, not a voice summary on the radio), and it must
+    // NOT depend on OpenAI (which can be out of quota). Saved unconditionally.
     await db.radioCheckSession
-      .update({ summary, summaryStatus: 'done', ...(summaryAudioUrl ? { summaryAudioUrl } : {}) }, { where: { id: sessionId, tenantId } })
-      .catch(() => {});
+      .update({ summary, summaryStatus: 'done' }, { where: { id: sessionId, tenantId } })
+      .catch((e: any) => console.warn('[radioCheck] report save failed:', e?.message || e));
     await storePlatformEvent(db, {
-      tenantId, eventType: 'radio.session_completed', title: 'Resumen del pase listo', body: '',
+      tenantId, eventType: 'radio.session_completed', title: 'Reporte del pase de turno listo', body: '',
       targetRoles: DISPATCHER_TARGET_ROLES, sourceEntityType: 'radioCheckSession', sourceEntityId: sessionId,
-      // summaryAudioUrl intentionally NOT in the payload: the closing report is
-      // spoken ONCE live on the radio channel (below). Auto-playing the mp3 too
-      // made the dispatcher hear it twice. The mp3 stays persisted on the session
-      // for an optional manual replay.
       payload: { sessionId, summaryReady: true, summaryAudioUrl: null },
     }).catch(() => {});
-    // Read the closing report over the live radio channel (fire-and-forget).
-    void (async () => {
-      try {
-        const pcm = await synthesizeSpeechPcm(spoken);
-        if (pcm) await broadcastPcm(tenantId, pcm, OPENAI_PCM_RATE, 'Central de monitoreo');
-      } catch { /* ignore */ }
-    })();
   };
 
   if (!KEY) { await finish(fallback); return; } // no AI configured → deterministic summary
