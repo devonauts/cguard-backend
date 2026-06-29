@@ -405,7 +405,10 @@ export default async (req: any, res: any) => {
     if (tenantId && shouldInclude('mobileServices')) {
       try {
         const r = await new ServiceService(req).findAndCountAll({ filter: {}, limit: 0 });
-        mobileServices = Array.isArray(r.rows) ? r.rows : [];
+        // Only services explicitly published to the mobile app (the CRM publish toggle).
+        mobileServices = (Array.isArray(r.rows) ? r.rows : []).filter(
+          (s: any) => s && (s.publishedOnMobile === true || s.publishedOnMobile === 1),
+        );
       } catch (e) { mobileServices = []; }
     }
 
