@@ -117,6 +117,13 @@ export default (app) => {
   app.get('/customer/reports/export', require('./customerReportsExport').default);
   app.get('/customer/analytics', require('./customerAnalytics').default);
 
+  // ── Ronda (patrol) history. New rondas are recorded in the siteTour system
+  // (tourAssignment + tagScan), not the legacy /tenant/:t/patrol table the client
+  // app used to read — so this exposes the siteTour-based history to the customer
+  // scope, restricted to the customer's own stations. Read-only.
+  // Mirror the registration of /customer/clock-ins above.
+  app.get('/customer/rondas', require('./customerRondas').customerRondasList);
+
   // ── Document vault (Feature #20). Aggregates the tenant compliance documents the
   // client is entitled to view (certifications + insurance policies) into one
   // flat list with signed downloadUrls + daysToExpiry. Customer-scoped via the JWT.

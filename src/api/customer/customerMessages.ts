@@ -144,12 +144,22 @@ export const customerDeviceToken = async (req, res) => {
     // Link the device to the client account directly so push can resolve it by
     // clientAccountId, independent of clientAccount.userId being set.
     if (clientAccountId) fields.clientAccountId = clientAccountId;
-    if (b.platform) fields.platform = String(b.platform).slice(0, 40);
+    const platform = b.platform ? String(b.platform).slice(0, 40) : '';
+    if (platform) fields.platform = platform;
     if (b.model) fields.model = String(b.model).slice(0, 120);
     if (b.osVersion) fields.osVersion = String(b.osVersion).slice(0, 60);
     if (b.appVersion) fields.appVersion = String(b.appVersion).slice(0, 40);
 
-    const existing = await db.deviceIdInformation.findOne({ where: { tenantId, userId } });
+    // An FCM (Android/web) device never carries an APNs token — clear any stale one so the
+    // row stays FCM-deliverable. Previously an iOS+Android pair merged into ONE row (keyed
+    // by user) and delivery, seeing an apnsToken, dropped the Android FCM token entirely.
+    const isApple = /ios|apple|iphone|ipad/i.test(platform);
+    if (token && !apnsToken && !isApple) fields.apnsToken = null;
+
+    // Key per (user, platform) so an iOS (APNs) and an Android (FCM) device for the same
+    // client get SEPARATE rows instead of merging — otherwise the Android push is dropped.
+    const whereKey: any = platform ? { tenantId, userId, platform } : { tenantId, userId };
+    const existing = await db.deviceIdInformation.findOne({ where: whereKey });
     if (existing) {
       await existing.update(fields);
     } else {
