@@ -417,17 +417,23 @@ class AuthService {
         console.warn('Could not mark lastLoginAt for user:', err);
       }
 
-      // SINGLE ACTIVE SESSION: invalidate this user's prior tokens. findByToken
-      // rejects any token issued before jwtTokenInvalidBefore; the new token
-      // (signed below) survives via the 2s back-dating. Per-user — only logs THIS
-      // account out of its other devices.
-      try {
-        await options.database.user.update(
-          { jwtTokenInvalidBefore: dayjs().subtract(2, 'second').toDate() },
-          { where: { id: user.id }, transaction },
-        );
-      } catch (err) {
-        console.warn('Could not set jwtTokenInvalidBefore:', err);
+      // SINGLE ACTIVE SESSION (opt-in): invalidate this user's prior tokens so a new
+      // login logs the account out of its other devices. findByToken rejects any
+      // token issued before jwtTokenInvalidBefore; the new token (signed below)
+      // survives via the 2s back-dating.
+      // DISABLED BY DEFAULT — it caused "random" logouts: any account used in more
+      // than one place (a 2nd tab/browser, the mobile app, a shared login, the demo)
+      // got kicked on every other login. Set ENFORCE_SINGLE_SESSION=true to re-enable.
+      // Explicit sign-out still invalidates the token (see authSignOut).
+      if (String(process.env.ENFORCE_SINGLE_SESSION || '').toLowerCase() === 'true') {
+        try {
+          await options.database.user.update(
+            { jwtTokenInvalidBefore: dayjs().subtract(2, 'second').toDate() },
+            { where: { id: user.id }, transaction },
+          );
+        } catch (err) {
+          console.warn('Could not set jwtTokenInvalidBefore:', err);
+        }
       }
 
       await SequelizeRepository.commitTransaction(transaction)
