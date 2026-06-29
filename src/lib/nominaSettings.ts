@@ -59,6 +59,23 @@ export interface NominaSettings {
     // Per-guard hourly rate overrides, keyed by securityGuard id. Falls back to
     // defaultHourlyRate when a guard has no override.
     guardRates: Record<string, number>;
+
+    // ── Universal salary model (configured per tenant / country) ──────────────
+    // 'hourly' = pay = hours × rate (legacy). 'monthly' = a fixed monthly salary per
+    // guard; payroll reports days worked + hours + overtime-by-type and (optionally)
+    // adjusts the salary per `unworkedDayPolicy`.
+    salaryBasis: 'hourly' | 'monthly';
+    defaultMonthlySalary: number;
+    // Per-guard monthly salary overrides, keyed by securityGuard id.
+    guardMonthlySalaries: Record<string, number>;
+    // How a scheduled-but-not-worked day affects monthly pay.
+    //  full = pay the full salary regardless · deduct_unjustified = subtract only
+    //  unjustified-absence (no-show) days · proportional = prorate by days worked.
+    unworkedDayPolicy: 'full' | 'deduct_unjustified' | 'proportional';
+    // Configurable extra/overtime hour categories the company reports/pays (e.g.
+    // Ecuador: suplementarias 1.5×, extraordinarias 2×). Each multiplies the base
+    // hourly rate; payroll breaks hours down by these so any country's rules fit.
+    extraHourTypes: Array<{ key: string; label: string; multiplier: number }>;
   };
 }
 
@@ -106,6 +123,14 @@ export const DEFAULT_NOMINA_SETTINGS: NominaSettings = {
     nightEndHour: 6,
     lastPeriodClose: null,
     guardRates: {},
+    salaryBasis: 'hourly',
+    defaultMonthlySalary: 0,
+    guardMonthlySalaries: {},
+    unworkedDayPolicy: 'full',
+    extraHourTypes: [
+      { key: 'supplementary', label: 'Horas suplementarias', multiplier: 1.5 },
+      { key: 'extraordinary', label: 'Horas extraordinarias', multiplier: 2 },
+    ],
   },
 };
 

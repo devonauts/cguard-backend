@@ -567,7 +567,7 @@ export default class AttendanceAdminService {
         punchInTime: { [Op.gte]: from, [Op.lte]: to },
         ...aclWhere,
       },
-      attributes: ['id', 'guardNameId', 'hoursWorked', 'overtimeMinutes', 'status', 'lateMinutes'],
+      attributes: ['id', 'guardNameId', 'hoursWorked', 'overtimeMinutes', 'status', 'lateMinutes', 'punchInTime'],
       include: [
         { model: db.securityGuard, as: 'guardName', attributes: ['id', 'fullName'] },
       ],
@@ -588,11 +588,18 @@ export default class AttendanceAdminService {
       payableHours: number;
     };
     const byGuard = new Map<string, Agg>();
+    const daysByGuard = new Map<string, Set<string>>(); // distinct punch-in days/guard
     const shiftIds: string[] = [];
 
     for (const r of rows as any[]) {
       const gid = r.guardName?.id || r.guardNameId || 'unknown';
       shiftIds.push(r.id);
+      if (r.punchInTime) {
+        const dayKey = new Date(r.punchInTime).toISOString().slice(0, 10);
+        let ds = daysByGuard.get(gid);
+        if (!ds) { ds = new Set(); daysByGuard.set(gid, ds); }
+        ds.add(dayKey);
+      }
       const a =
         byGuard.get(gid) ||
         {
@@ -662,22 +669,41 @@ export default class AttendanceAdminService {
       const r = Number(guardRates[gid]);
       return r > 0 ? r : defaultRate;
     };
-    const ratesEnabled = defaultRate > 0 || Object.values(guardRates).some((r) => Number(r) > 0);
+    // Universal salary model: 'monthly' pays a fixed salary per guard; 'hourly' is the
+    // legacy hours×rate. (Country labor rules for unworked days are configured in
+    // settings.payroll.unworkedDayPolicy; reported here as days worked for the period.)
+    const salaryBasis = (settings.payroll as any).salaryBasis === 'monthly' ? 'monthly' : 'hourly';
+    const defaultMonthly = Number((settings.payroll as any).defaultMonthlySalary || 0);
+    const guardMonthly: Record<string, number> = (settings.payroll as any).guardMonthlySalaries || {};
+    const monthlyFor = (gid: string) => {
+      const m = Number(guardMonthly[gid]);
+      return m > 0 ? m : defaultMonthly;
+    };
+    const ratesEnabled = salaryBasis === 'monthly'
+      ? (defaultMonthly > 0 || Object.values(guardMonthly).some((m) => Number(m) > 0))
+      : (defaultRate > 0 || Object.values(guardRates).some((r) => Number(r) > 0));
 
     const round = (n: number) => Math.round(n * 100) / 100;
     const result = Array.from(byGuard.values()).map((a) => {
       const regularHours = round(a.regularHours);
       const overtimeHours = round(a.overtimeHours);
       const totalHours = round(a.totalHours);
+      const daysWorked = daysByGuard.get(a.guardId)?.size || 0;
       const rate = rateFor(a.guardId);
+      const monthlySalary = monthlyFor(a.guardId);
+      const grossPay = salaryBasis === 'monthly'
+        ? (monthlySalary > 0 ? round(monthlySalary) : null)
+        : (rate > 0 ? round(regularHours * rate + overtimeHours * rate * otMult) : null);
       return {
         ...a,
         regularHours,
         overtimeHours,
         totalHours,
+        daysWorked,
         payableHours: totalHours, // approved hours
         hourlyRate: rate || null,
-        grossPay: rate > 0 ? round(regularHours * rate + overtimeHours * rate * otMult) : null,
+        monthlySalary: salaryBasis === 'monthly' ? (monthlySalary || null) : null,
+        grossPay,
       };
     });
     result.sort((x, y) => x.guardName.localeCompare(y.guardName));
@@ -705,6 +731,8 @@ export default class AttendanceAdminService {
       totals: { ...totals, grossPay: grossPayTotal },
       currency: settings.payroll.currency,
       ratesEnabled,
+      salaryBasis,
+      extraHourTypes: (settings.payroll as any).extraHourTypes || [],
     };
   }
 
