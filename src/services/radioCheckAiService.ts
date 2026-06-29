@@ -240,7 +240,9 @@ export async function generateSummary(db: any, tenantId: string, sessionId: stri
     // written record in the system, not a voice summary on the radio), and it must
     // NOT depend on OpenAI (which can be out of quota). Saved unconditionally.
     await db.radioCheckSession
-      .update({ summary, summaryStatus: 'done' }, { where: { id: sessionId, tenantId } })
+      // summaryAudioUrl cleared: the report is written-only now (no spoken readout
+      // to play back), so no stale audio lingers on the session.
+      .update({ summary, summaryStatus: 'done', summaryAudioUrl: null }, { where: { id: sessionId, tenantId } })
       .catch((e: any) => console.warn('[radioCheck] report save failed:', e?.message || e));
     await storePlatformEvent(db, {
       tenantId, eventType: 'radio.session_completed', title: 'Reporte del pase de turno listo', body: '',
