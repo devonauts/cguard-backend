@@ -151,15 +151,22 @@ export const customerDeviceToken = async (req, res) => {
     if (b.appVersion) fields.appVersion = String(b.appVersion).slice(0, 40);
 
     // An FCM (Android/web) device never carries an APNs token — clear any stale one so the
-    // row stays FCM-deliverable. Previously an iOS+Android pair merged into ONE row (keyed
-    // by user) and delivery, seeing an apnsToken, dropped the Android FCM token entirely.
+    // row stays FCM-deliverable.
     const isApple = /ios|apple|iphone|ipad/i.test(platform);
     if (token && !apnsToken && !isApple) fields.apnsToken = null;
 
-    // Key per (user, platform) so an iOS (APNs) and an Android (FCM) device for the same
-    // client get SEPARATE rows instead of merging — otherwise the Android push is dropped.
-    const whereKey: any = platform ? { tenantId, userId, platform } : { tenantId, userId };
-    const existing = await db.deviceIdInformation.findOne({ where: whereKey });
+    // Upsert keyed by the DEVICE's own token (the table has a UNIQUE (tenantId, deviceId)
+    // index and the FCM token IS the device identity). Re-logging-in on the same physical
+    // device then re-assigns that device row to the current user. The previous per-user
+    // upsert tried to UPDATE the user's row and set a deviceId already owned by ANOTHER row
+    // → ER_DUP_ENTRY, which failed silently (the app ignores the HTTP status) so the Android
+    // token never landed and no push arrived. Re-assign userId, then fall back to apnsToken,
+    // then (user, platform).
+    fields.userId = userId;
+    let existing: any = null;
+    if (token) existing = await db.deviceIdInformation.findOne({ where: { tenantId, deviceId: token } });
+    if (!existing && apnsToken) existing = await db.deviceIdInformation.findOne({ where: { tenantId, apnsToken } });
+    if (!existing) existing = await db.deviceIdInformation.findOne({ where: platform ? { tenantId, userId, platform } : { tenantId, userId } });
     if (existing) {
       await existing.update(fields);
     } else {

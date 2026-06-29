@@ -230,7 +230,7 @@ export default async (req: any, res: any) => {
 
         // Load profile photos for all guards
         const guardRecordIds = rawGuards.map((g: any) => g.id).filter(Boolean);
-        const guardPhotos = guardRecordIds.length
+        const guardPhotoRecords = guardRecordIds.length
           ? await db.file.findAll({
               where: {
                 belongsTo: db.securityGuard.getTableName(),
@@ -241,9 +241,13 @@ export default async (req: any, res: any) => {
               attributes: ['belongsToId', 'publicUrl', 'privateUrl'],
             })
           : [];
+        // Sign each guard photo into a fetchable downloadUrl. The worker-app selfie is stored
+        // privately, so the raw privateUrl path isn't loadable by the apps (only the CRM signed
+        // it) — fillDownloadUrl mints the same signed URL the logo/visitor photos use.
+        const guardPhotos = await FileRepository.fillDownloadUrl(guardPhotoRecords);
         const photoByGuardId = new Map<string, string>();
         for (const p of guardPhotos) {
-          const url = p.publicUrl || p.privateUrl || null;
+          const url = (p as any).downloadUrl || p.publicUrl || null;
           if (url && !photoByGuardId.has(p.belongsToId)) photoByGuardId.set(p.belongsToId, url);
         }
 
