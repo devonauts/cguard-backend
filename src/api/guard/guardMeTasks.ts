@@ -87,18 +87,31 @@ export const guardMeTasksList = async (req, res) => {
       where: {
         tenantId,
         deletedAt: null,
-        status: 'approved',
-        wasItDone: false,
         taskBelongsToStationId: { [Op.in]: stationIds },
+        [Op.or]: [
+          // Pending: approved + not yet done.
+          { status: 'approved', wasItDone: false },
+          // Also return RECENTLY completed tasks so the guard can tap them and review
+          // the detail (what was reported, photo, when). Last 14 days.
+          { status: 'completed', dateCompletedTask: { [Op.gte]: new Date(Date.now() - 14 * 864e5) } },
+        ],
       },
-      include: [{ model: db.station, as: 'taskBelongsToStation', attributes: ['id', 'stationName'] }],
-      order: [['dateToDoTheTask', 'ASC']],
+      include: [
+        { model: db.station, as: 'taskBelongsToStation', attributes: ['id', 'stationName'] },
+        { model: db.file, as: 'taskCompletedImage', required: false },
+        { model: db.file, as: 'imageOptional', required: false },
+      ],
+      order: [['wasItDone', 'ASC'], ['dateToDoTheTask', 'ASC']],
       limit: 200,
     });
-    await ApiResponseHandler.success(req, res, {
-      rows: rows.map((r: any) => r.get({ plain: true })),
-      count: rows.length,
-    });
+    // Sign the file relations so the app can render the completion photo + the
+    // client's optional reference image in the task detail screen.
+    const plain = rows.map((r: any) => r.get({ plain: true }));
+    for (const p of plain) {
+      p.taskCompletedImage = await FileRepository.fillDownloadUrl(p.taskCompletedImage || []);
+      p.imageOptional = await FileRepository.fillDownloadUrl(p.imageOptional || []);
+    }
+    await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
