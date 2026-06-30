@@ -61,16 +61,45 @@ async function resolveStationsForCheck(db: any, tenantId: string, scope: Scope, 
   });
   const out: any[] = [];
   for (const st of stations) {
+    // Dedupe on-duty guards by userId across both resolution paths.
+    const byUser = new Map<string, { userId: string; securityGuardId: string; name: string }>();
+
+    // (1) PRIMARY — whoever is actually CLOCKED IN at this station right now (an open
+    // guardShift). This is the real "on duty here" signal and is what should answer a
+    // pase de novedades. It does NOT depend on the static station-assignment pivot,
+    // which is frequently empty (guards clock in by rotation, not static assignment) —
+    // the old code only looked at that pivot, so every entry got skipped.
+    const openShifts = await db.guardShift.findAll({
+      where: { tenantId, deletedAt: null, stationNameId: st.id, punchOutTime: null },
+      attributes: ['guardNameId'],
+    });
+    const sgIds = openShifts.map((s: any) => s.guardNameId).filter(Boolean);
+    if (sgIds.length) {
+      const sgs = await db.securityGuard.findAll({
+        where: { tenantId, deletedAt: null, id: { [Op.in]: sgIds } },
+        attributes: ['id', 'guardId', 'fullName'],
+      });
+      for (const sg of sgs) {
+        if (sg.guardId) byUser.set(sg.guardId, { userId: sg.guardId, securityGuardId: sg.id, name: sg.fullName || 'Guardia' });
+      }
+    }
+
+    // (2) FALLBACK — statically-assigned guards flagged on-duty (legacy path), for
+    // tenants that assign without clock-in shifts.
     const userIds = (st.assignedGuards || []).map((u: any) => u.id).filter(Boolean);
-    let guards: any[] = [];
     if (userIds.length) {
       const sgs = await db.securityGuard.findAll({
         where: { tenantId, deletedAt: null, isOnDuty: true, guardId: { [Op.in]: userIds } },
         attributes: ['id', 'guardId', 'fullName'],
       });
-      guards = sgs.map((sg: any) => ({ userId: sg.guardId, securityGuardId: sg.id, name: sg.fullName || 'Guardia' }));
+      for (const sg of sgs) {
+        if (sg.guardId && !byUser.has(sg.guardId)) {
+          byUser.set(sg.guardId, { userId: sg.guardId, securityGuardId: sg.id, name: sg.fullName || 'Guardia' });
+        }
+      }
     }
-    out.push({ station: st, guards });
+
+    out.push({ station: st, guards: Array.from(byUser.values()) });
   }
   return out;
 }
