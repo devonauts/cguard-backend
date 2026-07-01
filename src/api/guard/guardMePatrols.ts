@@ -5,6 +5,7 @@
  * route name, status, timestamps and scan count). Drives the worker-app
  * patrol history.
  */
+import { Op } from 'sequelize';
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 
@@ -25,8 +26,31 @@ export default async (req: any, res: any) => {
       return ApiResponseHandler.success(req, res, { rows: [], count: 0 });
     }
 
+    // The worker only shows the CURRENT SHIFT DAY: patrols since the guard's open
+    // clock-in, or since local midnight if not clocked in. (The CRM / client /
+    // supervisor keep the full history — this cap is worker-only by design.)
+    let since: Date;
+    const openShift = await db.guardShift.findOne({
+      where: { guardNameId: securityGuard.id, tenantId, punchOutTime: null },
+      order: [['punchInTime', 'DESC']],
+      attributes: ['punchInTime'],
+    });
+    if (openShift && openShift.punchInTime) {
+      since = new Date(openShift.punchInTime);
+    } else {
+      since = new Date();
+      since.setHours(0, 0, 0, 0);
+    }
+
     const assignments = await db.tourAssignment.findAll({
-      where: { securityGuardId: securityGuard.id, tenantId },
+      where: {
+        securityGuardId: securityGuard.id,
+        tenantId,
+        [Op.or]: [
+          { startAt: { [Op.gte]: since } },
+          { startAt: null, createdAt: { [Op.gte]: since } },
+        ],
+      },
       order: [['updatedAt', 'DESC']],
       limit: 50,
     });

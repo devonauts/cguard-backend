@@ -255,6 +255,20 @@ export default function (router) {
     }
   });
 
+  // GET full ronda (patrol round) detail: /tenant/:tenantId/site-tour/ronda/:assignmentId
+  // Checkpoints (scanned + missed) with scan time / photo / note / geo verdict.
+  router.get('/tenant/:tenantId/site-tour/ronda/:assignmentId', async (req, res, next) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
+      const { buildRondaDetail } = require('../services/rondaDetailService');
+      const detail = await buildRondaDetail(req.database, req.currentTenant.id, req.params.assignmentId);
+      if (!detail) { const e: any = new Error('Not found'); e.code = 404; throw e; }
+      await ApiResponseHandler.success(req, res, detail);
+    } catch (error: any) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
   // GET tags for a post site (all tours under this site)
   // /tenant/:tenantId/post-site/:postSiteId/site-tour-tags
   router.get('/tenant/:tenantId/post-site/:postSiteId/site-tour-tags', async (req, res, next) => {

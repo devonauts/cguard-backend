@@ -193,4 +193,19 @@ export const customerRondasList = async (req: any, res: any) => {
   }
 };
 
+/** GET /customer/rondas/:assignmentId — full detail, scoped to the client's stations. */
+export const customerRondaDetail = async (req: any, res: any) => {
+  try {
+    const { db, tenantId, clientAccountId } = customerCtx(req);
+    const { stationIds } = await resolveCustomerStations(db, tenantId, clientAccountId);
+    if (!stationIds.length) { const e: any = new Error('No encontrado'); e.code = 404; throw e; }
+    const { buildRondaDetail } = require('../../services/rondaDetailService');
+    const detail = await buildRondaDetail(db, tenantId, req.params.assignmentId, { stationIds });
+    if (!detail) { const e: any = new Error('No encontrado'); e.code = 404; throw e; }
+    await ApiResponseHandler.success(req, res, detail);
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+};
+
 export default customerRondasList;

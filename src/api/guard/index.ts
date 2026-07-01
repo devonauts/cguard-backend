@@ -44,10 +44,15 @@ export default (app) => {
     require('./guardMeRondaSettings').default,
   );
 
-  // My patrol history (tour assignments)
+  // My patrol history (tour assignments) — worker shows the current shift day only
   app.get(
     `/tenant/:tenantId/guard/me/patrols`,
     require('./guardMePatrols').default,
+  );
+  // Detail of one of my rounds (checkpoints + scans/photos/notes)
+  app.get(
+    `/tenant/:tenantId/guard/me/patrols/:assignmentId`,
+    require('./guardMePatrolDetail').default,
   );
 
   // Today's due consignas for my station(s) + their completion status
