@@ -299,6 +299,10 @@ export const customerIncidentList = async (req: any, res: any) => {
           id: plain.id,
           title: plain.title,
           description: plain.description,
+          // Worker's narrative/observations (guard fills `content`) + actions taken — the
+          // proof-of-patrol text the client needs alongside the photo.
+          observations: (plain.content && String(plain.content).trim()) || null,
+          actionsTaken: (plain.actionsTaken && String(plain.actionsTaken).trim()) || null,
           priority: plain.priority || null,
           status: plain.status || null,
           date: plain.date || null,
@@ -306,6 +310,7 @@ export const customerIncidentList = async (req: any, res: any) => {
           stationName: plain.station ? plain.station.stationName : null,
           callerType: plain.callerType || null,
           photos,
+          imageUrl: photos.map((f: any) => ({ downloadUrl: f.downloadUrl })),
         };
       }),
     );

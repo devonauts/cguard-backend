@@ -280,15 +280,31 @@ export default async (req: any, res: any) => {
           // field is `priority`. Selecting `severity` here threw a "column does not
           // exist" error that the catch below swallowed, so incidents ALWAYS came
           // back as []. Select `priority` and surface it as `severity` for clients.
-          attributes: ['id', 'title', 'description', 'incidentAt', 'date', 'priority', 'postSiteId', 'createdAt'],
+          // `content` + `actionsTaken` hold the WORKER's narrative/observations (the guard
+          // fills `content`, not `description`), so surface them as the incident's
+          // observations — this is the proof-of-patrol text the client needs to see.
+          attributes: ['id', 'title', 'description', 'content', 'actionsTaken', 'incidentAt', 'date', 'priority', 'postSiteId', 'createdAt'],
+          include: [{ model: db.file, as: 'imageUrl', required: false }],
           order: [['createdAt', 'DESC']],
           limit: 50,
         });
-        incidents = rows.map((r: any) => {
+        incidents = await Promise.all(rows.map(async (r: any) => {
           const p = r.get({ plain: true });
           p.severity = p.priority ?? null;
+          // The guard's evidence photo is stored privately — sign it so the app can load it.
+          let photos: any[] = [];
+          try {
+            const withUrls = await FileRepository.fillDownloadUrl(p.imageUrl || []);
+            photos = (withUrls || [])
+              .map((f: any) => ({ id: f.id, downloadUrl: f.downloadUrl || f.publicUrl || null, name: f.name || null }))
+              .filter((f: any) => f.downloadUrl);
+          } catch { photos = []; }
+          p.photos = photos;
+          // iOS decodes images from `imageUrl: [{downloadUrl}]`; reshape so both apps get URLs.
+          p.imageUrl = photos.map((f: any) => ({ downloadUrl: f.downloadUrl }));
+          p.observations = (p.content && String(p.content).trim()) || null;
           return p;
-        });
+        }));
         console.debug('[customerAccountMe] incidents count:', incidents.length);
       } catch (e) {
         incidents = [];
