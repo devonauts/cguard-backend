@@ -97,6 +97,7 @@ const es = {
       message: 'Ocurrió un error',
       duplicate: 'Ya existe ese elemento',
       tokenExpired: 'La sesión expiró. Por favor inicia sesión de nuevo.',
+      sessionSuperseded: 'Se inició sesión en otro dispositivo. Por favor inicia sesión de nuevo.',
       missingFields: 'Por favor complete los campos requeridos: {0}',
     },
   },

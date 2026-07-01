@@ -246,9 +246,18 @@ export default async (req: any, res: any) => {
       const resolvedClient = payload && payload.user && payload.user.clientAccountId ? payload.user.clientAccountId : null;
       if (resolvedClient) {
         try {
-          const tokenPayload: any = { id: payload.user.id, tenantId: tokenTenantId, clientAccountId: resolvedClient };
+          // Single-device login: mint a fresh session id, embed it in the token, and store
+          // it as THE active session on the clientAccount. Any previously-issued token now
+          // has a stale sid → authMiddleware 401s it → the other device is logged out.
+          const sid = require('crypto').randomUUID();
+          const tokenPayload: any = { id: payload.user.id, tenantId: tokenTenantId, clientAccountId: resolvedClient, sid };
           const newToken = jwt.sign(tokenPayload, getConfig().AUTH_JWT_SECRET, { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN });
           payload.token = newToken;
+          try {
+            await req.database.clientAccount.update({ activeSessionId: sid }, { where: { id: resolvedClient } });
+          } catch (e2) {
+            dbg('authSignInCustomer: could not persist activeSessionId', e2 && (e2 as any).message ? (e2 as any).message : e2);
+          }
         } catch (e) {
           dbg('authSignInCustomer: could not re-sign token with clientAccountId', e && (e as any).message ? (e as any).message : e);
         }

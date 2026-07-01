@@ -46,6 +46,31 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     const currentUser: any = await AuthService.findByToken(idToken, req)
     ;(req as any).currentUser = currentUser
 
+    // ── Single-device login enforcement (CLIENT app only) ──────────────────────
+    // Only customer tokens carry `clientAccountId`; CRM/worker/guard tokens don't, so
+    // this never affects them. A customer token is valid ONLY if its `sid` matches the
+    // clientAccount's current activeSessionId. A new sign-in rotates that sid, so the
+    // previous device's token is superseded → 401 → it logs out. Tokens issued before
+    // this feature (no `sid`) are also superseded, forcing a one-time re-login.
+    try {
+      const decodedTok: any = jwt.decode(idToken)
+      if (decodedTok && decodedTok.clientAccountId) {
+        const ca: any = await (req as any).database.clientAccount.findOne({
+          where: { id: decodedTok.clientAccountId },
+          attributes: ['activeSessionId'],
+        })
+        const active = ca && ca.activeSessionId
+        // Enforce once an active session exists on the account; if the token lacks a sid
+        // (legacy) or it doesn't match, supersede it.
+        if (active && decodedTok.sid !== active) {
+          const lang = (req as any).language || undefined
+          return ApiResponseHandler.error(req, res, new Error401(lang, 'auth.sessionSuperseded'))
+        }
+      }
+    } catch (sessErr) {
+      // Never let the session check itself break auth — fail open on unexpected errors.
+    }
+
     // Normalize tenantUser entries to plain objects when Sequelize instances are present
     try {
       const cu: any = (req as any).currentUser;

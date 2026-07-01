@@ -106,6 +106,7 @@ const en = {
       message: 'An error occurred',
       duplicate: 'This item already exists',
       tokenExpired: 'Session expired. Please sign in again.',
+      sessionSuperseded: 'Signed in on another device. Please sign in again.',
        missingFields: 'Please complete required fields: {0}',
     },
   },

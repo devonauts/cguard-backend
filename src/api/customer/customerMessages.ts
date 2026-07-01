@@ -167,10 +167,26 @@ export const customerDeviceToken = async (req, res) => {
     if (token) existing = await db.deviceIdInformation.findOne({ where: { tenantId, deviceId: token } });
     if (!existing && apnsToken) existing = await db.deviceIdInformation.findOne({ where: { tenantId, apnsToken } });
     if (!existing) existing = await db.deviceIdInformation.findOne({ where: platform ? { tenantId, userId, platform } : { tenantId, userId } });
+    let current: any;
     if (existing) {
       await existing.update(fields);
+      current = existing;
     } else {
-      await db.deviceIdInformation.create({ ...fields, userId, tenantId, createdById: userId });
+      current = await db.deviceIdInformation.create({ ...fields, userId, tenantId, createdById: userId });
+    }
+
+    // Single device token per user: a login/registration on a new device REPLACES the old
+    // one — delete every OTHER client device row for this user/account so only the latest
+    // device receives push (matches single-device login: Apple → Android → … one at a time).
+    try {
+      const Op = db.Sequelize.Op;
+      const orIds: any[] = [{ userId }];
+      if (clientAccountId) orIds.push({ clientAccountId });
+      await db.deviceIdInformation.destroy({
+        where: { tenantId, app: 'client', [Op.or]: orIds, id: { [Op.ne]: current.id } },
+      });
+    } catch (e: any) {
+      console.warn('[customerDeviceToken] prune old devices failed:', e?.message || e);
     }
 
     // Link the clientAccount to this user so the push-notify path

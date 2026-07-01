@@ -166,6 +166,13 @@ export default function (sequelize) {
         defaultValue: 'not_invited',
         // Valid values: not_invited | invited | active | suspended
       },
+      // Single-device login: the sid of the ONLY currently-valid client-app session.
+      // Set on each customer sign-in; any token whose `sid` differs is superseded (401),
+      // so signing in on a new device logs the previous device out.
+      activeSessionId: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+      },
     },
     {
       indexes: [
