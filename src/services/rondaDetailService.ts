@@ -30,9 +30,21 @@ export async function buildRondaDetail(
     : [];
   const scans = await db.tagScan.findAll({ where: { tourAssignmentId: a.id, tenantId }, order: [['scannedAt', 'ASC']] });
 
+  // The guard's per-checkpoint NOTE + PHOTO live in scannedData.extra ({notes,
+  // photoFileToken}). Parse them into ready-to-render `note` + signed `photoUrl` so
+  // every consumer (client patrol detail included) shows the proof without re-parsing.
+  const { getConfig } = require('../config');
+  const backendBase = String((getConfig() as any).BACKEND_URL || '').replace(/\/+$/, '');
+  const fileDownloadPath = backendBase.endsWith('/api') ? '/file/download' : '/api/file/download';
+  const parseExtra = (sd: any): any => {
+    if (!sd) return {};
+    try { const o = typeof sd === 'string' ? JSON.parse(sd) : sd; return (o && o.extra) || {}; } catch { return {}; }
+  };
+
   const scanByTag = new Map<string, any>();
   const scanRows = scans.map((s: any) => {
     const sp = s.get({ plain: true });
+    const extra = parseExtra(sp.scannedData);
     const row = {
       id: sp.id,
       siteTourTagId: sp.siteTourTagId,
@@ -40,6 +52,8 @@ export async function buildRondaDetail(
       validLocation: sp.validLocation,
       distanceMeters: sp.distanceMeters,
       scannedData: sp.scannedData || null,
+      note: (extra.notes && String(extra.notes).trim()) || null,
+      photoUrl: extra.photoFileToken ? `${backendBase}${fileDownloadPath}?fileToken=${encodeURIComponent(String(extra.photoFileToken))}` : null,
     };
     if (sp.siteTourTagId) scanByTag.set(String(sp.siteTourTagId), row);
     return row;

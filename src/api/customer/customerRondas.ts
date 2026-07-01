@@ -17,6 +17,7 @@
  * uses the SAME resolveCustomerStations helper as the other customer-safety routes.
  */
 import { Op } from 'sequelize';
+import { getConfig } from '../../config';
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import Error400 from '../../errors/Error400';
@@ -118,7 +119,7 @@ export const customerRondasList = async (req: any, res: any) => {
         {
           model: db.tagScan,
           as: 'scans',
-          attributes: ['id', 'siteTourTagId', 'scannedAt', 'validLocation', 'distanceMeters'],
+          attributes: ['id', 'siteTourTagId', 'scannedAt', 'validLocation', 'distanceMeters', 'scannedData'],
           required: false,
         },
       ],
@@ -158,16 +159,37 @@ export const customerRondasList = async (req: any, res: any) => {
       tags.forEach((t: any) => { tagNameById[t.id] = t.name; });
     }
 
+    // The guard's per-checkpoint NOTE + PHOTO are stored in tagScan.scannedData.extra
+    // ({ notes, photoFileToken, checkpointName }). Build a signed download URL for the
+    // photo so the client patrol detail can show the proof (image + note).
+    const backendBase = String((getConfig() as any).BACKEND_URL || '').replace(/\/+$/, '');
+    const fileDownloadPath = backendBase.endsWith('/api') ? '/file/download' : '/api/file/download';
+    const photoUrlFromToken = (token: any): string | null =>
+      token ? `${backendBase}${fileDownloadPath}?fileToken=${encodeURIComponent(String(token))}` : null;
+    const parseScanExtra = (scannedData: any): any => {
+      if (!scannedData) return {};
+      try {
+        const obj = typeof scannedData === 'string' ? JSON.parse(scannedData) : scannedData;
+        return (obj && obj.extra) || {};
+      } catch { return {}; }
+    };
+
     const out = (rows || []).map((r: any) => {
       const p = r.get ? r.get({ plain: true }) : r;
       const station = stationById.get(String(p.stationId)) || {};
       const scans = (p.scans || [])
-        .map((s: any) => ({
-          id: s.id,
-          checkpoint: tagNameById[s.siteTourTagId] || '—',
-          scannedAt: s.scannedAt,
-          validLocation: s.validLocation,
-        }))
+        .map((s: any) => {
+          const extra = parseScanExtra(s.scannedData);
+          const note = (extra.notes && String(extra.notes).trim()) || null;
+          return {
+            id: s.id,
+            checkpoint: tagNameById[s.siteTourTagId] || extra.checkpointName || '—',
+            scannedAt: s.scannedAt,
+            validLocation: s.validLocation,
+            note,
+            photoUrl: photoUrlFromToken(extra.photoFileToken),
+          };
+        })
         .sort(
           (a: any, b: any) =>
             new Date(a.scannedAt).getTime() - new Date(b.scannedAt).getTime(),
