@@ -123,6 +123,7 @@ export default (app) => {
   // scope, restricted to the customer's own stations. Read-only.
   // Mirror the registration of /customer/clock-ins above.
   app.get('/customer/rondas', require('./customerRondas').customerRondasList);
+  app.get('/customer/activity', require('./customerActivity').customerActivityList);
   app.get('/customer/rondas/:assignmentId', require('./customerRondas').customerRondaDetail);
 
   // ── Document vault (Feature #20). Aggregates the tenant compliance documents the
