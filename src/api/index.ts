@@ -270,6 +270,7 @@ require('./payment').default(routes);
 require('./inquiries').default(routes);
 require('./customer').default(routes);
 require('./task').default(routes);
+require('./passdown').default(routes);
 require('./notification').default(routes);
 require('./deviceIdInformation').default(routes);
 require('./guardDevice').default(routes);

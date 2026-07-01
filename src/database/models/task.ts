@@ -104,6 +104,13 @@ export default function (sequelize) {
     models.task.belongsTo(models.user, {
       as: 'updatedBy',
     });
+
+    // Passdown (pase de turno) that produced this task, when source='passdown'.
+    models.task.belongsTo(models.shiftPassdown, {
+      as: 'passdown',
+      foreignKey: 'passdownId',
+      constraints: false,
+    });
   };
 
   return task;

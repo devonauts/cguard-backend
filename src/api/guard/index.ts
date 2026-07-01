@@ -71,6 +71,12 @@ export default (app) => {
     require('./guardMeTasks').guardMeTaskComplete,
   );
 
+  // Pase de turno (passdown) left at my post by the previous shift.
+  app.get(
+    `/tenant/:tenantId/guard/me/passdown/incoming`,
+    require('./guardMePassdown').guardPassdownIncoming,
+  );
+
   // Recent site activity (on-duty home feed)
   app.get(
     `/tenant/:tenantId/guard/me/activity`,

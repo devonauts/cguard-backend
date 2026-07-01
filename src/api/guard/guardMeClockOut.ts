@@ -145,6 +145,33 @@ export default async (req: any, res: any) => {
     // Update isOnDuty
     await securityGuard.update({ isOnDuty: false });
 
+    // Pase de turno (passdown): persist the outgoing guard's handover for this post and
+    // turn each instruction into an approved task for the next guard. Always recorded on
+    // clock-out (even "Sin novedad") so the relief has continuity + the CRM sees it.
+    // `observations` (the end-of-shift report) is the general novedades. Best-effort —
+    // never blocks clock-out.
+    try {
+      const { createPassdown } = require('../../services/shiftPassdownService');
+      const body = req.body.data || req.body || {};
+      const pd = body.passdown || {};
+      if (station) {
+        await createPassdown(db, tenantId, {
+          station: { id: activeClock.stationNameId, stationName: station.stationName || station.nickname, postSiteId: station.postSiteId },
+          guardShift: activeClock,
+          outgoingUserId: userId,
+          outgoingSecurityGuardId: securityGuard.id,
+          outgoingGuardName: securityGuard.fullName || null,
+          shiftSchedule: activeClock.shiftSchedule || null,
+          notes: observations || activeClock.observations || null,
+          instructions: Array.isArray(pd.instructions) ? pd.instructions : [],
+          photos: Array.isArray(pd.photos) ? pd.photos : [],
+          currentUser,
+        });
+      }
+    } catch (pdErr) {
+      console.warn('[clockOut] passdown failed:', (pdErr as any)?.message || pdErr);
+    }
+
     // Nómina: compute hours worked (sum of sessions) + overtime/early-departure,
     // geofence distance, persist exceptions + notify. Best-effort.
     try {
