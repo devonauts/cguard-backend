@@ -273,6 +273,12 @@ class Permissions {
       routeRead: createPermission('routeRead', [...ALL_STAFF_ROLES, roles.customer]),
       routeAutocomplete: createPermission('routeAutocomplete', ALL_STAFF_ROLES),
 
+      // === SUPERVISOR MOBILE APP (own clock + route runs) ===
+      // "me" endpoints: a supervisor manages their own shift + assigned route runs.
+      supervisorMe: createPermission('supervisorMe', SUPERVISOR_ROLES, undefined, [
+        storage.supervisorProofImage,
+      ]),
+
       // === PATROL CHECKPOINTS ===
       patrolCheckpointImport: createPermission('patrolCheckpointImport', SUPERVISOR_ROLES),
       patrolCheckpointCreate: createPermission('patrolCheckpointCreate', SUPERVISOR_ROLES),

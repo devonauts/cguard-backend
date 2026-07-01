@@ -138,6 +138,14 @@ export default class Storage {
         maxSizeInBytes: 100 * 1024 * 1024,
       },
 
+      // Proof photos captured at a supervisor route stop (supervisor mobile app).
+      supervisorProofImage: {
+        id: 'supervisorProofImage',
+        folder: 'tenant/:tenantId/supervisor/proof',
+        maxSizeInBytes: 100 * 1024 * 1024,
+        bypassWritingPermissions: true,
+      },
+
       clientAccountLogoUrl: {
         id: 'clientAccountLogoUrl',
         folder: 'tenant/:tenantId/clientAccount/logoUrl',

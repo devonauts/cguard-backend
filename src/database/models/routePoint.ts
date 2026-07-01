@@ -13,6 +13,11 @@ export default function (sequelize, DataTypes) {
       address: { type: DataTypes.TEXT, allowNull: true },
       lat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       lng: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
+      // What kind of record `siteId` points at, driving coordinate/name
+      // resolution: station | businessInfo | client | guard | alarm.
+      siteType: { type: DataTypes.STRING(20), allowNull: true, defaultValue: 'station' },
+      // Per-stop checklist definition — array of { id, label }.
+      tasks: { type: DataTypes.JSON, allowNull: true },
     },
     {
       tableName: 'route_points',

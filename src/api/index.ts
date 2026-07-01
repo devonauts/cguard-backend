@@ -296,6 +296,7 @@ require('./postSite').default(routes);
 require('./vehicle').default(routes);
 require('./route').default(routes);
 require('./routeRun').default(routes);
+require('./supervisor').default(routes);
 require('./geocode').default(routes);
 require('./siteTour').default(routes);
 require('./rondaSettings').default(routes);

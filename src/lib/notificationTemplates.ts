@@ -14,6 +14,9 @@ export type EventType =
   | 'visitor.departure'
   | 'patrol.completed'
   | 'patrol.missed'
+  | 'supervisor.route.started'
+  | 'supervisor.stop.completed'
+  | 'supervisor.route.finished'
   | 'shift.unassigned'
   | 'shift.exchange_requested'
   | 'shift.exchange_approved'
@@ -234,6 +237,27 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
       ${d.siteName ? `<p><strong>Sitio:</strong> ${d.siteName}</p>` : ''}
       ${d.missedCount ? `<p><strong>Puntos perdidos:</strong> ${d.missedCount}</p>` : ''}
     `,
+  },
+  'supervisor.route.started': {
+    title: (d) => `🚗 Ronda de supervisión iniciada`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} inició la ronda${d.routeName ? ` "${d.routeName}"` : ''}${d.pointsCount ? ` (${d.pointsCount} paradas)` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'supervisor.stop.completed': {
+    title: (d) => `📍 Parada verificada`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} verificó ${d.stopName || 'una parada'}${d.routeName ? ` en la ronda "${d.routeName}"` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'supervisor.route.finished': {
+    title: (d) => `✅ Ronda de supervisión finalizada`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} finalizó la ronda${d.routeName ? ` "${d.routeName}"` : ''}${d.completedCount != null ? ` (${d.completedCount}/${d.pointsCount ?? d.completedCount} paradas)` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
   },
   'shift.unassigned': {
     title: (d) => `⚠️ Turno sin asignar`,
