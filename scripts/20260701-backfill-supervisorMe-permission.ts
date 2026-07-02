@@ -38,9 +38,12 @@ async function run() {
       alreadyOk++;
       continue;
     }
-    if (!r.isCustomized) {
-      // Non-customized → static map already grants it; nothing to persist.
-      staticOk++;
+    // computeTenantPermissions uses the DB array whenever it is NON-EMPTY
+    // (customized OR just a frozen seed snapshot) — only a truly empty,
+    // non-customized row falls back to the static map. So we must patch every
+    // row that has a non-empty snapshot missing the permission.
+    if (perms.length === 0 && !r.isCustomized) {
+      staticOk++; // empty + non-customized → static map already grants it
       continue;
     }
     await r.update({ permissions: [...perms, ...missing] });
