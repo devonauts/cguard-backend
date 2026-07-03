@@ -231,6 +231,8 @@ export async function provisionSandbox(db: Db, opts: ProvisionOpts): Promise<San
     longitude: GEO.lng,
     timezone: 'America/Guayaquil',
     plan,
+    taxNumber: `179${crypto.randomBytes(4).toString('hex').replace(/\D/g, '0').slice(0, 7)}001`,
+    licenseNumber: 'PN-ECU-DEMO-0001',
     onboardingCompleted: true,
     website: `https://${slug}.cguardpro.com`,
   });
@@ -275,6 +277,7 @@ export async function provisionSandbox(db: Db, opts: ProvisionOpts): Promise<San
     country: 'Ecuador', zipCode: '090313', latitude: GEO.lat, longitude: GEO.lng,
     onboardingStatus: 'active', active: true,
   });
+  await attachImage(db, db.clientAccount.getTableName(), 'logoUrl', client.id, tenantId, brandLogo(`Cliente ${brand}`.slice(0, 20)), 'client-logo.png');
 
   // 6) SUPERVISOR.
   const supervisor = await createUser(db, pwdHash, {
@@ -381,18 +384,80 @@ export async function provisionSandbox(db: Db, opts: ProvisionOpts): Promise<San
     }, { validate: false });
   } catch { /* non-fatal — schema variance */ }
 
-  // 14) INCIDENTS (2) — direct writes (bypass the assigned-post ACL).
+  // 14) INCIDENTS (2) with photo evidence — direct writes (bypass the assigned-post ACL).
   const incidentDefs = [
-    { title: 'Persona sospechosa en el perímetro', description: 'Guardia reporta una persona merodeando junto al acceso vehicular. Se mantiene vigilancia.', priority: 'alta', guard: dia },
-    { title: 'Puerta de acceso sin novedad', description: 'Ronda nocturna: acceso posterior verificado y asegurado. Sin novedades.', priority: 'media', guard: noche },
+    { title: 'Persona sospechosa en el perímetro', description: 'Guardia reporta una persona merodeando junto al acceso vehicular. Se mantiene vigilancia.', priority: 'alta', guard: dia, photo: 'https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=800&q=80' },
+    { title: 'Puerta de acceso sin novedad', description: 'Ronda nocturna: acceso posterior verificado y asegurado. Sin novedades.', priority: 'media', guard: noche, photo: 'https://images.unsplash.com/photo-1521790361543-f645cf042ec4?w=800&q=80' },
   ];
   for (const inc of incidentDefs) {
-    await db.incident.create({
+    const rec = await db.incident.create({
       date: now, title: inc.title, description: inc.description, status: 'abierto', priority: inc.priority,
       stationId: mainStation.id, postSiteId: site.id, guardNameId: inc.guard.guard.id, wasRead: false,
       tenantId, createdById: inc.guard.user.id, updatedById: inc.guard.user.id,
     }, { validate: false });
+    try { await attachImage(db, db.incident.getTableName(), 'photoUrl', rec.id, tenantId, inc.photo, 'incident.jpg'); } catch { /* non-fatal */ }
   }
+
+  // 15) ATTENDANCE (guardShift) — día ON DUTY now (so the Control Center shows a
+  //     live guard + nómina isn't empty), noche a completed shift for history.
+  const nowMs = now.getTime();
+  const punchInDia = new Date(nowMs - 3 * 3600_000);
+  try {
+    await db.guardShift.create({
+      punchInTime: punchInDia, punchInLatitude: GEO.lat, punchInLongitude: GEO.lng,
+      shiftSchedule: 'Diurno', numberOfPatrolsDuringShift: 1, numberOfIncidentsDurindShift: 1,
+      observations: 'Turno en curso — sin novedades mayores.',
+      sessions: [{ at: punchInDia, lat: GEO.lat, lng: GEO.lng, distanceM: 0 }],
+      stationNameId: mainStation.id, guardNameId: dia.guard.id, postSiteId: site.id,
+      tenantId, createdById: dia.user.id, updatedById: dia.user.id,
+    }, { validate: false });
+    await dia.guard.update({ isOnDuty: true });
+
+    const pIn = new Date(nowMs - 20 * 3600_000);
+    const pOut = new Date(nowMs - 8 * 3600_000);
+    await db.guardShift.create({
+      punchInTime: pIn, punchOutTime: pOut, punchInLatitude: GEO.lat, punchInLongitude: GEO.lng,
+      shiftSchedule: 'Nocturno', numberOfPatrolsDuringShift: 2, numberOfIncidentsDurindShift: 1,
+      observations: 'Turno completado. Perímetro asegurado.',
+      sessions: [{ at: pIn, lat: GEO.lat, lng: GEO.lng }, { at: pOut, lat: GEO.lat, lng: GEO.lng, out: true }],
+      stationNameId: mainStation.id, guardNameId: noche.guard.id, postSiteId: site.id,
+      tenantId, createdById: noche.user.id, updatedById: noche.user.id,
+    }, { validate: false });
+  } catch { /* non-fatal */ }
+
+  // 16) SHIFT PASSDOWN — a handover (noche → día) received with "Sin novedad".
+  try {
+    await db.shiftPassdown.create({
+      tenantId, stationId: mainStation.id, stationName: mainStation.stationName, postSiteId: site.id,
+      outgoingGuardUserId: noche.user.id, outgoingSecurityGuardId: noche.guard.id, outgoingGuardName: 'Pedro Vásquez',
+      shiftSchedule: 'Nocturno', shiftKind: 'noche',
+      notes: 'Sin novedad. Perímetro y accesos verificados; cámaras operativas. Se entrega llaves y bitácora.',
+      instructionCount: 0, status: 'received',
+      receivedByGuardUserId: dia.user.id, receivedByName: 'Juan Ramírez', receivedAt: punchInDia,
+    }, { validate: false });
+  } catch { /* non-fatal */ }
+
+  // 17) RADIO CHECK (pase de novedades) — a completed session + one entry per station.
+  try {
+    const rc = await db.radioCheckSession.create({
+      tenantId, mode: 'manual', initiatedByUserId: supervisor.id, scope: 'all', status: 'completed',
+      startedAt: new Date(nowMs - 5 * 3600_000), completedAt: new Date(nowMs - 5 * 3600_000 + 300_000),
+      summary: 'Pase de novedades completado. Todas las estaciones responden sin novedad.',
+      summaryStatus: 'ready', totalStations: stations.length, respondedCount: stations.length, noResponseCount: 0, incidentCount: 0,
+    }, { validate: false });
+    let seq = 0;
+    for (const st of stations) {
+      seq += 1;
+      await db.radioCheckEntry.create({
+        tenantId, sessionId: rc.id, stationId: st.id, guardUserId: dia.user.id, guardSecurityGuardId: dia.guard.id,
+        guardName: 'Juan Ramírez', stationName: st.stationName, seq, status: 'responded',
+        promptText: `Central a ${st.stationName}, reporte novedades.`,
+        transcript: `Sin novedad en ${st.stationName}. Todo en orden.`,
+        transcriptStatus: 'ready', classification: 'sin_novedad',
+        respondedAt: new Date(nowMs - 5 * 3600_000 + seq * 20000),
+      }, { validate: false });
+    }
+  } catch { /* non-fatal */ }
 
   const accounts: SandboxAccount[] = [
     { role: 'Administrador', email: emails.admin, password: sharedPassword, fullName: ownerName },
