@@ -21,6 +21,7 @@ export default (app) => {
   require('./dashboard').default(router);
   require('./tenants').default(router);
   require('./plans').default(router);
+  require('./sandboxes').default(router);
   require('./billing').default(router);
   require('./users').default(router);
   require('./observability').default(router);
