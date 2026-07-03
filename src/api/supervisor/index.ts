@@ -8,6 +8,8 @@
  */
 import { getClock, clockIn, clockOut } from './clock';
 import { getStations } from './stations';
+import { getGuards } from './guards';
+import { getGuardDetail } from './guardDetail';
 import {
   getRoutesToday,
   getRouteDetail,
@@ -24,6 +26,12 @@ export default (app) => {
 
   // Station monitor for the dashboard map (pins + status cards).
   app.get('/tenant/:tenantId/supervisor/me/stations', getStations);
+
+  // Guard roster + live telemetry for the Guards screen.
+  app.get('/tenant/:tenantId/supervisor/me/guards', getGuards);
+
+  // Full detail for one guard (profile + patrol + activity).
+  app.get('/tenant/:tenantId/supervisor/me/guards/:guardId', getGuardDetail);
 
   // Assigned route runs for today.
   app.get('/tenant/:tenantId/supervisor/me/routes/today', getRoutesToday);
