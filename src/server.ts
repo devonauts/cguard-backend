@@ -317,6 +317,30 @@ async function runRadioCheckScheduler() {
       await radioSvc.advanceSession(database, s.tenantId, s.id).catch(() => {});
     }
 
+    // 1b) Self-heal orphaned entries: a session that stopped RUNNING (cancelled/
+    //     completed) must never leave a station stuck at 'notified' — the console
+    //     would render it as a perpetual timeout. 'notified' entries are inherently
+    //     few (one active per running session + any orphans), so key off them and
+    //     drop those whose session is no longer running. Backstop for any path
+    //     that didn't clean up its own entries.
+    const notifiedEntries = await database.radioCheckEntry.findAll({
+      where: { status: 'notified', deletedAt: null }, attributes: ['id', 'sessionId'],
+    });
+    if (notifiedEntries.length) {
+      const sessIds = [...new Set(notifiedEntries.map((e: any) => e.sessionId))];
+      const liveSess = new Set(
+        (await database.radioCheckSession.findAll({
+          where: { id: { [Op.in]: sessIds }, status: 'running', deletedAt: null }, attributes: ['id'],
+        })).map((r: any) => r.id),
+      );
+      const orphanIds = notifiedEntries.filter((e: any) => !liveSess.has(e.sessionId)).map((e: any) => e.id);
+      if (orphanIds.length) {
+        await database.radioCheckEntry.update(
+          { status: 'no_response' }, { where: { id: { [Op.in]: orphanIds } } },
+        ).catch(() => {});
+      }
+    }
+
     // 2) Auto-start due roll calls for enabled tenants (cluster-safe atomic claim).
     const settingsRows = await database.radioCheckSettings.findAll({ where: { enabled: true, deletedAt: null } });
     for (const st of settingsRows) {

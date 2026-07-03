@@ -334,9 +334,23 @@ export async function completeSession(db: any, tenantId: string, sessionId: stri
 }
 
 export async function cancelSession(db: any, tenantId: string, sessionId: string): Promise<void> {
+  const { Op } = db.Sequelize;
   await db.radioCheckSession.update(
     { status: 'cancelled', completedAt: new Date() },
     { where: { id: sessionId, tenantId, status: 'running' } },
+  );
+  // Terminate any in-flight entries so the roll call doesn't leave a station
+  // dangling at 'notified' forever (the scheduler only sweeps RUNNING sessions,
+  // so a cancel mid-call would otherwise orphan the entry — the console then
+  // shows a station stuck in a perpetual timed-out state). A guard that was
+  // already called but didn't answer → no_response; one never reached → skipped.
+  await db.radioCheckEntry.update(
+    { status: 'no_response' },
+    { where: { tenantId, sessionId, status: 'notified' } },
+  );
+  await db.radioCheckEntry.update(
+    { status: 'skipped' },
+    { where: { tenantId, sessionId, status: 'pending' } },
   );
   await storePlatformEvent(db, {
     tenantId, eventType: 'radio.session_completed', title: 'Pase de novedades cancelado', body: '',
