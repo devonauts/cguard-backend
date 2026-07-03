@@ -54,7 +54,11 @@ export const getIncidents = async (req: any, res: any) => {
     const incidents = await Promise.all(
       rows.map(async (r: any) => {
         const stationName = r.station ? r.station.stationName : null;
-        const sub = r.location || (r.site ? r.site.companyName : null);
+        // The incident `location` field sometimes holds raw "lat,lng" coords
+        // (GPS-stamped reports) — don't surface those; prefer the post-site name.
+        const rawSub = r.location ? String(r.location).trim() : '';
+        const looksLikeCoords = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(rawSub);
+        const sub = (looksLikeCoords ? '' : rawSub) || (r.site ? r.site.companyName : null);
         const location = [stationName, sub].filter(Boolean).join(' – ') || sub || stationName || null;
 
         let photo: any = null;
