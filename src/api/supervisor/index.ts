@@ -13,6 +13,7 @@ import { getStationDetail } from './stationDetail';
 import { createStationTask } from './stationTaskCreate';
 import { createInspection, listInspections } from './stationInspection';
 import { getIncidents } from './incidents';
+import { getVisitors } from './visitors';
 import { getIncidentDetail, addIncidentNote, setIncidentStatus, assignIncident, escalateIncident } from './incidentDetail';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
@@ -56,6 +57,9 @@ export default (app) => {
   app.post('/tenant/:tenantId/supervisor/me/incidents/:incidentId/status', setIncidentStatus);
   app.post('/tenant/:tenantId/supervisor/me/incidents/:incidentId/assign', assignIncident);
   app.post('/tenant/:tenantId/supervisor/me/incidents/:incidentId/escalate', escalateIncident);
+
+  // Visitors feed for the Visitors screen.
+  app.get('/tenant/:tenantId/supervisor/me/visitors', getVisitors);
 
   // Guard roster + live telemetry for the Guards screen.
   app.get('/tenant/:tenantId/supervisor/me/guards', getGuards);
