@@ -228,6 +228,21 @@ export default class Storage {
         bypassWritingPermissions: true,
         publicRead: false,
       },
+      // Supervisor app "Start Inspection" evidence + voice recording.
+      supervisorInspectionMedia: {
+        id: 'supervisorInspectionMedia',
+        folder: 'tenant/:tenantId/stationInspection/media',
+        maxSizeInBytes: 50 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
+      supervisorInspectionAudio: {
+        id: 'supervisorInspectionAudio',
+        folder: 'tenant/:tenantId/stationInspection/audio',
+        maxSizeInBytes: 25 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
 
       notificationImageUrl: {
         id: 'notificationImageUrl',

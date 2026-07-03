@@ -82,6 +82,20 @@ export const createStationTask = async (req: any, res: any) => {
     await linkFiles(data.attachments, 'imageOptional');
     await linkFiles(data.voiceNote, 'voiceNote');
 
+    // Approved on creation → push the station guards (worker app) + notify the
+    // CRM/client (templates + preferences). Best-effort, never blocks the create.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { notifyTaskApproved } = require('../../services/taskNotify');
+      notifyTaskApproved(
+        db,
+        tenantId,
+        task.get ? task.get({ plain: true }) : task,
+      ).catch(() => undefined);
+    } catch (e: any) {
+      console.warn('[supervisor.createStationTask] notify failed:', e?.message || e);
+    }
+
     await ApiResponseHandler.success(req, res, {
       task: { id: task.id, taskToDo, priority, status: 'approved' },
     });
