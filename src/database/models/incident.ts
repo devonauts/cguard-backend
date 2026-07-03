@@ -110,6 +110,11 @@ export default function (sequelize) {
           type: DataTypes.UUID,
           allowNull: true,
         },
+        // Supervisor-assigned owner (distinct from the reporter guardNameId).
+        assignedToUserId: {
+          type: DataTypes.UUID,
+          allowNull: true,
+        },
       wasRead: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
@@ -197,6 +202,12 @@ export default function (sequelize) {
       foreignKey: {
         allowNull: false,
       },
+    });
+
+    models.incident.belongsTo(models.user, {
+      as: 'assignedTo',
+      foreignKey: 'assignedToUserId',
+      constraints: false,
     });
 
     models.incident.belongsTo(models.user, {

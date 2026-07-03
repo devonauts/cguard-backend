@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import FileRepository from '../../database/repositories/fileRepository';
+import { normSeverity, statusFromLog, parseLog } from './incidentShared';
 
 /**
  * Incidents list for the supervisor app's Incidents screen — image-forward
@@ -10,22 +11,6 @@ import FileRepository from '../../database/repositories/fileRepository';
  * status, and timestamp, plus status and severity counts. Read-only, gated
  * `supervisorMe`.
  */
-
-function normSeverity(v: any): 'critical' | 'high' | 'medium' | 'low' {
-  const s = String(v || '').trim().toLowerCase();
-  if (['critical', 'critico', 'crítico', 'urgent', 'urgente'].includes(s)) return 'critical';
-  if (['high', 'alto', 'alta'].includes(s)) return 'high';
-  if (['low', 'bajo', 'baja'].includes(s)) return 'low';
-  return 'medium';
-}
-
-function normStatus(v: any): 'open' | 'inProgress' | 'resolved' | 'closed' {
-  const s = String(v || '').trim().toLowerCase();
-  if (['closed', 'cerrado', 'cerrada'].includes(s)) return 'closed';
-  if (['resolved', 'resuelto', 'resuelta'].includes(s)) return 'resolved';
-  if (['in_progress', 'inprogress', 'en proceso', 'en_proceso', 'proceso'].includes(s)) return 'inProgress';
-  return 'open';
-}
 
 /** GET /tenant/:tenantId/supervisor/me/incidents */
 export const getIncidents = async (req: any, res: any) => {
@@ -37,7 +22,7 @@ export const getIncidents = async (req: any, res: any) => {
     const rows = await db.incident.findAll({
       where: { tenantId },
       attributes: [
-        'id', 'subject', 'content', 'priority', 'status', 'location',
+        'id', 'subject', 'content', 'priority', 'status', 'comments', 'location',
         'dateTime', 'incidentAt', 'createdAt', 'stationId', 'postSiteId', 'guardNameId',
       ],
       include: [
@@ -77,7 +62,7 @@ export const getIncidents = async (req: any, res: any) => {
           id: String(r.id),
           title: r.subject || (r.incidentType ? r.incidentType.name : null) || 'Incidente',
           severity: normSeverity(r.priority),
-          status: normStatus(r.status),
+          status: statusFromLog(parseLog(r.comments), r.status),
           location,
           guard: r.guardName ? r.guardName.fullName : null,
           at: r.incidentAt || r.dateTime || r.createdAt,
