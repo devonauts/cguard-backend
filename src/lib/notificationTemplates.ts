@@ -49,6 +49,11 @@ export type EventType =
   | 'attendance.clockin_approved'
   | 'attendance.clockin_rejected'
   | 'device.mismatch'
+  | 'supervisor.inspection.submitted'
+  | 'supervisor.incident.note'
+  | 'supervisor.incident.status'
+  | 'supervisor.incident.assigned'
+  | 'supervisor.incident.escalated'
   | 'profile.updated';
 
 // Role sets for targetRoles field (comma-separated, used with FIND_IN_SET)
@@ -155,6 +160,41 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     title: (d) => `📋 Incidente actualizado`,
     body: (d) =>
       `Estado actualizado${d.siteName ? ` en ${d.siteName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'supervisor.inspection.submitted': {
+    title: (d) => `🛡️ Inspección de puesto${d.stationName ? `: ${d.stationName}` : ''}`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} registró una inspección (${d.result === 'issues' ? 'con novedades' : 'todo en orden'})${d.stationName ? ` en ${d.stationName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'supervisor.incident.note': {
+    title: (d) => `📝 Nota en incidente`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} agregó una nota${d.incidentTitle ? ` a "${d.incidentTitle}"` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'supervisor.incident.status': {
+    title: (d) => `📋 Incidente ${d.statusLabel || 'actualizado'}`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} cambió el estado${d.incidentTitle ? ` de "${d.incidentTitle}"` : ''} a ${d.statusLabel || d.status}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'supervisor.incident.assigned': {
+    title: (d) => `👤 Incidente reasignado`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} asignó${d.incidentTitle ? ` "${d.incidentTitle}"` : ' un incidente'}${d.assigneeName ? ` a ${d.assigneeName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  'supervisor.incident.escalated': {
+    title: (d) => `⬆️ Incidente escalado`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} escaló${d.incidentTitle ? ` "${d.incidentTitle}"` : ' un incidente'}${d.severity ? ` a ${d.severity}` : ''}`,
     targetRoles: TARGET_ROLES.SUPERVISORS,
     sendEmail: false,
   },

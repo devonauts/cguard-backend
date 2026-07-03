@@ -30,7 +30,7 @@ export const createInspection = async (req: any, res: any) => {
 
     const station = await db.station.findOne({
       where: { id: stationId, tenantId },
-      attributes: ['id'],
+      attributes: ['id', 'stationName'],
     });
     if (!station) throw new Error400(req.language);
 
@@ -67,6 +67,21 @@ export const createInspection = async (req: any, res: any) => {
     };
     await linkFiles(data.media, 'media');
     await linkFiles(data.audio, 'audio');
+
+    // CRM notification activity (best-effort).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { dispatch } = require('../../lib/notificationDispatcher');
+      dispatch(
+        'supervisor.inspection.submitted',
+        {
+          supervisorName: `${req.currentUser.firstName || ''} ${req.currentUser.lastName || ''}`.trim() || req.currentUser.email,
+          stationName: station.stationName || null,
+          result,
+        },
+        { database: db, tenantId, sourceEntityType: 'stationInspection', sourceEntityId: String(inspection.id) },
+      ).catch(() => undefined);
+    } catch { /* best-effort */ }
 
     await ApiResponseHandler.success(req, res, {
       inspection: { id: inspection.id, result },

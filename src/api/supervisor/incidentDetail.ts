@@ -158,16 +158,44 @@ export const getIncidentDetail = async (req: any, res: any) => {
   }
 };
 
-async function mutate(req: any, res: any, apply: (r: any, log: LogEvent[]) => Promise<void> | void) {
+async function mutate(
+  req: any,
+  res: any,
+  apply: (r: any, log: LogEvent[]) => Promise<void> | void,
+  buildDispatch?: (r: any) => { eventType: string; data: any } | null,
+) {
   new PermissionChecker(req).validateHas(Permissions.values.supervisorMe);
   const db = req.database;
-  const r = await loadIncident(db, req.currentTenant.id, String(req.params.incidentId));
+  const tenantId = req.currentTenant.id;
+  const r = await loadIncident(db, tenantId, String(req.params.incidentId));
   if (!r) throw new Error400(req.language);
   const log = parseLog(r.comments);
   await apply(r, log);
   r.comments = log; // JSON column
   await r.save();
-  const fresh = await loadIncident(db, req.currentTenant.id, String(r.id));
+  const fresh = await loadIncident(db, tenantId, String(r.id));
+
+  // CRM notification activity for the action (best-effort).
+  if (buildDispatch) {
+    try {
+      const info = buildDispatch(fresh);
+      if (info) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { dispatch } = require('../../lib/notificationDispatcher');
+        dispatch(
+          info.eventType,
+          {
+            supervisorName: actorName(req),
+            incidentTitle: fresh.subject || null,
+            stationName: fresh.station ? fresh.station.stationName : null,
+            ...info.data,
+          },
+          { database: db, tenantId, sourceEntityType: 'incident', sourceEntityId: String(fresh.id) },
+        ).catch(() => undefined);
+      }
+    } catch { /* dispatch best-effort */ }
+  }
+
   await ApiResponseHandler.success(req, res, { incident: await serialize(db, fresh) });
 }
 
@@ -180,7 +208,7 @@ export const addIncidentNote = async (req: any, res: any) => {
     await mutate(req, res, (r, log) => {
       log.push({ type: 'note', title: 'Note Added', text, by: actorName(req), at: new Date().toISOString() });
       r.internalNotes = text;
-    });
+    }, () => ({ eventType: 'supervisor.incident.note', data: {} }));
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
@@ -192,12 +220,12 @@ export const setIncidentStatus = async (req: any, res: any) => {
     const data = (req.body && req.body.data) || req.body || {};
     const status = String(data.status || '');
     if (!['open', 'inProgress', 'resolved', 'closed'].includes(status)) throw new Error400(req.language);
+    const labels: Record<string, string> = { open: 'Open', inProgress: 'In Progress', resolved: 'Resolved', closed: 'Closed' };
     await mutate(req, res, (r, log) => {
       // DB enum is binary; resolved/closed → cerrado, else abierto.
       r.status = status === 'resolved' || status === 'closed' ? 'cerrado' : 'abierto';
-      const labels: Record<string, string> = { open: 'Open', inProgress: 'In Progress', resolved: 'Resolved', closed: 'Closed' };
       log.push({ type: 'status', title: 'Status Updated', value: status, text: `Status changed to ${labels[status]}`, by: actorName(req), at: new Date().toISOString() });
-    });
+    }, () => ({ eventType: 'supervisor.incident.status', data: { status, statusLabel: labels[status] } }));
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
@@ -211,7 +239,7 @@ export const assignIncident = async (req: any, res: any) => {
     await mutate(req, res, (r, log) => {
       r.assignedToUserId = userId;
       log.push({ type: 'assign', title: 'Assigned', text: data.name ? `Assigned to ${data.name}` : 'Reassigned', by: actorName(req), at: new Date().toISOString() });
-    });
+    }, () => ({ eventType: 'supervisor.incident.assigned', data: { assigneeName: data.name || null } }));
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
@@ -226,7 +254,7 @@ export const escalateIncident = async (req: any, res: any) => {
       const next = order[Math.min(order.length - 1, order.indexOf(cur) + 1)];
       r.priority = next;
       log.push({ type: 'escalate', title: 'Escalated', text: `Severity raised to ${next}`, by: actorName(req), at: new Date().toISOString() });
-    });
+    }, (r) => ({ eventType: 'supervisor.incident.escalated', data: { severity: normSeverity(r.priority) } }));
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
