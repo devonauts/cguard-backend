@@ -88,7 +88,9 @@ export const getStationsList = async (req: any, res: any) => {
           include: [{ model: db.file, as: 'profileImage', required: false }],
         },
       ],
-      order: [['punchInTime', 'DESC']],
+      // NOTE: no `order` here — combining an ordered top-level column with an
+      // include + limit makes Sequelize wrap in a subquery that can't see the
+      // order column. We only need the set of on-duty guards per station.
       limit: 5000,
     });
 
