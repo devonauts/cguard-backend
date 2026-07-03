@@ -77,13 +77,28 @@ export interface BillingQuote {
   netMonthlyCents: number;
 }
 
+/**
+ * Optional per-tier GROSS price overrides. When a plan-catalog tier sets custom
+ * pricing, callers pass the already-grossed cents here; otherwise the flat
+ * defaults are used. Keeps quote() backward-compatible (overrides optional).
+ */
+export interface QuoteOverrides {
+  perUserCents?: number;
+  implementationCents?: number;
+}
+
 /** Compute a price quote for `seats` users. */
-export function quote(seats: number, includeImplementation: boolean): BillingQuote {
+export function quote(
+  seats: number,
+  includeImplementation: boolean,
+  overrides?: QuoteOverrides,
+): BillingQuote {
   const s = Math.max(0, Math.floor(seats || 0));
-  const perUser = grossPerUserCents();
+  const perUser = overrides?.perUserCents != null ? overrides.perUserCents : grossPerUserCents();
   const platform = platformFeeCents();
   const monthly = perUser * s + platform;
-  const impl = includeImplementation ? grossImplementationCents() : 0;
+  const implFee = overrides?.implementationCents != null ? overrides.implementationCents : grossImplementationCents();
+  const impl = includeImplementation ? implFee : 0;
   // Net the platform keeps from the monthly recurring charge.
   const netMonthly = Math.round(monthly * (1 - feePct()) - feeFixedCents());
   return {

@@ -19,6 +19,9 @@ import {
   extendTrial,
   deleteTenant,
   exportTenant,
+  setBillingStatus,
+  markImplementationPaid,
+  changePlan,
 } from '../../services/superadmin/tenantsService';
 
 export default (router) => {
@@ -148,6 +151,63 @@ export default (router) => {
           until: (req.body || {}).until ?? null,
           trialEndsAt: payload.trialEndsAt ?? null,
         },
+      });
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // POST /tenants/:id/billing-status — manually set billingStatus (comp/cancel).
+  router.post('/tenants/:id/billing-status', async (req, res) => {
+    try {
+      const status = (req.body || {}).status;
+      const payload = await setBillingStatus(req, req.params.id, status);
+      await writeAudit(req, {
+        action: 'tenant.set_billing_status',
+        targetType: 'tenant',
+        targetId: req.params.id,
+        tenantId: req.params.id,
+        statusCode: 200,
+        details: { status: status || null },
+      });
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // POST /tenants/:id/implementation — toggle implementation-fee paid. Body: { paid }.
+  router.post('/tenants/:id/implementation', async (req, res) => {
+    try {
+      const paid = !!(req.body || {}).paid;
+      const payload = await markImplementationPaid(req, req.params.id, paid);
+      await writeAudit(req, {
+        action: 'tenant.mark_implementation',
+        targetType: 'tenant',
+        targetId: req.params.id,
+        tenantId: req.params.id,
+        statusCode: 200,
+        details: { paid },
+      });
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // PUT /tenants/:id/plan — change the tenant's plan/tier. Body: { plan }.
+  router.put('/tenants/:id/plan', async (req, res) => {
+    try {
+      const plan = (req.body || {}).plan;
+      const payload = await changePlan(req, req.params.id, plan);
+      await writeAudit(req, {
+        action: 'tenant.change_plan',
+        targetType: 'tenant',
+        targetId: req.params.id,
+        tenantId: req.params.id,
+        statusCode: 200,
+        details: { plan: plan || null },
       });
       await ApiResponseHandler.success(req, res, payload);
     } catch (error) {

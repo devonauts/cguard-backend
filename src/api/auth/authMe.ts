@@ -43,6 +43,23 @@ export default async (req, res, next) => {
           t.trialEndsAt = (t.tenant && t.tenant.trialEndsAt) ? t.tenant.trialEndsAt : null;
           t.billingStatus = (t.tenant && t.tenant.billingStatus) ? t.tenant.billingStatus : null;
           t.onboardingCompleted = (t.tenant && typeof t.tenant.onboardingCompleted !== 'undefined') ? Boolean(t.tenant.onboardingCompleted) : false;
+          // Suspension state so the CRM can render the hard-lockout screen.
+          t.suspendedAt = (t.tenant && t.tenant.suspendedAt) ? t.tenant.suspendedAt : null;
+          t.suspensionReason = (t.tenant && t.tenant.suspensionReason) ? t.tenant.suspensionReason : null;
+
+          // Plan entitlements + seat cap so the CRM can feature-gate by tier.
+          // Fail-open: on any error the tenant keeps full access.
+          try {
+            if (t.tenant) {
+              const svc = require('../../services/planCatalogService');
+              const resolved = await svc.resolveForTenant(req.database, t.tenant);
+              t.planKey = resolved.planKey;
+              t.planFeatures = resolved.features;
+              t.seatCap = resolved.seatCap;
+            }
+          } catch (e) {
+            // non-fatal — omit entitlements, CRM treats absence as "all allowed"
+          }
         } catch (e) {
           // non-fatal
         }

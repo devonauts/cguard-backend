@@ -20,6 +20,7 @@ export default (app) => {
   // Domain route modules (each: export default (router) => { router.get(...) }).
   require('./dashboard').default(router);
   require('./tenants').default(router);
+  require('./plans').default(router);
   require('./billing').default(router);
   require('./users').default(router);
   require('./observability').default(router);

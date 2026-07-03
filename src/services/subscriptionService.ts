@@ -93,12 +93,42 @@ export interface BillingSummary {
   hasSubscription: boolean;
   quote: BillingQuote;
   trialDays: number;
+  // Plan-catalog resolution (fail-open: all features / unlimited when unset).
+  plan: {
+    key: string | null;
+    name: string | null;
+    features: string[];
+    seatCap: number | null;
+    seatsRemaining: number | null; // null = unlimited
+    overLimit: boolean;
+  };
 }
 
 export async function getSummary(db: any, tenant: any): Promise<BillingSummary> {
   const seats = await countBillableSeats(db, tenant.id);
   const implementationPaid = !!tenant.implementationPaidAt;
-  const q = quote(seats, !implementationPaid);
+
+  // Resolve tier entitlements + pricing overrides (fail-open on any error).
+  let resolved: any = null;
+  let pricing: any = null;
+  try {
+    const svc = require('./planCatalogService');
+    resolved = await svc.resolveForTenant(db, tenant);
+    pricing = await svc.resolvePricing(db, tenant);
+  } catch {
+    resolved = null;
+    pricing = null;
+  }
+
+  const q = quote(
+    seats,
+    !implementationPaid,
+    pricing ? { perUserCents: pricing.perSeatCents, implementationCents: pricing.implementationCents } : undefined,
+  );
+
+  const seatCap = resolved?.seatCap ?? null;
+  const seatsRemaining = seatCap == null ? null : Math.max(0, seatCap - seats);
+
   return {
     status: tenant.billingStatus || 'trialing',
     trial: trialInfo(tenant),
@@ -107,5 +137,13 @@ export async function getSummary(db: any, tenant: any): Promise<BillingSummary> 
     hasSubscription: !!tenant.stripeSubscriptionId,
     quote: q,
     trialDays: trialDays(),
+    plan: {
+      key: resolved?.planKey ?? (tenant.plan || null),
+      name: resolved?.planName ?? null,
+      features: resolved?.features ?? [],
+      seatCap,
+      seatsRemaining,
+      overLimit: seatCap != null && seats > seatCap,
+    },
   };
 }

@@ -745,6 +745,16 @@ class AuthService {
         
         const tenantIdForToken = tenantEntry.tenantId || (tenantEntry.tenant && tenantEntry.tenant.id) || null;
 
+        // ── Hard login block: suspended tenants ───────────────────────────────
+        // A suspended tenant (superadmin lever) cannot establish a session at
+        // all. Canceled tenants are intentionally NOT blocked here — they can
+        // still sign in to reach the billing page and re-subscribe; the paywall
+        // hard-blocks the rest of the app for them. Superadmins returned earlier
+        // and never reach this branch.
+        if (tenantEntry.tenant && (tenantEntry.tenant as any).suspendedAt) {
+          throw new Error('auth.tenantSuspended');
+        }
+
         // Replace tenants array with single `tenant` key containing the tenant info + roles/permissions
         (safeUser as any).tenant = {
           tenantId: tenantEntry.tenantId,
@@ -759,6 +769,7 @@ class AuthService {
           trialEndsAt: (tenantEntry.tenant && tenantEntry.tenant.trialEndsAt) ? tenantEntry.tenant.trialEndsAt : null,
           billingStatus: (tenantEntry.tenant && tenantEntry.tenant.billingStatus) ? tenantEntry.tenant.billingStatus : null,
           onboardingCompleted: (tenantEntry.tenant && typeof tenantEntry.tenant.onboardingCompleted !== 'undefined') ? Boolean(tenantEntry.tenant.onboardingCompleted) : false,
+          suspendedAt: (tenantEntry.tenant && (tenantEntry.tenant as any).suspendedAt) ? (tenantEntry.tenant as any).suspendedAt : null,
         };
         delete (safeUser as any).tenants;
 

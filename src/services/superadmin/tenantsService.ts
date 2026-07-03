@@ -260,8 +260,56 @@ export async function createTenant(req: Request): Promise<any> {
   }
 
   const created = await db(req).tenant.create(pickWritable(body));
+
+  // Optional owner-user invite: if an owner block is provided, provision the
+  // tenant's first admin and email them an invitation to set a password. This
+  // is best-effort — a failure here does NOT roll back the tenant (it already
+  // exists); the error is surfaced so the superadmin can retry the invite.
+  const owner = body.owner || {};
+  if (owner && owner.email) {
+    await provisionOwner(req, created, owner);
+  }
+
   const detail = await getTenantDetail(req, created.id);
   return detail;
+}
+
+/**
+ * Provision a tenant's first admin user + invitation email. Seeds the tenant's
+ * built-in roles and default settings first (so the 'admin' role resolves),
+ * then delegates to UserCreator (which creates the user, links the tenantUser
+ * with the admin role, and sends the invitation email).
+ */
+async function provisionOwner(req: Request, tenant: any, owner: any): Promise<void> {
+  const database = db(req);
+  const SettingsService = require('../settingsService').default;
+  const { ensureBuiltInRolesForTenant } = require('../roleSync');
+  const UserCreator = require('../user/userCreator').default;
+  const UserRepository = require('../../database/repositories/userRepository').default;
+
+  // Reject an email already attached to a user (UserCreator can't create dupes).
+  const existing = await UserRepository.findByEmailWithoutAvatar(owner.email, req);
+  if (existing) {
+    throw new Error400((req as any).language, 'auth.emailAlreadyInUse');
+  }
+
+  const scoped: any = {
+    database,
+    currentUser: (req as any).currentUser,
+    currentTenant: tenant,
+    language: (req as any).language,
+    bypassPermissionValidation: true,
+  };
+
+  await SettingsService.findOrCreateDefault({ ...scoped });
+  await ensureBuiltInRolesForTenant(database, tenant.id, {});
+
+  await new UserCreator(scoped).execute({
+    emails: [owner.email],
+    firstName: owner.firstName || null,
+    lastName: owner.lastName || null,
+    roles: ['admin'],
+  });
 }
 
 /**
@@ -351,6 +399,71 @@ export async function extendTrial(req: Request, id: string): Promise<any> {
     updates.billingStatus = 'trialing';
   }
   await tenant.update(updates);
+  return getTenantDetail(req, id);
+}
+
+/** Valid billingStatus values a superadmin may set manually. */
+const SETTABLE_BILLING_STATUSES = ['trialing', 'active', 'past_due', 'trial_expired', 'canceled'];
+
+/**
+ * POST /tenants/:id/billing-status — manually set a tenant's billingStatus.
+ * Lets a superadmin comp/activate a tenant (e.g. paid by wire, or a partner
+ * account) or force-cancel one, independent of Stripe. Setting 'active' does
+ * NOT create a Stripe subscription — it's a manual override. 404 if missing.
+ */
+export async function setBillingStatus(
+  req: Request,
+  id: string,
+  status: string,
+): Promise<any> {
+  if (!SETTABLE_BILLING_STATUSES.includes(status)) {
+    throw new Error400(
+      (req as any).language,
+      undefined,
+      `Invalid billingStatus. Allowed: ${SETTABLE_BILLING_STATUSES.join(', ')}`,
+    );
+  }
+  const tenant = await findTenantOr404(req, id);
+  const updates: any = { billingStatus: status };
+  // Comping a tenant active clears any lingering suspension so they get in.
+  if (status === 'active') {
+    updates.suspendedAt = null;
+    updates.suspensionReason = null;
+  }
+  await tenant.update(updates);
+  return getTenantDetail(req, id);
+}
+
+/**
+ * POST /tenants/:id/implementation — toggle the one-time implementation-fee
+ * paid marker. Body: { paid: boolean }. 404 if missing.
+ */
+export async function markImplementationPaid(
+  req: Request,
+  id: string,
+  paid: boolean,
+): Promise<any> {
+  const tenant = await findTenantOr404(req, id);
+  await tenant.update({ implementationPaidAt: paid ? new Date() : null });
+  return getTenantDetail(req, id);
+}
+
+/**
+ * PUT /tenants/:id/plan — change a tenant's plan (tier). Validates the plan key
+ * exists in the catalog. Kept distinct from updateTenant so the plan change is
+ * a first-class, audited action. 404 if tenant missing, 400 if plan unknown.
+ */
+export async function changePlan(req: Request, id: string, plan: string): Promise<any> {
+  const database = db(req);
+  if (!plan) {
+    throw new Error400((req as any).language, undefined, 'plan is required');
+  }
+  const known = await database.planCatalog.findOne({ where: { key: plan } });
+  if (!known) {
+    throw new Error400((req as any).language, undefined, `Unknown plan "${plan}"`);
+  }
+  const tenant = await findTenantOr404(req, id);
+  await tenant.update({ plan });
   return getTenantDetail(req, id);
 }
 

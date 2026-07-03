@@ -519,5 +519,41 @@ export default class UserCreator {
       this._roles && this._roles.length,
       'roles is required',
     );
+
+    await this._assertSeatCap();
+  }
+
+  /**
+   * Enforce the plan's seat cap. Every tenantUser is one billable seat, so a
+   * tenant already at (or over) its cap cannot add more users. Fail-open: any
+   * error resolving the cap, or a null (unlimited) cap, skips the check so this
+   * never blocks legitimate creation. Superadmins are exempt.
+   */
+  async _assertSeatCap() {
+    try {
+      const db = this.options.database;
+      const tenant = this.options.currentTenant;
+      if (!db || !tenant || !tenant.id) return;
+
+      const svc = require('../planCatalogService');
+      const resolved = await svc.resolveForTenant(db, tenant);
+      const cap = resolved?.seatCap;
+      if (cap == null) return; // unlimited
+
+      const seats = await db.tenantUser.count({ where: { tenantId: tenant.id } });
+      if (seats >= cap) {
+        const Error400 = require('../../errors/Error400').default;
+        throw new Error400(
+          (this.options as any).language,
+          undefined,
+          `Alcanzaste el límite de ${cap} usuarios de tu plan. Mejora tu plan para agregar más.`,
+        );
+      }
+    } catch (err: any) {
+      // Re-throw our own cap error; swallow anything else (fail open).
+      if (err && err.code === 400) throw err;
+      if (err && /límite de/.test(String(err.message || ''))) throw err;
+      return;
+    }
   }
 }

@@ -70,6 +70,11 @@ export default function (sequelize, DataTypes) {
         type: DataTypes.STRING(32),
         allowNull: false,
         defaultValue: 'trialing',
+        validate: {
+          isIn: [
+            ['trialing', 'active', 'past_due', 'trial_expired', 'canceled'],
+          ],
+        },
       },
       // Active Stripe subscription id once the tenant activates a paid plan.
       stripeSubscriptionId: {
