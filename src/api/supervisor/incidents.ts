@@ -22,7 +22,7 @@ export const getIncidents = async (req: any, res: any) => {
     const rows = await db.incident.findAll({
       where: { tenantId },
       attributes: [
-        'id', 'subject', 'content', 'priority', 'status', 'comments', 'location',
+        'id', 'subject', 'content', 'priority', 'status', 'comments', 'location', 'callerName',
         'dateTime', 'incidentAt', 'createdAt', 'stationId', 'postSiteId', 'guardNameId',
       ],
       include: [
@@ -64,7 +64,7 @@ export const getIncidents = async (req: any, res: any) => {
           severity: normSeverity(r.priority),
           status: statusFromLog(parseLog(r.comments), r.status),
           location,
-          guard: r.guardName ? r.guardName.fullName : null,
+          guard: (r.guardName ? r.guardName.fullName : null) || r.callerName || null,
           at: r.incidentAt || r.dateTime || r.createdAt,
           photo,
           photoCount,

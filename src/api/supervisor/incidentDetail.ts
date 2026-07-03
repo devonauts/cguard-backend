@@ -44,6 +44,7 @@ async function loadIncident(db: any, tenantId: string, id: string) {
       },
       { model: db.incidentType, as: 'incidentType', attributes: ['id', 'name'], required: false },
       { model: db.user, as: 'assignedTo', attributes: ['id', 'firstName', 'lastName'], required: false },
+      { model: db.user, as: 'createdBy', attributes: ['id', 'firstName', 'lastName'], required: false },
       { model: db.file, as: 'imageUrl', required: false },
     ],
   });
@@ -83,6 +84,11 @@ async function serialize(db: any, r: any) {
   const assignee = r.assignedTo || null;
   const assigneeName = assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() : null;
 
+  // Reporter: the reporting guard → caller (CRM phone report) → the creating user.
+  const createdByName = r.createdBy ? `${r.createdBy.firstName || ''} ${r.createdBy.lastName || ''}`.trim() : null;
+  const reporterName = (guard && guard.fullName) || r.callerName || createdByName || null;
+  const reporterRole = guard ? 'guard' : (r.callerType || 'staff');
+
   // ── Timeline: synthesized events + the activity log, sorted ascending ──
   const synth: any[] = [];
   synth.push({ type: 'reported', title: 'Incident Reported', text: `${guard?.fullName || 'Guardia'} reported an incident`, at: createdAt });
@@ -113,7 +119,13 @@ async function serialize(db: any, r: any) {
     lat, lng,
     photo: photos[0] || null,
     photos,
-    reportedBy: guard ? { name: guard.fullName, role: 'guard', avatar: reporterAvatar } : null,
+    reportedBy: reporterName ? { name: reporterName, role: reporterRole, avatar: reporterAvatar } : null,
+    details: {
+      description: r.content || r.description || null,
+      actionsTaken: r.actionsTaken || r.action || null,
+      caller: r.callerName || null,
+      callerType: r.callerType || null,
+    },
     assignedTo: assignee ? { id: String(assignee.id), name: assigneeName, role: 'supervisor' } : null,
     site: { station: stationName, post: subLabel || postName },
     incidentType: r.incidentType ? r.incidentType.name : null,
