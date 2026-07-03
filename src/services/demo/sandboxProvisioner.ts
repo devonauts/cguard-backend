@@ -17,8 +17,13 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { getDefaultPlanKey } from '../planCatalogService';
+import { sendMail } from '../mailService';
 
 type Db = any;
+
+/** From-address for sandbox credential emails. Override with SANDBOX_EMAIL_FROM. */
+const SANDBOX_EMAIL_FROM =
+  process.env.SANDBOX_EMAIL_FROM || 'CGuardPro Demo <demo@cguardpro.com>';
 
 const GEO = { lat: -2.170998, lng: -79.922359 }; // Guayaquil
 const BCRYPT_ROUNDS = 12;
@@ -110,12 +115,78 @@ export interface SandboxResult {
   loginUrl: string;
   sharedPassword: string;
   accounts: SandboxAccount[];
+  /** Set when credentials were emailed. */
+  emailedTo?: string | null;
+  emailSent?: boolean;
+  emailError?: string | null;
 }
 
 export interface ProvisionOpts {
   brandName: string;
   ownerEmail?: string | null;
   ownerFullName?: string | null;
+  /** If set, email the credentials to this address (from demo@cguardpro.com). */
+  sendCredentialsTo?: string | null;
+}
+
+const esc = (s: string) =>
+  String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+
+/** Branded HTML for the sandbox-credentials email. */
+function credentialsEmailHtml(r: SandboxResult): string {
+  const rows = r.accounts
+    .map(
+      (a) => `
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;color:#111">${esc(a.role)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #eee;font-family:monospace;color:#333">${esc(a.email)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #eee;font-family:monospace;color:#333">${esc(a.password)}</td>
+        </tr>`,
+    )
+    .join('');
+  return `
+  <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#222">
+    <h2 style="color:#0D47A1;margin-bottom:4px">Tu demo de CGuardPro está lista</h2>
+    <p style="margin-top:0;color:#555">Preparamos un entorno de prueba para <b>${esc(r.tenantName)}</b>, ya cargado con
+    guardias, sitios, horario e historial de operación para que lo explores como si fuera tu operación real.</p>
+    <p style="margin:20px 0">
+      <a href="${esc(r.loginUrl)}" style="background:#0D47A1;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">
+        Ingresar a la plataforma
+      </a>
+    </p>
+    <p style="color:#555;margin-bottom:6px">Accesos (todas las cuentas usan la misma contraseña):</p>
+    <table style="border-collapse:collapse;width:100%;font-size:14px">
+      <thead>
+        <tr style="background:#f5f7fa">
+          <th style="text-align:left;padding:8px 12px;color:#555">Rol</th>
+          <th style="text-align:left;padding:8px 12px;color:#555">Correo</th>
+          <th style="text-align:left;padding:8px 12px;color:#555">Contraseña</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="color:#888;font-size:12px;margin-top:24px">
+      Entorno de prueba de CGuardPro. Si no solicitaste esta demo, ignora este correo.
+    </p>
+  </div>`;
+}
+
+/**
+ * Email the sandbox credentials from demo@cguardpro.com. Best-effort: never
+ * throws — returns whether it sent (so provisioning succeeds even if mail fails).
+ */
+async function emailCredentials(r: SandboxResult, to: string): Promise<{ sent: boolean; error?: string }> {
+  try {
+    await sendMail({
+      to,
+      from: SANDBOX_EMAIL_FROM,
+      subject: `Tu demo de CGuardPro — ${r.tenantName}`,
+      html: credentialsEmailHtml(r),
+    });
+    return { sent: true };
+  } catch (e: any) {
+    return { sent: false, error: e?.message || 'mail send failed' };
+  }
 }
 
 /**
@@ -331,7 +402,7 @@ export async function provisionSandbox(db: Db, opts: ProvisionOpts): Promise<San
     { role: 'Vigilante (noche)', email: emails.guardNight, password: sharedPassword, fullName: 'Pedro Vásquez' },
   ];
 
-  return {
+  const result: SandboxResult = {
     tenantId,
     tenantName: brand,
     slug,
@@ -339,6 +410,17 @@ export async function provisionSandbox(db: Db, opts: ProvisionOpts): Promise<San
     sharedPassword,
     accounts,
   };
+
+  // Optionally email the credentials to the prospect (from demo@cguardpro.com).
+  const recipient = (opts.sendCredentialsTo || '').trim();
+  if (recipient) {
+    const { sent, error } = await emailCredentials(result, recipient);
+    result.emailedTo = recipient;
+    result.emailSent = sent;
+    result.emailError = error || null;
+  }
+
+  return result;
 }
 
 export default { provisionSandbox };
