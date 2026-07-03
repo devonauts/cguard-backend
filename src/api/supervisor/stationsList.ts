@@ -92,65 +92,90 @@ export const getStationsList = async (req: any, res: any) => {
       }
     }
 
-    // 3) Open attendance shifts → guards on duty per station.
+    // postSiteId → stationId (used by both on-duty + fallbacks)
+    const stationByPost = new Map<string, string>();
+    stations.forEach((s: any) => {
+      if (s.postSiteId) stationByPost.set(String(s.postSiteId), String(s.id));
+    });
+
+    // 3) On-duty count per station (open attendance shifts) → drives status.
     const openShifts = await db.guardShift.findAll({
       where: { tenantId, punchOutTime: null },
       attributes: ['id', 'guardNameId', 'shiftId', 'postSiteId'],
-      include: [
-        {
-          model: db.securityGuard,
-          as: 'guardName',
-          attributes: ['id', 'fullName'],
-          required: false,
-          include: [{ model: db.file, as: 'profileImage', required: false }],
-        },
-      ],
-      // NOTE: no `order` here — combining an ordered top-level column with an
-      // include + limit makes Sequelize wrap in a subquery that can't see the
-      // order column. We only need the set of on-duty guards per station.
       limit: 5000,
     });
-
-    // shiftId → stationId
-    const shiftIds = openShifts.map((s: any) => s.shiftId).filter(Boolean);
+    const openShiftIds = openShifts.map((s: any) => s.shiftId).filter(Boolean);
     const stationIdByShift = new Map<string, string | null>();
-    if (shiftIds.length) {
+    if (openShiftIds.length) {
       const scheds = await db.shift.findAll({
-        where: { tenantId, id: { [Op.in]: shiftIds } },
+        where: { tenantId, id: { [Op.in]: openShiftIds } },
         attributes: ['id', 'stationId'],
       });
       scheds.forEach((s: any) =>
         stationIdByShift.set(String(s.id), s.stationId ? String(s.stationId) : null),
       );
     }
-    // postSiteId → stationId
-    const stationByPost = new Map<string, string>();
-    stations.forEach((s: any) => {
-      if (s.postSiteId) stationByPost.set(String(s.postSiteId), String(s.id));
-    });
-
-    const guardsByStation = new Map<string, any[]>();
-    const seenGuardPerStation = new Set<string>();
+    const onDutyByStation = new Map<string, number>();
     for (const sh of openShifts) {
       let stId: string | null = sh.shiftId ? stationIdByShift.get(String(sh.shiftId)) ?? null : null;
       if (!stId && sh.postSiteId) stId = stationByPost.get(String(sh.postSiteId)) ?? null;
       if (!stId) continue;
-      const g = sh.guardName;
-      if (!g) continue;
-      const dedupe = `${stId}:${g.id}`;
-      if (seenGuardPerStation.has(dedupe)) continue;
-      seenGuardPerStation.add(dedupe);
-      let avatarUrl: string | null = null;
-      try {
-        if (Array.isArray(g.profileImage) && g.profileImage.length) {
-          const filled = await FileRepository.fillDownloadUrl(g.profileImage);
-          avatarUrl = (filled[0] && (filled[0] as any).downloadUrl) || null;
-        }
-      } catch {
-        avatarUrl = null;
+      onDutyByStation.set(stId, (onDutyByStation.get(stId) || 0) + 1);
+    }
+
+    // 3b) ASSIGNED guards per station (from the schedule) → the avatar stack.
+    // shifts.guardId is the USER id; securityGuard.guardId FKs to the same user.
+    const assignedUsersByStation = new Map<string, Set<string>>();
+    try {
+      const sched = await db.shift.findAll({
+        where: { tenantId, stationId: { [Op.in]: stationIds.length ? stationIds : [null] } },
+        attributes: ['stationId', 'guardId'],
+        group: ['stationId', 'guardId'],
+        limit: 20000,
+      });
+      for (const r of sched) {
+        if (!r.stationId || !r.guardId) continue;
+        const k = String(r.stationId);
+        if (!assignedUsersByStation.has(k)) assignedUsersByStation.set(k, new Set());
+        assignedUsersByStation.get(k)!.add(String(r.guardId));
       }
-      if (!guardsByStation.has(stId)) guardsByStation.set(stId, []);
-      guardsByStation.get(stId)!.push({ id: String(g.id), name: g.fullName, avatarUrl });
+    } catch {
+      /* schedule optional */
+    }
+
+    // Resolve those users → securityGuard (name + avatar).
+    const allUserIds = [
+      ...new Set([...assignedUsersByStation.values()].flatMap((s) => [...s])),
+    ];
+    const guardByUserId = new Map<string, any>();
+    if (allUserIds.length) {
+      const sgs = await db.securityGuard.findAll({
+        where: { tenantId, guardId: { [Op.in]: allUserIds } },
+        attributes: ['id', 'fullName', 'guardId'],
+        include: [{ model: db.file, as: 'profileImage', required: false }],
+        limit: 5000,
+      });
+      for (const sg of sgs) {
+        let avatarUrl: string | null = null;
+        try {
+          if (Array.isArray(sg.profileImage) && sg.profileImage.length) {
+            const filled = await FileRepository.fillDownloadUrl(sg.profileImage);
+            avatarUrl = (filled[0] && (filled[0] as any).downloadUrl) || null;
+          }
+        } catch {
+          avatarUrl = null;
+        }
+        guardByUserId.set(String(sg.guardId), {
+          id: String(sg.id),
+          name: sg.fullName,
+          avatarUrl,
+        });
+      }
+    }
+    const guardsByStation = new Map<string, any[]>();
+    for (const [stId, userSet] of assignedUsersByStation) {
+      const arr = [...userSet].map((uid) => guardByUserId.get(uid)).filter(Boolean);
+      guardsByStation.set(stId, arr);
     }
 
     // 4) Today's incidents per station.
@@ -198,11 +223,14 @@ export const getStationsList = async (req: any, res: any) => {
       const id = String(s.id);
       const post = s.postSiteId ? postSiteById.get(String(s.postSiteId)) : null;
       const guards = guardsByStation.get(id) || [];
+      const onDuty = onDutyByStation.get(id) || 0;
       const incidentsToday = incidentsByStation.get(id) || 0;
       const tasksPending = tasksByStation.get(id) || 0;
 
+      // Status reflects live coverage (who's clocked in), while the avatar stack
+      // shows the assigned roster.
       let status: 'active' | 'attention' | 'offline';
-      if (guards.length === 0) status = 'offline';
+      if (onDuty === 0) status = 'offline';
       else if (incidentsToday >= ATTENTION_INCIDENTS) status = 'attention';
       else status = 'active';
 
