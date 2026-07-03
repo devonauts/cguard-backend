@@ -10,6 +10,7 @@ import { getClock, clockIn, clockOut } from './clock';
 import { getStations } from './stations';
 import { getStationsList } from './stationsList';
 import { getStationDetail } from './stationDetail';
+import { createStationTask } from './stationTaskCreate';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
 import {
@@ -35,6 +36,9 @@ export default (app) => {
   // Full detail for one station (must come AFTER /stations/list so the literal
   // wins over the :stationId param).
   app.get('/tenant/:tenantId/supervisor/me/stations/:stationId', getStationDetail);
+
+  // Create a task for a station (Station Details → Add Task).
+  app.post('/tenant/:tenantId/supervisor/me/stations/:stationId/tasks', createStationTask);
 
   // Guard roster + live telemetry for the Guards screen.
   app.get('/tenant/:tenantId/supervisor/me/guards', getGuards);
