@@ -4,6 +4,7 @@
  * notifications (worker push + client push + email) via taskNotify.
  */
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
+import FileRepository from '../database/repositories/fileRepository';
 import Error404 from '../errors/Error404';
 import { notifyTaskApproved, notifyTaskRejected } from './taskNotify';
 
@@ -27,11 +28,22 @@ export default class TaskApprovalService {
     if (status && status !== 'all') where.status = String(status).split(',');
     const rows = await db.task.findAll({
       where,
-      include: [{ model: db.station, as: 'taskBelongsToStation', attributes: ['id', 'stationName'] }],
+      include: [
+        { model: db.station, as: 'taskBelongsToStation', attributes: ['id', 'stationName'] },
+        // The guard's completion photo + the client's optional reference image.
+        { model: db.file, as: 'taskCompletedImage', required: false },
+        { model: db.file, as: 'imageOptional', required: false },
+      ],
       order: [['createdAt', 'DESC']],
       limit: Math.min(Number(query.limit) || 100, 200),
     });
-    return { rows: rows.map((r: any) => r.get({ plain: true })), count: rows.length };
+    const plain = rows.map((r: any) => r.get({ plain: true }));
+    // Sign the file relations so the CRM detail can render the images.
+    for (const p of plain) {
+      p.taskCompletedImage = await FileRepository.fillDownloadUrl(p.taskCompletedImage || []);
+      p.imageOptional = await FileRepository.fillDownloadUrl(p.imageOptional || []);
+    }
+    return { rows: plain, count: plain.length };
   }
 
   /** Approve or reject a task; notify client (+ guards on approval) + email. */
