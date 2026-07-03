@@ -59,6 +59,19 @@ class TenantRepository {
       }
     }
 
+    // Resolve the tenant's plan: an explicit plan wins; otherwise fall back to
+    // the plan-catalog default (isDefault) so the default tier is UI-driven.
+    // Fail-open: any error leaves plan unset → the model default ('free').
+    let resolvedPlan = data.plan;
+    if (!resolvedPlan) {
+      try {
+        const { getDefaultPlanKey } = require('../../services/planCatalogService');
+        resolvedPlan = await getDefaultPlanKey(options.database);
+      } catch {
+        resolvedPlan = undefined;
+      }
+    }
+
     const record = await options.database.tenant.create(
       {
         ...lodash.pick(data, [
@@ -82,6 +95,7 @@ class TenantRepository {
           'licenseNumber',
           'timezone',
         ]),
+        ...(resolvedPlan ? { plan: resolvedPlan } : {}),
         url: normalizedUrl,
         createdById: currentUser.id,
         updatedById: currentUser.id,

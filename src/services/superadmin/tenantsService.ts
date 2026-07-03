@@ -259,7 +259,17 @@ export async function createTenant(req: Request): Promise<any> {
     );
   }
 
-  const created = await db(req).tenant.create(pickWritable(body));
+  const createData = pickWritable(body);
+  // Default to the plan-catalog default tier when the caller didn't pick one.
+  if (!createData.plan) {
+    try {
+      const { getDefaultPlanKey } = require('../planCatalogService');
+      createData.plan = await getDefaultPlanKey(db(req));
+    } catch {
+      /* fall back to the model default */
+    }
+  }
+  const created = await db(req).tenant.create(createData);
 
   // Optional owner-user invite: if an owner block is provided, provision the
   // tenant's first admin and email them an invitation to set a password. This
