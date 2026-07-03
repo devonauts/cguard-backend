@@ -44,7 +44,7 @@ export const getIncidents = async (req: any, res: any) => {
         { model: db.station, as: 'station', attributes: ['id', 'stationName'], required: false },
         { model: db.businessInfo, as: 'site', attributes: ['id', 'companyName'], required: false },
         { model: db.securityGuard, as: 'guardName', attributes: ['id', 'fullName'], required: false },
-        { model: db.incidentType, as: 'incidentType', attributes: ['id', 'title'], required: false },
+        { model: db.incidentType, as: 'incidentType', attributes: ['id', 'name'], required: false },
         { model: db.file, as: 'imageUrl', required: false },
       ],
       order: [['createdAt', 'DESC']],
@@ -71,7 +71,7 @@ export const getIncidents = async (req: any, res: any) => {
 
         return {
           id: String(r.id),
-          title: r.subject || (r.incidentType ? r.incidentType.title : null) || 'Incidente',
+          title: r.subject || (r.incidentType ? r.incidentType.name : null) || 'Incidente',
           severity: normSeverity(r.priority),
           status: normStatus(r.status),
           location,
