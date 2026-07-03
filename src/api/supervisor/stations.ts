@@ -100,6 +100,23 @@ export const getStations = async (req: any, res: any) => {
         .filter(Boolean) as string[],
     );
 
+    // 4b) Address per station (from its post site) — used by the map pin popup's
+    // address-based navigation.
+    const postSiteIds = [
+      ...new Set(stationRows.map((s: any) => s.postSiteId).filter(Boolean).map(String)),
+    ];
+    const addressByPost = new Map<string, string | null>();
+    if (postSiteIds.length) {
+      const posts = await db.businessInfo.findAll({
+        where: { id: { [Op.in]: postSiteIds } },
+        attributes: ['id', 'address', 'city'],
+      });
+      posts.forEach((p: any) => {
+        const parts = [p.address, p.city].filter(Boolean);
+        addressByPost.set(String(p.id), parts.length ? parts.join(', ') : null);
+      });
+    }
+
     // 5) Classify.
     const stations = stationRows.map((s: any) => {
       const id = String(s.id);
@@ -111,6 +128,7 @@ export const getStations = async (req: any, res: any) => {
         id,
         name: s.stationName,
         nickname: s.nickname || null,
+        address: s.postSiteId ? addressByPost.get(String(s.postSiteId)) ?? null : null,
         lat: toNum(s.latitud),
         lng: toNum(s.longitud),
         guardsOnDuty: onDuty,

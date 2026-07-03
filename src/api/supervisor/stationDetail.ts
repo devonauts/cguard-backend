@@ -16,6 +16,62 @@ function toNum(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
+/** Human label for a post-site security service type (mirrors CRM serviceTypes). */
+const SERVICE_TYPE_LABELS: Record<string, string> = {
+  manned: 'Vigilancia con vigilantes',
+  alarm: 'Alarma y respuesta',
+  cctv: 'Videovigilancia',
+  patrol: 'Patrulla móvil',
+  custody: 'Custodia y escolta',
+};
+function serviceTypeLabel(v: any): string | null {
+  if (!v) return null;
+  return SERVICE_TYPE_LABELS[String(v).toLowerCase()] || String(v);
+}
+
+/** Best-effort display time zone from the client's country + longitude. */
+function deriveTimeZone(country: any, lng: number | null): string | null {
+  const c = String(country || '').trim().toLowerCase();
+  if (['united states', 'usa', 'us', 'estados unidos', 'ee.uu.'].includes(c)) {
+    if (lng == null) return 'Estados Unidos';
+    if (lng > -87.5) return 'Eastern Time (GMT-5)';
+    if (lng > -100) return 'Central Time (GMT-6)';
+    if (lng > -115) return 'Mountain Time (GMT-7)';
+    return 'Pacific Time (GMT-8)';
+  }
+  const named: Record<string, string> = {
+    ecuador: 'America/Guayaquil (GMT-5)',
+    colombia: 'America/Bogotá (GMT-5)',
+    peru: 'America/Lima (GMT-5)',
+    perú: 'America/Lima (GMT-5)',
+    mexico: 'America/Mexico_City (GMT-6)',
+    méxico: 'America/Mexico_City (GMT-6)',
+    chile: 'America/Santiago (GMT-4)',
+    argentina: 'America/Argentina (GMT-3)',
+    spain: 'Europe/Madrid (GMT+1)',
+    'españa': 'Europe/Madrid (GMT+1)',
+  };
+  if (named[c]) return named[c];
+  if (lng != null) {
+    const off = Math.round(lng / 15);
+    return `GMT${off >= 0 ? '+' : ''}${off}`;
+  }
+  return null;
+}
+
+/** Parse a categoryIds JSON column into a string[] of ids. */
+function parseIds(v: any): string[] {
+  let raw = v;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return raw ? [String(raw)] : [];
+    }
+  }
+  return Array.isArray(raw) ? raw.map(String).filter(Boolean) : [];
+}
+
 function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -59,14 +115,14 @@ export const getStationDetail = async (req: any, res: any) => {
     let client: any = null;
     if (station.postSiteId) {
       post = await db.businessInfo.findByPk(station.postSiteId, {
-        attributes: ['id', 'companyName', 'address', 'city', 'country', 'serviceType', 'contactPhone', 'contactEmail', 'clientAccountId'],
+        attributes: ['id', 'companyName', 'address', 'city', 'country', 'serviceType', 'categoryIds', 'contactPhone', 'contactEmail', 'clientAccountId'],
         include: [
           { model: db.file, as: 'logo', required: false },
           {
             model: db.clientAccount,
             as: 'clientAccount',
             required: false,
-            attributes: ['id', 'name', 'lastName', 'commercialName', 'phoneNumber', 'email'],
+            attributes: ['id', 'name', 'lastName', 'commercialName', 'phoneNumber', 'email', 'country', 'city', 'latitude', 'longitude', 'categoryIds'],
             include: [
               { model: db.file, as: 'placePictureUrl', required: false },
               { model: db.file, as: 'logoUrl', required: false },
@@ -224,6 +280,30 @@ export const getStationDetail = async (req: any, res: any) => {
         ? `${station.startingTimeInDay} - ${station.finishTimeInDay}`
         : null;
 
+    // Site type = post-site service type (labelled) → else the client/post
+    // business category name.
+    let siteType: string | null = serviceTypeLabel(post?.serviceType);
+    if (!siteType) {
+      try {
+        const catIds = [...parseIds(post?.categoryIds), ...parseIds(client?.categoryIds)];
+        if (catIds.length) {
+          const cat = await db.category.findOne({
+            where: { tenantId, id: { [Op.in]: catIds } },
+            attributes: ['name'],
+          });
+          if (cat && cat.name) siteType = cat.name;
+        }
+      } catch {
+        /* category optional */
+      }
+    }
+
+    // Time zone derived from the client's country + longitude.
+    const timeZone = deriveTimeZone(
+      client?.country || post?.country,
+      toNum(client?.longitude) ?? toNum(post?.longitud) ?? toNum(station.longitud),
+    );
+
     await ApiResponseHandler.success(req, res, {
       station: {
         id: String(station.id),
@@ -233,7 +313,7 @@ export const getStationDetail = async (req: any, res: any) => {
         priority: openIncidents > 0 ? 'high' : null,
         address: addressParts.length ? addressParts.join(', ') : null,
         photo,
-        serviceType: post?.serviceType || null,
+        serviceType: siteType,
         lat: toNum(station.latitud),
         lng: toNum(station.longitud),
         geofence,
@@ -249,12 +329,12 @@ export const getStationDetail = async (req: any, res: any) => {
         checkpoints,
         info: {
           client: client ? client.commercialName || client.name : null,
-          siteType: post?.serviceType || null,
+          siteType,
           alarmPanel: null,
           contactPerson: contactName,
           contactPhone: (client && client.phoneNumber) || post?.contactPhone || null,
           accessHours,
-          timeZone: null,
+          timeZone,
         },
       },
     });
