@@ -211,6 +211,23 @@ export default class Storage {
         bypassWritingPermissions: true,
         publicRead: false,
       },
+      // Supervisor app "Create Task" attachments (photos/videos) + voice note.
+      // Self-service (bypass write-perm) like the guard flow; the create endpoint
+      // only links them to a task on a station in the supervisor's own tenant.
+      supervisorTaskAttachment: {
+        id: 'supervisorTaskAttachment',
+        folder: 'tenant/:tenantId/task/imageOptional',
+        maxSizeInBytes: 20 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
+      supervisorTaskVoiceNote: {
+        id: 'supervisorTaskVoiceNote',
+        folder: 'tenant/:tenantId/task/voiceNote',
+        maxSizeInBytes: 20 * 1024 * 1024,
+        bypassWritingPermissions: true,
+        publicRead: false,
+      },
 
       notificationImageUrl: {
         id: 'notificationImageUrl',

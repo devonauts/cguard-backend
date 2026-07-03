@@ -34,6 +34,10 @@ export default function (sequelize) {
       status: { type: DataTypes.STRING(30), allowNull: true, defaultValue: 'pending_approval' },
       source: { type: DataTypes.STRING(20), allowNull: true }, // 'client' | 'staff'
       priority: { type: DataTypes.STRING(10), allowNull: true, defaultValue: 'media' }, // alta|media|baja
+      // Richer create-task fields (supervisor "Create Task" screen).
+      description: { type: DataTypes.TEXT, allowNull: true },
+      assignedGuardId: { type: DataTypes.UUID, allowNull: true }, // assign to a specific guard (securityGuard.id)
+      repeatConfig: { type: DataTypes.TEXT, allowNull: true }, // JSON repeat rule
       approvedById: { type: DataTypes.UUID, allowNull: true },
       approvedAt: { type: DataTypes.DATE, allowNull: true },
       approvalNotes: { type: DataTypes.TEXT, allowNull: true },
@@ -87,6 +91,17 @@ export default function (sequelize) {
       scope: {
         belongsTo: models.task.getTableName(),
         belongsToColumn: 'taskCompletedImage',
+      },
+    });
+
+    // Voice instructions recorded when creating the task (supervisor app).
+    models.task.hasMany(models.file, {
+      as: 'voiceNote',
+      foreignKey: 'belongsToId',
+      constraints: false,
+      scope: {
+        belongsTo: models.task.getTableName(),
+        belongsToColumn: 'voiceNote',
       },
     });
     
