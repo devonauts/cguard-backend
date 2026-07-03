@@ -12,6 +12,7 @@ import { getStationsList } from './stationsList';
 import { getStationDetail } from './stationDetail';
 import { createStationTask } from './stationTaskCreate';
 import { createInspection, listInspections } from './stationInspection';
+import { getIncidents } from './incidents';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
 import {
@@ -44,6 +45,9 @@ export default (app) => {
   // Station inspections (Station Details → Start Inspection).
   app.post('/tenant/:tenantId/supervisor/me/stations/:stationId/inspection', createInspection);
   app.get('/tenant/:tenantId/supervisor/me/stations/:stationId/inspections', listInspections);
+
+  // Incidents list (image-forward) for the Incidents screen.
+  app.get('/tenant/:tenantId/supervisor/me/incidents', getIncidents);
 
   // Guard roster + live telemetry for the Guards screen.
   app.get('/tenant/:tenantId/supervisor/me/guards', getGuards);
