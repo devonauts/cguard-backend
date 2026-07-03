@@ -55,13 +55,30 @@ export const getStationsList = async (req: any, res: any) => {
       const posts = await db.businessInfo.findAll({
         where: { id: { [Op.in]: postSiteIds } },
         attributes: ['id', 'companyName', 'address', 'city', 'country'],
-        include: [{ model: db.file, as: 'logo', required: false }],
+        include: [
+          { model: db.file, as: 'logo', required: false },
+          // The customer logo usually lives on the client account, not the
+          // post-site itself — resolve it via postSite → clientAccount.logoUrl.
+          {
+            model: db.clientAccount,
+            as: 'clientAccount',
+            required: false,
+            attributes: ['id', 'name'],
+            include: [{ model: db.file, as: 'logoUrl', required: false }],
+          },
+        ],
       });
       for (const p of posts) {
         let logo: any = null;
         try {
-          if (Array.isArray(p.logo) && p.logo.length) {
-            const filled = await FileRepository.fillDownloadUrl(p.logo);
+          const own = Array.isArray(p.logo) && p.logo.length ? p.logo : null;
+          const client =
+            p.clientAccount && Array.isArray(p.clientAccount.logoUrl) && p.clientAccount.logoUrl.length
+              ? p.clientAccount.logoUrl
+              : null;
+          const source = own || client;
+          if (source) {
+            const filled = await FileRepository.fillDownloadUrl(source);
             logo = filled[0] || null;
           }
         } catch {
