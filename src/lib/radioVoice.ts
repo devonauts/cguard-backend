@@ -96,6 +96,18 @@ async function roster(io: IOServer, tenantId: string): Promise<Array<{ userId: s
   return [...byUser.values()];
 }
 
+/** Live distinct-user count in a tenant's voice channel (cluster-wide via the
+ *  socket.io adapter). Best-effort — 0 if the io ref isn't ready. */
+export async function voiceOnlineCount(tenantId: string): Promise<number> {
+  if (!ioRef || !tenantId) return 0;
+  try {
+    const sockets = await ioRef.in(room(tenantId)).fetchSockets();
+    const users = new Set<string>();
+    for (const s of sockets) { const d: any = s.data || {}; if (d.userId) users.add(d.userId); }
+    return users.size;
+  } catch { return 0; }
+}
+
 /** Current speaker across the cluster (Redis floor), or null. */
 async function currentSpeaker(tenantId: string): Promise<{ userId: string; name: string } | null> {
   if (redisReady && pub) {
