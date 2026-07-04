@@ -45,7 +45,14 @@ export const getVisitors = async (req: any, res: any) => {
       where: {
         tenantId,
         archived: { [Op.or]: [false, null] },
-        [Op.or]: [{ exitTime: null }, { visitDate: { [Op.gte]: startOfToday() } }],
+        // Show: still-onsite (no exit) · arrived today · checked out today. The
+        // last case keeps a just-checked-out visitor (who arrived earlier) in the
+        // Checked Out tab instead of dropping them from the feed.
+        [Op.or]: [
+          { exitTime: null },
+          { visitDate: { [Op.gte]: startOfToday() } },
+          { exitTime: { [Op.gte]: startOfToday() } },
+        ],
       },
       attributes: [
         'id', 'firstName', 'lastName', 'company', 'personVisited', 'tagNumber',
