@@ -14,6 +14,7 @@ import { createStationTask } from './stationTaskCreate';
 import { createInspection, listInspections } from './stationInspection';
 import { getIncidents } from './incidents';
 import { getVisitors } from './visitors';
+import { getVisitorDetail, checkoutVisitor } from './visitorDetail';
 import { getIncidentDetail, addIncidentNote, setIncidentStatus, assignIncident, escalateIncident } from './incidentDetail';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
@@ -60,6 +61,8 @@ export default (app) => {
 
   // Visitors feed for the Visitors screen.
   app.get('/tenant/:tenantId/supervisor/me/visitors', getVisitors);
+  app.get('/tenant/:tenantId/supervisor/me/visitors/:visitorId', getVisitorDetail);
+  app.post('/tenant/:tenantId/supervisor/me/visitors/:visitorId/checkout', checkoutVisitor);
 
   // Guard roster + live telemetry for the Guards screen.
   app.get('/tenant/:tenantId/supervisor/me/guards', getGuards);
