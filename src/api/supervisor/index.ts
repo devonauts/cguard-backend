@@ -16,6 +16,7 @@ import { getIncidents } from './incidents';
 import { getVisitors } from './visitors';
 import { getVisitorDetail, checkoutVisitor } from './visitorDetail';
 import { getRadioChannels } from './radioChannels';
+import { getEmergency } from './emergency';
 import { getIncidentDetail, addIncidentNote, setIncidentStatus, assignIncident, escalateIncident } from './incidentDetail';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
@@ -67,6 +68,9 @@ export default (app) => {
 
   // Radio channels (live PTT presence) for the Radio screen.
   app.get('/tenant/:tenantId/supervisor/me/radio/channels', getRadioChannels);
+
+  // Emergency contacts for the SOS screen.
+  app.get('/tenant/:tenantId/supervisor/me/emergency', getEmergency);
 
   // Guard roster + live telemetry for the Guards screen.
   app.get('/tenant/:tenantId/supervisor/me/guards', getGuards);
