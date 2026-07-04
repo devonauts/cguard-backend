@@ -114,7 +114,7 @@ export const getVisitorDetail = async (req: any, res: any) => {
           expectedDuration: r.expectedDuration || null,
           notes: r.notes || r.reason || null,
         },
-        vehicle: r.vehiclePlate || r.vehicleType || r.vehicleMakeModel ? {
+        vehicle: r.vehiclePlate || r.vehicleType || r.vehicleMakeModel || r.vehicleColor || r.parkingLocation ? {
           vehicle: r.vehicleType || r.vehicleMakeModel || null,
           plate: r.vehiclePlate || null,
           color: r.vehicleColor || null,
