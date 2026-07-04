@@ -122,6 +122,17 @@ export default function (sequelize) {
         type: DataTypes.DATEONLY,
         allowNull: true,
       },
+      // Richer visitor detail fields (supervisor "Visitor Details" screen).
+      email: { type: DataTypes.STRING(255), allowNull: true },
+      issuingState: { type: DataTypes.STRING(120), allowNull: true }, // ID issuing state/region
+      visitType: { type: DataTypes.STRING(60), allowNull: true }, // Business / Personal / Delivery …
+      department: { type: DataTypes.STRING(120), allowNull: true }, // host department
+      accessLevel: { type: DataTypes.STRING(60), allowNull: true }, // e.g. "Level 2"
+      expectedDuration: { type: DataTypes.STRING(60), allowNull: true }, // e.g. "2 hours"
+      notes: { type: DataTypes.TEXT, allowNull: true }, // free notes (separate from `reason`)
+      vehicleColor: { type: DataTypes.STRING(40), allowNull: true },
+      vehicleMakeModel: { type: DataTypes.STRING(120), allowNull: true },
+      parkingLocation: { type: DataTypes.STRING(120), allowNull: true },
     },
     {
       indexes: [
