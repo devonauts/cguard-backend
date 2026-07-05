@@ -57,6 +57,9 @@ export default function (sequelize) {
       turnoStart: { type: DataTypes.STRING(5), allowNull: true },
       turnoEnd: { type: DataTypes.STRING(5), allowNull: true },
       mobileStationId: { type: DataTypes.UUID, allowNull: true },
+      // Stations/sites this supervisor is responsible for (oversight area).
+      // Plain id array — NOT guardAssignment/guardShift (guard-safe, no shift gen).
+      assignedStationIds: { type: DataTypes.JSON, allowNull: true },
     },
     {
       timestamps: true,
