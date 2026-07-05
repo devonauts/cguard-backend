@@ -10,39 +10,53 @@
  */
 import { Op } from 'sequelize';
 
-let _admin: any = null;
-let _initialized = false;
+// Multi-project FCM: each cguard app can live in its OWN Firebase project, so we
+// must send each device's push via the project its token was minted for — else
+// FCM rejects with `messaging/mismatched-credential` (SenderId mismatch). The
+// supervisor app (project supervisor-app-9fac4) differs from the worker/backend
+// project (cguardpro-worker-app), so it needs its own service account.
+//   default    (worker/client) → FIREBASE_SERVICE_ACCOUNT(_FILE)
+//   supervisor                 → FIREBASE_SERVICE_ACCOUNT_SUPERVISOR(_FILE)
+type PushProject = 'default' | 'supervisor';
 
-function getAdmin(): any {
-  if (_initialized) return _admin;
-  _initialized = true;
+const _messaging: Record<string, any> = {};
+const _tried: Record<string, boolean> = {};
+
+function credFor(project: PushProject): any | null {
+  const inline = project === 'supervisor' ? process.env.FIREBASE_SERVICE_ACCOUNT_SUPERVISOR : process.env.FIREBASE_SERVICE_ACCOUNT;
+  const filePath = project === 'supervisor' ? process.env.FIREBASE_SERVICE_ACCOUNT_SUPERVISOR_FILE : process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
+  if (inline) return typeof inline === 'string' ? JSON.parse(inline) : inline;
+  if (filePath) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('fs');
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  }
+  return null;
+}
+
+/** The firebase messaging() instance for a project (named app), or null. */
+function getMessaging(project: PushProject = 'default'): any {
+  if (_tried[project]) return _messaging[project] || null;
+  _tried[project] = true;
   try {
-    // Accept the service account inline (FIREBASE_SERVICE_ACCOUNT = JSON string)
-    // or as a path to the JSON file (FIREBASE_SERVICE_ACCOUNT_FILE).
-    let cred: any = null;
-    const inline = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const filePath = process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
-    if (inline) {
-      cred = typeof inline === 'string' ? JSON.parse(inline) : inline;
-    } else if (filePath) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require('fs');
-      cred = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } else {
-      console.warn('[push] no FIREBASE_SERVICE_ACCOUNT(_FILE) set — push disabled (in-app notifications only)');
+    const cred = credFor(project);
+    if (!cred) {
+      if (project === 'default') console.warn('[push] no FIREBASE_SERVICE_ACCOUNT(_FILE) set — push disabled (in-app notifications only)');
+      else console.warn('[push] no FIREBASE_SERVICE_ACCOUNT_SUPERVISOR(_FILE) — supervisor-app push disabled until its service account is provided');
+      _messaging[project] = null;
       return null;
     }
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const admin = require('firebase-admin');
-    if (!admin.apps || !admin.apps.length) {
-      admin.initializeApp({ credential: admin.credential.cert(cred) });
-    }
-    _admin = admin;
+    const appName = project === 'default' ? '[DEFAULT]' : project;
+    const existing = (admin.apps || []).find((a: any) => a && a.name === appName);
+    const app = existing || admin.initializeApp({ credential: admin.credential.cert(cred) }, project === 'default' ? undefined : appName);
+    _messaging[project] = app.messaging();
   } catch (e: any) {
-    console.warn('[push] firebase-admin unavailable — push disabled:', e?.message || e);
-    _admin = null;
+    console.warn(`[push] firebase-admin (${project}) unavailable:`, e?.message || e);
+    _messaging[project] = null;
   }
-  return _admin;
+  return _messaging[project];
 }
 
 export interface PushPayload {
@@ -67,13 +81,13 @@ export interface PushPayload {
 
 /** True when FCM credentials are present and firebase-admin initialised. */
 export function isPushConfigured(): boolean {
-  return !!getAdmin();
+  return !!getMessaging('default');
 }
 
-export async function sendToTokens(tokens: string[], payload: PushPayload) {
-  const admin = getAdmin();
+export async function sendToTokens(tokens: string[], payload: PushPayload, project: PushProject = 'default') {
+  const messaging = getMessaging(project);
   const unique = Array.from(new Set((tokens || []).filter(Boolean)));
-  if (!admin || unique.length === 0) return { sent: 0, skipped: true };
+  if (!messaging || unique.length === 0) return { sent: 0, skipped: true };
   try {
     const aps: Record<string, any> = { sound: 'default' };
     // Time-sensitive interruption level pierces Focus modes and shows even when
@@ -112,7 +126,7 @@ export async function sendToTokens(tokens: string[], payload: PushPayload) {
     let failed = 0;
     for (let i = 0; i < unique.length; i += 500) {
       const batch = unique.slice(i, i + 500);
-      const res = await admin.messaging().sendEachForMulticast({ tokens: batch, ...message });
+      const res = await messaging.sendEachForMulticast({ tokens: batch, ...message });
       sent += res.successCount;
       failed += res.failureCount;
     }
@@ -138,12 +152,20 @@ async function deliverToDevices(rows: any[], payload: PushPayload) {
   // registerGuardDevice writes to `deviceId`. Sending that as a token guarantees
   // a failed delivery (and, on a guard with both rows, masked the working one).
   const looksLikeFcmToken = (s: any) => typeof s === 'string' && s.length > 64;
-  const fcmTokens = (rows || [])
-    .filter((r: any) => !r.apnsToken)
-    .map((r: any) => r.pushToken || (looksLikeFcmToken(r.deviceId) ? r.deviceId : null))
-    .filter(Boolean);
+  const tokenOf = (r: any) => r.pushToken || (looksLikeFcmToken(r.deviceId) ? r.deviceId : null);
+  const fcmRows = (rows || []).filter((r: any) => !r.apnsToken && tokenOf(r));
+  // Route each FCM device via the Firebase project its token belongs to: the
+  // supervisor app (app='supervisor') lives in its own project, everyone else in
+  // the default project. Sending a supervisor token via the default project ⇒
+  // messaging/mismatched-credential (SenderId mismatch).
+  const supTokens = fcmRows.filter((r: any) => r.app === 'supervisor').map(tokenOf);
+  const defTokens = fcmRows.filter((r: any) => r.app !== 'supervisor').map(tokenOf);
 
-  const fcmRes: any = await sendToTokens(fcmTokens, payload);
+  const [defRes, supRes] = await Promise.all([
+    sendToTokens(defTokens, payload, 'default'),
+    sendToTokens(supTokens, payload, 'supervisor'),
+  ]);
+  const fcmRes: any = { sent: (defRes.sent || 0) + (supRes.sent || 0), default: defRes, supervisor: supRes };
 
   let apnsRes: any = { sent: 0, skipped: true };
   if (apnsTokens.length) {
