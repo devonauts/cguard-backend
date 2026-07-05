@@ -687,9 +687,9 @@ export default class AttendanceAdminService {
           where: { id: { [Op.in]: uids } },
           attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
         });
-        const nameById = new Map(users.map((u: any) => [
+        const nameById = new Map<string, string>(users.map((u: any): [string, string] => [
           String(u.id),
-          u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || 'Supervisor',
+          String(u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || 'Supervisor'),
         ]));
         for (const r of supRows as any[]) {
           const s = r.get ? r.get({ plain: true }) : r;
