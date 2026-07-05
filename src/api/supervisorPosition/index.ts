@@ -9,7 +9,7 @@ import Permissions from '../../security/permissions';
 import Error404 from '../../errors/Error404';
 import { regenerateForAssignment, regenerateForPosition } from '../../services/supervisorScheduleService';
 
-const POS_FIELDS = ['name', 'zone', 'scheduleType', 'rotationStyleId', 'startTime', 'endTime', 'guardsNeeded', 'mobileStationId', 'isActive'];
+const POS_FIELDS = ['name', 'zone', 'scheduleType', 'rotationStyleId', 'startTime', 'endTime', 'guardsNeeded', 'mobileStationId', 'stationIds', 'isActive'];
 const ASG_FIELDS = ['supervisorUserId', 'startDate', 'endDate', 'platoonOffset', 'isRelief', 'status'];
 
 const pick = (obj: any, keys: string[]) => keys.reduce((a: any, k) => { if (obj[k] !== undefined) a[k] = obj[k]; return a; }, {});
@@ -37,6 +37,7 @@ async function shapePosition(db: any, p: any) {
     endTime: o.endTime || null,
     guardsNeeded: o.guardsNeeded ?? 1,
     mobileStationId: o.mobileStationId ? String(o.mobileStationId) : null,
+    stationIds: Array.isArray(o.stationIds) ? o.stationIds.map((x: any) => String(x)) : [],
     isActive: o.isActive !== false,
     assignments,
   };

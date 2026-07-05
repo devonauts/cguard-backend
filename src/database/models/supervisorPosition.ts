@@ -28,6 +28,9 @@ export default function (sequelize) {
       guardsNeeded: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
       // Optional link to a mobile station this puesto patrols from.
       mobileStationId: { type: DataTypes.UUID, allowNull: true },
+      // Stations UNDER THIS PUESTO'S PROTECTION (id array). The supervisors
+      // assigned to the puesto are responsible for these stations.
+      stationIds: { type: DataTypes.JSON, allowNull: true },
       isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
       tenantId: {
         type: DataTypes.UUID,
