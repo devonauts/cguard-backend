@@ -50,6 +50,13 @@ export default function (sequelize) {
       // Supervisor-specific: zone/sector of responsibility + assigned vehicle.
       zone: { type: DataTypes.STRING(120), allowNull: true },
       assignedVehicle: { type: DataTypes.STRING(120), allowNull: true },
+      // ── Turno (Phase 2) — the recurring shift the supervisor must follow.
+      //    turnoDays = weekday numbers 0..6 (0=Sun); turnoStart/End = "HH:mm"
+      //    local; mobileStationId = the (mobile) station they patrol from.
+      turnoDays: { type: DataTypes.JSON, allowNull: true },
+      turnoStart: { type: DataTypes.STRING(5), allowNull: true },
+      turnoEnd: { type: DataTypes.STRING(5), allowNull: true },
+      mobileStationId: { type: DataTypes.UUID, allowNull: true },
     },
     {
       timestamps: true,

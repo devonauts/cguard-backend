@@ -19,6 +19,8 @@ const WRITABLE_PROFILE = [
   'governmentId', 'gender', 'bloodType', 'birthDate', 'birthPlace', 'maritalStatus',
   'academicInstruction', 'address', 'latitude', 'longitude', 'hiringContractDate',
   'guardCredentials', 'availability', 'languages', 'skills', 'zone', 'assignedVehicle',
+  // Turno (Phase 2)
+  'turnoDays', 'turnoStart', 'turnoEnd', 'mobileStationId',
 ];
 
 function db(req: Request): any {
@@ -57,19 +59,33 @@ async function ensureProfile(database: any, tid: string, user: any, actorId?: st
   return profile;
 }
 
-/** Map supervisorUserId → { clockedIn, since } from open supervisorShift rows. */
-async function liveClockByUser(database: any, tid: string): Promise<Record<string, { clockedIn: boolean; since: string | null }>> {
-  const out: Record<string, { clockedIn: boolean; since: string | null }> = {};
+interface LiveClock {
+  clockedIn: boolean;
+  since: string | null;
+  status: string | null;
+  lateMinutes: number;
+  scheduledEnd: string | null;
+}
+
+/** Map supervisorUserId → live clock/attendance from open supervisorShift rows. */
+async function liveClockByUser(database: any, tid: string): Promise<Record<string, LiveClock>> {
+  const out: Record<string, LiveClock> = {};
   try {
     const open = await database.supervisorShift.findAll({ where: { tenantId: tid, punchOutTime: null } });
     for (const s of open) {
-      out[s.supervisorUserId] = { clockedIn: true, since: s.punchInTime ? new Date(s.punchInTime).toISOString() : null };
+      out[s.supervisorUserId] = {
+        clockedIn: true,
+        since: s.punchInTime ? new Date(s.punchInTime).toISOString() : null,
+        status: s.status || null,
+        lateMinutes: s.lateMinutes || 0,
+        scheduledEnd: s.scheduledEnd ? new Date(s.scheduledEnd).toISOString() : null,
+      };
     }
   } catch { /* supervisorShift optional */ }
   return out;
 }
 
-function shape(user: any, profile: any, live?: { clockedIn: boolean; since: string | null }): any {
+function shape(user: any, profile: any, live?: LiveClock): any {
   const p = profile?.get ? profile.get({ plain: true }) : profile;
   return {
     id: user.id, // the supervisor's USER id is the stable identifier
@@ -96,8 +112,17 @@ function shape(user: any, profile: any, live?: { clockedIn: boolean; since: stri
     skills: p?.skills ?? [],
     zone: p?.zone ?? null,
     assignedVehicle: p?.assignedVehicle ?? null,
+    // Turno config
+    turnoDays: p?.turnoDays ?? null,
+    turnoStart: p?.turnoStart ?? null,
+    turnoEnd: p?.turnoEnd ?? null,
+    mobileStationId: p?.mobileStationId ?? null,
+    // Live attendance for the open shift (if any)
     isOnDuty: !!(live?.clockedIn),
     onDutySince: live?.since ?? null,
+    dutyStatus: live?.status ?? null,        // on_time | late | no_schedule
+    dutyLateMinutes: live?.lateMinutes ?? 0,
+    dutyScheduledEnd: live?.scheduledEnd ?? null,
     createdAt: p?.createdAt ?? null,
   };
 }

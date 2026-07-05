@@ -88,12 +88,33 @@ export const clockIn = async (req: any, res: any) => {
       return ApiResponseHandler.success(req, res, { shift: serializeShift(existing) });
     }
 
+    // Stamp the scheduled turno window this punch is for (from the supervisor's
+    // turno config), so we can measure punctuality + force-close an overrun.
+    const now = new Date();
+    const attendance: any = { status: 'no_schedule', lateMinutes: 0 };
+    try {
+      const profile = await db.supervisorProfile.findOne({ where: { tenantId, supervisorUserId: userId } });
+      const tz = (req.currentTenant && req.currentTenant.timezone) || 'America/Guayaquil';
+      const { turnoForInstant } = require('../../lib/supervisorTurno');
+      const w = profile ? turnoForInstant(profile, now, tz) : null;
+      if (w) {
+        attendance.scheduledStart = w.scheduledStart;
+        attendance.scheduledEnd = w.scheduledEnd;
+        attendance.shiftKind = w.shiftKind;
+        const lateMs = now.getTime() - w.scheduledStart.getTime();
+        const GRACE_MS = 5 * 60_000;
+        attendance.status = lateMs > GRACE_MS ? 'late' : 'on_time';
+        attendance.lateMinutes = lateMs > GRACE_MS ? Math.round(lateMs / 60_000) : 0;
+      }
+    } catch { /* turno stamping is best-effort */ }
+
     const shift = await db.supervisorShift.create({
       tenantId,
       supervisorUserId: userId,
-      punchInTime: new Date(),
+      punchInTime: now,
       punchInLat: data.latitude ?? null,
       punchInLng: data.longitude ?? null,
+      ...attendance,
     });
 
     // Optional selfie captured at clock-in (uploaded via the credentials flow,

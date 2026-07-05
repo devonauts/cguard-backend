@@ -7,6 +7,7 @@
  * of routes assigned to them (route.assignedGuard === currentUser.id).
  */
 import { getClock, clockIn, clockOut } from './clock';
+import { getSchedule } from './schedule';
 import { getStations } from './stations';
 import { getStationsList } from './stationsList';
 import { getStationDetail } from './stationDetail';
@@ -17,6 +18,7 @@ import { getVisitors } from './visitors';
 import { getVisitorDetail, checkoutVisitor } from './visitorDetail';
 import { getRadioChannels } from './radioChannels';
 import { getEmergency } from './emergency';
+import { supMessageList, supMessageCreate, supMessageGet, supMessageThread, supMessageReply, supMessageMarkRead, supMessageDelete } from './messages';
 import { getIncidentDetail, addIncidentNote, setIncidentStatus, assignIncident, escalateIncident } from './incidentDetail';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
@@ -33,6 +35,7 @@ export default (app) => {
   app.get('/tenant/:tenantId/supervisor/me/clock', getClock);
   app.post('/tenant/:tenantId/supervisor/me/clock-in', clockIn);
   app.post('/tenant/:tenantId/supervisor/me/clock-out', clockOut);
+  app.get('/tenant/:tenantId/supervisor/me/schedule', getSchedule);
 
   // Station monitor for the dashboard map (pins + status cards).
   app.get('/tenant/:tenantId/supervisor/me/stations', getStations);
@@ -71,6 +74,15 @@ export default (app) => {
 
   // Emergency contacts for the SOS screen.
   app.get('/tenant/:tenantId/supervisor/me/emergency', getEmergency);
+
+  // Private supervisor messaging (scoped to the user; encrypted; per-user delete).
+  app.get('/tenant/:tenantId/supervisor/me/messages', supMessageList);
+  app.post('/tenant/:tenantId/supervisor/me/messages', supMessageCreate);
+  app.get('/tenant/:tenantId/supervisor/me/messages/:conversationId/messages', supMessageThread);
+  app.post('/tenant/:tenantId/supervisor/me/messages/:conversationId/read', supMessageMarkRead);
+  app.get('/tenant/:tenantId/supervisor/me/messages/:conversationId', supMessageGet);
+  app.post('/tenant/:tenantId/supervisor/me/messages/:conversationId', supMessageReply);
+  app.delete('/tenant/:tenantId/supervisor/me/messages/:conversationId', supMessageDelete);
 
   // Guard roster + live telemetry for the Guards screen.
   app.get('/tenant/:tenantId/supervisor/me/guards', getGuards);

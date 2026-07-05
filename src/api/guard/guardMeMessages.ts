@@ -15,6 +15,7 @@ import {
   listMessages,
   sendMessage,
   markRead,
+  hideConversationForUser,
 } from '../../services/messageService';
 import { resolveSupervisorUserIds } from '../../services/communication/operationalRecipients';
 
@@ -87,13 +88,24 @@ export const guardMessageThread = async (req, res) => {
     const convo = await getConversation(db, tenantId, req.params.conversationId, userId, false);
     if (!convo) return ApiResponseHandler.error(req, res, notFound());
     const q = req.query || {};
-    const data = await listMessages(db, tenantId, req.params.conversationId, { limit: parseInt(q.limit, 10) || 30, before: q.before || null });
+    const data = await listMessages(db, tenantId, req.params.conversationId, { limit: parseInt(q.limit, 10) || 30, before: q.before || null, viewerUserId: userId });
     const c = convo.get({ plain: true });
     await ApiResponseHandler.success(req, res, {
-      conversation: { id: c.id, subject: c.subject, isOneWay: c.isOneWay, recipientType: c.recipientType, kind: c.kind, isGroup: c.kind === 'group' },
+      conversation: { id: c.id, subject: c.subject, isOneWay: c.isOneWay, recipientType: c.recipientType, kind: c.kind, isGroup: c.kind === 'group', encrypted: true },
       rows: data.rows,
       nextCursor: data.nextCursor,
     });
+  } catch (error) { await ApiResponseHandler.error(req, res, error); }
+};
+
+/** Delete the conversation FOR THIS GUARD ONLY (WhatsApp-style hide). */
+export const guardMessageDelete = async (req, res) => {
+  try {
+    const { db, tenantId, userId } = guardCtx(req);
+    const convo = await getConversation(db, tenantId, req.params.conversationId, userId, false);
+    if (!convo) return ApiResponseHandler.error(req, res, notFound());
+    await hideConversationForUser(db, tenantId, userId, req.params.conversationId);
+    await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
 

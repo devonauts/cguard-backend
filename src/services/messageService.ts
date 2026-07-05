@@ -11,8 +11,30 @@
  * request body.
  */
 
+import { encryptBody, decryptBody } from '../lib/messageCrypto';
+
 type SenderType = 'staff' | 'guard' | 'client';
 type RecipientType = 'guard' | 'client';
+
+/** Hide a conversation for one user (WhatsApp-style per-user delete). Upserts
+ *  the hiddenAt so re-deleting just refreshes the clear point. */
+export async function hideConversationForUser(db: any, tenantId: string, userId: string, conversationId: string): Promise<void> {
+  const now = new Date();
+  const existing = await db.messageHidden.findOne({ where: { tenantId, userId, conversationId } });
+  if (existing) { existing.hiddenAt = now; await existing.save(); }
+  else await db.messageHidden.create({ tenantId, userId, conversationId, hiddenAt: now });
+}
+
+/** Map conversationId → hiddenAt for a viewer (their per-user delete points). */
+async function hiddenMap(db: any, tenantId: string, userId?: string): Promise<Map<string, Date>> {
+  const m = new Map<string, Date>();
+  if (!userId) return m;
+  try {
+    const rows = await db.messageHidden.findAll({ where: { tenantId, userId }, attributes: ['conversationId', 'hiddenAt'], raw: true });
+    for (const r of rows) m.set(String(r.conversationId), new Date(r.hiddenAt));
+  } catch { /* table may not exist yet */ }
+  return m;
+}
 
 const preview = (body: string) => String(body || '').replace(/\s+/g, ' ').trim().slice(0, 200);
 
@@ -138,7 +160,7 @@ export async function sendMessage(
   let message: any;
   try {
     message = await db.message.create(
-      { tenantId, conversationId: conversation.id, senderUserId, senderType, body: String(body || ''), attachments: attachments.length ? attachments : null, clientMsgId, createdById: senderUserId, updatedById: senderUserId },
+      { tenantId, conversationId: conversation.id, senderUserId, senderType, body: encryptBody(String(body || '')), attachments: attachments.length ? attachments : null, clientMsgId, createdById: senderUserId, updatedById: senderUserId },
       { transaction },
     );
     for (const r of recipients) {
@@ -148,7 +170,7 @@ export async function sendMessage(
       );
     }
     await conversation.update(
-      { lastMessageAt: message.createdAt, lastMessagePreview: preview(body) || attachmentLabel(attachments), updatedById: senderUserId },
+      { lastMessageAt: message.createdAt, lastMessagePreview: encryptBody(preview(body) || attachmentLabel(attachments)), updatedById: senderUserId },
       { transaction },
     );
     await transaction.commit();
@@ -231,7 +253,7 @@ async function notifyRecipients(db: any, tenantId: string, conversation: any, me
       (a: any) => a && typeof a.url === 'string' && a.url && (a.type === 'image' || !a.type),
     );
     const imageUrl = firstImage && /^https?:\/\//i.test(firstImage.url) ? String(firstImage.url) : undefined;
-    const body = String(message.body || '').slice(0, 150) || attachmentLabel(atts);
+    const body = decryptBody(String(message.body || '')).slice(0, 150) || attachmentLabel(atts);
     // For groups, prefix the sender so the recipient knows who wrote in the group.
     const isGroup = conversation.kind === 'group';
     const groupName = isGroup ? (conversation.subject || 'Grupo') : '';
@@ -366,7 +388,14 @@ export async function listConversations(
       where: { tenantId, userId: viewerUserId, deletedAt: null }, attributes: ['conversationId'], raw: true,
     });
     const partIds = (partRows || []).map((r: any) => String(r.conversationId));
-    where[Op.or] = [{ recipientUserId: viewerUserId }, ...(partIds.length ? [{ id: { [Op.in]: partIds } }] : [])];
+    // A user's own inbox = direct threads where they're the recipient OR the
+    // creator, plus any group they participate in. (createdById is what lets a
+    // supervisor see the threads THEY started with a guard/client.)
+    where[Op.or] = [
+      { recipientUserId: viewerUserId },
+      { createdById: viewerUserId },
+      ...(partIds.length ? [{ id: { [Op.in]: partIds } }] : []),
+    ];
   }
   if (opts.recipientType) where.recipientType = opts.recipientType;
   if (opts.cursor) where.lastMessageAt = { [Op.lt]: new Date(opts.cursor) };
@@ -383,8 +412,17 @@ export async function listConversations(
   });
 
   const unread = await unreadByConversation(db, tenantId, viewerUserId);
-  const hasMore = convos.length > limit;
-  const page = hasMore ? convos.slice(0, limit) : convos;
+  // Per-user delete: drop conversations this viewer hid, unless a newer message
+  // arrived after they hid it (WhatsApp brings the chat back on a new message).
+  const hidden = await hiddenMap(db, tenantId, viewerUserId);
+  const filtered = hidden.size
+    ? convos.filter((c: any) => {
+        const h = hidden.get(String(c.id));
+        return !h || new Date(c.lastMessageAt || c.createdAt) > h;
+      })
+    : convos;
+  const hasMore = filtered.length > limit;
+  const page = hasMore ? filtered.slice(0, limit) : filtered;
 
   // Member counts for any group conversations on this page (one grouped query).
   const groupIds = page.filter((c: any) => c.kind === 'group').map((c: any) => String(c.id));
@@ -413,7 +451,7 @@ export async function listConversations(
       recipientName: name, subject: p.subject, isOneWay: p.isOneWay,
       avatarUrl: p.avatarUrl || null,
       memberCount: isGroup ? (memberCounts.get(String(p.id)) || 0) : null,
-      lastMessageAt: p.lastMessageAt, lastMessagePreview: p.lastMessagePreview,
+      lastMessageAt: p.lastMessageAt, lastMessagePreview: decryptBody(p.lastMessagePreview),
       unreadCount: unread.get(String(p.id)) || 0,
     };
   });
@@ -449,12 +487,19 @@ export async function listMessages(
   db: any,
   tenantId: string,
   conversationId: string,
-  opts: { limit?: number; before?: string | null } = {},
+  opts: { limit?: number; before?: string | null; viewerUserId?: string } = {},
 ): Promise<{ rows: any[]; nextCursor: string | null }> {
   const { Op } = db.Sequelize;
   const limit = Math.min(opts.limit || 30, 100);
   const where: any = { tenantId, conversationId, deletedAt: null };
   if (opts.before) where.createdAt = { [Op.lt]: new Date(opts.before) };
+  // Per-user delete cleared this viewer's history — only show messages after it.
+  if (opts.viewerUserId) {
+    try {
+      const h = await db.messageHidden.findOne({ where: { tenantId, userId: opts.viewerUserId, conversationId }, attributes: ['hiddenAt'], raw: true });
+      if (h?.hiddenAt) where.createdAt = { ...(where.createdAt || {}), [Op.gt]: new Date(h.hiddenAt) };
+    } catch { /* table may not exist yet */ }
+  }
 
   const rows = await db.message.findAll({
     where,
@@ -472,7 +517,7 @@ export async function listMessages(
     return {
       id: p.id, senderUserId: p.senderUserId, senderType: p.senderType,
       senderName: m.sender?.fullName || m.sender?.firstName || (p.senderType === 'staff' ? 'Operador' : p.senderType === 'guard' ? 'Guardia' : 'Cliente'),
-      body: p.body, attachments: p.attachments || null, createdAt: p.createdAt,
+      body: decryptBody(p.body), attachments: p.attachments || null, createdAt: p.createdAt,
       receipt: (p.receipts && p.receipts[0]) ? { deliveryStatus: p.receipts[0].deliveryStatus, deliveredAt: p.receipts[0].deliveredAt, readAt: p.receipts[0].readAt } : null,
     };
   });

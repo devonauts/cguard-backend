@@ -111,6 +111,15 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: true,
       },
+      // A "mobile station" is an operational unit that isn't fixed to coords /
+      // not geofenced — e.g. a supervisor's patrol base. Additive + default
+      // false so every existing (physical) station and the guard clock-in
+      // geofence path are completely unaffected.
+      isMobile: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
     },
     {
       indexes: [

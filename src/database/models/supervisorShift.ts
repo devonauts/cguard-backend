@@ -18,6 +18,15 @@ export default function (sequelize) {
       punchOutLat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       punchOutLng: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       observations: { type: DataTypes.TEXT, allowNull: true },
+      // ── Turno enforcement (Phase 2) — the scheduled window this punch is for,
+      //    stamped at clock-in from the supervisor's turno config. Lets us
+      //    measure punctuality and force-close an overrun shift.
+      scheduledStart: { type: DataTypes.DATE, allowNull: true },
+      scheduledEnd: { type: DataTypes.DATE, allowNull: true },
+      shiftKind: { type: DataTypes.STRING(16), allowNull: true }, // Diurno | Nocturno | 24h
+      status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'on_time' }, // on_time | late | no_schedule
+      lateMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      forcedClockOut: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     },
     { tableName: 'supervisorShifts', timestamps: true, paranoid: true },
   );

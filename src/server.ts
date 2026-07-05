@@ -386,6 +386,20 @@ async function runForcedClockOutScheduler() {
 nodeSetInterval(() => { runJob("ForcedClockOut", runForcedClockOutScheduler); }, 60 * 1000);
 leaderTimeout(() => runForcedClockOutScheduler(), 45000);
 
+// Supervisor forced clock-out — same idea over supervisorShift (never touches
+// guardShift). Force-closes a supervisor punch left open past their turno end.
+async function runSupervisorForcedClockOutScheduler() {
+  try {
+    const database = await databaseInit();
+    const { runSupervisorForcedClockOut } = require('./services/supervisorForcedClockOutService');
+    await runSupervisorForcedClockOut(database);
+  } catch (err) {
+    console.error('[supervisorForcedClockOut] scheduler error:', (err as any)?.message || err);
+  }
+}
+nodeSetInterval(() => { runJob("SupervisorForcedClockOut", runSupervisorForcedClockOutScheduler); }, 60 * 1000);
+leaderTimeout(() => runSupervisorForcedClockOutScheduler(), 50000);
+
 /**
  * Shift reminders — push notifications to whoever is assigned a station turno
  * (guard/supervisor) at 2 days, 1 day, 12h, 1h and 10min before shift start, so
