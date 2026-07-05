@@ -18,8 +18,9 @@ import { getVisitors } from './visitors';
 import { getVisitorDetail, checkoutVisitor } from './visitorDetail';
 import { getRadioChannels } from './radioChannels';
 import { getEmergency } from './emergency';
+import { getReports } from './reports';
 import { supMessageList, supMessageCreate, supMessageGet, supMessageThread, supMessageReply, supMessageMarkRead, supMessageDelete } from './messages';
-import { getIncidentDetail, addIncidentNote, setIncidentStatus, assignIncident, escalateIncident } from './incidentDetail';
+import { getIncidentDetail, addIncidentNote, setIncidentStatus, assignIncident, escalateIncident, respondDispatch } from './incidentDetail';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
 import {
@@ -63,6 +64,7 @@ export default (app) => {
   app.post('/tenant/:tenantId/supervisor/me/incidents/:incidentId/status', setIncidentStatus);
   app.post('/tenant/:tenantId/supervisor/me/incidents/:incidentId/assign', assignIncident);
   app.post('/tenant/:tenantId/supervisor/me/incidents/:incidentId/escalate', escalateIncident);
+  app.post('/tenant/:tenantId/supervisor/me/incidents/:incidentId/respond', respondDispatch);
 
   // Visitors feed for the Visitors screen.
   app.get('/tenant/:tenantId/supervisor/me/visitors', getVisitors);
@@ -74,6 +76,9 @@ export default (app) => {
 
   // Emergency contacts for the SOS screen.
   app.get('/tenant/:tenantId/supervisor/me/emergency', getEmergency);
+
+  // Reports/analytics overview.
+  app.get('/tenant/:tenantId/supervisor/me/reports', getReports);
 
   // Private supervisor messaging (scoped to the user; encrypted; per-user delete).
   app.get('/tenant/:tenantId/supervisor/me/messages', supMessageList);
