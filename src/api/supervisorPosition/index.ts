@@ -7,6 +7,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import Error404 from '../../errors/Error404';
+import { regenerateForAssignment, regenerateForPosition } from '../../services/supervisorScheduleService';
 
 const POS_FIELDS = ['name', 'zone', 'scheduleType', 'rotationStyleId', 'startTime', 'endTime', 'guardsNeeded', 'mobileStationId', 'isActive'];
 const ASG_FIELDS = ['supervisorUserId', 'startDate', 'endDate', 'platoonOffset', 'isRelief', 'status'];
@@ -97,6 +98,7 @@ export default (app) => {
       const rec = await db.supervisorPosition.findOne({ where: { id: req.params.id, tenantId: req.currentTenant.id } });
       if (!rec) throw new Error404();
       await rec.update({ ...pick(body(req), POS_FIELDS), updatedById: req.currentUser?.id });
+      await regenerateForPosition(db, req.currentTenant.id, rec.id, req.currentUser?.id).catch(() => undefined);
       const fresh = await db.supervisorPosition.findByPk(rec.id, { include: positionInclude(db) });
       await ApiResponseHandler.success(req, res, await shapePosition(db, fresh));
     } catch (error) { await ApiResponseHandler.error(req, res, error); }
@@ -125,7 +127,8 @@ export default (app) => {
       if (!pos) throw new Error404();
       const data = pick(body(req), ASG_FIELDS);
       if (!data.startDate) data.startDate = new Date().toISOString().slice(0, 10);
-      await db.supervisorPositionAssignment.create({ ...data, positionId: pos.id, tenantId: req.currentTenant.id, createdById: uid, updatedById: uid });
+      const created = await db.supervisorPositionAssignment.create({ ...data, positionId: pos.id, tenantId: req.currentTenant.id, createdById: uid, updatedById: uid });
+      await regenerateForAssignment(db, req.currentTenant.id, created.id, uid).catch(() => undefined);
       const fresh = await db.supervisorPosition.findByPk(pos.id, { include: positionInclude(db) });
       await ApiResponseHandler.success(req, res, await shapePosition(db, fresh));
     } catch (error) { await ApiResponseHandler.error(req, res, error); }
@@ -139,6 +142,7 @@ export default (app) => {
       const asg = await db.supervisorPositionAssignment.findOne({ where: { id: req.params.assignmentId, positionId: req.params.id, tenantId: req.currentTenant.id } });
       if (!asg) throw new Error404();
       await asg.destroy();
+      await db.supervisorScheduledShift.destroy({ where: { assignmentId: asg.id, tenantId: req.currentTenant.id } }).catch(() => undefined);
       const fresh = await db.supervisorPosition.findByPk(req.params.id, { include: positionInclude(db) });
       await ApiResponseHandler.success(req, res, await shapePosition(db, fresh));
     } catch (error) { await ApiResponseHandler.error(req, res, error); }

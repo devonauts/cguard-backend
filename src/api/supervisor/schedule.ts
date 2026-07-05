@@ -1,13 +1,13 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-import { upcomingTurnos } from '../../lib/supervisorTurno';
+import { upcomingForUser } from '../../services/supervisorScheduleService';
 
 /**
- * GET /supervisor/me/schedule — the supervisor's OWN upcoming turno windows
- * (derived from their turno config), plus the config itself. Replaces the app's
- * previous reliance on /guard-shift (guards' shifts), which never showed the
- * supervisor's own turno.
+ * GET /supervisor/me/schedule — the supervisor's upcoming shifts, DERIVED from
+ * the rotation of the puesto(s) they're assigned to (supervisorScheduledShifts).
+ * The schedule lives on the position, never on the user — this just reads the
+ * generated plan for the signed-in supervisor.
  */
 export const getSchedule = async (req: any, res: any) => {
   try {
@@ -15,22 +15,19 @@ export const getSchedule = async (req: any, res: any) => {
     const db = req.database;
     const tenantId = req.currentTenant.id;
     const userId = req.currentUser.id;
-    const tz = (req.currentTenant && req.currentTenant.timezone) || 'America/Guayaquil';
 
-    const profile = await db.supervisorProfile.findOne({ where: { tenantId, supervisorUserId: userId } });
-    const windows = profile ? upcomingTurnos(profile, new Date(), tz, 14) : [];
-    const rows = windows.map((w) => ({
-      date: w.date,
-      start: w.scheduledStart,
-      end: w.scheduledEnd,
-      kind: w.shiftKind,
+    const shifts = await upcomingForUser(db, tenantId, userId, 30);
+    const rows = shifts.map((s: any) => ({
+      date: s.start ? new Date(s.start).toISOString().slice(0, 10) : null,
+      start: s.start,
+      end: s.end,
+      kind: s.kind,
+      position: s.position,
     }));
 
     await ApiResponseHandler.success(req, res, {
       rows,
-      turno: profile
-        ? { days: profile.turnoDays || null, start: profile.turnoStart || null, end: profile.turnoEnd || null }
-        : null,
+      position: shifts.length ? shifts[0].position : null,
     });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

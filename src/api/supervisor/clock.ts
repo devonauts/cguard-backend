@@ -93,20 +93,20 @@ export const clockIn = async (req: any, res: any) => {
     const now = new Date();
     const attendance: any = { status: 'no_schedule', lateMinutes: 0 };
     try {
-      const profile = await db.supervisorProfile.findOne({ where: { tenantId, supervisorUserId: userId } });
-      const tz = (req.currentTenant && req.currentTenant.timezone) || 'America/Guayaquil';
-      const { turnoForInstant } = require('../../lib/supervisorTurno');
-      const w = profile ? turnoForInstant(profile, now, tz) : null;
+      // Punctuality is measured against the generated schedule of the puesto the
+      // supervisor is assigned to (the schedule lives on the position, not the user).
+      const { scheduledShiftAt } = require('../../services/supervisorScheduleService');
+      const w = await scheduledShiftAt(db, tenantId, userId, now);
       if (w) {
-        attendance.scheduledStart = w.scheduledStart;
-        attendance.scheduledEnd = w.scheduledEnd;
+        attendance.scheduledStart = w.startTime;
+        attendance.scheduledEnd = w.endTime;
         attendance.shiftKind = w.shiftKind;
-        const lateMs = now.getTime() - w.scheduledStart.getTime();
+        const lateMs = now.getTime() - new Date(w.startTime).getTime();
         const GRACE_MS = 5 * 60_000;
         attendance.status = lateMs > GRACE_MS ? 'late' : 'on_time';
         attendance.lateMinutes = lateMs > GRACE_MS ? Math.round(lateMs / 60_000) : 0;
       }
-    } catch { /* turno stamping is best-effort */ }
+    } catch { /* schedule stamping is best-effort */ }
 
     const shift = await db.supervisorShift.create({
       tenantId,
