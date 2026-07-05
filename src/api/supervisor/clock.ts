@@ -39,10 +39,25 @@ async function propagateSupervisorClock(
   } catch { /* realtime is best-effort */ }
 }
 
+/** Break totals + current state from a shift's `breaks` array. */
+function breakStats(breaks: any): { breaks: any[]; onBreak: boolean; breakMinutes: number } {
+  const arr = Array.isArray(breaks) ? breaks : [];
+  const last = arr[arr.length - 1];
+  const onBreak = !!last && !last.end;
+  let ms = 0;
+  for (const b of arr) {
+    const start = b?.start ? new Date(b.start).getTime() : 0;
+    const end = b?.end ? new Date(b.end).getTime() : Date.now();
+    if (start) ms += Math.max(0, end - start);
+  }
+  return { breaks: arr, onBreak, breakMinutes: Math.round(ms / 60000) };
+}
+
 /** Serialize a supervisorShift row for the app. */
 function serializeShift(shift: any) {
   if (!shift) return null;
   const s = shift.get ? shift.get({ plain: true }) : shift;
+  const bs = breakStats(s.breaks);
   return {
     id: s.id,
     punchInTime: s.punchInTime,
@@ -52,6 +67,9 @@ function serializeShift(shift: any) {
     punchOutLat: s.punchOutLat,
     punchOutLng: s.punchOutLng,
     observations: s.observations,
+    breaks: bs.breaks,
+    onBreak: bs.onBreak,
+    breakMinutes: bs.breakMinutes,
   };
 }
 
@@ -163,15 +181,63 @@ export const clockOut = async (req: any, res: any) => {
     const shift = await findOpenShift(db, tenantId, userId);
     if (!shift) throw new Error400(req.language);
 
+    // Auto-close any open break so a shift never ends mid-break.
+    const breaks = Array.isArray(shift.breaks) ? [...shift.breaks] : [];
+    const lastBreak = breaks[breaks.length - 1];
+    if (lastBreak && !lastBreak.end) lastBreak.end = new Date().toISOString();
+
     await shift.update({
       punchOutTime: new Date(),
       punchOutLat: data.latitude ?? null,
       punchOutLng: data.longitude ?? null,
       observations: data.observations ?? null,
+      breaks,
     });
 
     await propagateSupervisorClock(db, tenantId, userId, 'out', shift.id, req.currentUser?.fullName || req.currentUser?.email);
 
+    await ApiResponseHandler.success(req, res, { shift: serializeShift(shift) });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+};
+
+/** POST /supervisor/me/break/start — begin a break on the open shift. */
+export const breakStart = async (req: any, res: any) => {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.supervisorMe);
+    const db = req.database;
+    const tenantId = req.currentTenant.id;
+    const shift = await findOpenShift(db, tenantId, req.currentUser.id);
+    if (!shift) throw new Error400(req.language);
+
+    const breaks = Array.isArray(shift.breaks) ? [...shift.breaks] : [];
+    const last = breaks[breaks.length - 1];
+    if (!last || last.end) {
+      breaks.push({ start: new Date().toISOString(), end: null });
+      await shift.update({ breaks });
+    }
+    await ApiResponseHandler.success(req, res, { shift: serializeShift(shift) });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+};
+
+/** POST /supervisor/me/break/end — end the current break. */
+export const breakEnd = async (req: any, res: any) => {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.supervisorMe);
+    const db = req.database;
+    const tenantId = req.currentTenant.id;
+    const shift = await findOpenShift(db, tenantId, req.currentUser.id);
+    if (!shift) throw new Error400(req.language);
+
+    const breaks = Array.isArray(shift.breaks) ? [...shift.breaks] : [];
+    const last = breaks[breaks.length - 1];
+    if (last && !last.end) {
+      last.end = new Date().toISOString();
+      await shift.update({ breaks });
+    }
     await ApiResponseHandler.success(req, res, { shift: serializeShift(shift) });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

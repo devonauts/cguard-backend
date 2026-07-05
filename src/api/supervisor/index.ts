@@ -6,7 +6,7 @@
  * "me" = req.currentUser; a supervisor manages their own shift + the route runs
  * of routes assigned to them (route.assignedGuard === currentUser.id).
  */
-import { getClock, clockIn, clockOut } from './clock';
+import { getClock, clockIn, clockOut, breakStart, breakEnd } from './clock';
 import { updateMyLocation } from './meLocation';
 import { getSchedule } from './schedule';
 import { getStations } from './stations';
@@ -38,6 +38,8 @@ export default (app) => {
   app.get('/tenant/:tenantId/supervisor/me/clock', getClock);
   app.post('/tenant/:tenantId/supervisor/me/clock-in', clockIn);
   app.post('/tenant/:tenantId/supervisor/me/clock-out', clockOut);
+  app.post('/tenant/:tenantId/supervisor/me/break/start', breakStart);
+  app.post('/tenant/:tenantId/supervisor/me/break/end', breakEnd);
   app.post('/tenant/:tenantId/supervisor/me/location', updateMyLocation);
   app.get('/tenant/:tenantId/supervisor/me/schedule', getSchedule);
 

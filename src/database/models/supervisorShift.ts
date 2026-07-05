@@ -18,6 +18,9 @@ export default function (sequelize) {
       punchOutLat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       punchOutLng: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       observations: { type: DataTypes.TEXT, allowNull: true },
+      // Break periods taken during the shift: [{ start: ISO, end: ISO|null }].
+      // The last entry with a null `end` means the supervisor is currently on break.
+      breaks: { type: DataTypes.JSON, allowNull: true },
       // ── Turno enforcement (Phase 2) — the scheduled window this punch is for,
       //    stamped at clock-in from the supervisor's turno config. Lets us
       //    measure punctuality and force-close an overrun shift.
