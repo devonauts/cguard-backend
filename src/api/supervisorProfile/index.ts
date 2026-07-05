@@ -12,8 +12,13 @@ import {
   createSupervisor,
   updateSupervisor,
 } from '../../services/supervisorProfileService';
+import { listSupervisorNotes, createSupervisorNote } from './supervisorNotes';
 
 export default (app) => {
+  // Notes (reuse the polymorphic note model — notableType='supervisorProfile').
+  app.get('/tenant/:tenantId/supervisors/:userId/notes', listSupervisorNotes);
+  app.post('/tenant/:tenantId/supervisors/:userId/notes', createSupervisorNote);
+
   // GET /supervisors — list supervisors + profile + live clock status.
   app.get('/tenant/:tenantId/supervisors', async (req, res) => {
     try {
