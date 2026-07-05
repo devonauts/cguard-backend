@@ -65,6 +65,8 @@ interface LiveClock {
   status: string | null;
   lateMinutes: number;
   scheduledEnd: string | null;
+  lat: number | null;
+  lng: number | null;
 }
 
 /** Map supervisorUserId → live clock/attendance from open supervisorShift rows. */
@@ -79,6 +81,8 @@ async function liveClockByUser(database: any, tid: string): Promise<Record<strin
         status: s.status || null,
         lateMinutes: s.lateMinutes || 0,
         scheduledEnd: s.scheduledEnd ? new Date(s.scheduledEnd).toISOString() : null,
+        lat: s.punchInLat != null ? Number(s.punchInLat) : null,
+        lng: s.punchInLng != null ? Number(s.punchInLng) : null,
       };
     }
   } catch { /* supervisorShift optional */ }
@@ -103,8 +107,10 @@ function shape(user: any, profile: any, live?: LiveClock): any {
     maritalStatus: p?.maritalStatus ?? null,
     academicInstruction: p?.academicInstruction ?? null,
     address: p?.address ?? null,
-    latitude: p?.latitude ?? null,
-    longitude: p?.longitude ?? null,
+    // Live position for the CRM map: prefer the profile (seeded at clock-in +
+    // live-ping), fall back to the open shift's clock-in coords.
+    latitude: p?.latitude ?? live?.lat ?? null,
+    longitude: p?.longitude ?? live?.lng ?? null,
     hiringContractDate: p?.hiringContractDate ?? null,
     guardCredentials: p?.guardCredentials ?? null,
     availability: p?.availability ?? null,
