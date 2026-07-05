@@ -112,5 +112,6 @@ export default (app) => {
     '/tenant/:tenantId/supervisor/me/routes/:routeId/stops/:pointId/check',
     checkStop,
   );
+  app.post('/tenant/:tenantId/supervisor/me/routes/:routeId/stops/:pointId/notify-eta', require('./routes').notifyStopEta);
   app.post('/tenant/:tenantId/supervisor/me/routes/:routeId/finish', finishRoute);
 };

@@ -4,6 +4,7 @@ import Permissions from '../../security/permissions';
 import Error400 from '../../errors/Error400';
 import Error404 from '../../errors/Error404';
 import { dispatch } from '../../lib/notificationDispatcher';
+import { notifyClient } from '../../services/clientNotifyService';
 import {
   todayDateStr,
   routeRunsToday,
@@ -308,6 +309,86 @@ export const finishRoute = async (req: any, res: any) => {
     await ApiResponseHandler.success(req, res, {
       run: { id: run.id, status: run.status },
     });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+};
+
+/**
+ * Notify the CRM and the station's client that the supervisor is en route to a
+ * stop, with an ETA. The client (Mi Seguridad app) gets a push via
+ * notifyClient; the CRM gets a realtime + stored platform event. Best-effort —
+ * a delivery failure never fails the request.
+ *
+ * POST /supervisor/me/routes/:routeId/stops/:pointId/notify-eta   body: { etaMinutes }
+ */
+export const notifyStopEta = async (req: any, res: any) => {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.supervisorMe);
+    const db = req.database;
+    const tenantId = req.currentTenant.id;
+    const data = (req.body && req.body.data) || req.body || {};
+    const etaMinutes = Math.max(1, Math.min(240, Math.round(Number(data.etaMinutes) || 15)));
+
+    const route = await db.route.findOne({ where: { id: req.params.routeId, tenantId } });
+    if (!route) throw new Error404();
+    const point = await db.routePoint.findOne({ where: { id: req.params.pointId, routeId: route.id } });
+    if (!point) throw new Error404();
+    const plain = point.get ? point.get({ plain: true }) : point;
+    const resolved = await resolveStopSafe(db, tenantId, plain);
+    const stopName = resolved.name || 'la estación';
+    const supName = req.currentUser?.fullName || req.currentUser?.email || 'El supervisor';
+    const etaAt = new Date(Date.now() + etaMinutes * 60000);
+
+    const title = 'Supervisor en camino';
+    const body = `${supName} va en camino a ${stopName}. Llegada estimada en ${etaMinutes} min.`;
+    const payload = {
+      routeId: String(route.id),
+      pointId: String(plain.id),
+      stopName,
+      etaMinutes: String(etaMinutes),
+      etaAt: etaAt.toISOString(),
+    };
+
+    // Client app (Mi Seguridad) — only for station/client stops that resolve to a client.
+    let clientNotified = false;
+    try {
+      const siteType = plain.siteType || 'station';
+      if (plain.siteId && (siteType === 'station' || siteType === 'client')) {
+        const ref = siteType === 'client' ? { clientAccountId: plain.siteId } : { stationId: plain.siteId };
+        const r = await notifyClient(db, tenantId, ref as any, {
+          eventType: 'supervisor.eta',
+          title,
+          body,
+          category: 'supervisor',
+          sourceEntityType: 'route',
+          sourceEntityId: String(route.id),
+          data: payload,
+        });
+        clientNotified = Boolean(r);
+      }
+    } catch (e: any) {
+      console.warn('[supervisor.notifyStopEta] client notify failed:', e?.message || e);
+    }
+
+    // CRM realtime + stored notification.
+    try {
+      const { storePlatformEvent } = require('../../lib/platformEventStore');
+      await storePlatformEvent(db, {
+        tenantId,
+        eventType: 'supervisor.route.eta',
+        title,
+        body,
+        targetRoles: 'admin,operationsManager',
+        sourceEntityType: 'route',
+        sourceEntityId: String(route.id),
+        payload,
+      });
+    } catch (e: any) {
+      console.warn('[supervisor.notifyStopEta] CRM event failed:', e?.message || e);
+    }
+
+    await ApiResponseHandler.success(req, res, { ok: true, etaAt: etaAt.toISOString(), stopName, clientNotified });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
