@@ -161,7 +161,41 @@ export async function getSupervisor(req: Request, userId: string): Promise<any> 
   if (!tu || !tu.user || !rolesOf(tu).includes(SUPERVISOR_ROLE)) throw new Error404((req as any).language);
   const profile = await ensureProfile(database, tid, tu.user, (req as any).currentUser?.id);
   const live = await liveClockByUser(database, tid);
-  return shape(tu.user, profile, live[userId]);
+  const base = shape(tu.user, profile, live[userId]);
+
+  // Attendance history (asistencia) + hours for nómina — from the supervisor's shifts.
+  let shifts: any[] = [];
+  let hoursThisMonth = 0;
+  let hoursTotal = 0;
+  try {
+    const rows = await database.supervisorShift.findAll({
+      where: { tenantId: tid, supervisorUserId: userId },
+      order: [['punchInTime', 'DESC']],
+      limit: 60,
+    });
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    shifts = rows.map((r: any) => {
+      const s = r.get ? r.get({ plain: true }) : r;
+      const hw = s.hoursWorked != null ? Number(s.hoursWorked) : null;
+      if (hw) { hoursTotal += hw; if (new Date(s.punchInTime) >= monthStart) hoursThisMonth += hw; }
+      return {
+        id: s.id,
+        punchInTime: s.punchInTime,
+        punchOutTime: s.punchOutTime,
+        hoursWorked: hw,
+        status: s.status,
+        lateMinutes: s.lateMinutes,
+        breaks: Array.isArray(s.breaks) ? s.breaks.length : 0,
+      };
+    });
+  } catch { /* attendance history optional */ }
+
+  return {
+    ...base,
+    shifts,
+    hoursThisMonth: Math.round(hoursThisMonth * 100) / 100,
+    hoursTotal: Math.round(hoursTotal * 100) / 100,
+  };
 }
 
 /**
