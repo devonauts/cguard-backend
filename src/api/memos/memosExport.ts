@@ -2,12 +2,19 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import MemosService from '../../services/memosService';
+import Error403 from '../../errors/Error403';
+import { memoRecipientScope } from './memoScope';
 
 export default async (req, res, next) => {
   try {
     new PermissionChecker(req).validateHas(
       Permissions.values.memosRead,
     );
+
+    // Bulk export is a CRM/management action — not available to guard recipients.
+    if (await memoRecipientScope(req)) {
+      throw new Error403(req.language);
+    }
 
     const format = String(req.query.format || '').toLowerCase();
     const idsQuery = req.query.ids;
