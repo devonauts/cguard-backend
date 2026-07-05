@@ -8,7 +8,7 @@
  *
  *   GET  /broadcast-push/audience   -> per-app counts + fcm/apns configured flags
  *   POST /broadcast-push            -> { title, body, link?, timeSensitive?, app? }
- *                                      app: 'worker' | 'client' | omit (both apps)
+ *                                      app: 'worker' | 'supervisor' | 'client' | omit (whole fleet)
  */
 import ApiResponseHandler from '../apiResponseHandler';
 import { db, writeAudit } from '../../services/superadmin/superadminHelpers';
@@ -41,9 +41,10 @@ export default (router) => {
           message: 'title and body are required',
         });
       }
-      // Optional app target: 'worker' (C-Guard Pro) or 'client' (Mi Seguridad); omit for both.
+      // Optional app target: 'worker' (C-Guard Pro), 'supervisor' (C-Guard Pro
+      // Supervisor), or 'client' (Mi Seguridad); omit for the whole fleet.
       const app: BroadcastApp | undefined =
-        body.app === 'worker' || body.app === 'client' ? body.app : undefined;
+        body.app === 'worker' || body.app === 'supervisor' || body.app === 'client' ? body.app : undefined;
 
       const data: Record<string, string> = {};
       // The mobile app routes a tapped notification by its `link` data field.

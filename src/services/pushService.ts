@@ -181,11 +181,19 @@ export async function pushToTenant(db: any, tenantId: string, payload: PushPaylo
   }
 }
 
-export type BroadcastApp = 'worker' | 'client';
+export type BroadcastApp = 'worker' | 'supervisor' | 'client';
 
-/** WHERE clause for an app filter (worker counts NULL app as worker; client is explicit). */
+/**
+ * WHERE clause for an app filter. Three distinct segments:
+ *   worker     → C-Guard Pro operaciones (app='worker', or NULL legacy rows)
+ *   supervisor → C-Guard Pro Supervisor (app='supervisor')
+ *   client     → Mi Seguridad (app='client')
+ * Omit for the whole fleet. (Note: tenant broadcasts via pushToTenant still reach
+ * BOTH worker + supervisor — this filter is only for the superadmin console.)
+ */
 function appWhere(app?: BroadcastApp): any {
-  if (app === 'worker') return { [Op.or]: [{ app: { [Op.ne]: 'client' } }, { app: null }] };
+  if (app === 'worker') return { [Op.or]: [{ app: 'worker' }, { app: null }] };
+  if (app === 'supervisor') return { app: 'supervisor' };
   if (app === 'client') return { app: 'client' };
   return {};
 }
@@ -200,18 +208,20 @@ export async function countAllDevices(db: any) {
     const rows = await db.deviceIdInformation.findAll({
       attributes: ['pushToken', 'deviceId', 'apnsToken', 'app'],
     });
-    let worker = 0, client = 0, apns = 0, fcm = 0;
+    let worker = 0, supervisor = 0, client = 0, apns = 0, fcm = 0;
     for (const r of rows || []) {
       const hasApns = !!r.apnsToken;
       const hasFcm = !!(r.pushToken || r.deviceId);
       if (!hasApns && !hasFcm) continue;
-      if (r.app === 'client') client++; else worker++;
+      if (r.app === 'client') client++;
+      else if (r.app === 'supervisor') supervisor++;
+      else worker++;
       if (hasApns) apns++; else fcm++;
     }
-    return { total: worker + client, worker, client, apns, fcm };
+    return { total: worker + supervisor + client, worker, supervisor, client, apns, fcm };
   } catch (e: any) {
     console.warn('[push] countAllDevices failed:', e?.message || e);
-    return { total: 0, worker: 0, client: 0, apns: 0, fcm: 0, error: true };
+    return { total: 0, worker: 0, supervisor: 0, client: 0, apns: 0, fcm: 0, error: true };
   }
 }
 

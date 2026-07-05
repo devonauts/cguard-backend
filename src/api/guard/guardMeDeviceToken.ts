@@ -21,6 +21,9 @@ export default async (req: any, res: any) => {
     const token = body.token;
     const deviceId = body.deviceId ? String(body.deviceId) : null;
     if (!token) throw new Error400(req.language, 'device.tokenRequired');
+    // App segment: the Supervisor app registers as 'supervisor'; everything else
+    // (the worker/guard app) is 'worker'. Lets the superadmin target each fleet.
+    const appTag = body.app === 'supervisor' ? 'supervisor' : 'worker';
 
     // Resolve the row to attach the token to, in priority:
     //  1) the stable device row (same key as /guard/me/device) — no duplicates,
@@ -45,7 +48,7 @@ export default async (req: any, res: any) => {
       // (rondas/alarms/memos) reach it and never the Mi Seguridad client app.
       await device.update({
         pushToken: String(token),
-        app: 'worker',
+        app: appTag,
         userId: currentUser.id,
         lastSeenAt: new Date(),
         updatedById: currentUser.id,
@@ -59,7 +62,7 @@ export default async (req: any, res: any) => {
         defaults: {
           deviceId: deviceId || String(token),
           pushToken: String(token),
-          app: 'worker',
+          app: appTag,
           tenantId,
           userId: currentUser.id,
           createdById: currentUser.id,
