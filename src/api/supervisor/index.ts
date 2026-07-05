@@ -23,6 +23,7 @@ import { supMessageList, supMessageCreate, supMessageGet, supMessageThread, supM
 import { getIncidentDetail, addIncidentNote, setIncidentStatus, assignIncident, escalateIncident, respondDispatch } from './incidentDetail';
 import { getGuards } from './guards';
 import { getGuardDetail } from './guardDetail';
+import { getPendingAttendance, decideClockIn, decideClockOut, approvePunch, rejectPunch, resolveAttendanceException } from './attendance';
 import {
   getRoutesToday,
   getRouteDetail,
@@ -94,6 +95,14 @@ export default (app) => {
 
   // Full detail for one guard (profile + patrol + activity).
   app.get('/tenant/:tenantId/supervisor/me/guards/:guardId', getGuardDetail);
+
+  // Guard attendance management (reuses the ACL-scoped AttendanceAdminService).
+  app.get('/tenant/:tenantId/supervisor/me/attendance/pending', getPendingAttendance);
+  app.post('/tenant/:tenantId/supervisor/me/attendance/clock-in-requests/:id/decision', decideClockIn);
+  app.post('/tenant/:tenantId/supervisor/me/attendance/clock-out-requests/:id/decision', decideClockOut);
+  app.post('/tenant/:tenantId/supervisor/me/attendance/:id/approve', approvePunch);
+  app.post('/tenant/:tenantId/supervisor/me/attendance/:id/reject', rejectPunch);
+  app.post('/tenant/:tenantId/supervisor/me/attendance/exceptions/:id/resolve', resolveAttendanceException);
 
   // Assigned route runs for today.
   app.get('/tenant/:tenantId/supervisor/me/routes/today', getRoutesToday);
