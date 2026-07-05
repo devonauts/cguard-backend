@@ -13,11 +13,18 @@ import {
   updateSupervisor,
 } from '../../services/supervisorProfileService';
 import { listSupervisorNotes, createSupervisorNote } from './supervisorNotes';
+import { listSupervisorLicenses, createSupervisorLicense, updateSupervisorLicense, destroySupervisorLicense } from './supervisorLicenses';
 
 export default (app) => {
   // Notes (reuse the polymorphic note model — notableType='supervisorProfile').
   app.get('/tenant/:tenantId/supervisors/:userId/notes', listSupervisorNotes);
   app.post('/tenant/:tenantId/supervisors/:userId/notes', createSupervisorNote);
+
+  // Licenses (supervisorLicense model, user-keyed; images via FileRepository).
+  app.get('/tenant/:tenantId/supervisors/:userId/licenses', listSupervisorLicenses);
+  app.post('/tenant/:tenantId/supervisors/:userId/licenses', createSupervisorLicense);
+  app.put('/tenant/:tenantId/supervisors/:userId/licenses/:licenseId', updateSupervisorLicense);
+  app.delete('/tenant/:tenantId/supervisors/:userId/licenses/:licenseId', destroySupervisorLicense);
 
   // GET /supervisors — list supervisors + profile + live clock status.
   app.get('/tenant/:tenantId/supervisors', async (req, res) => {
