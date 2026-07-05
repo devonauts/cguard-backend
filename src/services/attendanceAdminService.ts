@@ -91,13 +91,25 @@ export default class AttendanceAdminService {
     const clockedInToday = await db.guardShift.count({
       where: { tenantId, punchInTime: { [Op.gte]: start, [Op.lt]: end } },
     });
+
+    // Fold supervisors (supervisorShift) into the live/attendance counts so the
+    // asistencia dashboard reflects them too — they never have a guardShift.
+    let supClockedInNow = 0, supClockedInToday = 0, supLateToday = 0;
+    try {
+      [supClockedInNow, supClockedInToday, supLateToday] = await Promise.all([
+        db.supervisorShift.count({ where: { tenantId, punchOutTime: null } }),
+        db.supervisorShift.count({ where: { tenantId, punchInTime: { [Op.gte]: start, [Op.lt]: end } } }),
+        db.supervisorShift.count({ where: { tenantId, status: 'late', punchInTime: { [Op.gte]: start, [Op.lt]: end } } }),
+      ]);
+    } catch { /* supervisors optional */ }
+
     const attendancePct =
-      scheduledToday > 0 ? Math.round((clockedInToday / scheduledToday) * 100) : null;
+      scheduledToday > 0 ? Math.round(((clockedInToday + supClockedInToday) / scheduledToday) * 100) : null;
 
     return {
       scheduledToday,
-      clockedInNow,
-      lateToday,
+      clockedInNow: clockedInNow + supClockedInNow,
+      lateToday: lateToday + supLateToday,
       noShowsToday,
       missedClockouts,
       overtimeToday,
@@ -659,6 +671,51 @@ export default class AttendanceAdminService {
       }
     } catch { /* best-effort */ }
 
+    // Supervisors live in supervisorShift (never a securityGuard row), so they'd
+    // otherwise be invisible in nómina. Fold their shifts into the same aggregation,
+    // keyed by userId (prefixed) and tagged role='supervisor'.
+    const supervisorIds = new Set<string>();
+    try {
+      const supRows = await db.supervisorShift.findAll({
+        where: { tenantId, punchInTime: { [Op.gte]: from, [Op.lte]: to } },
+        attributes: ['id', 'supervisorUserId', 'hoursWorked', 'status', 'lateMinutes', 'punchInTime'],
+        order: [['punchInTime', 'ASC']],
+      });
+      if (supRows.length) {
+        const uids = [...new Set(supRows.map((r: any) => String(r.supervisorUserId)).filter(Boolean))];
+        const users = await db.user.findAll({
+          where: { id: { [Op.in]: uids } },
+          attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
+        });
+        const nameById = new Map(users.map((u: any) => [
+          String(u.id),
+          u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || 'Supervisor',
+        ]));
+        for (const r of supRows as any[]) {
+          const s = r.get ? r.get({ plain: true }) : r;
+          const gid = 'sup:' + String(s.supervisorUserId);
+          supervisorIds.add(gid);
+          if (s.punchInTime) {
+            const dayKey = new Date(s.punchInTime).toISOString().slice(0, 10);
+            let ds = daysByGuard.get(gid);
+            if (!ds) { ds = new Set(); daysByGuard.set(gid, ds); }
+            ds.add(dayKey);
+          }
+          const a = byGuard.get(gid) || {
+            guardId: gid, guardName: nameById.get(String(s.supervisorUserId)) || 'Supervisor',
+            shifts: 0, regularHours: 0, overtimeHours: 0, totalHours: 0,
+            lateCount: 0, missedClockouts: 0, noShows: 0, approvedCorrections: 0, payableHours: 0,
+          };
+          const total = Number(s.hoursWorked || 0);
+          a.shifts += 1;
+          a.totalHours += total;
+          a.regularHours += total; // supervisor shifts have no OT tracking
+          if (s.status === 'late' || Number(s.lateMinutes || 0) > 0) a.lateCount += 1;
+          byGuard.set(gid, a);
+        }
+      }
+    } catch { /* supervisors optional */ }
+
     // Optional pay calculation — uses a per-guard rate override when present,
     // else the tenant default. Computed only when an effective rate > 0 exists.
     const settings = await getNominaSettings(db, tenantId);
@@ -696,6 +753,7 @@ export default class AttendanceAdminService {
         : (rate > 0 ? round(regularHours * rate + overtimeHours * rate * otMult) : null);
       return {
         ...a,
+        role: supervisorIds.has(a.guardId) ? 'supervisor' : 'guard',
         regularHours,
         overtimeHours,
         totalHours,
