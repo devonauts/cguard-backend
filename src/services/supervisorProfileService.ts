@@ -21,8 +21,6 @@ const WRITABLE_PROFILE = [
   'guardCredentials', 'availability', 'languages', 'skills', 'zone', 'assignedVehicle',
   // Turno (Phase 2)
   'turnoDays', 'turnoStart', 'turnoEnd', 'mobileStationId',
-  // Oversight area (guard-safe id list)
-  'assignedStationIds',
 ];
 
 function db(req: Request): any {
@@ -119,7 +117,6 @@ function shape(user: any, profile: any, live?: LiveClock): any {
     turnoStart: p?.turnoStart ?? null,
     turnoEnd: p?.turnoEnd ?? null,
     mobileStationId: p?.mobileStationId ?? null,
-    assignedStationIds: Array.isArray(p?.assignedStationIds) ? p.assignedStationIds : [],
     // Live attendance for the open shift (if any)
     isOnDuty: !!(live?.clockedIn),
     onDutySince: live?.since ?? null,
