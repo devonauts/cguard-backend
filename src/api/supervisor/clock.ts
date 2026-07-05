@@ -181,10 +181,11 @@ export const clockOut = async (req: any, res: any) => {
     const shift = await findOpenShift(db, tenantId, userId);
     if (!shift) throw new Error400(req.language);
 
-    // Auto-close any open break so a shift never ends mid-break.
-    const breaks = Array.isArray(shift.breaks) ? [...shift.breaks] : [];
-    const lastBreak = breaks[breaks.length - 1];
-    if (lastBreak && !lastBreak.end) lastBreak.end = new Date().toISOString();
+    // Auto-close any open break so a shift never ends mid-break (new objects so
+    // Sequelize detects the JSON change).
+    const arr: any[] = Array.isArray(shift.breaks) ? shift.breaks : [];
+    const li = arr.length - 1;
+    const breaks = arr.map((b, k) => (k === li && !b.end ? { ...b, end: new Date().toISOString() } : { ...b }));
 
     await shift.update({
       punchOutTime: new Date(),
@@ -232,13 +233,16 @@ export const breakEnd = async (req: any, res: any) => {
     const shift = await findOpenShift(db, tenantId, req.currentUser.id);
     if (!shift) throw new Error400(req.language);
 
-    const breaks = Array.isArray(shift.breaks) ? [...shift.breaks] : [];
-    const last = breaks[breaks.length - 1];
-    if (last && !last.end) {
-      last.end = new Date().toISOString();
+    // Build a NEW array with NEW objects — mutating the loaded JSON in place
+    // isn't detected by Sequelize as a change, so the UPDATE would be skipped.
+    const arr: any[] = Array.isArray(shift.breaks) ? shift.breaks : [];
+    const i = arr.length - 1;
+    if (i >= 0 && !arr[i].end) {
+      const breaks = arr.map((b, k) => (k === i ? { ...b, end: new Date().toISOString() } : { ...b }));
       await shift.update({ breaks });
     }
-    await ApiResponseHandler.success(req, res, { shift: serializeShift(shift) });
+    const fresh = await findOpenShift(db, tenantId, req.currentUser.id);
+    await ApiResponseHandler.success(req, res, { shift: serializeShift(fresh || shift) });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }
