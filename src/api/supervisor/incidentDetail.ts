@@ -222,7 +222,9 @@ export const setIncidentStatus = async (req: any, res: any) => {
     if (!['open', 'inProgress', 'resolved', 'closed'].includes(status)) throw new Error400(req.language);
     const labels: Record<string, string> = { open: 'Open', inProgress: 'In Progress', resolved: 'Resolved', closed: 'Closed' };
     await mutate(req, res, (r, log) => {
-      // DB enum is binary; resolved/closed → cerrado, else abierto.
+      // Persist the granular 4-state so the CRM sees it, and keep the binary
+      // enum in sync (resolved/closed → cerrado, else abierto).
+      r.workStatus = status;
       r.status = status === 'resolved' || status === 'closed' ? 'cerrado' : 'abierto';
       log.push({ type: 'status', title: 'Status Updated', value: status, text: `Status changed to ${labels[status]}`, by: actorName(req), at: new Date().toISOString() });
     }, () => ({ eventType: 'supervisor.incident.status', data: { status, statusLabel: labels[status] } }));

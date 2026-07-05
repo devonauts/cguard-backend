@@ -51,6 +51,15 @@ export default function (sequelize) {
             ]],
           },
         },
+        // Granular work status (open | inProgress | resolved | closed) so a
+        // supervisor's "in progress"/"resolved" is visible in the CRM, not just
+        // collapsed to the binary `status`. `status` stays the legacy source of
+        // truth (abierto/cerrado); this is the finer view both apps read/write.
+        workStatus: {
+          type: DataTypes.STRING(20),
+          allowNull: true,
+          defaultValue: 'open',
+        },
         dateTime: {
           type: DataTypes.DATE,
           allowNull: true,
