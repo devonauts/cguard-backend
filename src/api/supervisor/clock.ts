@@ -12,12 +12,17 @@ import { storePlatformEvent } from '../../lib/platformEventStore';
  */
 async function propagateSupervisorClock(
   db: any, tenantId: string, userId: string, kind: 'in' | 'out', shiftId: string, actorName?: string,
+  coords?: { lat: any; lng: any },
 ): Promise<void> {
   try {
-    await db.supervisorProfile.update(
-      { isOnDuty: kind === 'in' },
-      { where: { tenantId, supervisorUserId: userId } },
-    );
+    const update: any = { isOnDuty: kind === 'in' };
+    // Seed the supervisor's live position from the clock-in coords so they show
+    // on the CRM live map immediately (live-ping keeps it fresh afterwards).
+    if (kind === 'in' && coords && coords.lat != null && coords.lng != null) {
+      update.latitude = coords.lat;
+      update.longitude = coords.lng;
+    }
+    await db.supervisorProfile.update(update, { where: { tenantId, supervisorUserId: userId } });
   } catch { /* profile may not exist yet — CRM list lazy-creates it */ }
   try {
     const name = actorName || 'Supervisor';
@@ -138,7 +143,7 @@ export const clockIn = async (req: any, res: any) => {
       }
     }
 
-    await propagateSupervisorClock(db, tenantId, userId, 'in', shift.id, req.currentUser?.fullName || req.currentUser?.email);
+    await propagateSupervisorClock(db, tenantId, userId, 'in', shift.id, req.currentUser?.fullName || req.currentUser?.email, { lat: data.latitude, lng: data.longitude });
 
     await ApiResponseHandler.success(req, res, { shift: serializeShift(shift) });
   } catch (error) {

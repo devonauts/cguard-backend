@@ -7,6 +7,7 @@
  * of routes assigned to them (route.assignedGuard === currentUser.id).
  */
 import { getClock, clockIn, clockOut } from './clock';
+import { updateMyLocation } from './meLocation';
 import { getSchedule } from './schedule';
 import { getStations } from './stations';
 import { getStationsList } from './stationsList';
@@ -37,6 +38,7 @@ export default (app) => {
   app.get('/tenant/:tenantId/supervisor/me/clock', getClock);
   app.post('/tenant/:tenantId/supervisor/me/clock-in', clockIn);
   app.post('/tenant/:tenantId/supervisor/me/clock-out', clockOut);
+  app.post('/tenant/:tenantId/supervisor/me/location', updateMyLocation);
   app.get('/tenant/:tenantId/supervisor/me/schedule', getSchedule);
 
   // Station monitor for the dashboard map (pins + status cards).
