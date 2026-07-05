@@ -71,6 +71,13 @@ export const getGuardDetail = async (req: any, res: any) => {
         'punchInBattery',
         'punchInLatitude',
         'punchInLongitude',
+        'liveLatitude',
+        'liveLongitude',
+        'liveSpeed',
+        'liveHeading',
+        'liveAccuracy',
+        'liveBattery',
+        'liveLocationAt',
         'scheduledStart',
         'scheduledEnd',
         'shiftId',
@@ -137,8 +144,9 @@ export const getGuardDetail = async (req: any, res: any) => {
       avatar = null;
     }
 
-    const guardLat = open ? toNum(open.punchInLatitude) : null;
-    const guardLng = open ? toNum(open.punchInLongitude) : null;
+    // Prefer live telemetry (pinged while on duty); fall back to the clock-in snapshot.
+    const guardLat = open ? (toNum(open.liveLatitude) ?? toNum(open.punchInLatitude)) : null;
+    const guardLng = open ? (toNum(open.liveLongitude) ?? toNum(open.punchInLongitude)) : null;
 
     // ── Patrol: checkpoints + today's scans ──────────────────────────────
     let checkpoints: any[] = [];
@@ -288,10 +296,13 @@ export const getGuardDetail = async (req: any, res: any) => {
         shiftStartAt: open ? open.punchInTime : null,
         scheduledStart: open ? open.scheduledStart : null,
         scheduledEnd: open ? open.scheduledEnd : null,
-        lastUpdateAt: open ? open.punchInTime : null,
-        battery: open ? toNum(open.punchInBattery) : null,
+        lastUpdateAt: open ? (open.liveLocationAt || open.punchInTime) : null,
+        battery: open ? (toNum(open.liveBattery) ?? toNum(open.punchInBattery)) : null,
         lat: guardLat,
         lng: guardLng,
+        speed: open ? toNum(open.liveSpeed) : null,
+        heading: open ? toNum(open.liveHeading) : null,
+        accuracy: open ? toNum(open.liveAccuracy) : null,
         rating,
         phone: u ? u.phoneNumber || null : null,
         avatar,

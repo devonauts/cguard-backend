@@ -28,6 +28,7 @@ export default (app) => {
   app.post(`/tenant/:tenantId/guard/me/messages/:conversationId`, require('./guardMeMessages').guardMessageReply);
   app.post(`/tenant/:tenantId/guard/me/messages/:conversationId/read`, require('./guardMeMessages').guardMessageRead);
   app.delete(`/tenant/:tenantId/guard/me/messages/:conversationId`, require('./guardMeMessages').guardMessageDelete);
+  app.post(`/tenant/:tenantId/guard/me/location`, require('./guardMeLocation').default);
 
   // Radio check (pase de novedades) — the guard answers a roll-call request.
   app.get(`/tenant/:tenantId/guard/me/radio-check/pending`, require('./guardMeRadioCheck').guardRadioPending);

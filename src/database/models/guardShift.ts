@@ -35,6 +35,16 @@ export default function (sequelize) {
         type: DataTypes.INTEGER,
         allowNull: true,
       },
+      // Live telemetry — the guard's CURRENT position/battery/speed, pinged by
+      // the worker app while on duty (POST /guard/me/location). The supervisor
+      // reads these (falling back to the punchIn* snapshot when null).
+      liveLatitude: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
+      liveLongitude: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
+      liveSpeed: { type: DataTypes.FLOAT, allowNull: true },
+      liveHeading: { type: DataTypes.FLOAT, allowNull: true },
+      liveAccuracy: { type: DataTypes.FLOAT, allowNull: true },
+      liveBattery: { type: DataTypes.INTEGER, allowNull: true },
+      liveLocationAt: { type: DataTypes.DATE, allowNull: true },
       punchInChecklist: {
         type: DataTypes.TEXT,
         allowNull: true,
