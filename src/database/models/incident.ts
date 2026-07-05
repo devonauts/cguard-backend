@@ -124,6 +124,17 @@ export default function (sequelize) {
           type: DataTypes.UUID,
           allowNull: true,
         },
+        // Supervisor dispatch state: when an admin dispatches an incident to a
+        // supervisor (assignedToUserId), track the supervisor's acknowledgement:
+        // dispatched → accepted → enRoute → onScene. null = not dispatched.
+        dispatchStatus: {
+          type: DataTypes.STRING(16),
+          allowNull: true,
+        },
+        dispatchedAt: {
+          type: DataTypes.DATE,
+          allowNull: true,
+        },
       wasRead: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

@@ -11,7 +11,7 @@ export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type WorkStatus = 'open' | 'inProgress' | 'resolved' | 'closed';
 
 export interface LogEvent {
-  type: 'note' | 'status' | 'assign' | 'escalate';
+  type: 'note' | 'status' | 'assign' | 'escalate' | 'dispatch';
   title?: string;
   text?: string;
   value?: string; // for status: open|inProgress|resolved|closed

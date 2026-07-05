@@ -127,6 +127,8 @@ async function serialize(db: any, r: any) {
       callerType: r.callerType || null,
     },
     assignedTo: assignee ? { id: String(assignee.id), name: assigneeName, role: 'supervisor' } : null,
+    assignedToUserId: r.assignedToUserId ? String(r.assignedToUserId) : null,
+    dispatchStatus: r.dispatchStatus || null,
     site: { station: stationName, post: subLabel || postName },
     incidentType: r.incidentType ? r.incidentType.name : null,
     summary: {
@@ -257,6 +259,50 @@ export const escalateIncident = async (req: any, res: any) => {
       r.priority = next;
       log.push({ type: 'escalate', title: 'Escalated', text: `Severity raised to ${next}`, by: actorName(req), at: new Date().toISOString() });
     }, (r) => ({ eventType: 'supervisor.incident.escalated', data: { severity: normSeverity(r.priority) } }));
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+};
+
+/**
+ * POST /supervisor/me/incidents/:incidentId/respond { status: accepted|enRoute|onScene }
+ * The dispatched supervisor acknowledges: accept → en route → on scene. Notifies
+ * admins/ops in realtime (storePlatformEvent — no template needed).
+ */
+export const respondDispatch = async (req: any, res: any) => {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.supervisorMe);
+    const db = req.database;
+    const tenantId = req.currentTenant.id;
+    const data = (req.body && req.body.data) || req.body || {};
+    const status = String(data.status || '');
+    if (!['accepted', 'enRoute', 'onScene'].includes(status)) throw new Error400(req.language);
+    const labels: Record<string, string> = { accepted: 'Aceptado', enRoute: 'En camino', onScene: 'En sitio' };
+
+    const r = await loadIncident(db, tenantId, String(req.params.incidentId));
+    if (!r) throw new Error400(req.language);
+    const log = parseLog(r.comments);
+    log.push({ type: 'dispatch', title: 'Despacho', value: status, text: `Supervisor: ${labels[status]}`, by: actorName(req), at: new Date().toISOString() });
+    r.dispatchStatus = status;
+    r.comments = log;
+    await r.save();
+
+    try {
+      const { storePlatformEvent } = require('../../lib/platformEventStore');
+      await storePlatformEvent(db, {
+        tenantId,
+        eventType: 'supervisor.incident.dispatchResponse',
+        title: 'Respuesta de supervisor',
+        body: `${actorName(req)}: ${labels[status]}`,
+        targetRoles: 'admin,operationsManager',
+        sourceEntityType: 'incident',
+        sourceEntityId: String(r.id),
+        payload: { incidentId: String(r.id), status },
+      });
+    } catch { /* realtime best-effort */ }
+
+    const fresh = await loadIncident(db, tenantId, String(r.id));
+    await ApiResponseHandler.success(req, res, { incident: await serialize(db, fresh) });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }

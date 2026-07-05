@@ -31,4 +31,8 @@ export default (app) => {
     `/tenant/:tenantId/incident/:id/dispatch`,
     require('./incidentCreateDispatch').default,
   );
+  app.post(
+    `/tenant/:tenantId/incident/:id/assign-supervisor`,
+    require('./incidentAssignSupervisor').default,
+  );
 };
