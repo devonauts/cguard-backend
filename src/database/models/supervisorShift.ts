@@ -21,6 +21,8 @@ export default function (sequelize) {
       // Break periods taken during the shift: [{ start: ISO, end: ISO|null }].
       // The last entry with a null `end` means the supervisor is currently on break.
       breaks: { type: DataTypes.JSON, allowNull: true },
+      // Break-adjusted hours, computed at clock-out — feeds nómina / asistencia.
+      hoursWorked: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
       // ── Turno enforcement (Phase 2) — the scheduled window this punch is for,
       //    stamped at clock-in from the supervisor's turno config. Lets us
       //    measure punctuality and force-close an overrun shift.

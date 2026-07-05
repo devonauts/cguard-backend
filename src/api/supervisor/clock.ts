@@ -70,6 +70,7 @@ function serializeShift(shift: any) {
     breaks: bs.breaks,
     onBreak: bs.onBreak,
     breakMinutes: bs.breakMinutes,
+    hoursWorked: s.hoursWorked != null ? Number(s.hoursWorked) : null,
   };
 }
 
@@ -179,20 +180,37 @@ export const clockOut = async (req: any, res: any) => {
     const data = (req.body && req.body.data) || req.body || {};
 
     const shift = await findOpenShift(db, tenantId, userId);
-    if (!shift) throw new Error400(req.language);
+    if (!shift) {
+      // Idempotent: no open shift (double-tap / stale local state) is NOT an error
+      // — the supervisor is already clocked out. Return success so the app resets
+      // cleanly instead of surfacing a scary "Ocurrió un error".
+      return ApiResponseHandler.success(req, res, { shift: null, alreadyOut: true });
+    }
 
+    const now = new Date();
     // Auto-close any open break so a shift never ends mid-break (new objects so
     // Sequelize detects the JSON change).
     const arr: any[] = Array.isArray(shift.breaks) ? shift.breaks : [];
     const li = arr.length - 1;
-    const breaks = arr.map((b, k) => (k === li && !b.end ? { ...b, end: new Date().toISOString() } : { ...b }));
+    const breaks = arr.map((b, k) => (k === li && !b.end ? { ...b, end: now.toISOString() } : { ...b }));
+
+    // Break-adjusted worked hours for nómina / asistencia.
+    const grossMs = now.getTime() - new Date(shift.punchInTime).getTime();
+    let breakMs = 0;
+    for (const b of breaks) {
+      const st = b.start ? new Date(b.start).getTime() : 0;
+      const en = b.end ? new Date(b.end).getTime() : now.getTime();
+      if (st) breakMs += Math.max(0, en - st);
+    }
+    const hoursWorked = Math.round((Math.max(0, grossMs - breakMs) / 3_600_000) * 100) / 100;
 
     await shift.update({
-      punchOutTime: new Date(),
+      punchOutTime: now,
       punchOutLat: data.latitude ?? null,
       punchOutLng: data.longitude ?? null,
       observations: data.observations ?? null,
       breaks,
+      hoursWorked,
     });
 
     await propagateSupervisorClock(db, tenantId, userId, 'out', shift.id, req.currentUser?.fullName || req.currentUser?.email);
