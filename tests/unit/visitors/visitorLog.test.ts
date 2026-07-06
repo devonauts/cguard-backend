@@ -75,15 +75,18 @@ function buildDb(seed: {
   clientAccounts?: any[];
   visitorLogs?: any[];
 } = {}) {
+  // Default tenantId=TENANT on every seed row so they match the (correct)
+  // tenant-scoped by-id lookups the repo now uses (cross-tenant-leak fix a890854).
+  const t = (r: any) => makeRow({ tenantId: TENANT, ...r });
   const state = {
-    shifts: (seed.shifts || []).map(makeRow),
-    securityGuards: (seed.securityGuards || []).map(makeRow),
-    guardShifts: (seed.guardShifts || []).map(makeRow),
-    stations: (seed.stations || []).map(makeRow),
-    tenantUsers: (seed.tenantUsers || []).map(makeRow),
-    businessInfos: (seed.businessInfos || []).map(makeRow),
-    clientAccounts: (seed.clientAccounts || []).map(makeRow),
-    visitorLogs: (seed.visitorLogs || []).map(makeRow),
+    shifts: (seed.shifts || []).map(t),
+    securityGuards: (seed.securityGuards || []).map(t),
+    guardShifts: (seed.guardShifts || []).map(t),
+    stations: (seed.stations || []).map(t),
+    tenantUsers: (seed.tenantUsers || []).map(t),
+    businessInfos: (seed.businessInfos || []).map(t),
+    clientAccounts: (seed.clientAccounts || []).map(t),
+    visitorLogs: (seed.visitorLogs || []).map(t),
   };
 
   const matchesWhere = (row: any, where: any): boolean => {
@@ -170,6 +173,10 @@ function buildDb(seed: {
       async findByPk(id: string) {
         return state.businessInfos.find((r) => String(r.id) === String(id)) || null;
       },
+      // Tenant-scoped by-id lookup used by the postSite → client completion.
+      async findOne({ where }: any) {
+        return state.businessInfos.find((r) => matchesWhere(r, where)) || null;
+      },
       async findAll({ where }: any) {
         return state.businessInfos.filter((r) => matchesWhere(r, where));
       },
@@ -178,6 +185,9 @@ function buildDb(seed: {
     clientAccount: {
       async findByPk(id: string) {
         return state.clientAccounts.find((r) => String(r.id) === String(id)) || null;
+      },
+      async findOne({ where }: any) {
+        return state.clientAccounts.find((r) => matchesWhere(r, where)) || null;
       },
     },
 

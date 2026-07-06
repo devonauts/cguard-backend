@@ -147,7 +147,7 @@ export async function sendMessage(
   // Idempotency: a retry with the same clientMsgId returns the existing message.
   if (clientMsgId) {
     const existing = await db.message.findOne({ where: { tenantId, senderUserId, clientMsgId, deletedAt: null } });
-    if (existing) return existing;
+    if (existing) { (existing as any).body = decryptBody(existing.body); return existing; }
   }
 
   // Resolve who should receive this message (and a receipt). For a direct thread
@@ -179,13 +179,18 @@ export async function sendMessage(
     // Lost the idempotency race → return the winner.
     if (clientMsgId && /unique|duplicate/i.test(e?.message || '')) {
       const existing = await db.message.findOne({ where: { tenantId, senderUserId, clientMsgId } });
-      if (existing) return existing;
+      if (existing) { (existing as any).body = decryptBody(existing.body); return existing; }
     }
     throw e;
   }
 
   // Best-effort notification — never affects the committed send.
   notifyRecipients(db, tenantId, conversation, message, recipients).catch(() => {});
+
+  // Return PLAINTEXT to the sender so their just-sent message renders immediately
+  // (at-rest stays encrypted; other viewers decrypt on read via listMessages).
+  (message as any).body = String(body || '');
+  (conversation as any).lastMessagePreview = preview(body) || attachmentLabel(attachments);
   return message;
 }
 
