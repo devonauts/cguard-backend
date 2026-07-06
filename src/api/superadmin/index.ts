@@ -25,6 +25,7 @@ export default (app) => {
   require('./billing').default(router);
   require('./users').default(router);
   require('./observability').default(router);
+  require('./feedback').default(router);
   require('./settings').default(router);
   require('./trainingAddon').default(router);
   require('./twilio').default(router);

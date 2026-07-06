@@ -244,6 +244,7 @@ require('./certification').default(routes);
 require('./securityGuard').default(routes);
 require('./supervisorProfile').default(routes);
 require('./supervisorPosition').default(routes);
+require('./feedback').default(routes);
 require('./performance').default(routes);
 require('./clientAccount').default(routes);
 require('./clientProject').default(routes);
