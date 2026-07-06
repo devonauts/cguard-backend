@@ -21,7 +21,7 @@ class TimeOffRequestRepository {
         endDate: data.endDate || null,
         endTime: data.endTime || null,
         reason: data.reason || null,
-        comment: null,
+        comment: data.comment || null,
         status: 'pending',
         isPaid: data.isPaid || false,
         guardId: data.guard || data.guardId || null,

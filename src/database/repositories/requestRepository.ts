@@ -431,14 +431,20 @@ class RequestRepository {
     );
 
     let whereAnd: Array<any> = [];
-    let include = [
+    let include: any[] = [
       {
         model: options.database.securityGuard,
         as: 'guardName',
-      },      
+      },
     ];
     // include related entities for display
     include.push(
+      {
+        model: options.database.station,
+        as: 'station',
+        attributes: ['id', 'stationName'],
+        required: false,
+      },
       {
         model: options.database.clientAccount,
         as: 'client',

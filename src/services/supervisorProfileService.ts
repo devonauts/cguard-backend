@@ -11,6 +11,7 @@
 import { Request } from 'express';
 import Error404 from '../errors/Error404';
 import Error400 from '../errors/Error400';
+import FileRepository from '../database/repositories/fileRepository';
 
 const SUPERVISOR_ROLE = 'securitySupervisor';
 
@@ -41,9 +42,23 @@ function rolesOf(tu: any): string[] {
 async function supervisorMemberships(database: any, tid: string): Promise<any[]> {
   const rows = await database.tenantUser.findAll({
     where: { tenantId: tid },
-    include: [{ model: database.user, as: 'user', attributes: ['id', 'firstName', 'lastName', 'fullName', 'email', 'phoneNumber'] }],
+    include: [{
+      model: database.user, as: 'user',
+      attributes: ['id', 'firstName', 'lastName', 'fullName', 'email', 'phoneNumber'],
+      include: [{ model: database.file, as: 'avatars' }],
+    }],
   });
   return rows.filter((tu: any) => rolesOf(tu).includes(SUPERVISOR_ROLE) && tu.user);
+}
+
+/** Resolve the supervisor user's avatar (profile photo) to a download URL, if any. */
+async function avatarUrl(user: any): Promise<string | null> {
+  try {
+    const avatars = Array.isArray(user?.avatars) ? user.avatars : [];
+    if (!avatars.length) return null;
+    const filled = await FileRepository.fillDownloadUrl(avatars);
+    return (filled?.[0] && (filled[0].downloadUrl || filled[0].publicUrl)) || null;
+  } catch { return null; }
 }
 
 /** Find (or lazily create) the supervisorProfile row for a supervisor user. */
@@ -89,11 +104,12 @@ async function liveClockByUser(database: any, tid: string): Promise<Record<strin
   return out;
 }
 
-function shape(user: any, profile: any, live?: LiveClock): any {
+function shape(user: any, profile: any, live?: LiveClock, photoUrl?: string | null): any {
   const p = profile?.get ? profile.get({ plain: true }) : profile;
   return {
     id: user.id, // the supervisor's USER id is the stable identifier
     profileId: p?.id || null,
+    photoUrl: photoUrl ?? null,
     email: user.email || null,
     fullName: user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email || '—',
     firstName: user.firstName || null,
@@ -144,7 +160,8 @@ export async function listSupervisors(req: Request): Promise<any> {
   const rows: any[] = [];
   for (const tu of memberships) {
     const profile = await ensureProfile(database, tid, tu.user, actorId);
-    rows.push(shape(tu.user, profile, live[tu.user.id]));
+    const photoUrl = await avatarUrl(tu.user);
+    rows.push(shape(tu.user, profile, live[tu.user.id], photoUrl));
   }
   rows.sort((a, b) => String(a.fullName).localeCompare(String(b.fullName)));
   return { rows, count: rows.length };
@@ -156,12 +173,13 @@ export async function getSupervisor(req: Request, userId: string): Promise<any> 
   const tid = tenantId(req);
   const tu = await database.tenantUser.findOne({
     where: { tenantId: tid, userId },
-    include: [{ model: database.user, as: 'user' }],
+    include: [{ model: database.user, as: 'user', include: [{ model: database.file, as: 'avatars' }] }],
   });
   if (!tu || !tu.user || !rolesOf(tu).includes(SUPERVISOR_ROLE)) throw new Error404((req as any).language);
   const profile = await ensureProfile(database, tid, tu.user, (req as any).currentUser?.id);
   const live = await liveClockByUser(database, tid);
-  const base = shape(tu.user, profile, live[userId]);
+  const photoUrl = await avatarUrl(tu.user);
+  const base = shape(tu.user, profile, live[userId], photoUrl);
 
   // Attendance history (asistencia) + hours for nómina — from the supervisor's shifts.
   let shifts: any[] = [];
