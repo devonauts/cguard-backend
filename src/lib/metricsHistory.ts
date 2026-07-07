@@ -6,6 +6,7 @@
  */
 import os from 'os';
 import fs from 'fs';
+import v8 from 'v8';
 import { getSlowQueries } from './slowQueryMonitor';
 import { getJobs } from './jobsMonitor';
 
@@ -60,7 +61,11 @@ export async function captureSnapshot(): Promise<any> {
 
   const metrics = {
     hostMemPct: Math.round(((totalmem - freemem) / totalmem) * 1000) / 10,
-    heapUsedPct: mem.heapTotal ? Math.round((mem.heapUsed / mem.heapTotal) * 1000) / 10 : null,
+    // Percent of the HARD heap ceiling (heap_size_limit), NOT of heapTotal.
+    // heapUsed/heapTotal sits at ~90% on a healthy process (V8 keeps heapTotal
+    // near heapUsed and only grows it on demand), so it's a false-alarm metric —
+    // the number that signals real memory pressure is usage vs the limit.
+    heapUsedPct: Math.round((mem.heapUsed / (v8.getHeapStatistics().heap_size_limit || mem.heapTotal)) * 1000) / 10,
     rss: mem.rss,
     loadPct: Math.round((load1 / cores) * 1000) / 10,
     diskPct: diskPct(),

@@ -211,6 +211,7 @@ export async function health(req: Request): Promise<any> {
       rss: mem.rss,
       heapUsed: mem.heapUsed,
       heapTotal: mem.heapTotal,
+      heapLimit: require('v8').getHeapStatistics().heap_size_limit,
     },
     nodeVersion: process.version,
     timestamp: new Date().toISOString(),
@@ -308,9 +309,13 @@ export async function system(_req: Request): Promise<any> {
       rss: mem.rss,
       heapUsed: mem.heapUsed,
       heapTotal: mem.heapTotal,
+      heapLimit: require('v8').getHeapStatistics().heap_size_limit,
       external: mem.external,
       arrayBuffers: (mem as any).arrayBuffers || 0,
-      heapUsedPct: mem.heapTotal ? Math.round((mem.heapUsed / mem.heapTotal) * 1000) / 10 : null,
+      // % of the HARD heap ceiling — heapUsed/heapTotal is ~90% on a healthy
+      // process (V8 keeps heapTotal near heapUsed), so it's misleading; measure
+      // against heap_size_limit, the number that signals real pressure.
+      heapUsedPct: Math.round((mem.heapUsed / (require('v8').getHeapStatistics().heap_size_limit || mem.heapTotal)) * 1000) / 10,
       uptimeSeconds: Math.round(process.uptime()),
       pid: process.pid,
       pm2Instance: process.env.NODE_APP_INSTANCE ?? process.env.pm_id ?? null,
