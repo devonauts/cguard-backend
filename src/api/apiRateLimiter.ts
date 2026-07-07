@@ -76,6 +76,24 @@ export function createRateLimiter({
     message,
     standardHeaders: true,
     legacyHeaders: false,
+    // Log every throttle so the superadmin "Accesos" page can surface abuse /
+    // brute-force patterns (top rate-limited IPs). Best-effort.
+    handler: (req: any, res: any, _next: any, options: any) => {
+      try {
+        const db = require('../database/models').default();
+        const { logSecurityEvent } = require('../services/auth/securityAudit');
+        const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip;
+        logSecurityEvent(db, {
+          event: 'rate_limited',
+          outcome: 'failure',
+          email: req.body?.email || req.body?.data?.email || null,
+          ip,
+          userAgent: String(req.headers['user-agent'] || '').slice(0, 400),
+          detail: String(req.originalUrl || '').slice(0, 200),
+        }).catch(() => {});
+      } catch { /* best-effort */ }
+      res.status(options.statusCode).send(options.message);
+    },
     skip: (req) => {
       if (req.method === 'OPTIONS') return true;
       if (req.originalUrl.endsWith('/import')) return true;

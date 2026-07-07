@@ -592,3 +592,48 @@ export async function dbProcessList(req: Request): Promise<any> {
     return { processes: [], error: e?.message || 'query failed', timestamp: new Date().toISOString() };
   }
 }
+
+// ── Access & auth events (the "Accesos" page) ─────────────────────────────────
+/**
+ * GET /observability/auth-events — cross-tenant auth/session/rate-limit feed +
+ * top failed-login IPs/emails. Reads the existing securityAuditLog (logins,
+ * failed logins, logouts, device events, and now rate_limited hits).
+ */
+export async function authEvents(req: Request): Promise<any> {
+  const database = db(req);
+  if (!database.securityAuditLog) {
+    return { window: 0, rows: [], topFailedIps: [], topFailedEmails: [], timestamp: new Date().toISOString() };
+  }
+  const { Op, fn, col, literal } = database.Sequelize;
+  const q = req.query as any;
+  const minutes = Math.min(Math.max(Number(q.minutes) || 1440, 5), 20160);
+  const where: any = { at: { [Op.gte]: new Date(Date.now() - minutes * 60000) } };
+  if (q.event) where.event = String(q.event).trim();
+  if (q.outcome) where.outcome = String(q.outcome).trim();
+  if (q.ip) where.ip = String(q.ip).trim();
+  if (q.email) where.email = { [Op.like]: `%${String(q.email).trim()}%` };
+  if (q.tenantId) where.tenantId = String(q.tenantId).trim();
+  const limit = Math.min(Math.max(Number(q.limit) || 150, 1), 500);
+
+  const failWhere = { ...where, outcome: 'failure' };
+  const [rows, topIps, topEmails] = await Promise.all([
+    database.securityAuditLog.findAll({ where, order: [['at', 'DESC']], limit, raw: true }),
+    database.securityAuditLog.findAll({
+      where: { ...failWhere, ip: { [Op.ne]: null } },
+      attributes: ['ip', [fn('COUNT', col('id')), 'count']],
+      group: ['ip'], order: [[literal('count'), 'DESC']], limit: 10, raw: true,
+    }),
+    database.securityAuditLog.findAll({
+      where: { ...failWhere, email: { [Op.ne]: null } },
+      attributes: ['email', [fn('COUNT', col('id')), 'count']],
+      group: ['email'], order: [[literal('count'), 'DESC']], limit: 10, raw: true,
+    }),
+  ]);
+  return {
+    window: minutes,
+    rows,
+    topFailedIps: (topIps as any[]).map((r) => ({ ip: r.ip, count: Number(r.count) })),
+    topFailedEmails: (topEmails as any[]).map((r) => ({ email: r.email, count: Number(r.count) })),
+    timestamp: new Date().toISOString(),
+  };
+}

@@ -24,6 +24,7 @@ import {
   alerts,
   dbTables,
   dbProcessList,
+  authEvents,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -47,6 +48,7 @@ export default (router) => {
   route('/observability/alerts', alerts);
   route('/observability/db/tables', dbTables);
   route('/observability/db/processlist', dbProcessList);
+  route('/observability/auth-events', authEvents);
 
   router.post('/observability/errors/resolve', async (req: any, res: any) => {
     try {
