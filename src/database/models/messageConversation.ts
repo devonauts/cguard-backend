@@ -33,7 +33,10 @@ export default function (sequelize) {
       avatarUrl: { type: DataTypes.STRING(1024), allowNull: true },
       // Denormalized for inbox sort + preview without a join.
       lastMessageAt: { type: DataTypes.DATE, allowNull: true },
-      lastMessagePreview: { type: DataTypes.STRING(200), allowNull: true },
+      // TEXT (not STRING(200)): the preview is stored ENCRYPTED (enc1:… base64),
+      // which is much longer than the plaintext and overflowed VARCHAR(200) →
+      // "Data too long" 500 on send. TEXT can't overflow.
+      lastMessagePreview: { type: DataTypes.TEXT, allowNull: true },
       importHash: { type: DataTypes.STRING(255), allowNull: true, validate: { len: [0, 255] } },
     },
     {
