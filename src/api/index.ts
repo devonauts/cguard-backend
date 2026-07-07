@@ -47,6 +47,34 @@ app.use(
   }),
 );
 
+// Seed the per-request context (AsyncLocalStorage) as early as possible so slow
+// queries, errors, and N+1 detection can attribute themselves to this request
+// without threading req everywhere. tenantId is parsed from the /tenant/:id path;
+// userId is enriched after authMiddleware.
+app.use((req: any, res: any, next: any) => {
+  try {
+    const { runWithContext, newRequestId } = require('../lib/requestContext');
+    const rawPath = String(req.originalUrl || req.url || '').split('?')[0];
+    const requestId = String(req.headers['x-request-id'] || newRequestId()).slice(0, 32);
+    res.setHeader('X-Request-Id', requestId);
+    const tenantMatch = rawPath.match(/\/tenant\/([0-9a-fA-F-]{36})/);
+    const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    runWithContext(
+      {
+        requestId,
+        method: req.method,
+        path: rawPath.slice(0, 255),
+        tenantId: tenantMatch ? tenantMatch[1] : null,
+        ip: fwd || req.ip || null,
+        userAgent: String(req.headers['user-agent'] || '').slice(0, 255) || null,
+      },
+      () => next(),
+    );
+  } catch {
+    next();
+  }
+});
+
 // Initializes and adds the database middleware.
 app.use(databaseMiddleware);
 
@@ -164,6 +192,15 @@ app.use((req: any, res: any, next: any) => {
 // Configures the authentication middleware
 // to set the currentUser to the requests
 app.use(authMiddleware);
+
+// Now that the user is known, enrich the request context so errors/slow queries
+// captured downstream carry the userId.
+app.use((req: any, _res: any, next: any) => {
+  try {
+    require('../lib/requestContext').enrichContext({ userId: req.currentUser?.id ?? null });
+  } catch { /* best-effort */ }
+  next();
+});
 
 // Middleware: allow selecting tenant by header `X-Tenant-Id` (optional)
 app.use(require('../middlewares/tenantHeaderMiddleware').tenantFromHeaderMiddleware);

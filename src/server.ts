@@ -70,9 +70,18 @@ const leaderTimeout = (fn: () => void, ms: number) => { setTimeout(() => { if (i
 // the real cause stays fixable, but keep the worker alive instead of crash-looping.
 process.on('unhandledRejection', (reason: any) => {
   console.error('[unhandledRejection]', (reason && reason.stack) ? reason.stack : reason);
+  try {
+    require('./lib/errorTracker').capture(
+      reason instanceof Error ? reason : new Error(String(reason)),
+      { source: 'unhandledRejection', statusCode: 0 },
+    );
+  } catch { /* best-effort */ }
 });
 process.on('uncaughtException', (err: any) => {
   console.error('[uncaughtException]', (err && err.stack) ? err.stack : err);
+  try {
+    require('./lib/errorTracker').capture(err, { source: 'uncaughtException', statusCode: 0 });
+  } catch { /* best-effort */ }
 });
 
 // const PORT = process.env.PORT || 8080

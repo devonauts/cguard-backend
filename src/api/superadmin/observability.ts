@@ -17,6 +17,9 @@ import {
   slowQueries,
   resetSlowQueries,
   workers,
+  errors,
+  errorDetail,
+  resolveError,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -34,6 +37,16 @@ export default (router) => {
   route('/observability/jobs', jobs);
   route('/observability/slow-queries', slowQueries);
   route('/observability/workers', workers);
+  route('/observability/errors', errors);
+  route('/observability/errors/:fingerprint', errorDetail);
+
+  router.post('/observability/errors/resolve', async (req: any, res: any) => {
+    try {
+      await ApiResponseHandler.success(req, res, await resolveError(req));
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
 
   router.delete('/observability/slow-queries', async (req: any, res: any) => {
     try {

@@ -83,13 +83,23 @@ export default class ApiResponseHandler {
       }
 
       console.error(error);
+      // Persist the error for the superadmin "Errores" page (best-effort, never
+      // throws). Attribution (route/tenant/user/requestId) comes from the
+      // request context seeded in api/index.ts.
+      let requestId: string | null = null;
+      try {
+        const { getContext } = require('../lib/requestContext');
+        requestId = getContext()?.requestId ?? null;
+        require('../lib/errorTracker').capture(error, { statusCode: 500, source: 'request' });
+      } catch { /* telemetry must never break the response */ }
       // Never echo the raw internal message to the client on the 500 path — it
       // leaks DB/Sequelize/stack internals. Return a generic message (the real
       // error is logged above). Handlers that need a user-facing message must
       // throw a typed Error400/401/403/404 (handled by the structured branch).
       const isEs = (req && req.language && String(req.language).startsWith('es')) || !req || !req.language;
       const genericMessage = isEs ? 'Error interno del servidor' : 'Internal server error';
-      res.status(500).json({ message: genericMessage, code: 500 });
+      // requestId lets a user/operator correlate a report with the logged error.
+      res.status(500).json({ message: genericMessage, code: 500, requestId });
     }
   }
 }

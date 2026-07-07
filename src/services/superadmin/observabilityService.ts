@@ -397,3 +397,123 @@ export async function resetSlowQueries(_req: Request): Promise<any> {
 export async function workers(_req: Request): Promise<any> {
   return { ...(await getAllWorkers()), timestamp: new Date().toISOString() };
 }
+
+// ── Application errors (the "Errores" page) ───────────────────────────────────
+/**
+ * GET /observability/errors — cross-tenant error feed + grouped patterns + an
+ * hourly rate series for a sparkline. Query: minutes (default 1440, max 20160),
+ * limit (default 100), resolved ('true'|'false'), fingerprint, tenantId, q.
+ */
+export async function errors(req: Request): Promise<any> {
+  const database = db(req);
+  if (!database.errorEvent) {
+    return { window: 0, total: 0, patterns: [], recent: [], series: [], perfSchema: false };
+  }
+  const { Op, fn, col, literal } = database.Sequelize;
+  const q = req.query as any;
+  const minutes = Math.min(Math.max(Number(q.minutes) || 1440, 5), 20160);
+  const since = new Date(Date.now() - minutes * 60000);
+  const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 500);
+
+  const where: any = { createdAt: { [Op.gte]: since } };
+  if (q.resolved === 'true') where.resolved = true;
+  else if (q.resolved === 'false') where.resolved = false;
+  if (q.fingerprint) where.fingerprint = String(q.fingerprint).trim();
+  if (q.tenantId) where.tenantId = String(q.tenantId).trim();
+  if (q.source) where.source = String(q.source).trim();
+  if (q.q) where.message = { [Op.like]: `%${String(q.q).trim()}%` };
+
+  const [total, unresolved, patternsRaw, recent, seriesRaw] = await Promise.all([
+    database.errorEvent.count({ where }),
+    database.errorEvent.count({ where: { ...where, resolved: false } }),
+    database.errorEvent.findAll({
+      where,
+      attributes: [
+        'fingerprint',
+        [fn('COUNT', col('id')), 'count'],
+        [fn('MAX', col('createdAt')), 'lastSeen'],
+        [fn('MIN', col('createdAt')), 'firstSeen'],
+        [fn('MAX', col('name')), 'name'],
+        [fn('MAX', col('message')), 'message'],
+        [fn('MAX', col('route')), 'route'],
+        [fn('MAX', col('statusCode')), 'statusCode'],
+        [fn('MAX', col('source')), 'source'],
+        [fn('MIN', col('resolved')), 'resolved'],
+        [fn('COUNT', fn('DISTINCT', col('tenantId'))), 'tenants'],
+      ],
+      group: ['fingerprint'],
+      order: [[literal('count'), 'DESC']],
+      limit: 30,
+      raw: true,
+    }),
+    database.errorEvent.findAll({
+      where,
+      attributes: ['id', 'fingerprint', 'name', 'message', 'statusCode', 'method', 'route',
+        'source', 'tenantId', 'userId', 'ip', 'requestId', 'pmInstance', 'resolved', 'createdAt'],
+      order: [['createdAt', 'DESC']],
+      limit,
+      raw: true,
+    }),
+    database.errorEvent.findAll({
+      where,
+      attributes: [
+        [fn('DATE_FORMAT', col('createdAt'), '%Y-%m-%d %H:00'), 'hour'],
+        [fn('COUNT', col('id')), 'count'],
+      ],
+      group: [literal("DATE_FORMAT(createdAt, '%Y-%m-%d %H:00')")],
+      order: [[literal('hour'), 'ASC']],
+      raw: true,
+    }).catch(() => []),
+  ]);
+
+  return {
+    window: minutes,
+    total,
+    unresolved,
+    patterns: patternsRaw.map((p: any) => ({
+      fingerprint: p.fingerprint,
+      count: Number(p.count),
+      name: p.name,
+      message: p.message,
+      route: p.route,
+      statusCode: p.statusCode,
+      source: p.source,
+      tenants: Number(p.tenants || 0),
+      resolved: !!p.resolved,
+      firstSeen: p.firstSeen,
+      lastSeen: p.lastSeen,
+    })),
+    recent,
+    series: (seriesRaw as any[]).map((s) => ({ hour: s.hour, count: Number(s.count) })),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/** GET /observability/errors/:fingerprint → full occurrences (incl. stack) for one pattern. */
+export async function errorDetail(req: Request): Promise<any> {
+  const database = db(req);
+  if (!database.errorEvent) return { fingerprint: null, occurrences: [] };
+  const fingerprint = String(req.params.fingerprint || '').trim();
+  const occurrences = await database.errorEvent.findAll({
+    where: { fingerprint },
+    order: [['createdAt', 'DESC']],
+    limit: 50,
+    raw: true,
+  });
+  return { fingerprint, count: occurrences.length, occurrences };
+}
+
+/** POST /observability/errors/resolve { fingerprint, resolved } → mark a pattern (un)resolved. */
+export async function resolveError(req: Request): Promise<any> {
+  const database = db(req);
+  if (!database.errorEvent) return { ok: false, updated: 0 };
+  const body = (req.body?.data ?? req.body) || {};
+  const fingerprint = String(body.fingerprint || '').trim();
+  if (!fingerprint) return { ok: false, updated: 0 };
+  const resolved = body.resolved === false ? false : true;
+  const [updated] = await database.errorEvent.update(
+    { resolved, resolvedAt: resolved ? new Date() : null },
+    { where: { fingerprint } },
+  );
+  return { ok: true, updated, fingerprint, resolved };
+}
