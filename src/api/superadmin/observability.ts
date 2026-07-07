@@ -25,6 +25,9 @@ import {
   dbTables,
   dbProcessList,
   authEvents,
+  lockedAccounts,
+  accountAction,
+  explainQuery,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -49,6 +52,17 @@ export default (router) => {
   route('/observability/db/tables', dbTables);
   route('/observability/db/processlist', dbProcessList);
   route('/observability/auth-events', authEvents);
+  route('/observability/locked-accounts', lockedAccounts);
+
+  router.post('/observability/explain', async (req: any, res: any) => {
+    try { await ApiResponseHandler.success(req, res, await explainQuery(req)); }
+    catch (error) { await ApiResponseHandler.error(req, res, error); }
+  });
+
+  router.post('/observability/accounts/action', async (req: any, res: any) => {
+    try { await ApiResponseHandler.success(req, res, await accountAction(req)); }
+    catch (error) { await ApiResponseHandler.error(req, res, error); }
+  });
 
   router.post('/observability/errors/resolve', async (req: any, res: any) => {
     try {

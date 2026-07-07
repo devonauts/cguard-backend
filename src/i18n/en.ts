@@ -23,6 +23,7 @@ const en = {
   auth: {
     userNotFound: 'The email is not registered.',
     wrongPassword: 'The password is incorrect.',
+    accountLocked: 'Account temporarily locked after too many failed attempts. Try again later.',
     emailNotVerified: 'Email not verified. Check your inbox.',
     weakPassword: 'This password is too weak',
     emailAlreadyInUse: 'Email is already in use',

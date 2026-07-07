@@ -82,6 +82,10 @@ process.on('uncaughtException', (err: any) => {
   try {
     require('./lib/errorTracker').capture(err, { source: 'uncaughtException', statusCode: 0 });
   } catch { /* best-effort */ }
+  // After an uncaught exception the process is in an undefined state — persist the
+  // error (above), then exit so PM2 restarts a clean worker instead of limping on
+  // with corrupt state. The 1s delay lets the error write + logs flush.
+  setTimeout(() => process.exit(1), 1000);
 });
 
 // const PORT = process.env.PORT || 8080

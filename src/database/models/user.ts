@@ -124,6 +124,17 @@ export default function (sequelize, DataTypes) {
         type: DataTypes.DATE,
         allowNull: true,
       },
+      // Brute-force lockout: consecutive failed logins; when it crosses the
+      // threshold lockedUntil is set and sign-in is blocked until it passes.
+      failedLoginCount: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      lockedUntil: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,

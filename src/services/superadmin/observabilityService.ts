@@ -365,12 +365,25 @@ export async function dbPerformance(req: Request): Promise<any> {
               ROUND(avg_timer_wait/1e12, 4) AS avg_s,
               ROUND(max_timer_wait/1e12, 4) AS max_s,
               ROUND(sum_timer_wait/1e12, 2) AS total_s,
-              sum_rows_examined AS rows_examined, last_seen
+              sum_rows_examined AS rows_examined, sum_rows_sent AS rows_sent,
+              sum_no_index_used AS no_index_used, sum_no_good_index_used AS no_good_index_used,
+              last_seen
        FROM performance_schema.events_statements_summary_by_digest
        WHERE avg_timer_wait/1e12 >= 0.1 AND digest_text IS NOT NULL
        ORDER BY avg_timer_wait DESC LIMIT 50`,
     );
-    digests = rows;
+    // Flag likely-missing-index patterns: queries that scan without an index, or
+    // examine far more rows than they return (examined:sent ratio).
+    digests = (rows as any[]).map((r) => {
+      const examined = Number(r.rows_examined || 0);
+      const sent = Number(r.rows_sent || 0);
+      const ratio = sent > 0 ? Math.round((examined / sent) * 10) / 10 : (examined > 0 ? examined : 0);
+      return {
+        ...r,
+        examineRatio: ratio,
+        fullScan: Number(r.no_index_used || 0) > 0 || Number(r.no_good_index_used || 0) > 0 || ratio >= 100,
+      };
+    });
   } catch {
     perfSchema = false;
   }
@@ -380,7 +393,10 @@ export async function dbPerformance(req: Request): Promise<any> {
 
 /** GET /observability/jobs → background-job health (per worker). */
 export async function jobs(_req: Request): Promise<any> {
-  return { jobs: getJobs(), pid: process.pid, timestamp: new Date().toISOString() };
+  // Merge every PM2 worker's stats (schedulers run only on the leader) so the
+  // Jobs table is complete regardless of which worker serves this request.
+  const { getMergedJobs } = require('../../lib/jobsMonitor');
+  return { jobs: await getMergedJobs(), pid: process.pid, timestamp: new Date().toISOString() };
 }
 
 /** GET /observability/slow-queries → captured queries >= threshold (0.1s). */
@@ -636,4 +652,62 @@ export async function authEvents(req: Request): Promise<any> {
     topFailedEmails: (topEmails as any[]).map((r) => ({ email: r.email, count: Number(r.count) })),
     timestamp: new Date().toISOString(),
   };
+}
+
+// ── Account lockout controls (the "Cuentas bloqueadas" panel) ─────────────────
+/** GET /observability/locked-accounts → currently locked / failing accounts. */
+export async function lockedAccounts(req: Request): Promise<any> {
+  const database = db(req);
+  const { Op } = database.Sequelize;
+  const rows = await database.user.findAll({
+    where: { [Op.or]: [{ lockedUntil: { [Op.gt]: new Date() } }, { failedLoginCount: { [Op.gt]: 0 } }] },
+    attributes: ['id', 'email', 'firstName', 'lastName', 'failedLoginCount', 'lockedUntil', 'lastLoginAt'],
+    order: [['lockedUntil', 'DESC']],
+    limit: 200,
+    raw: true,
+  });
+  return { rows, timestamp: new Date().toISOString() };
+}
+
+/** POST /observability/accounts/action { userId, action: lock|unlock|logout }. */
+export async function accountAction(req: Request): Promise<any> {
+  const database = db(req);
+  const body = (req.body?.data ?? req.body) || {};
+  const userId = String(body.userId || '').trim();
+  const action = String(body.action || '').trim();
+  if (!userId || !action) return { ok: false, error: 'userId and action required' };
+  if (action === 'lock') {
+    await database.user.update({ lockedUntil: new Date(Date.now() + 24 * 3600 * 1000) }, { where: { id: userId } });
+  } else if (action === 'unlock') {
+    await database.user.update({ lockedUntil: null, failedLoginCount: 0 }, { where: { id: userId } });
+  } else if (action === 'logout') {
+    // Invalidate all existing JWTs for the user (force re-login everywhere).
+    await database.user.update({ jwtTokenInvalidBefore: new Date() }, { where: { id: userId } });
+  } else {
+    return { ok: false, error: 'unknown action' };
+  }
+  return { ok: true, action, userId };
+}
+
+// ── EXPLAIN a query (SELECT-only) ─────────────────────────────────────────────
+/** POST /observability/explain { sql } → EXPLAIN FORMAT=JSON for a single SELECT. */
+export async function explainQuery(req: Request): Promise<any> {
+  const database = db(req);
+  const body = (req.body?.data ?? req.body) || {};
+  let sql = String(body.sql || '').trim().replace(/;+\s*$/, '');
+  if (!sql) return { ok: false, error: 'sql required' };
+  // Hard guard: exactly one SELECT, no mutating keywords, no stacked statements.
+  if (!/^select\b/i.test(sql) || /;/.test(sql) ||
+      /\b(insert|update|delete|drop|alter|truncate|create|grant|replace|call|load|into\s+outfile)\b/i.test(sql)) {
+    return { ok: false, error: 'Solo se permite una única sentencia SELECT de lectura.' };
+  }
+  try {
+    const [rows]: any = await database.sequelize.query('EXPLAIN FORMAT=JSON ' + sql);
+    const raw = rows?.[0]?.EXPLAIN ?? rows?.[0]?.explain ?? null;
+    let plan: any = raw;
+    try { plan = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { /* keep raw */ }
+    return { ok: true, plan };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'EXPLAIN failed' };
+  }
 }

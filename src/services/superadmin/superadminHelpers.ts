@@ -51,6 +51,8 @@ export async function writeAudit(
       statusCode: entry.statusCode ?? null,
       details: entry.details ?? null,
     });
+    // Mark so the router-level auto-audit middleware doesn't double-log this one.
+    (req as any)._audited = true;
   } catch (err: any) {
     console.warn('superadmin audit write failed:', err?.message || err);
   }

@@ -7,6 +7,8 @@ const es = {
       'El correo no está registrado.',
     wrongPassword:
       'La contraseña es incorrecta.',
+    accountLocked:
+      'Cuenta bloqueada temporalmente por demasiados intentos fallidos. Inténtalo más tarde.',
     emailNotVerified:
       'Correo no verificado. Revisa tu email.',
     weakPassword: 'La contraseña es muy débil. Requisitos: mínimo 8 caracteres y contener al menos una letra mayúscula, una letra minúscula, un número y un carácter especial.',

@@ -38,6 +38,45 @@ export async function runJob(name: string, fn: () => Promise<void> | void): Prom
   } finally {
     j.lastRunAt = new Date().toISOString();
     j.lastDurationMs = Date.now() - started;
+    void publishJobs();
+  }
+}
+
+// Publish this worker's job stats to Redis so the observability endpoint shows a
+// COMPLETE picture regardless of which worker (leader or not) serves the request.
+// Schedulers run only on the leader, so without this a non-leader worker returned
+// an empty/misleading Jobs table.
+async function publishJobs(): Promise<void> {
+  try {
+    const { getObsRedis, OBS_INSTANCE } = require('./obsRedis');
+    const r = await getObsRedis();
+    if (r) await r.set(`obs:jobs:${OBS_INSTANCE}`, JSON.stringify(getJobs()), { EX: 180 });
+  } catch { /* best-effort */ }
+}
+
+/** Merge every worker's job stats from Redis (latest run wins), + local. */
+export async function getMergedJobs(): Promise<JobStat[]> {
+  const local = getJobs();
+  try {
+    const { getObsRedis } = require('./obsRedis');
+    const r = await getObsRedis();
+    if (!r) return local;
+    const keys: string[] = await r.keys('obs:jobs:*');
+    if (!keys.length) return local;
+    const byName: Record<string, JobStat> = {};
+    for (const j of local) byName[j.name] = j;
+    for (const k of keys) {
+      try {
+        const arr: JobStat[] = JSON.parse(await r.get(k)) || [];
+        for (const j of arr) {
+          const prev = byName[j.name];
+          if (!prev || (j.lastRunAt || '') > (prev.lastRunAt || '')) byName[j.name] = j;
+        }
+      } catch { /* skip bad key */ }
+    }
+    return Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return local;
   }
 }
 

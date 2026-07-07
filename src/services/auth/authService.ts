@@ -371,6 +371,21 @@ class AuthService {
         throw new Error400(options.language, 'auth.userNotFound')
       }
 
+      // Brute-force lockout. Read the live lock state (findByEmail may not select
+      // the new columns) and block if the account is currently locked.
+      const LOCK_THRESHOLD = Number(process.env.AUTH_LOCK_THRESHOLD || 8);
+      const LOCK_MINUTES = Number(process.env.AUTH_LOCK_MINUTES || 15);
+      const lockState: any = await options.database.user
+        .findByPk(user.id, { attributes: ['failedLoginCount', 'lockedUntil'], raw: true })
+        .catch(() => null);
+      if (lockState?.lockedUntil && new Date(lockState.lockedUntil) > new Date()) {
+        try {
+          const { logSecurityEvent } = require('./securityAudit');
+          await logSecurityEvent(options.database, { userId: user.id, email, event: 'login_blocked', outcome: 'failure', detail: 'account locked' });
+        } catch { /* best-effort */ }
+        throw new Error400(options.language, 'auth.accountLocked')
+      }
+
       const currentPassword = await UserRepository.findPassword(user.id, options)
       if (!currentPassword) {
         throw new Error400(options.language, 'auth.wrongPassword')
@@ -378,8 +393,23 @@ class AuthService {
 
       const passwordsMatch = await bcrypt.compare(password, currentPassword)
       if (!passwordsMatch) {
+        // Increment the failed counter OUTSIDE this transaction (which is about to
+        // roll back on the throw), locking the account once it crosses the limit.
+        try {
+          const fc = Number(lockState?.failedLoginCount || 0) + 1;
+          const patch: any = { failedLoginCount: fc };
+          if (fc >= LOCK_THRESHOLD) { patch.lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60000); patch.failedLoginCount = 0; }
+          await options.database.user.update(patch, { where: { id: user.id } });
+        } catch { /* best-effort */ }
         throw new Error400(options.language, 'auth.wrongPassword')
       }
+
+      // Successful password → clear any failed-login state.
+      try {
+        if (lockState && (Number(lockState.failedLoginCount || 0) > 0 || lockState.lockedUntil)) {
+          await options.database.user.update({ failedLoginCount: 0, lockedUntil: null }, { where: { id: user.id }, transaction });
+        }
+      } catch { /* best-effort */ }
 
       if (!user.emailVerified) {
         if (EmailSender.isConfigured) {

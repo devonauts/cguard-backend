@@ -20,6 +20,7 @@ const ptBR = {
   auth: {
     userNotFound: 'O e-mail não está cadastrado.',
     wrongPassword: 'A senha está incorreta.',
+    accountLocked: 'Conta bloqueada temporariamente por muitas tentativas. Tente mais tarde.',
     emailNotVerified: 'E-mail não verificado. Verifique sua caixa de entrada.',
     weakPassword: 'Esta senha é muito fraca',
     emailAlreadyInUse: 'O email já está sendo usado',
