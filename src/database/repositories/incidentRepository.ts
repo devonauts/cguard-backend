@@ -613,7 +613,14 @@ class IncidentRepository {
           else if (typeof tenantUserRec.roles === 'string') {
             try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
           }
-          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+          // Every OFFICE / management role sees ALL incidents — not just the
+          // literal admin. The old admin-only check left owners/ops-managers/
+          // dispatchers/custom roles with an EMPTY incidents list (the reported
+          // "incidents arrive empty" bug). The assigned-post-site/client scoping
+          // is only for genuinely scoped field staff.
+          const R = (await import('../../security/roles')).default.values;
+          const SEES_ALL_INCIDENTS = [R.superadmin, R.admin, R.operationsManager, R.administrativeSupervisor, R.administrativeAssistant, R.dispatcher].filter(Boolean);
+          isAdmin = roles.some((r: any) => SEES_ALL_INCIDENTS.includes(r));
         }
       }
 
@@ -657,19 +664,15 @@ class IncidentRepository {
           }
         }
 
-        if (!allowedPostSiteIds.length && !allowedClientIds.length) {
-          return { rows: [], count: 0 };
-        }
-
         const clauses: any[] = [];
         if (allowedPostSiteIds.length) clauses.push({ postSiteId: { [Op.in]: allowedPostSiteIds } });
         if (allowedClientIds.length) clauses.push({ clientId: { [Op.in]: allowedClientIds } });
+        // Always let a user see incidents THEY created — a guard/dispatcher who
+        // filed one but isn't assigned to that post-site would otherwise never see
+        // it (and this stops the "empty" result when they have no assignments).
+        clauses.push({ createdById: currentUser.id });
 
-        if (clauses.length === 1) {
-          whereAnd.push(clauses[0]);
-        } else {
-          whereAnd.push({ [Op.or]: clauses });
-        }
+        whereAnd.push(clauses.length === 1 ? clauses[0] : { [Op.or]: clauses });
       }
     } catch (e) {
       // ignore and proceed
