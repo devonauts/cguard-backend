@@ -33,6 +33,7 @@ import {
   queuesDrain,
   backups,
   runBackupNow,
+  sendDigestNow,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -60,6 +61,11 @@ export default (router) => {
   route('/observability/locked-accounts', lockedAccounts);
   route('/observability/queues', queues);
   route('/observability/backups', backups);
+
+  router.post('/observability/digest/send', async (req: any, res: any) => {
+    try { await ApiResponseHandler.success(req, res, await sendDigestNow(req)); }
+    catch (error) { await ApiResponseHandler.error(req, res, error); }
+  });
 
   router.post('/observability/backups/run', async (req: any, res: any) => {
     try { await ApiResponseHandler.success(req, res, await runBackupNow(req)); }

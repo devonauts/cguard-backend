@@ -744,3 +744,9 @@ export async function backups(_req: Request): Promise<any> {
 export async function runBackupNow(_req: Request): Promise<any> {
   return require('../../lib/dbBackup').runBackup();
 }
+
+/** POST /observability/digest/send → send the daily ops digest now (test). */
+export async function sendDigestNow(_req: Request): Promise<any> {
+  await require('../../lib/opsDigest').sendDailyDigest();
+  return { ok: true, sentTo: process.env.ALERT_EMAIL_TO || null };
+}

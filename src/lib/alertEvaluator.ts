@@ -78,3 +78,48 @@ export async function evaluate(metrics: any): Promise<string[]> {
   }
   return fired;
 }
+
+/**
+ * Trend-based leak detection — the signal a static threshold can't catch: RSS
+ * (real process memory) creeping UP over hours. Compares the latest snapshot to
+ * the baseline (min over the older half of an 8h window); a large sustained rise
+ * suggests a leak. Fires ONE alert (cooldown) so you learn about a slow leak from
+ * an email, not from checking the panel. Runs on the leader in the snapshot job.
+ */
+export async function evaluateTrends(): Promise<void> {
+  try {
+    const models = require('../database/models').default;
+    const db = models();
+    if (!db.metricsSnapshot) return;
+    const { Op } = db.Sequelize;
+    const rows = await db.metricsSnapshot.findAll({
+      where: { createdAt: { [Op.gte]: new Date(Date.now() - 8 * 3600 * 1000) } },
+      attributes: ['rss'],
+      order: [['createdAt', 'ASC']],
+      raw: true,
+    });
+    const rss = (rows as any[]).map((r) => Number(r.rss || 0)).filter((n) => n > 0);
+    if (rss.length < 30) return; // need ~30 min of history before trusting a trend
+    const current = rss[rss.length - 1];
+    const olderHalf = rss.slice(0, Math.floor(rss.length / 2));
+    const baseline = Math.min(...olderHalf);
+    const floorBytes = Number(process.env.ALERT_RSS_FLOOR_MB || 350) * 1048576;
+    const growth = Number(process.env.ALERT_RSS_GROWTH || 1.5); // 1.5 = +50%
+    if (baseline > 0 && current > baseline * growth && current > floorBytes) {
+      if (!shouldFire('rss_trend')) return;
+      const mb = (b: number) => `${Math.round(b / 1048576)}MB`;
+      const pct = Math.round((current / baseline - 1) * 100);
+      const title = 'Posible fuga de memoria';
+      const body = `El RSS del proceso creció de ${mb(baseline)} a ${mb(current)} (+${pct}%) en ~8h. PM2 reinicia a 450MB (sin caída), pero conviene revisar si sigue subiendo.`;
+      const models2 = require('../database/models').default;
+      const { createNotification } = require('../services/superadmin/superadminNotificationService');
+      await createNotification(models2(), {
+        type: 'alert.rss_trend', title: `⚠️ ${title}`, body,
+        link: '/observability/workers', icon: 'AlertTriangle', metadata: { baseline, current, pct },
+      });
+      require('./alertChannels').sendOffPanelAlert({ key: 'rss_trend', title, body }).catch(() => {});
+    }
+  } catch (e: any) {
+    console.error('[alertEvaluator:trends]', e?.message || e);
+  }
+}

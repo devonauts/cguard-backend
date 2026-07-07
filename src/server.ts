@@ -235,9 +235,16 @@ nodeSetInterval(() => {
 nodeSetInterval(() => {
   runJob("MetricsSnapshot", async () => {
     const metrics = await require('./lib/metricsHistory').captureSnapshot();
-    await require('./lib/alertEvaluator').evaluate(metrics);
+    const ae = require('./lib/alertEvaluator');
+    await ae.evaluate(metrics);        // instantaneous threshold breaches
+    await ae.evaluateTrends();         // slow-leak / RSS-creep detection
   });
 }, 60 * 1000);
+
+// Daily ops heartbeat digest (leader only): checks hourly, emails once/day at
+// ALERT_DIGEST_HOUR so "all good" is something you receive, not something you
+// check — and its absence flags an outage.
+nodeSetInterval(() => { runJob("OpsDigest", () => require('./lib/opsDigest').sendDigestIfDue()); }, 60 * 60 * 1000);
 
 // Automated DB backups (leader only): daily mysqldump → gzip → rotate → optional
 // off-box S3. Plus a boot-time run if the newest backup is stale (>20h) so a
