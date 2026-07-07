@@ -544,3 +544,51 @@ export async function alerts(req: Request): Promise<any> {
   } catch { /* ignore */ }
   return { thresholds: THRESHOLDS, recent, timestamp: new Date().toISOString() };
 }
+
+// ── DB inspection (per-table sizes + live process list) ───────────────────────
+/** GET /observability/db/tables → per-table row counts + data/index size. */
+export async function dbTables(req: Request): Promise<any> {
+  const database = db(req);
+  const sequelize = database.sequelize;
+  try {
+    const [rows]: any = await sequelize.query(
+      "SELECT table_name AS name, table_rows AS rowCount, data_length AS dataBytes, index_length AS indexBytes, (data_length + index_length) AS totalBytes, data_free AS freeBytes " +
+        "FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY (data_length + index_length) DESC LIMIT 80",
+    );
+    return {
+      tables: (rows as any[]).map((r) => ({
+        name: r.name,
+        rowCount: Number(r.rowCount || 0),
+        dataBytes: Number(r.dataBytes || 0),
+        indexBytes: Number(r.indexBytes || 0),
+        totalBytes: Number(r.totalBytes || 0),
+        freeBytes: Number(r.freeBytes || 0),
+      })),
+      timestamp: new Date().toISOString(),
+    };
+  } catch (e: any) {
+    return { tables: [], error: e?.message || 'query failed', timestamp: new Date().toISOString() };
+  }
+}
+
+/** GET /observability/db/processlist → non-idle connections (long-runners flagged). */
+export async function dbProcessList(req: Request): Promise<any> {
+  const database = db(req);
+  const sequelize = database.sequelize;
+  try {
+    const [rows]: any = await sequelize.query(
+      "SELECT id, user, host, db, command, time, state, LEFT(info, 300) AS info " +
+        "FROM information_schema.PROCESSLIST WHERE command <> 'Sleep' ORDER BY time DESC LIMIT 60",
+    );
+    return {
+      processes: (rows as any[]).map((r) => ({
+        id: r.id, user: r.user, host: r.host, db: r.db, command: r.command,
+        time: Number(r.time || 0), state: r.state, info: r.info,
+        longRunning: Number(r.time || 0) >= 5,
+      })),
+      timestamp: new Date().toISOString(),
+    };
+  } catch (e: any) {
+    return { processes: [], error: e?.message || 'query failed', timestamp: new Date().toISOString() };
+  }
+}

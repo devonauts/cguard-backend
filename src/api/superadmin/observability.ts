@@ -22,6 +22,8 @@ import {
   resolveError,
   systemHistory,
   alerts,
+  dbTables,
+  dbProcessList,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -43,6 +45,8 @@ export default (router) => {
   route('/observability/errors/:fingerprint', errorDetail);
   route('/observability/system/history', systemHistory);
   route('/observability/alerts', alerts);
+  route('/observability/db/tables', dbTables);
+  route('/observability/db/processlist', dbProcessList);
 
   router.post('/observability/errors/resolve', async (req: any, res: any) => {
     try {

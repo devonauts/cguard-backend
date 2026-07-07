@@ -209,10 +209,10 @@ initBuiltInRoles();
 // Publish this worker's resource metrics for the per-worker observability view.
 startWorkerMetrics();
 
-// Schedule periodic cleanup every 3 hours
+// Schedule periodic cleanup every 3 hours (wrapped so they show in the Jobs panel)
 nodeSetInterval(() => {
-  runExpiredInvitesCleanup();
-  runPlatformEventsCleanup();
+  runJob("ExpiredInvitesCleanup", runExpiredInvitesCleanup);
+  runJob("PlatformEventsCleanup", runPlatformEventsCleanup);
 }, 3 * 60 * 60 * 1000);
 
 // Observability: snapshot system/pool/slow/error metrics every minute (leader
@@ -765,7 +765,7 @@ async function runRepeatedLatenessScheduler() {
 }
 
 // Repeated-lateness check hourly.
-nodeSetInterval(() => { runRepeatedLatenessScheduler(); }, 60 * 60 * 1000);
+nodeSetInterval(() => { runJob("RepeatedLateness", runRepeatedLatenessScheduler); }, 60 * 60 * 1000);
 leaderTimeout(() => runRepeatedLatenessScheduler(), 90000);
 
 /**

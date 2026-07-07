@@ -10,8 +10,14 @@
  * strings, plus `external`/`arrayBuffers` = C++/Buffer memory outside the heap.
  */
 import v8 from 'v8';
+import { monitorEventLoopDelay } from 'perf_hooks';
 import { createClient } from 'redis';
 import { getSlowQueries } from './slowQueryMonitor';
+
+// Event-loop delay histogram — a rising mean/max is the clearest early signal of
+// a saturated/blocked worker (sync work, GC pressure) before RAM/CPU show it.
+const eld = monitorEventLoopDelay({ resolution: 20 });
+eld.enable();
 
 const INSTANCE = String(process.env.NODE_APP_INSTANCE ?? process.env.pm_id ?? process.pid);
 const KEY = `obs:worker:${INSTANCE}`;
@@ -59,9 +65,16 @@ function buildSnapshot(): any {
     heapLimit: v8.getHeapStatistics().heap_size_limit,
     heapSpaces,
     slow: { totalSlow: slow.totalSlow, maxMs: slow.maxMs, captured: slow.captured, thresholdMs: slow.thresholdMs },
+    eventLoop: {
+      meanMs: Math.round((eld.mean / 1e6) * 100) / 100,
+      maxMs: Math.round((eld.max / 1e6) * 100) / 100,
+      p99Ms: Math.round((eld.percentile(99) / 1e6) * 100) / 100,
+    },
     at: new Date().toISOString(),
   };
 }
+// Reset the histogram each publish so the numbers reflect the last interval.
+function resetEld(): void { try { eld.reset(); } catch { /* ignore */ } }
 
 async function getClient(): Promise<any> {
   const url = process.env.REDIS_URL;
@@ -88,6 +101,7 @@ export function startWorkerMetrics(): void {
       lastSnap = buildSnapshot();
       const c = await getClient();
       if (c) await c.set(KEY, JSON.stringify(lastSnap), { EX: TTL_SECONDS });
+      resetEld(); // per-interval event-loop stats
     } catch {
       /* best-effort */
     }
