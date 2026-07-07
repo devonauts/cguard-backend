@@ -11,6 +11,13 @@ export interface SlowQuery {
   sql: string;
   ms: number;
   at: string;
+  // Attribution from the request context (which endpoint/tenant issued it) —
+  // the whole point: you can now locate the code path behind a slow query.
+  route?: string | null;
+  method?: string | null;
+  tenantId?: string | null;
+  requestId?: string | null;
+  queryNo?: number; // this query's index within its request (N+1 signal)
 }
 
 const buffer: SlowQuery[] = [];
@@ -19,10 +26,22 @@ let maxMs = 0;
 
 /** Called from the Sequelize benchmark logger for every query. */
 export function recordQuery(sql: string, ms: number): void {
+  // Count every query against the request (N+1 detection) even when it's fast.
+  let ctx: any;
+  try { ctx = require('./requestContext').getContext(); if (ctx) ctx.queryCount += 1; } catch { /* no context */ }
   if (typeof ms !== 'number' || ms < THRESHOLD_MS) return;
   totalSlow++;
   if (ms > maxMs) maxMs = ms;
-  buffer.unshift({ sql: String(sql || '').replace(/\s+/g, ' ').trim().slice(0, 2000), ms: Math.round(ms), at: new Date().toISOString() });
+  buffer.unshift({
+    sql: String(sql || '').replace(/\s+/g, ' ').trim().slice(0, 2000),
+    ms: Math.round(ms),
+    at: new Date().toISOString(),
+    route: ctx?.path ?? null,
+    method: ctx?.method ?? null,
+    tenantId: ctx?.tenantId ?? null,
+    requestId: ctx?.requestId ?? null,
+    queryNo: ctx?.queryCount ?? undefined,
+  });
   if (buffer.length > MAX) buffer.pop();
 }
 

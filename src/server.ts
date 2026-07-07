@@ -215,6 +215,17 @@ nodeSetInterval(() => {
   runPlatformEventsCleanup();
 }, 3 * 60 * 60 * 1000);
 
+// Observability: snapshot system/pool/slow/error metrics every minute (leader
+// only) into the time series, then evaluate thresholds and fire alerts. Turns
+// every instantaneous metric into a trend + gives the platform a "tell me before
+// users do" path (disk/RAM/heap/pool/error-spike/job-failure).
+nodeSetInterval(() => {
+  runJob("MetricsSnapshot", async () => {
+    const metrics = await require('./lib/metricsHistory').captureSnapshot();
+    await require('./lib/alertEvaluator').evaluate(metrics);
+  });
+}, 60 * 1000);
+
 // Sync guard duty status every 5 minutes based on active shifts
 nodeSetInterval(() => { runJob("DutySync", syncGuardDutyStatus); }, 5 * 60 * 1000);
 

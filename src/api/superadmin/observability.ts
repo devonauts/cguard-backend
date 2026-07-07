@@ -20,6 +20,8 @@ import {
   errors,
   errorDetail,
   resolveError,
+  systemHistory,
+  alerts,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -39,6 +41,8 @@ export default (router) => {
   route('/observability/workers', workers);
   route('/observability/errors', errors);
   route('/observability/errors/:fingerprint', errorDetail);
+  route('/observability/system/history', systemHistory);
+  route('/observability/alerts', alerts);
 
   router.post('/observability/errors/resolve', async (req: any, res: any) => {
     try {

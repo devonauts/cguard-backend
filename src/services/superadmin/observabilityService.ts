@@ -517,3 +517,30 @@ export async function resolveError(req: Request): Promise<any> {
   );
   return { ok: true, updated, fingerprint, resolved };
 }
+
+// ── Metrics history (sparklines) + alerts ─────────────────────────────────────
+/** GET /observability/system/history?hours= → per-minute time series. */
+export async function systemHistory(req: Request): Promise<any> {
+  const hours = Number((req.query as any).hours) || 6;
+  const rows = await require('../../lib/metricsHistory').getHistory(hours);
+  return { hours, points: rows, timestamp: new Date().toISOString() };
+}
+
+/** GET /observability/alerts → current thresholds + recent fired alerts. */
+export async function alerts(req: Request): Promise<any> {
+  const database = db(req);
+  const { THRESHOLDS } = require('../../lib/alertEvaluator');
+  let recent: any[] = [];
+  try {
+    if (database.superadminNotification) {
+      const { Op } = database.Sequelize;
+      recent = await database.superadminNotification.findAll({
+        where: { type: { [Op.like]: 'alert.%' } },
+        order: [['createdAt', 'DESC']],
+        limit: 50,
+        raw: true,
+      });
+    }
+  } catch { /* ignore */ }
+  return { thresholds: THRESHOLDS, recent, timestamp: new Date().toISOString() };
+}
