@@ -99,10 +99,21 @@ export async function evaluateTrends(): Promise<void> {
       raw: true,
     });
     const rss = (rows as any[]).map((r) => Number(r.rss || 0)).filter((n) => n > 0);
-    if (rss.length < 30) return; // need ~30 min of history before trusting a trend
-    const current = rss[rss.length - 1];
-    const olderHalf = rss.slice(0, Math.floor(rss.length / 2));
-    const baseline = Math.min(...olderHalf);
+    if (rss.length < 30) return;
+    // Only look at the CURRENT process's lifetime — trim everything up to the last
+    // RESTART (a >30% drop between consecutive samples = PM2 recycled the worker).
+    // The sawtooth of climbing to max_memory_restart then dropping is NOT a leak;
+    // treating post-restart warmup growth as a leak is what caused the false alarm.
+    let start = 0;
+    for (let i = 1; i < rss.length; i++) if (rss[i] < rss[i - 1] * 0.7) start = i;
+    const life = rss.slice(start);
+    // Require ≥2h of continuous uptime before trusting a trend (past warmup).
+    if (life.length < 120) return;
+    const current = life[life.length - 1];
+    // Baseline = min AFTER the first ~30min of warmup within this process life. A
+    // real leak = a process up >2h that is STILL climbing above its steady floor.
+    const steady = life.slice(30);
+    const baseline = steady.length ? Math.min(...steady) : Math.min(...life);
     const floorBytes = Number(process.env.ALERT_RSS_FLOOR_MB || 350) * 1048576;
     const growth = Number(process.env.ALERT_RSS_GROWTH || 1.5); // 1.5 = +50%
     if (baseline > 0 && current > baseline * growth && current > floorBytes) {

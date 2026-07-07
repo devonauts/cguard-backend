@@ -847,7 +847,17 @@ class ClientAccountRepository {
           else if (typeof tenantUserRec.roles === 'string') {
             try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
           }
-          isAdmin = roles.includes(Roles.values.admin);
+          // "Sees all clients" is not just the literal admin role — every OFFICE /
+          // management role does (they run the CRM, message clients, dispatch,
+          // etc.). Restricting to the assigned-clients subset is only for
+          // genuinely client-scoped reps. The old admin-only check left owners/
+          // ops-managers/dispatchers with an EMPTY client picker in the messenger.
+          const SEES_ALL_CLIENTS = [
+            Roles.values.superadmin, Roles.values.admin, Roles.values.operationsManager,
+            Roles.values.administrativeSupervisor, Roles.values.administrativeAssistant,
+            Roles.values.dispatcher,
+          ].filter(Boolean);
+          isAdmin = roles.some((r: any) => SEES_ALL_CLIENTS.includes(r));
         }
       }
 
@@ -859,11 +869,12 @@ class ClientAccountRepository {
         });
 
         const allowedIds = (tenantUser && tenantUser.assignedClients && tenantUser.assignedClients.map((c) => c.id)) || [];
-        if (!allowedIds.length) {
-          return [];
+        // A user who is NOT an office role AND has no explicit client assignments
+        // is not a scoped rep — don't hide every client (that was the bug). Only
+        // restrict when they DO have assignments.
+        if (allowedIds.length) {
+          whereAnd.push({ id: { [Op.in]: allowedIds } });
         }
-
-        whereAnd.push({ id: { [Op.in]: allowedIds } });
       }
     } catch (e) {
       // ignore and continue

@@ -29,9 +29,11 @@ module.exports = {
       // ============================================================
       // MEMORY & RESTART POLICIES
       // ============================================================
-      // Baseline is ~175MB/worker; restart well above that to catch a real leak
-      // early without flapping. Raise for heavy production load.
-      max_memory_restart: '450M',         // Restart a worker if it exceeds 450MB
+      // The working set legitimately climbs to ~450MB under load (Node + Sequelize
+      // + pools + caches), so a 450M ceiling was recycling workers every ~2h for
+      // nothing. 900M gives real headroom on the 15GB box (2×900M) and still traps
+      // a genuine runaway. A slow leak is caught by the RSS-trend alert, not this.
+      max_memory_restart: '900M',         // Restart a worker only if it exceeds 900MB
       min_uptime: '10s',                  // Min uptime to consider "started"
       max_restarts: 10,                   // Max restarts in restart_delay window
       restart_delay: 4000,                // Wait 4s between restarts
