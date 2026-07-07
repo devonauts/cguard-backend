@@ -711,3 +711,20 @@ export async function explainQuery(req: Request): Promise<any> {
     return { ok: false, error: e?.message || 'EXPLAIN failed' };
   }
 }
+
+// ── Job queue (the "Colas" page) ──────────────────────────────────────────────
+/** GET /observability/queues → queue depth (waiting/active/failed/…) + failed jobs. */
+export async function queues(_req: Request): Promise<any> {
+  const status = await require('../../lib/queue').queueStatus();
+  return { ...status, timestamp: new Date().toISOString() };
+}
+
+/** POST /observability/queues/retry → re-enqueue all failed (dead-letter) jobs. */
+export async function queuesRetry(_req: Request): Promise<any> {
+  return { retried: await require('../../lib/queue').retryFailed() };
+}
+
+/** POST /observability/queues/drain → clear the failed set. */
+export async function queuesDrain(_req: Request): Promise<any> {
+  return { removed: await require('../../lib/queue').drainFailed() };
+}

@@ -213,6 +213,15 @@ initBuiltInRoles();
 // Publish this worker's resource metrics for the per-worker observability view.
 startWorkerMetrics();
 
+// Start the BullMQ consumer (each PM2 worker runs one; BullMQ shares the load).
+// Load the handler-registering services first so their handlers are known.
+try {
+  require('./services/mailService');
+  require('./lib/queue').startQueueWorker();
+} catch (e: any) {
+  console.error('[queue] init failed:', e?.message || e);
+}
+
 // Schedule periodic cleanup every 3 hours (wrapped so they show in the Jobs panel)
 nodeSetInterval(() => {
   runJob("ExpiredInvitesCleanup", runExpiredInvitesCleanup);

@@ -28,6 +28,9 @@ import {
   lockedAccounts,
   accountAction,
   explainQuery,
+  queues,
+  queuesRetry,
+  queuesDrain,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -53,6 +56,16 @@ export default (router) => {
   route('/observability/db/processlist', dbProcessList);
   route('/observability/auth-events', authEvents);
   route('/observability/locked-accounts', lockedAccounts);
+  route('/observability/queues', queues);
+
+  router.post('/observability/queues/retry', async (req: any, res: any) => {
+    try { await ApiResponseHandler.success(req, res, await queuesRetry(req)); }
+    catch (error) { await ApiResponseHandler.error(req, res, error); }
+  });
+  router.post('/observability/queues/drain', async (req: any, res: any) => {
+    try { await ApiResponseHandler.success(req, res, await queuesDrain(req)); }
+    catch (error) { await ApiResponseHandler.error(req, res, error); }
+  });
 
   router.post('/observability/explain', async (req: any, res: any) => {
     try { await ApiResponseHandler.success(req, res, await explainQuery(req)); }

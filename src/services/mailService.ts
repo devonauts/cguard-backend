@@ -139,4 +139,17 @@ export async function sendMail(opts: MailOpts) {
   throw new Error('No mail transport configured. Set SENDGRID_API_KEY or MAIL_SERVER in environment.');
 }
 
-export default { sendMail };
+// Register the async 'mail' handler on the queue: bulk/non-critical senders can
+// call enqueueMail() for retried, backgrounded delivery. The handler is the SAME
+// real sendMail (throws on failure → BullMQ retries). Critical flows that need
+// the result/throw synchronously (e.g. the communication fallback chain) keep
+// calling sendMail() directly.
+import { registerHandler, enqueue } from '../lib/queue';
+registerHandler('mail', (data: MailOpts) => sendMail(data));
+
+/** Fire-and-forget queued email (retries + backoff; inline fallback if no Redis). */
+export async function enqueueMail(opts: MailOpts): Promise<void> {
+  return enqueue('mail', opts);
+}
+
+export default { sendMail, enqueueMail };

@@ -32,6 +32,7 @@
     "@types/multer": "^2.0.0",
     "@types/passport-microsoft": "^2.1.1",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^5.79.2",
     "cli-highlight": "^2.1.11",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",

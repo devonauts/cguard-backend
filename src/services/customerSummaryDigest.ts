@@ -121,12 +121,12 @@ async function aggregateForStations(
 }
 
 /** Lazily resolve the optional mail layer; returns null when not present. */
-function loadMailLayer(): { sendMail: any; renderNotificationEmail: any } | null {
+function loadMailLayer(): { sendMail: any; enqueueMail: any; renderNotificationEmail: any } | null {
   try {
-    const { sendMail } = require('./mailService');
+    const { sendMail, enqueueMail } = require('./mailService');
     const { renderNotificationEmail } = require('../lib/emailLayout');
     if (typeof sendMail !== 'function') return null;
-    return { sendMail, renderNotificationEmail };
+    return { sendMail, enqueueMail, renderNotificationEmail };
   } catch {
     return null;
   }
@@ -247,7 +247,8 @@ export async function runCustomerSummaryDigest(db: any): Promise<number> {
             title,
             body: emailBody,
           });
-          await mail.sendMail({
+          // Batch digest → queue it (retries/backoff; inline fallback if no Redis).
+          await mail.enqueueMail({
             to: c.email,
             subject: `${tenantName ? tenantName + ' — ' : ''}${title} de seguridad`,
             html,
