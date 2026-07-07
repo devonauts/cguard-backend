@@ -189,10 +189,14 @@ app.use((req: any, res: any, next: any) => {
   next();
 });
 
-// Public health + metrics endpoints (/health, /health/ready, /health/live,
-// /metrics) — mounted BEFORE authMiddleware so external uptime monitors + APM
-// scrapers can reach them without a session. /metrics is gated by METRICS_TOKEN.
-require('./health').default(app);
+// Public health + metrics endpoints (/api/health, /api/health/ready,
+// /api/health/live, /api/metrics) — mounted at the /api prefix BEFORE
+// authMiddleware so external uptime monitors + APM scrapers reach them without a
+// session. Unmatched paths fall through to the authenticated routes below.
+// /metrics is gated by METRICS_TOKEN.
+const _healthRouter = require('express').Router();
+require('./health').default(_healthRouter);
+app.use('/api', _healthRouter);
 
 // Configures the authentication middleware
 // to set the currentUser to the requests
