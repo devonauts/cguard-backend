@@ -122,6 +122,61 @@ router.get('/health/live', (req: Request, res: Response) => {
   res.status(200).json({ alive: true, uptime: process.uptime() });
 });
 
+/**
+ * GET /api/metrics — Prometheus text exposition for APM scraping (Grafana Agent,
+ * Datadog OpenMetrics, etc.). Gated by METRICS_TOKEN (Bearer); if unset, only
+ * localhost may scrape (so it's never accidentally public).
+ */
+router.get('/metrics', async (req: Request, res: Response) => {
+  const token = process.env.METRICS_TOKEN;
+  if (token) {
+    if ((req.headers.authorization || '') !== `Bearer ${token}`) { res.status(401).send('unauthorized\n'); return; }
+  } else {
+    const ip = String(req.ip || (req.socket && req.socket.remoteAddress) || '');
+    if (!/127\.0\.0\.1|::1/.test(ip)) { res.status(403).send('# set METRICS_TOKEN to enable remote scraping\n'); return; }
+  }
+
+  const lines: string[] = [];
+  const gauge = (name: string, help: string, val: number | null | undefined) => {
+    if (val == null || Number.isNaN(val as number)) return;
+    lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} gauge`, `${name} ${val}`);
+  };
+
+  const mem = process.memoryUsage();
+  gauge('cguard_process_rss_bytes', 'Resident set size', mem.rss);
+  gauge('cguard_process_heap_used_bytes', 'Heap used', mem.heapUsed);
+  gauge('cguard_process_heap_total_bytes', 'Heap total', mem.heapTotal);
+  gauge('cguard_process_uptime_seconds', 'Process uptime', Math.round(process.uptime()));
+
+  try {
+    const p: any = (req as any).database?.sequelize?.connectionManager?.pool;
+    if (p) {
+      gauge('cguard_db_pool_using', 'DB connections in use', p.using ?? p.size ?? 0);
+      gauge('cguard_db_pool_waiting', 'DB connection requests waiting', p.pending ?? 0);
+      gauge('cguard_db_pool_max', 'DB pool max size', p.max ?? 0);
+    }
+  } catch { /* ignore */ }
+  try {
+    const slow = require('../lib/slowQueryMonitor').getSlowQueries();
+    gauge('cguard_slow_queries_total', 'Slow queries since boot', slow.totalSlow);
+    gauge('cguard_slow_query_max_ms', 'Slowest query (ms)', slow.maxMs);
+  } catch { /* ignore */ }
+  try {
+    const jobErrors = require('../lib/jobsMonitor').getJobs().filter((j: any) => j.lastStatus === 'error').length;
+    gauge('cguard_job_errors', 'Scheduled jobs currently failing', jobErrors);
+  } catch { /* ignore */ }
+  try {
+    const q = await require('../lib/queue').queueStatus();
+    if (q?.counts) {
+      gauge('cguard_queue_waiting', 'Queue jobs waiting', q.counts.waiting);
+      gauge('cguard_queue_active', 'Queue jobs active', q.counts.active);
+      gauge('cguard_queue_failed', 'Queue jobs failed', q.counts.failed);
+    }
+  } catch { /* ignore */ }
+
+  res.set('Content-Type', 'text/plain; version=0.0.4').send(lines.join('\n') + '\n');
+});
+
 export default function (routes: Router) {
   routes.use('/', router);
 }

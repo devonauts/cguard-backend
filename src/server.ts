@@ -239,6 +239,12 @@ nodeSetInterval(() => {
   });
 }, 60 * 1000);
 
+// Automated DB backups (leader only): daily mysqldump → gzip → rotate → optional
+// off-box S3. Plus a boot-time run if the newest backup is stale (>20h) so a
+// long gap self-heals without waiting a full day.
+nodeSetInterval(() => { runJob("DbBackup", () => require('./lib/dbBackup').runBackup()); }, 24 * 60 * 60 * 1000);
+leaderTimeout(() => { require('./lib/dbBackup').runBackupIfStale().catch(() => {}); }, 3 * 60 * 1000);
+
 // Sync guard duty status every 5 minutes based on active shifts
 nodeSetInterval(() => { runJob("DutySync", syncGuardDutyStatus); }, 5 * 60 * 1000);
 

@@ -728,3 +728,14 @@ export async function queuesRetry(_req: Request): Promise<any> {
 export async function queuesDrain(_req: Request): Promise<any> {
   return { removed: await require('../../lib/queue').drainFailed() };
 }
+
+// ── DB backups (the "Copias" panel) ───────────────────────────────────────────
+/** GET /observability/backups → last-run status + recent backup files. */
+export async function backups(_req: Request): Promise<any> {
+  return { ...require('../../lib/dbBackup').getBackupStatus(), timestamp: new Date().toISOString() };
+}
+
+/** POST /observability/backups/run → trigger a backup now (returns its status). */
+export async function runBackupNow(_req: Request): Promise<any> {
+  return require('../../lib/dbBackup').runBackup();
+}

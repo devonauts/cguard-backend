@@ -67,6 +67,10 @@ export async function evaluate(metrics: any): Promise<string[]> {
         icon: 'AlertTriangle',
         metadata: { metrics, threshold: (THRESHOLDS as any)[b.key === 'errors' ? 'errorSpike' : b.key === 'pool' ? 'poolWaiting' : b.key] },
       });
+      // Also deliver OFF-PANEL (email / Slack / SMS) so it reaches an on-call human.
+      try {
+        require('./alertChannels').sendOffPanelAlert({ key: b.key, title: b.title, body: b.body, metrics }).catch(() => {});
+      } catch { /* best-effort */ }
       fired.push(b.key);
     } catch (e: any) {
       console.error('[alertEvaluator] notify failed:', e?.message || e);

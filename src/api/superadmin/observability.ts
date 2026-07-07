@@ -31,6 +31,8 @@ import {
   queues,
   queuesRetry,
   queuesDrain,
+  backups,
+  runBackupNow,
 } from '../../services/superadmin/observabilityService';
 
 export default (router) => {
@@ -57,6 +59,12 @@ export default (router) => {
   route('/observability/auth-events', authEvents);
   route('/observability/locked-accounts', lockedAccounts);
   route('/observability/queues', queues);
+  route('/observability/backups', backups);
+
+  router.post('/observability/backups/run', async (req: any, res: any) => {
+    try { await ApiResponseHandler.success(req, res, await runBackupNow(req)); }
+    catch (error) { await ApiResponseHandler.error(req, res, error); }
+  });
 
   router.post('/observability/queues/retry', async (req: any, res: any) => {
     try { await ApiResponseHandler.success(req, res, await queuesRetry(req)); }

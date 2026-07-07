@@ -189,6 +189,11 @@ app.use((req: any, res: any, next: any) => {
   next();
 });
 
+// Public health + metrics endpoints (/health, /health/ready, /health/live,
+// /metrics) — mounted BEFORE authMiddleware so external uptime monitors + APM
+// scrapers can reach them without a session. /metrics is gated by METRICS_TOKEN.
+require('./health').default(app);
+
 // Configures the authentication middleware
 // to set the currentUser to the requests
 app.use(authMiddleware);
