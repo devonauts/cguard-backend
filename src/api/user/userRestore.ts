@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
+import { invitationTokenExpiry } from '../../services/auth/invitationToken';
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import AuditLogRepository from '../../database/repositories/auditLogRepository';
 
@@ -48,7 +49,7 @@ export default async (req, res) => {
       if (!tenantUser.invitationToken) {
         tenantUser.invitationToken = require('crypto').randomBytes(20).toString('hex');
       }
-      tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+      tenantUser.invitationTokenExpiresAt = invitationTokenExpiry();
     }
 
     await tenantUser.save({ transaction });

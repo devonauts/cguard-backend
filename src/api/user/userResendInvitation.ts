@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
+import { invitationTokenExpiry } from '../../services/auth/invitationToken';
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import { tenantSubdomain } from '../../services/tenantSubdomain';
 import EmailSender from '../../services/emailSender';
@@ -33,11 +34,15 @@ export default async (req, res) => {
       throw Object.assign(new Error('User has already accepted the invitation'), { code: 400 });
     }
 
+    // Resending must ALWAYS refresh the window (and mint a token if one is
+    // missing) so the re-sent link is freshly valid. Previously this only ran
+    // when there was no token, so resending a user who already had an EXPIRED
+    // token just re-mailed the same dead link.
     if (!tenantUser.invitationToken) {
       tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
-      tenantUser.invitationTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
-      await tenantUser.save({ transaction });
     }
+    tenantUser.invitationTokenExpiresAt = invitationTokenExpiry();
+    await tenantUser.save({ transaction });
 
     const roles = Array.isArray((tenantUser as any).roles) ? (tenantUser as any).roles : [];
     const isGuardInvite = roles.includes(Roles.values.securityGuard);
@@ -48,11 +53,6 @@ export default async (req, res) => {
     let inviteType = 'staff';
     if (isGuardInvite) { invitationPath = '/auth/invitation'; inviteType = 'guard'; }
     else if (isCustomerInvite) { invitationPath = '/client/registration'; inviteType = 'client'; }
-    if (!tenantUser.invitationToken) {
-      tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
-      tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
-      await tenantUser.save({ transaction });
-    }
     const link = `${tenantSubdomain.frontendUrl(req.currentTenant)}${invitationPath}?token=${encodeURIComponent(tenantUser.invitationToken)}&inviteType=${inviteType}`;
 
     try {

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import TenantUserRepository from '../database/repositories/tenantUserRepository';
+import { invitationTokenExpiry } from './auth/invitationToken';
 import UserRepository from '../database/repositories/userRepository';
 import { tenantSubdomain } from './tenantSubdomain';
 import EmailSender from './emailSender';
@@ -78,7 +79,7 @@ export default class CustomerIdentityService {
 
     const invitationToken = crypto.randomBytes(20).toString('hex');
     (tenantUser as any).invitationToken = invitationToken;
-    (tenantUser as any).invitationTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    (tenantUser as any).invitationTokenExpiresAt = invitationTokenExpiry();
     (tenantUser as any).status = 'invited';
     await (tenantUser as any).save({ transaction });
 

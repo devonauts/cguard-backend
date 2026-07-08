@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import SecurityGuardService from '../../services/securityGuardService';
+import { invitationTokenExpiry } from '../../services/auth/invitationToken';
 import StationService from '../../services/stationService';
 import Error400 from '../../errors/Error400';
 import moment from 'moment';
@@ -502,7 +503,7 @@ export default async (req, res, next) => {
                     tenantUser.invitationToken = require('crypto')
                       .randomBytes(20)
                       .toString('hex');
-                    tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+                    tenantUser.invitationTokenExpiresAt = invitationTokenExpiry();
                     tenantUser.status = 'invited';
                     await tenantUser.save();
                   }

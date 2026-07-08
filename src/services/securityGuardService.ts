@@ -1,6 +1,7 @@
 import Error400 from '../errors/Error400';
 import Error404 from '../errors/Error404';
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
+import { invitationTokenExpiry } from './auth/invitationToken';
 import { isEmailEnabled } from '../lib/emailPrefs';
 import { IServiceOptions } from './IServiceOptions';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
@@ -404,7 +405,7 @@ export default class SecurityGuardService {
                 // Ensure invitation token exists (similar to securityGuardInvite.ts resend logic)
                 if (!tenantUser.invitationToken) {
                   tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
-                  tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)); // 7 days
+                  tenantUser.invitationTokenExpiresAt = invitationTokenExpiry();
                   await TenantUserRepository.saveTenantUser(tenantUser, this.options);
                   console.log('[SecurityGuardService.create] generated invitationToken after commit', { tenantUserId: tenantUser.id, guardId: data.guard, token: tenantUser.invitationToken });
                 } else {

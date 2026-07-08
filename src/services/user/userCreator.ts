@@ -1,6 +1,7 @@
 import assert from 'assert';
 import crypto from 'crypto';
 import EmailSender from '../../services/emailSender';
+import { invitationTokenExpiry } from '../auth/invitationToken';
 import UserRepository from '../../database/repositories/userRepository';
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
@@ -378,7 +379,7 @@ export default class UserCreator {
     if (!tenantUser.invitationToken) {
       try {
         tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
-        tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (60 * 60 * 1000));
+        tenantUser.invitationTokenExpiresAt = invitationTokenExpiry();
         await tenantUser.save({ transaction: tx });
       } catch (err) {
         console.warn('userCreator: failed to generate invitation token for tenantUser', err && (err as any).message ? (err as any).message : err);

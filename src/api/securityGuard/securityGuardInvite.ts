@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import SecurityGuardService from '../../services/securityGuardService';
+import { invitationTokenExpiry } from '../../services/auth/invitationToken';
 import UserCreator from '../../services/user/userCreator';
 import UserRepository from '../../database/repositories/userRepository';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
@@ -124,7 +125,7 @@ export default async (req, res, next) => {
 
           if (!(tenantUser as any).invitationToken) {
             (tenantUser as any).invitationToken = crypto.randomBytes(20).toString('hex');
-            (tenantUser as any).invitationTokenExpiresAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)); // 7 days
+            (tenantUser as any).invitationTokenExpiresAt = invitationTokenExpiry();
             await TenantUserRepository.saveTenantUser(tenantUser, req);
             console.debug('[securityGuardInvite.resend] generated invitationToken', { tenantUserId: (tenantUser as any).id, invitationToken: (tenantUser as any).invitationToken });
           }
@@ -346,7 +347,7 @@ export default async (req, res, next) => {
         // Ensure the tenantUser has an invitation token for the email link
         if (!tenantUser.invitationToken) {
           tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
-          tenantUser.invitationTokenExpiresAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)); // 7 days
+          tenantUser.invitationTokenExpiresAt = invitationTokenExpiry();
           await TenantUserRepository.saveTenantUser(tenantUser, req);
           console.debug('[securityGuardInvite.create] generated invitationToken', { tenantUserId: tenantUser.id, invitationToken: tenantUser.invitationToken });
         }

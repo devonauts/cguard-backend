@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
+import { invitationTokenExpiry } from '../../services/auth/invitationToken';
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import { tenantSubdomain } from '../../services/tenantSubdomain';
 import EmailSender from '../../services/emailSender';
@@ -70,7 +71,7 @@ export default async (req: any, res: any) => {
 
       // Always generate a fresh invitation token
       (tenantUser as any).invitationToken = crypto.randomBytes(20).toString('hex');
-      (tenantUser as any).invitationTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+      (tenantUser as any).invitationTokenExpiresAt = invitationTokenExpiry();
       (tenantUser as any).status = 'invited';
       await (tenantUser as any).save({ transaction });
 
