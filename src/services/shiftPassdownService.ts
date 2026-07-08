@@ -35,7 +35,8 @@ export async function createPassdown(
   db: any,
   tenantId: string,
   opts: {
-    station: { id: string; stationName?: string | null; postSiteId?: string | null };
+    station?: { id?: string | null; stationName?: string | null; postSiteId?: string | null } | null;
+    channel?: 'guard' | 'supervisor';
     guardShift?: any;
     outgoingUserId?: string | null;
     outgoingSecurityGuardId?: string | null;
@@ -47,6 +48,9 @@ export async function createPassdown(
     currentUser?: any;
   },
 ): Promise<any> {
+  const channel = opts.channel === 'supervisor' ? 'supervisor' : 'guard';
+  const isSupervisor = channel === 'supervisor';
+  const stationId = opts.station?.id || null;
   const instructions = (opts.instructions || []).filter(
     (i) => i && typeof i.text === 'string' && i.text.trim(),
   );
@@ -56,9 +60,10 @@ export async function createPassdown(
 
   const passdown = await db.shiftPassdown.create({
     tenantId,
-    stationId: opts.station.id,
-    stationName: opts.station.stationName || null,
-    postSiteId: opts.station.postSiteId || null,
+    channel,
+    stationId,
+    stationName: opts.station?.stationName || null,
+    postSiteId: opts.station?.postSiteId || null,
     outgoingGuardUserId: opts.outgoingUserId || null,
     outgoingSecurityGuardId: opts.outgoingSecurityGuardId || null,
     outgoingGuardName: opts.outgoingGuardName || null,
@@ -67,6 +72,15 @@ export async function createPassdown(
     shiftKind,
     notes,
     instructionCount: instructions.length,
+    // Supervisors aren't station-bound, so their instructions can't become
+    // post-tasks — persist them inline instead (hydrated back the same shape).
+    instructionsJson: isSupervisor && instructions.length
+      ? JSON.stringify(instructions.map((i) => ({
+          taskToDo: i.text.trim().slice(0, 300),
+          priority: ['alta', 'media', 'baja'].includes(String(i.priority)) ? i.priority : 'media',
+          wasItDone: false,
+        })))
+      : null,
     status: 'open',
   });
 
@@ -84,25 +98,29 @@ export async function createPassdown(
   }
 
   // Each instruction → an approved task for the post → appears for the incoming guard
-  // (GET /guard/me/tasks) and in the CRM task tracking (source='passdown').
+  // (GET /guard/me/tasks) and in the CRM task tracking (source='passdown'). Only
+  // for station-bound (guard) passdowns; supervisor instructions live in
+  // instructionsJson (above) since they have no post.
   const dueDate = new Date();
-  for (const ins of instructions) {
-    try {
-      await db.task.create({
-        tenantId,
-        taskToDo: ins.text.trim().slice(0, 300),
-        taskBelongsToStationId: opts.station.id,
-        dateToDoTheTask: dueDate,
-        status: 'approved',
-        source: 'passdown',
-        priority: ['alta', 'media', 'baja'].includes(String(ins.priority)) ? ins.priority : 'media',
-        wasItDone: false,
-        passdownId: passdown.id,
-        createdById: opts.outgoingUserId || null,
-        approvedAt: dueDate,
-      });
-    } catch (e: any) {
-      console.warn('[passdown] instruction task failed:', e?.message || e);
+  if (!isSupervisor && stationId) {
+    for (const ins of instructions) {
+      try {
+        await db.task.create({
+          tenantId,
+          taskToDo: ins.text.trim().slice(0, 300),
+          taskBelongsToStationId: stationId,
+          dateToDoTheTask: dueDate,
+          status: 'approved',
+          source: 'passdown',
+          priority: ['alta', 'media', 'baja'].includes(String(ins.priority)) ? ins.priority : 'media',
+          wasItDone: false,
+          passdownId: passdown.id,
+          createdById: opts.outgoingUserId || null,
+          approvedAt: dueDate,
+        });
+      } catch (e: any) {
+        console.warn('[passdown] instruction task failed:', e?.message || e);
+      }
     }
   }
 
@@ -111,12 +129,14 @@ export async function createPassdown(
     await storePlatformEvent(db, {
       tenantId,
       eventType: 'passdown.created',
-      title: `Pase de turno — ${opts.station.stationName || 'Puesto'}`,
+      title: isSupervisor
+        ? `Pase de turno — Supervisión${opts.outgoingGuardName ? ` (${opts.outgoingGuardName})` : ''}`
+        : `Pase de turno — ${opts.station?.stationName || 'Puesto'}`,
       body: notes ? notes.slice(0, 140) : instructions.length ? `${instructions.length} instrucción(es)` : 'Sin novedad',
       targetRoles: DISPATCHER_TARGET_ROLES,
       sourceEntityType: 'shiftPassdown',
       sourceEntityId: passdown.id,
-      payload: { passdownId: passdown.id, stationId: opts.station.id, stationName: opts.station.stationName, instructionCount: instructions.length },
+      payload: { passdownId: passdown.id, channel, stationId, stationName: opts.station?.stationName || null, instructionCount: instructions.length },
     } as any);
   } catch (e) { /* best-effort */ }
 
@@ -131,21 +151,30 @@ export async function getIncomingForGuard(
   db: any,
   tenantId: string,
   userId: string,
-  opts: { stationIds: string[]; markReceived?: boolean; receivedByName?: string | null; receivedByShiftId?: string | null },
+  opts: { stationIds?: string[]; channel?: 'guard' | 'supervisor'; markReceived?: boolean; receivedByName?: string | null; receivedByShiftId?: string | null },
 ): Promise<any | null> {
   const { Op } = db.Sequelize;
-  const stationIds = (opts.stationIds || []).filter(Boolean);
-  if (!stationIds.length) return null;
+  const channel = opts.channel === 'supervisor' ? 'supervisor' : 'guard';
   const since = new Date(Date.now() - RELIEF_WINDOW_HOURS * 3.6e6);
+  const where: any = {
+    tenantId,
+    deletedAt: null,
+    status: 'open',
+    channel,
+    outgoingGuardUserId: { [Op.ne]: userId },
+    createdAt: { [Op.gte]: since },
+  };
+  if (channel === 'supervisor') {
+    // Supervisors hand over tenant-wide (roaming, no fixed post): the next
+    // supervisor to clock in receives the most recent open supervisor handover.
+  } else {
+    // Guards are matched to the post they clocked into.
+    const stationIds = (opts.stationIds || []).filter(Boolean);
+    if (!stationIds.length) return null;
+    where.stationId = { [Op.in]: stationIds };
+  }
   const passdown = await db.shiftPassdown.findOne({
-    where: {
-      tenantId,
-      deletedAt: null,
-      status: 'open',
-      stationId: { [Op.in]: stationIds },
-      outgoingGuardUserId: { [Op.ne]: userId },
-      createdAt: { [Op.gte]: since },
-    },
+    where,
     order: [['createdAt', 'DESC']],
   });
   if (!passdown) return null;
@@ -202,16 +231,26 @@ async function hydratePassdown(db: any, passdown: any, withInstructions = true):
     plain.passdownImages = [];
   }
   if (withInstructions) {
-    try {
-      const tasks = await db.task.findAll({
-        where: { tenantId: plain.tenantId, passdownId: plain.id, deletedAt: null },
-        attributes: ['id', 'taskToDo', 'priority', 'status', 'wasItDone', 'dateCompletedTask', 'completionNotes'],
-        order: [['createdAt', 'ASC']],
-      });
-      plain.instructions = tasks.map((t: any) => t.get({ plain: true }));
-    } catch (e) {
-      plain.instructions = [];
+    if (plain.channel === 'supervisor') {
+      // Supervisor instructions live inline (no post-tasks).
+      try {
+        plain.instructions = plain.instructionsJson ? JSON.parse(plain.instructionsJson) : [];
+      } catch (e) {
+        plain.instructions = [];
+      }
+    } else {
+      try {
+        const tasks = await db.task.findAll({
+          where: { tenantId: plain.tenantId, passdownId: plain.id, deletedAt: null },
+          attributes: ['id', 'taskToDo', 'priority', 'status', 'wasItDone', 'dateCompletedTask', 'completionNotes'],
+          order: [['createdAt', 'ASC']],
+        });
+        plain.instructions = tasks.map((t: any) => t.get({ plain: true }));
+      } catch (e) {
+        plain.instructions = [];
+      }
     }
+    delete plain.instructionsJson;
   }
   plain.shiftLabel = passdownShiftLabel(plain.shiftSchedule, plain.shiftKind);
   return plain;

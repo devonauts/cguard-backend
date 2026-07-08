@@ -114,6 +114,29 @@ export const getClock = async (req: any, res: any) => {
   }
 };
 
+/**
+ * GET /supervisor/me/passdown/incoming — the latest open supervisor handover left
+ * by ANOTHER supervisor within the relief window (tenant-wide; supervisors roam).
+ * Marks it received so it surfaces once. Mirrors the guard's incoming passdown.
+ */
+export const getIncomingPassdown = async (req: any, res: any) => {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.supervisorMe);
+    const db = req.database;
+    const tenantId = req.currentTenant.id;
+    const userId = req.currentUser.id;
+    const { getIncomingForGuard } = require('../../services/shiftPassdownService');
+    const passdown = await getIncomingForGuard(db, tenantId, userId, {
+      channel: 'supervisor',
+      markReceived: true,
+      receivedByName: req.currentUser?.fullName || req.currentUser?.email || null,
+    });
+    await ApiResponseHandler.success(req, res, { passdown: passdown || null });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+};
+
 /** POST /supervisor/me/clock-in { latitude, longitude, selfiePhoto? } */
 export const clockIn = async (req: any, res: any) => {
   try {
@@ -241,6 +264,39 @@ export const clockOut = async (req: any, res: any) => {
       breaks,
       hoursWorked,
     });
+
+    // Pase de turno (relevo) — the supervisor's handover, received by the next
+    // supervisor to clock in. Best-effort; never blocks clock-out.
+    try {
+      const pd = data.passdown || {};
+      const instructions = Array.isArray(pd.instructions) ? pd.instructions : [];
+      const prof = await db.supervisorProfile.findOne({
+        where: { tenantId, supervisorUserId: userId },
+        attributes: ['mobileStationId', 'fullName'],
+      });
+      let station: any = null;
+      if (prof?.mobileStationId) {
+        const st = await db.station.findOne({
+          where: { id: prof.mobileStationId, tenantId, deletedAt: null },
+          attributes: ['id', 'stationName', 'postSiteId'],
+        });
+        if (st) station = { id: st.id, stationName: st.stationName, postSiteId: st.postSiteId };
+      }
+      const { createPassdown } = require('../../services/shiftPassdownService');
+      await createPassdown(db, tenantId, {
+        channel: 'supervisor',
+        station,
+        guardShift: shift,
+        outgoingUserId: userId,
+        outgoingGuardName: req.currentUser?.fullName || prof?.fullName || req.currentUser?.email || 'Supervisor',
+        shiftSchedule: shift.shiftKind,
+        notes: data.observations || null,
+        instructions,
+        currentUser: req.currentUser,
+      });
+    } catch (e: any) {
+      console.warn('[supervisor.clockOut] passdown failed:', e?.message || e);
+    }
 
     await propagateSupervisorClock(db, tenantId, userId, 'out', shift.id, req.currentUser?.fullName || req.currentUser?.email, {
       coords: { lat: data.latitude, lng: data.longitude },

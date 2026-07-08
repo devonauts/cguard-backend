@@ -12,8 +12,15 @@ export default function (sequelize) {
     'shiftPassdown',
     {
       id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-      stationId: { type: DataTypes.UUID, allowNull: false },
+      // 'guard' (station-bound, instructions → post-tasks) | 'supervisor'
+      // (roaming/tenant-wide handover, instructions stored inline).
+      channel: { type: DataTypes.STRING(12), allowNull: false, defaultValue: 'guard' },
+      // Nullable: a supervisor handover isn't bound to a post.
+      stationId: { type: DataTypes.UUID, allowNull: true },
       stationName: { type: DataTypes.STRING(250), allowNull: true },
+      // Supervisor instructions (JSON [{taskToDo,priority,wasItDone}]) — supervisors
+      // have no post so instructions can't become post-tasks.
+      instructionsJson: { type: DataTypes.TEXT, allowNull: true },
       postSiteId: { type: DataTypes.UUID, allowNull: true },
       // Outgoing (saliente) guard who left the handover.
       outgoingGuardUserId: { type: DataTypes.UUID, allowNull: true },

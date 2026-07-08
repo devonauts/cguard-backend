@@ -47,7 +47,7 @@ export default class AttendanceAdminService {
   // ── Records ────────────────────────────────────────────────────────────────
   /** List attendance records (guardShifts) with ACL + attendance filters. */
   async list(query: any) {
-    return GuardShiftRepository.findAndCountAll(
+    const guardResult = await GuardShiftRepository.findAndCountAll(
       {
         filter: query.filter || query,
         limit: query.limit,
@@ -56,10 +56,109 @@ export default class AttendanceAdminService {
       },
       this.options,
     );
+    // Fold supervisor shifts (which live in supervisorShift, never guardShift)
+    // into the SAME list, tagged role='supervisor'. Only for broad-access
+    // (admin/unrestricted) viewers — supervisors have no post-site, so a
+    // post-scoped viewer must not see them. Best-effort; never breaks the list.
+    try {
+      const acl = await this.payrollAclWhere();
+      const isBroad = acl != null && Object.keys(acl).length === 0;
+      if (!isBroad) return guardResult;
+      const supRows = await this.listSupervisorShiftsForNomina(query.filter || query || {});
+      if (!supRows.length) return guardResult;
+      const merged = [...((guardResult as any).rows || []), ...supRows].sort(
+        (a: any, b: any) => new Date(b.punchInTime || 0).getTime() - new Date(a.punchInTime || 0).getTime(),
+      );
+      const limit = Number(query.limit) || merged.length;
+      return { rows: merged.slice(0, limit), count: ((guardResult as any).count || 0) + supRows.length };
+    } catch {
+      return guardResult;
+    }
+  }
+
+  /** Supervisor shifts normalized to the attendance-record shape (role='supervisor'). */
+  private async listSupervisorShiftsForNomina(filter: any): Promise<any[]> {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const { Op } = db.Sequelize;
+    const where: any = { tenantId };
+    const range = filter?.punchInTimeRange;
+    if (Array.isArray(range)) {
+      const [start, end] = range;
+      if (start) where.punchInTime = { ...(where.punchInTime || {}), [Op.gte]: new Date(start) };
+      if (end) where.punchInTime = { ...(where.punchInTime || {}), [Op.lte]: new Date(end) };
+    }
+    if (filter?.status && filter.status !== 'all') where.status = filter.status;
+    const rows = await db.supervisorShift.findAll({ where, order: [['punchInTime', 'DESC']], limit: 1000 });
+    if (!rows.length) return [];
+    const uids = [...new Set(rows.map((r: any) => String(r.supervisorUserId)).filter(Boolean))];
+    const users = await db.user.findAll({
+      where: { id: { [Op.in]: uids } },
+      attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
+    });
+    const nameById = new Map<string, string>(
+      users.map((u: any): [string, string] => [
+        String(u.id),
+        String(u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || 'Supervisor'),
+      ]),
+    );
+    return rows.map((r: any) => this.normalizeSupervisorShift(r.get ? r.get({ plain: true }) : r, nameById));
+  }
+
+  /** Map a supervisorShift row → the guard attendance-record shape the CRM renders. */
+  private normalizeSupervisorShift(s: any, nameById: Map<string, string>): any {
+    return {
+      id: s.id,
+      role: 'supervisor',
+      guardName: { id: s.supervisorUserId, fullName: nameById.get(String(s.supervisorUserId)) || 'Supervisor' },
+      guardNameId: s.supervisorUserId,
+      stationName: null,
+      stationNameId: null,
+      punchInTime: s.punchInTime,
+      punchOutTime: s.punchOutTime,
+      hoursWorked: s.hoursWorked != null ? Number(s.hoursWorked) : null,
+      status: s.status,
+      lateMinutes: s.lateMinutes,
+      scheduledStart: s.scheduledStart,
+      scheduledEnd: s.scheduledEnd,
+      shiftSchedule: s.shiftKind,
+      punchInLatitude: s.punchInLat != null ? Number(s.punchInLat) : null,
+      punchInLongitude: s.punchInLng != null ? Number(s.punchInLng) : null,
+      punchOutLatitude: s.punchOutLat != null ? Number(s.punchOutLat) : null,
+      punchOutLongitude: s.punchOutLng != null ? Number(s.punchOutLng) : null,
+      punchInPhoto: s.punchInPhoto,
+      punchInAddress: s.punchInAddress,
+      punchOutPhoto: s.punchOutPhoto,
+      observations: s.observations,
+      approvalStatus: null,
+      numberOfPatrolsDuringShift: 0,
+      numberOfIncidentsDurindShift: 0,
+      patrolsDone: 0,
+      dailyIncidents: 0,
+    };
   }
 
   async findById(id: string) {
-    return GuardShiftRepository.findById(id, this.options);
+    try {
+      return await GuardShiftRepository.findById(id, this.options);
+    } catch (e) {
+      // Might be a supervisor shift (different table) — resolve + normalize.
+      const db = this.db;
+      const row = await db.supervisorShift.findOne({ where: { id, tenantId: this.tenantId } });
+      if (!row) throw e;
+      const s = row.get ? row.get({ plain: true }) : row;
+      const user = await db.user.findOne({
+        where: { id: s.supervisorUserId },
+        attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
+      });
+      const nameById = new Map<string, string>([
+        [
+          String(s.supervisorUserId),
+          String((user && (user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email)) || 'Supervisor'),
+        ],
+      ]);
+      return this.normalizeSupervisorShift(s, nameById);
+    }
   }
 
   // ── Dashboard ────────────────────────────────────────────────────────────────
