@@ -48,6 +48,22 @@ export async function captureSnapshot(): Promise<any> {
     }
   } catch { /* ignore */ }
 
+  // MySQL SERVER-GLOBAL connection saturation — the EARLY warning for the whole
+  // box. max_connections is shared by every process (both API instances, the
+  // alarm-receiver, the SIP bridge, schedulers), so the per-process pool metric
+  // above can look healthy while MySQL is about to reject with "Too many
+  // connections" — which is exactly what caused the mass-logout incident.
+  let dbConnPct: number | null = null, dbThreadsConnected: number | null = null, dbMaxConnections: number | null = null;
+  try {
+    const [tcRows]: any = await db.sequelize.query("SHOW GLOBAL STATUS LIKE 'Threads_connected'");
+    const [mcRows]: any = await db.sequelize.query("SHOW VARIABLES LIKE 'max_connections'");
+    dbThreadsConnected = tcRows?.[0]?.Value != null ? Number(tcRows[0].Value) : null;
+    dbMaxConnections = mcRows?.[0]?.Value != null ? Number(mcRows[0].Value) : null;
+    if (dbThreadsConnected != null && dbMaxConnections) {
+      dbConnPct = Math.round((dbThreadsConnected / dbMaxConnections) * 1000) / 10;
+    }
+  } catch { /* non-MySQL dialect or insufficient privilege — skip */ }
+
   // Recent error count (last 60s) for the error-rate trend + spike alert.
   let errorCount = 0;
   try {
@@ -70,6 +86,7 @@ export async function captureSnapshot(): Promise<any> {
     loadPct: Math.round((load1 / cores) * 1000) / 10,
     diskPct: diskPct(),
     dbPoolUsing, dbPoolWaiting, dbPoolMax,
+    dbConnPct, dbThreadsConnected, dbMaxConnections,
     dbSizeBytes: null as number | null,
     slowTotal: slow.totalSlow ?? 0,
     slowMax: slow.maxMs ?? 0,

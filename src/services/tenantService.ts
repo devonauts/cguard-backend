@@ -522,6 +522,7 @@ export default class TenantService {
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
     );
+    let committed = false;
 
     try {
       // First, check standalone tenant invitations table
@@ -618,6 +619,7 @@ export default class TenantService {
         await TenantInvitationRepository.consume(token, { ...this.options, transaction });
 
         await SequelizeRepository.commitTransaction(transaction);
+        committed = true;
 
         // Sync linked clientAccount to 'active' (fire-and-forget, non-blocking)
         CustomerIdentityService.markActive(this.options.currentUser.id, tenantId, this.options.database)
@@ -679,6 +681,7 @@ export default class TenantService {
       await SequelizeRepository.commitTransaction(
         transaction,
       );
+      committed = true;
 
       // Sync linked clientAccount to 'active' (fire-and-forget, non-blocking)
       CustomerIdentityService.markActive(this.options.currentUser.id, tenantUser.tenant.id, this.options.database)
@@ -703,9 +706,13 @@ export default class TenantService {
         user: updatedUser,
       };
     } catch (error) {
-      await SequelizeRepository.rollbackTransaction(
-        transaction,
-      );
+      // Only roll back if we never committed — post-commit work (markActive reload,
+      // JWT) must not attempt to roll back an already-durable transaction.
+      if (!committed) {
+        await SequelizeRepository.rollbackTransaction(
+          transaction,
+        );
+      }
 
       throw error;
     }

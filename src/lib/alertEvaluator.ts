@@ -19,6 +19,7 @@ export const THRESHOLDS = {
   loadPct: num(process.env.ALERT_LOAD_PCT, 400),
   errorSpike: num(process.env.ALERT_ERROR_SPIKE, 20), // errors/minute
   poolWaiting: 0, // any waiting connection = saturation
+  dbConnPct: num(process.env.ALERT_DB_CONN_PCT, 80), // MySQL-global Threads_connected / max_connections
 };
 
 const COOLDOWN_MS = num(process.env.ALERT_COOLDOWN_MIN, 15) * 60_000;
@@ -47,6 +48,11 @@ export async function evaluate(metrics: any): Promise<string[]> {
     breaches.push({ key: 'load', title: 'Carga de CPU alta', body: `Carga ${metrics.loadPct}% de los núcleos (umbral ${THRESHOLDS.loadPct}%).` });
   if (metrics.dbPoolWaiting != null && metrics.dbPoolWaiting > THRESHOLDS.poolWaiting)
     breaches.push({ key: 'pool', title: 'Pool de BD saturado', body: `${metrics.dbPoolWaiting} conexiones en espera — el pool está saturado.` });
+  // Server-global connection saturation: the EARLY warning before MySQL rejects
+  // with "Too many connections" (the mass-logout root cause). Fires before the
+  // per-process pool even starts queuing.
+  if (metrics.dbConnPct != null && metrics.dbConnPct >= THRESHOLDS.dbConnPct)
+    breaches.push({ key: 'dbconn', title: 'Conexiones de BD altas', body: `MySQL usando ${metrics.dbConnPct}% de las conexiones (${metrics.dbThreadsConnected}/${metrics.dbMaxConnections}, umbral ${THRESHOLDS.dbConnPct}%). Riesgo de "Too many connections".` });
   if (metrics.errorCount != null && metrics.errorCount >= THRESHOLDS.errorSpike)
     breaches.push({ key: 'errors', title: 'Pico de errores', body: `${metrics.errorCount} errores en el último minuto (umbral ${THRESHOLDS.errorSpike}).` });
   if (metrics.jobErrors != null && metrics.jobErrors > 0)
@@ -65,7 +71,7 @@ export async function evaluate(metrics: any): Promise<string[]> {
         body: b.body,
         link: '/observability',
         icon: 'AlertTriangle',
-        metadata: { metrics, threshold: (THRESHOLDS as any)[b.key === 'errors' ? 'errorSpike' : b.key === 'pool' ? 'poolWaiting' : b.key] },
+        metadata: { metrics, threshold: (THRESHOLDS as any)[b.key === 'errors' ? 'errorSpike' : b.key === 'pool' ? 'poolWaiting' : b.key === 'dbconn' ? 'dbConnPct' : b.key] },
       });
       // Also deliver OFF-PANEL (email / Slack / SMS) so it reaches an on-call human.
       try {

@@ -103,7 +103,25 @@ router.get('/health/ready', async (req: Request, res: Response) => {
     const database = (req as any).database;
     if (database && database.sequelize) {
       await database.sequelize.authenticate();
-      res.status(200).json({ ready: true });
+      // Surface pool saturation — a full pool still authenticates(), so connectivity
+      // alone hid the exhaustion that caused the mass-logout incident. Reported for
+      // monitoring; readiness stays 200 unless the DB is actually unreachable (shedding
+      // this instance while every instance is saturated would only make it worse).
+      let pool: any = null;
+      try {
+        const p: any = database.sequelize.connectionManager?.pool;
+        if (p) {
+          const using = Number(p.using ?? p.size ?? 0);
+          const max = Number(p.max ?? 0);
+          pool = {
+            using,
+            waiting: Number(p.pending ?? 0),
+            max,
+            saturationPct: max ? Math.round((using / max) * 100) : null,
+          };
+        }
+      } catch { /* pool introspection optional */ }
+      res.status(200).json({ ready: true, pool });
     } else {
       res.status(503).json({ ready: false, reason: 'database_not_initialized' });
     }

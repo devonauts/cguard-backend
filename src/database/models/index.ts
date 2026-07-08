@@ -50,6 +50,31 @@ function models() {
         idle: Number(getConfig().DATABASE_POOL_IDLE) || Number(process.env.DATABASE_POOL_IDLE) || 10000,
         evict: Number(getConfig().DATABASE_POOL_EVICT) || Number(process.env.DATABASE_POOL_EVICT) || 1000,
       },
+      // Self-heal transient DB failures at the driver layer: retry a query that hits
+      // a connection error (pool blip / "Too many connections" / dropped socket — the
+      // query never reached the DB) or a deadlock/lock-wait-timeout (MySQL rolled it
+      // back). Connection retries can't double-apply a write; this keeps a brief blip
+      // from ever surfacing to the request handler.
+      retry: {
+        max: 3,
+        match: [
+          /SequelizeConnectionError/,
+          /SequelizeConnectionRefusedError/,
+          /SequelizeHostNotReachableError/,
+          /SequelizeConnectionTimedOutError/,
+          /SequelizeConnectionAcquireTimeoutError/,
+          /ER_CON_COUNT_ERROR/,
+          /Too many connections/,
+          /ETIMEDOUT/,
+          /ECONNRESET/,
+          /ECONNREFUSED/,
+          /EPIPE/,
+          /PROTOCOL_CONNECTION_LOST/,
+          /SequelizeDeadlockError/,
+          /ER_LOCK_DEADLOCK/,
+          /ER_LOCK_WAIT_TIMEOUT/,
+        ],
+      },
       // benchmark: true → the logging fn receives the query's exec time (ms), which
       // we feed to the slow-query monitor (>=0.1s) for the observability page,
       // regardless of DATABASE_LOGGING.

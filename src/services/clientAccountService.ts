@@ -47,6 +47,7 @@ export default class ClientAccountService {
     const transaction = await SequelizeRepository.createTransaction(
       this.options.database,
     );
+    let committed = false;
 
     try {
       // No relationship filtering needed for simplified model
@@ -168,6 +169,7 @@ export default class ClientAccountService {
       }
 
       await SequelizeRepository.commitTransaction(transaction);
+      committed = true;
 
       // ── Post-commit: async media enrichment (FALLBACK) ────────────────────────
       // The form already asks for the logo + header image; only when the admin
@@ -247,9 +249,13 @@ export default class ClientAccountService {
 
       return record;
     } catch (error) {
-      await SequelizeRepository.rollbackTransaction(
-        transaction,
-      );
+      // Only roll back if we never committed — a post-commit enrichment failure
+      // must not attempt to roll back an already-durable transaction.
+      if (!committed) {
+        await SequelizeRepository.rollbackTransaction(
+          transaction,
+        );
+      }
 
       SequelizeRepository.handleUniqueFieldError(
         error,

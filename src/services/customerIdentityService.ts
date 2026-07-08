@@ -128,6 +128,7 @@ export default class CustomerIdentityService {
     }
 
     const transaction = await SequelizeRepository.createTransaction(database);
+    let committed = false;
     try {
       const { userId, invitationToken } = await this._provisionCustomerUser(transaction, {
         email: recipientEmail,
@@ -149,11 +150,16 @@ export default class CustomerIdentityService {
       }
 
       await SequelizeRepository.commitTransaction(transaction);
+      committed = true;
       await this._sendClientInvite(recipientEmail, (clientAccount as any).name || '', invitationToken, variant);
       return { sent: true, recipient: recipientEmail };
     } catch (err) {
-      try { await SequelizeRepository.rollbackTransaction(transaction); } catch (rbErr) {
-        console.error('CustomerIdentityService.provisionAndInvite: rollback failed', rbErr);
+      // Only roll back if we never committed — a post-commit send failure must not
+      // trigger a (spurious) rollback of an already-durable transaction.
+      if (!committed) {
+        try { await SequelizeRepository.rollbackTransaction(transaction); } catch (rbErr) {
+          console.error('CustomerIdentityService.provisionAndInvite: rollback failed', rbErr);
+        }
       }
       throw err;
     }
@@ -178,6 +184,7 @@ export default class CustomerIdentityService {
     const lastName = parts.slice(1).join(' ');
 
     const transaction = await SequelizeRepository.createTransaction(database);
+    let committed = false;
     try {
       const { tenantUser, invitationToken } = await this._provisionCustomerUser(transaction, {
         email: recipientEmail, firstName, lastName, phone: contact.phone || null,
@@ -198,11 +205,15 @@ export default class CustomerIdentityService {
       }
 
       await SequelizeRepository.commitTransaction(transaction);
+      committed = true;
       await this._sendClientInvite(recipientEmail, firstName, invitationToken, 'welcome');
       return { sent: true, recipient: recipientEmail };
     } catch (err) {
-      try { await SequelizeRepository.rollbackTransaction(transaction); } catch (rbErr) {
-        console.error('CustomerIdentityService.provisionAdditionalAccess: rollback failed', rbErr);
+      // Only roll back if we never committed (post-commit send failure must not).
+      if (!committed) {
+        try { await SequelizeRepository.rollbackTransaction(transaction); } catch (rbErr) {
+          console.error('CustomerIdentityService.provisionAdditionalAccess: rollback failed', rbErr);
+        }
       }
       throw err;
     }
