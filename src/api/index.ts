@@ -333,6 +333,7 @@ require('./timeOffRequest').default(routes);
 require('./shiftExchangeRequest').default(routes);
 require('./shiftTemplate').default(routes);
 require('./radioDevice').default(routes);
+  require('./radio').default(routes);
 require('./clientLog').default(app);
 require('./debug').default(routes);
 require('./videoTutorialCategory').default(routes);
