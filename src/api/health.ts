@@ -111,11 +111,12 @@ router.get('/health/ready', async (req: Request, res: Response) => {
       try {
         const p: any = database.sequelize.connectionManager?.pool;
         if (p) {
+          // sequelize-pool 7.x getters: using / waiting / maxSize.
           const using = Number(p.using ?? p.size ?? 0);
-          const max = Number(p.max ?? 0);
+          const max = Number(p.maxSize ?? 0);
           pool = {
             using,
-            waiting: Number(p.pending ?? 0),
+            waiting: Number(p.waiting ?? 0),
             max,
             saturationPct: max ? Math.round((using / max) * 100) : null,
           };
@@ -170,8 +171,8 @@ router.get('/metrics', async (req: Request, res: Response) => {
     const p: any = (req as any).database?.sequelize?.connectionManager?.pool;
     if (p) {
       gauge('cguard_db_pool_using', 'DB connections in use', p.using ?? p.size ?? 0);
-      gauge('cguard_db_pool_waiting', 'DB connection requests waiting', p.pending ?? 0);
-      gauge('cguard_db_pool_max', 'DB pool max size', p.max ?? 0);
+      gauge('cguard_db_pool_waiting', 'DB connection requests waiting', p.waiting ?? 0);
+      gauge('cguard_db_pool_max', 'DB pool max size', p.maxSize ?? 0);
     }
   } catch { /* ignore */ }
   try {

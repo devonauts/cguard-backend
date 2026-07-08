@@ -42,9 +42,10 @@ export async function captureSnapshot(): Promise<any> {
   try {
     const pool: any = (db.sequelize as any).connectionManager?.pool;
     if (pool) {
+      // sequelize-pool 7.x getters: using / waiting / maxSize (NOT pending / max).
       dbPoolUsing = pool.using ?? pool.size ?? null;
-      dbPoolWaiting = pool.pending ?? 0;
-      dbPoolMax = pool.max ?? null;
+      dbPoolWaiting = pool.waiting ?? 0;
+      dbPoolMax = pool.maxSize ?? null;
     }
   } catch { /* ignore */ }
 
