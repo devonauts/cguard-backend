@@ -14,7 +14,10 @@ export default function (sequelize) {
     {
       id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
       sessionId: { type: DataTypes.UUID, allowNull: false },
-      stationId: { type: DataTypes.UUID, allowNull: false },
+      // Nullable: an on-duty supervisor answers the roll call too but isn't
+      // station-bound (a roaming/mobile responder). Their entry targets by
+      // guardUserId; stationId is null (or their mobile station, as a label).
+      stationId: { type: DataTypes.UUID, allowNull: true },
       guardUserId: { type: DataTypes.UUID, allowNull: true },
       guardSecurityGuardId: { type: DataTypes.UUID, allowNull: true },
       guardName: { type: DataTypes.STRING(200), allowNull: true },

@@ -122,13 +122,24 @@ export async function startSession(db: any, tenantId: string, opts: { mode: 'man
   const settings = await getSettings(db, tenantId);
   const prompt = settings.promptText || DEFAULT_PROMPT;
   const stations = await resolveStationsForCheck(db, tenantId, opts.scope, opts.stationId);
-  if (!stations.length) { const e: any = new Error('No hay puestos para el pase de novedades'); e.code = 400; throw e; }
+
+  // On-duty supervisors answer the roll call too. They aren't station-bound, so
+  // each gets a per-user entry (targeting by guardUserId); their mobile station,
+  // if any, rides along only as a label. Only for a tenant-wide ('all') check —
+  // a single-station roll call stays station-scoped.
+  const supervisors = opts.scope === 'all'
+    ? await db.supervisorProfile.findAll({ where: { tenantId, isOnDuty: true } })
+    : [];
+
+  if (!stations.length && !supervisors.length) {
+    const e: any = new Error('No hay puestos ni supervisores en turno para el pase de novedades'); e.code = 400; throw e;
+  }
 
   const now = new Date();
   const session = await db.radioCheckSession.create({
     tenantId, mode: opts.mode, initiatedByUserId: opts.initiatedByUserId || null,
     scope: opts.scope, status: 'running', startedAt: now,
-    summaryStatus: 'pending', totalStations: stations.length,
+    summaryStatus: 'pending', totalStations: stations.length + supervisors.length,
     createdById: opts.initiatedByUserId || null,
   });
 
@@ -144,6 +155,33 @@ export async function startSession(db: any, tenantId: string, opts: { mode: 'man
       guardName: primary?.name || null,
       seq: seq++,
       status: noGuard ? 'skipped' : 'pending',
+      promptText: prompt,
+      transcriptStatus: 'skipped',
+      classification: 'unknown',
+      notifiedAt: null,
+      timeoutAt: null,
+    });
+  }
+
+  // On-duty supervisors — one per-user entry each. stationId is their mobile
+  // station (label only) or null; targeting downstream is by guardUserId.
+  for (const sup of supervisors) {
+    const supUserId = sup.supervisorUserId;
+    if (!supUserId) continue;
+    let stationId: string | null = sup.mobileStationId || null;
+    let stationName = 'Supervisión móvil';
+    if (stationId) {
+      const st = await db.station.findOne({ where: { id: stationId, tenantId, deletedAt: null }, attributes: ['id', 'stationName'] });
+      if (st) stationName = st.stationName || stationName; else stationId = null;
+    }
+    await db.radioCheckEntry.create({
+      tenantId, sessionId: session.id, stationId,
+      stationName,
+      guardUserId: supUserId,
+      guardSecurityGuardId: null,
+      guardName: sup.fullName || 'Supervisor',
+      seq: seq++,
+      status: 'pending',
       promptText: prompt,
       transcriptStatus: 'skipped',
       classification: 'unknown',
@@ -199,9 +237,15 @@ async function notifyAllEntries(db: any, tenantId: string, sessionId: string, wi
     );
     if (!claimed) continue;
 
-    const stations = await resolveStationsForCheck(db, tenantId, 'station', entry.stationId);
-    const guards = stations[0]?.guards || [];
-    const userIds = guards.map((g: any) => g.userId).filter(Boolean);
+    let userIds: string[] = [];
+    if (entry.stationId) {
+      const stations = await resolveStationsForCheck(db, tenantId, 'station', entry.stationId);
+      userIds = (stations[0]?.guards || []).map((g: any) => g.userId).filter(Boolean);
+    }
+    // Always include the entry's own targeted user — this is what reaches a
+    // supervisor (roaming, null station) and a station's primary guard if the
+    // station re-resolution missed them.
+    if (entry.guardUserId && !userIds.includes(entry.guardUserId)) userIds.push(entry.guardUserId);
     await adapter.notifyGuards({ db, tenantId }, userIds, {
       sessionId, entryId: entry.id, stationId: entry.stationId,
       stationName: entry.stationName || '', promptText: entry.promptText || DEFAULT_PROMPT,
