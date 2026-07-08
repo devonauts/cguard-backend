@@ -18,6 +18,16 @@ export default function (sequelize) {
       punchOutLat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       punchOutLng: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       observations: { type: DataTypes.TEXT, allowNull: true },
+      // ── Clock-in parity with guardShift: stamped selfie URL, reverse-geocoded
+      //    address, device battery %, and the pre-shift checklist (JSON blob).
+      //    These make a supervisor punch carry the same evidence a guard punch
+      //    does (CRM live map + Actividades show the selfie).
+      punchInPhoto: { type: DataTypes.TEXT, allowNull: true },
+      punchInAddress: { type: DataTypes.STRING(255), allowNull: true },
+      punchInBattery: { type: DataTypes.INTEGER, allowNull: true },
+      punchInChecklist: { type: DataTypes.TEXT, allowNull: true },
+      punchOutPhoto: { type: DataTypes.TEXT, allowNull: true },
+      punchOutAddress: { type: DataTypes.STRING(255), allowNull: true },
       // Break periods taken during the shift: [{ start: ISO, end: ISO|null }].
       // The last entry with a null `end` means the supervisor is currently on break.
       breaks: { type: DataTypes.JSON, allowNull: true },

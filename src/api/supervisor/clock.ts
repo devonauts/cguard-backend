@@ -3,17 +3,21 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import Error400 from '../../errors/Error400';
 import { fileOptionsFor } from './helpers';
-import { storePlatformEvent } from '../../lib/platformEventStore';
+import { dispatch } from '../../lib/notificationDispatcher';
 
 /**
  * De-island the supervisor clock: mirror on-duty onto the supervisorProfile and
- * notify the CRM (bell + activity feed) so a supervisor punch propagates the
- * same way a guard punch does. Best-effort — never breaks the clock action.
+ * notify the CRM the SAME rich way a guard punch does — via the notification
+ * dispatcher (Actividades feed + channel-matrix email), carrying the selfie
+ * (photoUrl), address, location and time so the CRM shows the supervisor punch
+ * with its selfie thumbnail exactly like a guard check-in. Best-effort — never
+ * breaks the clock action.
  */
 async function propagateSupervisorClock(
   db: any, tenantId: string, userId: string, kind: 'in' | 'out', shiftId: string, actorName?: string,
-  coords?: { lat: any; lng: any },
+  extra?: { coords?: { lat: any; lng: any }; photoUrl?: string; address?: string; time?: Date; hoursWorked?: number | null; observations?: string | null },
 ): Promise<void> {
+  const coords = extra?.coords;
   try {
     const update: any = { isOnDuty: kind === 'in' };
     // Seed the supervisor's live position from the clock-in coords so they show
@@ -25,17 +29,25 @@ async function propagateSupervisorClock(
     await db.supervisorProfile.update(update, { where: { tenantId, supervisorUserId: userId } });
   } catch { /* profile may not exist yet — CRM list lazy-creates it */ }
   try {
-    const name = actorName || 'Supervisor';
-    await storePlatformEvent(db, {
-      tenantId,
-      eventType: kind === 'in' ? 'supervisor.checkin' : 'supervisor.checkout',
-      title: kind === 'in' ? 'Supervisor en turno' : 'Supervisor fuera de turno',
-      body: name,
-      targetRoles: 'admin,operationsManager',
-      sourceEntityType: 'supervisorShift',
-      sourceEntityId: shiftId,
-      payload: { supervisorUserId: userId, kind },
-    });
+    const when = extra?.time || new Date();
+    const timeLabel = when.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+    await dispatch(
+      kind === 'in' ? 'supervisor.checkin' : 'supervisor.checkout',
+      {
+        supervisorUserId: userId,
+        supervisorName: actorName || 'Supervisor',
+        kind,
+        photoUrl: extra?.photoUrl || null,
+        address: extra?.address || null,
+        latitude: coords?.lat ?? null,
+        longitude: coords?.lng ?? null,
+        clockInTime: kind === 'in' ? timeLabel : undefined,
+        clockOutTime: kind === 'out' ? timeLabel : undefined,
+        hoursWorked: extra?.hoursWorked ?? null,
+        observations: extra?.observations || null,
+      },
+      { database: db, tenantId, sourceEntityType: 'supervisorShift', sourceEntityId: shiftId },
+    );
   } catch { /* realtime is best-effort */ }
 }
 
@@ -67,6 +79,11 @@ function serializeShift(shift: any) {
     punchOutLat: s.punchOutLat,
     punchOutLng: s.punchOutLng,
     observations: s.observations,
+    punchInPhoto: s.punchInPhoto,
+    punchInAddress: s.punchInAddress,
+    punchInBattery: s.punchInBattery,
+    punchOutPhoto: s.punchOutPhoto,
+    punchOutAddress: s.punchOutAddress,
     breaks: bs.breaks,
     onBreak: bs.onBreak,
     breakMinutes: bs.breakMinutes,
@@ -138,6 +155,11 @@ export const clockIn = async (req: any, res: any) => {
       punchInTime: now,
       punchInLat: data.latitude ?? null,
       punchInLng: data.longitude ?? null,
+      // Clock-in evidence parity with guardShift.
+      punchInPhoto: data.selfiePhoto ?? null,
+      punchInAddress: data.address ?? null,
+      punchInBattery: data.battery ?? null,
+      punchInChecklist: data.checklist != null ? JSON.stringify(data.checklist) : null,
       ...attendance,
     });
 
@@ -162,7 +184,12 @@ export const clockIn = async (req: any, res: any) => {
       }
     }
 
-    await propagateSupervisorClock(db, tenantId, userId, 'in', shift.id, req.currentUser?.fullName || req.currentUser?.email, { lat: data.latitude, lng: data.longitude });
+    await propagateSupervisorClock(db, tenantId, userId, 'in', shift.id, req.currentUser?.fullName || req.currentUser?.email, {
+      coords: { lat: data.latitude, lng: data.longitude },
+      photoUrl: typeof data.selfiePhoto === 'string' ? data.selfiePhoto : (data.selfiePhoto?.privateUrl || null),
+      address: data.address || null,
+      time: now,
+    });
 
     await ApiResponseHandler.success(req, res, { shift: serializeShift(shift) });
   } catch (error) {
@@ -170,7 +197,7 @@ export const clockIn = async (req: any, res: any) => {
   }
 };
 
-/** POST /supervisor/me/clock-out { latitude, longitude, observations? } */
+/** POST /supervisor/me/clock-out { latitude, longitude, observations?, selfiePhoto?, address? } */
 export const clockOut = async (req: any, res: any) => {
   try {
     new PermissionChecker(req).validateHas(Permissions.values.supervisorMe);
@@ -208,12 +235,21 @@ export const clockOut = async (req: any, res: any) => {
       punchOutTime: now,
       punchOutLat: data.latitude ?? null,
       punchOutLng: data.longitude ?? null,
+      punchOutPhoto: data.selfiePhoto ?? null,
+      punchOutAddress: data.address ?? null,
       observations: data.observations ?? null,
       breaks,
       hoursWorked,
     });
 
-    await propagateSupervisorClock(db, tenantId, userId, 'out', shift.id, req.currentUser?.fullName || req.currentUser?.email);
+    await propagateSupervisorClock(db, tenantId, userId, 'out', shift.id, req.currentUser?.fullName || req.currentUser?.email, {
+      coords: { lat: data.latitude, lng: data.longitude },
+      photoUrl: typeof data.selfiePhoto === 'string' ? data.selfiePhoto : null,
+      address: data.address || null,
+      time: now,
+      hoursWorked,
+      observations: data.observations || null,
+    });
 
     await ApiResponseHandler.success(req, res, { shift: serializeShift(shift) });
   } catch (error) {

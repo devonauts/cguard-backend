@@ -9,6 +9,8 @@ export type EventType =
   | 'panic.alert'
   | 'guard.checkin'
   | 'guard.checkout'
+  | 'supervisor.checkin'
+  | 'supervisor.checkout'
   | 'guard.late'
   | 'visitor.arrival'
   | 'visitor.departure'
@@ -225,6 +227,34 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
       ${d.siteName ? `<p><strong>Sitio:</strong> ${esc(d.siteName)}</p>` : ''}
       ${d.stationName ? `<p><strong>Puesto:</strong> ${esc(d.stationName)}</p>` : ''}
       ${d.clockOutTime ? `<p><strong>Hora:</strong> ${esc(d.clockOutTime)}</p>` : ''}
+    `,
+  },
+  'supervisor.checkin': {
+    title: (d) => `✅ Supervisor en turno: ${d.supervisorName || 'Supervisor'}`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} inició turno${d.address ? ` — ${d.address}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+    emailSubject: (d) => `[CGuard] ${d.supervisorName || 'Supervisor'} inició turno`,
+    emailHtml: (d) => checkinEmailHtml({
+      guardName: d.supervisorName,
+      siteName: d.address,
+      clockInTime: d.clockInTime,
+      photoUrl: d.photoUrl,
+    }),
+  },
+  'supervisor.checkout': {
+    title: (d) => `🔚 Supervisor fuera de turno: ${d.supervisorName || 'Supervisor'}`,
+    body: (d) =>
+      `${d.supervisorName || 'Supervisor'} finalizó turno${d.hoursWorked != null ? ` · ${d.hoursWorked} h` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+    emailSubject: (d) => `[CGuard] ${d.supervisorName || 'Supervisor'} finalizó turno`,
+    emailHtml: (d) => `
+      <h2>🔚 Turno de supervisión finalizado</h2>
+      ${d.supervisorName ? `<p><strong>Supervisor:</strong> ${esc(d.supervisorName)}</p>` : ''}
+      ${d.clockOutTime ? `<p><strong>Hora:</strong> ${esc(d.clockOutTime)}</p>` : ''}
+      ${d.observations ? `<p><strong>Novedades:</strong> ${esc(d.observations)}</p>` : ''}
     `,
   },
   'guard.late': {
