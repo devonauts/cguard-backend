@@ -3,6 +3,7 @@ import AuthService from '../services/auth/authService'
 import jwt from 'jsonwebtoken'
 import ApiResponseHandler from '../api/apiResponseHandler'
 import Error401 from '../errors/Error401'
+import isInfrastructureError from '../errors/isInfrastructureError'
 import RoleRepository from '../database/repositories/roleRepository'
 
 const PUBLIC_PREFIXES = [
@@ -132,6 +133,22 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       console.debug('🔐 authMiddleware — AuthService.findByToken failed:', error && (error as any).message ? (error as any).message : error);
     } catch (e) {
       // ignore
+    }
+
+    // A DB / infrastructure failure while validating the token is NOT an auth
+    // failure. Returning 401 here logs the user out on a transient blip (e.g. the
+    // DB connection pool being exhausted → "Too many connections"), which is
+    // exactly what caused users to keep getting kicked out mid-session. Return a
+    // retryable 503 instead so the client backs off and the SESSION IS PRESERVED.
+    if (isInfrastructureError(error)) {
+      try {
+        console.warn('🔐 authMiddleware — infrastructure error during token validation → 503 (session preserved):', error && (error as any).message ? (error as any).message : error);
+      } catch (e) { /* ignore */ }
+      return res.status(503).json({
+        message: 'Service temporarily unavailable, please retry.',
+        code: 503,
+        retryable: true,
+      })
     }
 
     // If the token expired, return a specific message code so the UI can prompt re-login

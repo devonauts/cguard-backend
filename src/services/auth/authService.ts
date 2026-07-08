@@ -21,6 +21,7 @@ import TenantService from '../tenantService';
 import TenantRepository from '../../database/repositories/tenantRepository';
 import { tenantSubdomain } from '../tenantSubdomain';
 import Error401 from '../../errors/Error401';
+import isInfrastructureError from '../../errors/isInfrastructureError';
 import dayjs from 'dayjs';
 import Roles from '../../security/roles';
 import RoleRepository from '../../database/repositories/roleRepository';
@@ -1038,7 +1039,10 @@ class AuthService {
                       // ignore attach errors
                     }
                   } catch (e) {
-                    // If tenant lookup fails, reject
+                    // A DB/infra failure here must NOT masquerade as an auth error
+                    // (that logs the user out). Propagate infra errors so the auth
+                    // middleware returns 503; a genuine missing tenant stays 401.
+                    if (isInfrastructureError(e)) { reject(e); return; }
                     reject(new Error401());
                     return;
                   }
