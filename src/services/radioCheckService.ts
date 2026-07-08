@@ -104,6 +104,60 @@ async function resolveStationsForCheck(db: any, tenantId: string, scope: Scope, 
   return out;
 }
 
+/**
+ * Supervisor safety net: a supervisor answers roll calls too, but they only get a
+ * PRE-created entry when clocked in (isOnDuty). So if a supervisor's app polls
+ * /pending during an ACTIVE session and has no entry yet, mint one on demand —
+ * this is what guarantees the full-screen "pase de novedades" takeover reaches
+ * any supervisor using the app, clocked in or not. Supervisors only (must have a
+ * supervisorProfile); guards are never auto-added here.
+ */
+export async function ensureSupervisorEntry(db: any, tenantId: string, userId: string): Promise<any | null> {
+  const prof = await db.supervisorProfile.findOne({ where: { tenantId, supervisorUserId: userId } });
+  if (!prof) return null;
+
+  const session = await db.radioCheckSession.findOne({
+    where: { tenantId, status: 'running', deletedAt: null },
+    order: [['startedAt', 'DESC']],
+  });
+  if (!session) return null;
+
+  const now = new Date();
+  const window = new Date(now.getTime() + RADIO_REPORT_WINDOW_SECONDS * 1000);
+
+  // Existing entry for this session? Surface it (notify a still-'pending' one).
+  const existing = await db.radioCheckEntry.findOne({
+    where: { tenantId, sessionId: session.id, guardUserId: userId, deletedAt: null },
+  });
+  if (existing) {
+    if (existing.status === 'pending') {
+      await db.radioCheckEntry.update(
+        { status: 'notified', notifiedAt: now, timeoutAt: window },
+        { where: { id: existing.id, tenantId, status: 'pending' } },
+      );
+      return db.radioCheckEntry.findOne({ where: { id: existing.id, tenantId } });
+    }
+    return existing.status === 'notified' ? existing : null;
+  }
+
+  // None yet → mint one, already 'notified' so /pending returns it immediately.
+  const settings = await getSettings(db, tenantId);
+  let stationId: string | null = prof.mobileStationId || null;
+  let stationName = 'Supervisión móvil';
+  if (stationId) {
+    const st = await db.station.findOne({ where: { id: stationId, tenantId, deletedAt: null }, attributes: ['id', 'stationName'] });
+    if (st) stationName = st.stationName || stationName; else stationId = null;
+  }
+  return db.radioCheckEntry.create({
+    tenantId, sessionId: session.id, stationId, stationName,
+    guardUserId: userId, guardSecurityGuardId: null,
+    guardName: prof.fullName || 'Supervisor',
+    seq: 9000, status: 'notified', promptText: settings.promptText || DEFAULT_PROMPT,
+    transcriptStatus: 'skipped', classification: 'unknown',
+    notifiedAt: now, timeoutAt: window,
+  });
+}
+
 /** The station ids a guard (user.id) is assigned to — used to authorize replies. */
 async function guardStationIds(db: any, tenantId: string, userId: string): Promise<string[]> {
   const stations = await db.station.findAll({

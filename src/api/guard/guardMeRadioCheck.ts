@@ -5,7 +5,7 @@
  */
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
-import { getPendingForGuard, submitReply } from '../../services/radioCheckService';
+import { getPendingForGuard, submitReply, ensureSupervisorEntry } from '../../services/radioCheckService';
 
 const guardCtx = (req: any) => {
   if (!req.currentUser) throw new Error401();
@@ -19,7 +19,11 @@ const guardCtx = (req: any) => {
 export const guardRadioPending = async (req, res) => {
   try {
     const { db, tenantId, userId } = guardCtx(req);
-    const entry = await getPendingForGuard(db, tenantId, userId);
+    // Guard entry first; if none, a supervisor gets one minted on demand while a
+    // roll call is running (so the takeover reaches supervisors not clocked in).
+    const entry =
+      (await getPendingForGuard(db, tenantId, userId)) ||
+      (await ensureSupervisorEntry(db, tenantId, userId));
     await ApiResponseHandler.success(req, res, { entry: entry ? (entry.get ? entry.get({ plain: true }) : entry) : null });
   } catch (error) { await ApiResponseHandler.error(req, res, error); }
 };
