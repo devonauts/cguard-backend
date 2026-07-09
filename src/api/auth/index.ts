@@ -7,6 +7,7 @@ export default (app) => {
   );
 
   const emailRateLimiter = createRateLimiter({
+    name: 'auth-email',
     max: 6,
     windowMs: 15 * 60 * 1000,
     message: 'errors.429',
@@ -30,6 +31,7 @@ export default (app) => {
   // 100/15min still stops real brute-force (the email/reset limiters stay
   // strict). Tunable via SIGNIN_RATE_MAX without a code change.
   const signInRateLimiter = createRateLimiter({
+    name: 'auth-signin',
     max: Number(process.env.SIGNIN_RATE_MAX) || 100,
     windowMs: 15 * 60 * 1000,
     message: 'errors.429',
@@ -48,6 +50,7 @@ export default (app) => {
   );
 
   const signUpRateLimiter = createRateLimiter({
+    name: 'auth-signup',
     max: 20,
     windowMs: 60 * 60 * 1000,
     message: 'errors.429',

@@ -60,13 +60,22 @@ export function createRateLimiter({
   max,
   windowMs,
   message,
+  name,
 }: {
   max: number;
   windowMs: number;
   message: string;
+  /**
+   * Unique per limiter. Namespaces the Redis keys — without it every limiter
+   * shares the same `rl:<ip>` key, so a request passing through two limiters
+   * (e.g. the app-wide default + /auth/sign-in) increments the same counter
+   * twice (ERR_ERL_DOUBLE_COUNT) and burns the strict limit at double speed.
+   * Must be stable across processes/deploys since the Redis store is fleet-wide.
+   */
+  name: string;
 }) {
   const store = redisClient
-    ? failOpen(new RedisStore({ sendCommand: (...args: string[]) => redisClient.sendCommand(args), prefix: 'rl:' }))
+    ? failOpen(new RedisStore({ sendCommand: (...args: string[]) => redisClient.sendCommand(args), prefix: `rl:${name}:` }))
     : undefined; // default in-memory store
 
   return rateLimit({

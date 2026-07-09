@@ -219,6 +219,7 @@ setupSwaggerUI(app);
 
 // Default rate limiter
 const defaultRateLimiter = createRateLimiter({
+  name: 'default',
   max: 500,
   windowMs: 15 * 60 * 1000,
   message: 'errors.429',
