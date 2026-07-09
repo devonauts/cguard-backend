@@ -63,7 +63,10 @@ export default (app) => {
         user.email ||
         'Radio';
 
-      const at = new AccessToken(apiKey, apiSecret, { identity: String(user.id), name, ttl: '2h' });
+      // TTL must outlive a full guard shift (up to 12h + relevo margin): the app
+      // joins once at clock-in, and livekit-client's own reconnects reuse this
+      // same token — a shorter TTL made every late-shift reconnect fail.
+      const at = new AccessToken(apiKey, apiSecret, { identity: String(user.id), name, ttl: '14h' });
       at.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true, canPublishData: true });
       const token = await at.toJwt();
 
