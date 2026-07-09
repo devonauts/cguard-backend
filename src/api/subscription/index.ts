@@ -8,6 +8,10 @@ import TenantService from '../../services/tenantService';
 import { getSummary, countBillableSeats, listBillableUsers } from '../../services/subscriptionService';
 import { getStripeClient } from '../../services/stripe/stripeConfigService';
 import {
+  listTenantInvoices,
+  syncTenantInvoicesFromStripe,
+} from '../../services/platformBillingService';
+import {
   grossPerUserCents,
   platformFeeCents,
   grossImplementationCents,
@@ -25,6 +29,30 @@ export default (app) => {
       new PermissionChecker(req).validateHas(Permissions.values.settingsRead);
       const summary = await getSummary(req.database, req.currentTenant);
       return ApiResponseHandler.success(req, res, summary);
+    } catch (error) {
+      return ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // Invoice history for the billing page: refresh from Stripe (best-effort —
+  // the cached rows still serve if Stripe is unreachable), then return the
+  // stored records with hosted/PDF links for download.
+  app.get('/tenant/:tenantId/subscription/invoices', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.settingsRead);
+
+      const currentTenant = req.currentTenant;
+      try {
+        const stripe = await getStripeClient(req.database);
+        if (stripe && currentTenant.planStripeCustomerId) {
+          await syncTenantInvoicesFromStripe(req.database, currentTenant, stripe);
+        }
+      } catch (e) {
+        console.error('[subscription invoices] stripe sync failed:', (e as any)?.message);
+      }
+
+      const invoices = await listTenantInvoices(req.database, currentTenant.id);
+      return ApiResponseHandler.success(req, res, invoices);
     } catch (error) {
       return ApiResponseHandler.error(req, res, error);
     }

@@ -211,3 +211,75 @@ export async function testStripeConnection(
     return { ok: false, error: (e && e.message) || 'Stripe authentication failed' };
   }
 }
+
+const WEBHOOK_EVENTS = [
+  'checkout.session.completed',
+  'invoice.paid',
+  'invoice.payment_succeeded',
+  'invoice.payment_failed',
+  'invoice.finalized',
+  'invoice.voided',
+  'invoice.marked_uncollectible',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+];
+
+/**
+ * Register (or re-register) our webhook endpoint in Stripe for a mode and
+ * store the returned signing secret. Stripe only reveals the signing secret
+ * at creation time, so if an endpoint already exists for this URL we replace
+ * it — otherwise we'd have an endpoint we can't verify.
+ */
+export async function registerWebhookEndpoint(
+  req: Request,
+  mode: Mode,
+  url: string,
+): Promise<{ ok: boolean; endpointId?: string; error?: string }> {
+  const database = db(req);
+  const stored = await readStored(database);
+  const m: ModeStored = (stored[mode] || {}) as ModeStored;
+  let secret = decrypt(m.secretKey);
+  if (!secret && mode === (stored.mode === 'live' ? 'live' : 'test')) {
+    secret = (getConfig() as any).PLAN_STRIPE_SECRET_KEY || '';
+  }
+  if (!secret) {
+    return { ok: false, error: `No secret key configured for ${mode} mode.` };
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const stripe = require('stripe')(secret);
+
+    const existing = await stripe.webhookEndpoints.list({ limit: 100 });
+    for (const ep of (existing && existing.data) || []) {
+      if (ep.url === url) {
+        await stripe.webhookEndpoints.del(ep.id);
+      }
+    }
+
+    const endpoint = await stripe.webhookEndpoints.create({
+      url,
+      enabled_events: WEBHOOK_EVENTS,
+      description: 'CGuardPro platform billing webhook',
+    });
+
+    const next: StripeStored = { ...stored };
+    const cur: ModeStored = { ...((next[mode] || {}) as ModeStored) };
+    cur.webhookSecret = encrypt(String(endpoint.secret)) || undefined;
+    next[mode] = cur;
+    next.updatedAt = new Date().toISOString();
+    await writeStored(database, next, actor(req).id);
+
+    await writeAudit(req, {
+      action: 'settings.stripe.webhookRegister',
+      targetType: 'platformSetting',
+      targetId: 'stripe',
+      statusCode: 200,
+      details: { mode, url, endpointId: endpoint.id },
+    });
+
+    return { ok: true, endpointId: endpoint.id };
+  } catch (e: any) {
+    return { ok: false, error: (e && e.message) || 'Webhook registration failed' };
+  }
+}

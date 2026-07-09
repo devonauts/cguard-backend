@@ -251,3 +251,149 @@ export async function billingInvoices(req: Request): Promise<any> {
     totalPages: Math.ceil(count / limit) || 1,
   };
 }
+
+// ─── Stripe subscription invoices (platform payments) ───────────────────────
+// The real record of what Stripe charged each tenant — persisted by the
+// webhook into platformInvoices and refreshable on demand. Distinct from the
+// tenant→client `invoice` rows served above.
+
+import { getStripeClient } from '../stripe/stripeConfigService';
+import {
+  listTenantInvoices,
+  listRecentInvoices,
+  syncTenantInvoicesFromStripe,
+} from '../platformBillingService';
+import { writeAudit, actor } from './superadminHelpers';
+import Error400 from '../../errors/Error400';
+
+/** GET /billing/tenants/:id/subscription-invoices */
+export async function tenantSubscriptionInvoices(req: Request): Promise<any> {
+  const database = db(req);
+  const id = (req.params as any).id;
+
+  const tenant = await database.tenant.findByPk(id);
+  if (!tenant) throw new Error404((req as any).language);
+
+  let synced = 0;
+  let syncError: string | null = null;
+  try {
+    const stripe = await getStripeClient(database);
+    if (stripe && tenant.planStripeCustomerId) {
+      synced = await syncTenantInvoicesFromStripe(database, tenant, stripe);
+    }
+  } catch (e: any) {
+    syncError = e?.message || 'Stripe sync failed';
+  }
+
+  const invoices = await listTenantInvoices(database, id);
+  return { invoices, synced, syncError };
+}
+
+/** GET /billing/payments — recent platform charges across all tenants. */
+export async function recentPlatformPayments(req: Request): Promise<any> {
+  const database = db(req);
+  const q: any = req.query || {};
+  return listRecentInvoices(database, {
+    page: Number(q.page) || 1,
+    limit: Number(q.limit) || 20,
+    status: q.status ? String(q.status) : undefined,
+  });
+}
+
+/** POST /billing/tenants/:id/subscription-invoices/:invoiceId/refund */
+export async function refundSubscriptionInvoice(req: Request): Promise<any> {
+  const database = db(req);
+  const { id, invoiceId } = req.params as any;
+
+  const tenant = await database.tenant.findByPk(id);
+  if (!tenant) throw new Error404((req as any).language);
+
+  const row = await database.platformInvoice.findOne({
+    where: { id: invoiceId, tenantId: id },
+  });
+  if (!row) throw new Error404((req as any).language);
+  if (row.status !== 'paid' || !(row.amountPaidCents > 0)) {
+    throw new Error400((req as any).language, 'Only paid invoices can be refunded.');
+  }
+
+  const stripe = await getStripeClient(database);
+  if (!stripe) throw new Error400((req as any).language, 'Stripe is not configured.');
+
+  const stripeInvoice = await stripe.invoices.retrieve(row.stripeInvoiceId);
+  const paymentIntent =
+    typeof stripeInvoice.payment_intent === 'string'
+      ? stripeInvoice.payment_intent
+      : stripeInvoice.payment_intent?.id;
+  if (!paymentIntent) {
+    throw new Error400((req as any).language, 'This invoice has no refundable payment.');
+  }
+
+  const refund = await stripe.refunds.create({ payment_intent: paymentIntent });
+
+  await writeAudit(req, {
+    action: 'billing.invoice.refund',
+    targetType: 'tenant',
+    targetId: id,
+    statusCode: 200,
+    details: {
+      invoiceId: row.id,
+      stripeInvoiceId: row.stripeInvoiceId,
+      amountCents: refund.amount,
+      refundId: refund.id,
+      by: actor(req).email,
+    },
+  });
+
+  return { ok: true, refundId: refund.id, amountCents: refund.amount, status: refund.status };
+}
+
+/**
+ * POST /billing/tenants/:id/subscription/cancel — cancel the REAL Stripe
+ * subscription (immediately or at period end). The webhook will confirm, but
+ * we set the tenant fields right away so the panel reflects the action.
+ */
+export async function cancelStripeSubscription(req: Request): Promise<any> {
+  const database = db(req);
+  const id = (req.params as any).id;
+  const immediately = !!(req.body && (req.body as any).immediately);
+
+  const tenant = await database.tenant.findByPk(id);
+  if (!tenant) throw new Error404((req as any).language);
+  if (!tenant.stripeSubscriptionId) {
+    throw new Error400((req as any).language, 'This tenant has no active Stripe subscription.');
+  }
+
+  const stripe = await getStripeClient(database);
+  if (!stripe) throw new Error400((req as any).language, 'Stripe is not configured.');
+
+  let result: any;
+  if (immediately) {
+    result = await stripe.subscriptions.cancel(tenant.stripeSubscriptionId);
+    await tenant.update({ billingStatus: 'canceled', stripeSubscriptionId: null });
+  } else {
+    result = await stripe.subscriptions.update(tenant.stripeSubscriptionId, {
+      cancel_at_period_end: true,
+    });
+  }
+
+  await writeAudit(req, {
+    action: 'billing.subscription.cancel',
+    targetType: 'tenant',
+    targetId: id,
+    statusCode: 200,
+    details: {
+      stripeSubscriptionId: result?.id || tenant.stripeSubscriptionId,
+      immediately,
+      by: actor(req).email,
+    },
+  });
+
+  return {
+    ok: true,
+    immediately,
+    cancelAtPeriodEnd: !immediately,
+    currentPeriodEnd: result?.current_period_end
+      ? new Date(result.current_period_end * 1000).toISOString()
+      : null,
+  };
+}
