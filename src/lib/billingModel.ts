@@ -3,7 +3,8 @@
  *
  * Business model:
  *   - 14-day free trial, no credit card.
- *   - Then: $250 one-time implementation fee + $5 / user / month, billed monthly.
+ *   - Then: $299.99 one-time implementation fee (charged; nets ≈$291.29) +
+ *     $5 / user / month, billed monthly.
  *   - Any tenant user (guard, supervisor, assistant, cliente) is one $5 seat.
  *   - Stripe processing fees are passed to the tenant: prices are grossed up so
  *     the platform NETS the target amounts after Stripe takes its cut.
@@ -38,9 +39,10 @@ export function feeFixedCents(): number {
 export function netPerUserCents(): number {
   return int(process.env.BILLING_NET_PER_USER_CENTS, 500);
 }
-/** Target NET implementation (one-time) fee, in cents. */
+/** Target NET implementation (one-time) fee, in cents.
+ *  29129 grosses up to exactly 29999 → the customer is charged $299.99. */
 export function netImplementationCents(): number {
-  return int(process.env.BILLING_NET_IMPLEMENTATION_CENTS, 25000);
+  return int(process.env.BILLING_NET_IMPLEMENTATION_CENTS, 29129);
 }
 /** Free-trial length in days. */
 export function trialDays(): number {
@@ -60,7 +62,7 @@ export function grossPerUserCents(): number {
 export function platformFeeCents(): number {
   return grossUpPercent(feeFixedCents());
 }
-/** Grossed one-time implementation fee. e.g. 25000 → 25747. */
+/** Grossed one-time implementation fee. e.g. 29129 → 29999 ($299.99). */
 export function grossImplementationCents(): number {
   return grossUpPercent(netImplementationCents());
 }
