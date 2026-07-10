@@ -8,6 +8,7 @@ import {
   guardAssignmentList,
   guardAssignmentCreate,
   guardAssignmentDelete,
+  guardAssignmentRephase,
   stationAutoPositions,
   stationGenerateYearly,
   schedulerOverview,
@@ -46,6 +47,7 @@ export default (app) => {
   app.get('/tenant/:tenantId/guard-assignments', guardAssignmentList);
   app.post('/tenant/:tenantId/guard-assignment', guardAssignmentCreate);
   app.delete('/tenant/:tenantId/guard-assignment/:id', guardAssignmentDelete);
+  app.post('/tenant/:tenantId/guard-assignment/:id/rephase', guardAssignmentRephase);
 
   // Scheduler overview (unified view)
   app.get('/tenant/:tenantId/scheduler/overview', schedulerOverview);

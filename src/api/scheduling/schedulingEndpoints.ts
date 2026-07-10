@@ -246,6 +246,88 @@ export async function guardAssignmentDelete(req, res) {
   }
 }
 
+// POST /tenant/:tenantId/guard-assignment/:id/rephase
+// Re-anchor a rotation assignment's phase so its REST (libre) block starts on
+// the given date, then regenerate the future shifts. This is the "apply this
+// L-day change to the rest of the schedule" action: when a generated rotation
+// doesn't match how the guards are actually cycling, the planner moves one L
+// day and confirms — instead of hand-editing every week of the month.
+export async function guardAssignmentRephase(req, res) {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.stationEdit);
+    const tenantId = req.currentTenant.id;
+    const { id } = req.params;
+    const data = req.body?.data || req.body || {};
+    const restStartDate = String(data.restStartDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(restStartDate)) {
+      res.status(400).send({ message: 'restStartDate (YYYY-MM-DD) es requerido' });
+      return;
+    }
+
+    const assignment = await req.database.guardAssignment.findOne({
+      where: { id, tenantId, status: 'active' },
+    });
+    if (!assignment) { res.status(404).send({ message: 'Assignment not found' }); return; }
+
+    // Rotation lives on the STATION; assignment's own value is legacy fallback.
+    const station = await req.database.station.findByPk(assignment.stationId, {
+      attributes: ['id', 'rotationStyleId'],
+    });
+    const rotationStyleId = station?.rotationStyleId || assignment.rotationStyleId;
+    const rot = rotationStyleId
+      ? await req.database.rotationStyle.findByPk(rotationStyleId)
+      : null;
+    if (!rot) { res.status(400).send({ message: 'El puesto no tiene patrón de rotación' }); return; }
+
+    const dayShifts = rot.dayShifts || 0;
+    const nightShifts = rot.nightShifts || 0;
+    const restDays = rot.restDays || 0;
+    const cycle = dayShifts + nightShifts + restDays;
+    if (!(cycle > 0) || !(restDays > 0)) {
+      res.status(400).send({ message: 'Patrón de rotación inválido (sin días libres)' });
+      return;
+    }
+
+    // Same math as shiftGenerationService.getRotationStatus: status(d) reads
+    // ((dse − platoonOffset) mod C) against the 2024-01-01 epoch, and the rest
+    // block starts at index dayShifts+nightShifts. Solve for the offset that
+    // makes restStartDate the FIRST rest day (with 2+ libres, the block starts
+    // there and runs consecutively).
+    const [y, m, d] = restStartDate.split('-').map(Number);
+    const dse = Math.floor(
+      (new Date(y, m - 1, d).getTime() - new Date(2024, 0, 1).getTime()) / 86400000,
+    );
+    const restStartIdx = dayShifts + nightShifts;
+    const newOffset = (((dse - restStartIdx) % cycle) + cycle) % cycle;
+
+    await assignment.update({ platoonOffset: newOffset, updatedById: req.currentUser.id });
+    // Keep the slot's position in sync so a future re-assign inherits the phase.
+    if (assignment.positionId) {
+      await req.database.stationPosition.update(
+        { platoonOffset: newOffset },
+        { where: { id: assignment.positionId, tenantId } },
+      );
+    }
+
+    const { generateShiftsForAssignment } = await import('../../services/shiftGenerationService');
+    await generateShiftsForAssignment(
+      req.database,
+      assignment.get({ plain: true }),
+      tenantId,
+      req.currentUser.id,
+    );
+
+    await ApiResponseHandler.success(req, res, {
+      ok: true,
+      platoonOffset: newOffset,
+      cycleLength: cycle,
+      restDays,
+    });
+  } catch (error) {
+    await ApiResponseHandler.error(req, res, error);
+  }
+}
+
 // POST /tenant/:tenantId/station/:stationId/auto-positions
 // Auto-creates positions based on station scheduleType + generates yearly schedule
 export async function stationAutoPositions(req, res) {
