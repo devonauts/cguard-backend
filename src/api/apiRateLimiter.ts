@@ -61,6 +61,8 @@ export function createRateLimiter({
   windowMs,
   message,
   name,
+  keyByAuth = false,
+  skipPaths = [],
 }: {
   max: number;
   windowMs: number;
@@ -73,6 +75,17 @@ export function createRateLimiter({
    * Must be stable across processes/deploys since the Redis store is fleet-wide.
    */
   name: string;
+  /**
+   * Key authenticated requests by IP + a hash of the Authorization header so
+   * every signed-in user/device gets its OWN bucket. Without this, a whole
+   * office behind one NAT IP shares a single bucket and normal multi-user CRM
+   * usage throttles the entire company (Ecuaseguridad outage, 2026-07-09).
+   * Anonymous requests still share the per-IP bucket, so IP-based brute-force
+   * limits (sign-in etc.) keep their meaning.
+   */
+  keyByAuth?: boolean;
+  /** Substrings of req.originalUrl this limiter never throttles. */
+  skipPaths?: string[];
 }) {
   const store = redisClient
     ? failOpen(new RedisStore({ sendCommand: (...args: string[]) => redisClient.sendCommand(args), prefix: `rl:${name}:` }))
@@ -85,6 +98,20 @@ export function createRateLimiter({
     message,
     standardHeaders: true,
     legacyHeaders: false,
+    ...(keyByAuth
+      ? {
+          keyGenerator: (req: any) => {
+            const auth = String(req.headers?.authorization || '');
+            if (!auth) return String(req.ip);
+            const crypto = require('crypto');
+            const h = crypto.createHash('sha256').update(auth).digest('hex').slice(0, 24);
+            return `${req.ip}|${h}`;
+          },
+          // Custom key includes req.ip verbatim; skip the library's IPv6-subnet
+          // keygen validation (we intentionally want per-address behavior).
+          validate: false as any,
+        }
+      : {}),
     // Log every throttle so the superadmin "Accesos" page can surface abuse /
     // brute-force patterns (top rate-limited IPs). Best-effort.
     handler: (req: any, res: any, _next: any, options: any) => {
@@ -106,6 +133,7 @@ export function createRateLimiter({
     skip: (req) => {
       if (req.method === 'OPTIONS') return true;
       if (req.originalUrl.endsWith('/import')) return true;
+      if (skipPaths.some((p) => req.originalUrl.includes(p))) return true;
       if (isAllowlisted(req)) return true; // office/demo IPs never throttled
       return false;
     },

@@ -217,12 +217,18 @@ app.use(require('../middlewares/tenantHeaderMiddleware').tenantFromHeaderMiddlew
 // Setup the Documentation
 setupSwaggerUI(app);
 
-// Default rate limiter
+// Default rate limiter — the app-wide backstop. Keyed per user token (not
+// just per IP) so an office of operators behind one NAT never shares a single
+// bucket, and /auth/me is exempt so a throttled client still hydrates its
+// session instead of looking logged out (Ecuaseguridad outage, 2026-07-09).
+// Sign-in/sign-up keep their own stricter per-IP limiters.
 const defaultRateLimiter = createRateLimiter({
   name: 'default',
-  max: 500,
+  max: Number(process.env.RATE_LIMIT_DEFAULT_MAX) || 1500,
   windowMs: 15 * 60 * 1000,
   message: 'errors.429',
+  keyByAuth: true,
+  skipPaths: ['/auth/me'],
 });
 app.use(defaultRateLimiter);
 
