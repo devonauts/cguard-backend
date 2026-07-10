@@ -94,7 +94,9 @@ async function storeBinary(buffer: Buffer, originalname: string, privateUrl: str
     os.tmpdir(),
     `customer-incident-${Date.now()}-${Math.round(Math.random() * 1e9)}-${safeName}`,
   );
-  fs.writeFileSync(tempPath, buffer);
+  // Async write — these buffers are multi-MB phone photos; writeFileSync here
+  // would block the event loop for every other request on the instance.
+  await fs.promises.writeFile(tempPath, buffer);
   try {
     if (typeof (FileStorage as any).upload === 'function') {
       await (FileStorage as any).upload(tempPath, privateUrl);

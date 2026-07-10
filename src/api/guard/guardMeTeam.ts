@@ -10,6 +10,7 @@
  */
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
+import { Op } from 'sequelize';
 
 export default async (req: any, res: any) => {
   try {
@@ -24,12 +25,16 @@ export default async (req: any, res: any) => {
 
     const securityGuard = await db.securityGuard.findOne({
       where: { guardId: userId, tenantId, deletedAt: null },
+      attributes: ['id', 'fullName'],
     });
     if (!securityGuard) return ApiResponseHandler.success(req, res, empty);
 
     // My most recent active clock-in → resolve which sitio I'm working.
+    // Lean attributes: guardShift rows carry heavy TEXT blobs (selfie,
+    // sessions JSON) we must not hydrate here.
     const myShift = await db.guardShift.findOne({
       where: { guardNameId: securityGuard.id, tenantId, punchOutTime: null },
+      attributes: ['id', 'postSiteId', 'stationNameId', 'punchInTime'],
       order: [['punchInTime', 'DESC']],
     });
 
@@ -72,14 +77,28 @@ export default async (req: any, res: any) => {
 
     const postSite = await db.businessInfo.findByPk(postSiteId, { attributes: ['id', 'companyName'] });
 
-    // All active clock-ins for the tenant, then keep those at THIS sitio.
+    // Active clock-ins at THIS sitio only — the postSite match (shift snapshot
+    // OR its station's postSiteId) is pushed into SQL instead of fetching every
+    // open shift tenant-wide and filtering in JS. Lean attributes (no selfie /
+    // sessions blobs) + a backstop limit; both includes are belongsTo, so
+    // subQuery:false keeps the $stationName.postSiteId$ reference valid.
     const shifts = await db.guardShift.findAll({
-      where: { tenantId, punchOutTime: null },
+      where: {
+        tenantId,
+        punchOutTime: null,
+        [Op.or]: [
+          { postSiteId },
+          { '$stationName.postSiteId$': postSiteId },
+        ],
+      },
+      attributes: ['id', 'guardNameId', 'stationNameId', 'postSiteId', 'punchInTime'],
       include: [
         { model: db.securityGuard, as: 'guardName', attributes: ['id', 'fullName'], required: true },
         { model: db.station, as: 'stationName', attributes: ['id', 'stationName', 'postSiteId'], required: false },
       ],
       order: [['punchInTime', 'ASC']],
+      limit: 500,
+      subQuery: false,
     });
 
     const seen = new Set<string>();

@@ -28,36 +28,55 @@ interface SchedulingContext {
   sfUtilization?: number; // Percentage of SF work days actually covering vs idle
 }
 
+// Hard timeout for the OpenAI call. This runs inside Express request handlers,
+// so a hung upstream would otherwise hold the connection (and its DB pool slot)
+// indefinitely. On abort, fetch rejects and safeCallAI returns the standard
+// Spanish unavailable message.
+const OPENAI_TIMEOUT_MS = 30_000;
+
 async function callAI(systemPrompt: string, userMessage: string, maxTokens = 2000): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY not configured');
   }
 
-  const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      temperature: 0.4,
-      max_tokens: maxTokens,
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        temperature: 0.4,
+        max_tokens: maxTokens,
+      }),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+    }
+
+    const data: any = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  } catch (e: any) {
+    if (e?.name === 'AbortError' || controller.signal.aborted) {
+      throw new Error(`OpenAI API timeout after ${OPENAI_TIMEOUT_MS}ms`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-
-  const data: any = await response.json();
-  return data.choices?.[0]?.message?.content || '';
 }
 
 /** True when the AI advisor can be called. */

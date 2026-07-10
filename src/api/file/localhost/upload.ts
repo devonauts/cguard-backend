@@ -49,38 +49,104 @@ export default function upload(req, res): void {
 
   const form = new formidable.IncomingForm();
 
-  form.maxFileSize = Number(maxSizeInBytes);
+  // The signed token carries the storage config's max size; fall back to the
+  // largest configured storage cap so a malformed token never means "no limit"
+  // (Number(undefined) is NaN, which disables formidable's size check).
+  form.maxFileSize =
+    Number(maxSizeInBytes) > 0
+      ? Number(maxSizeInBytes)
+      : 100 * 1024 * 1024;
 
   form.parse(req, function (err, fields, files): void {
-    const filename = String(fields.filename);
-    const fileTempUrl = files.file.path;
+    // This callback runs inside formidable's event emitter, OUTSIDE Express's
+    // try/catch — anything thrown here is an uncaughtException that kills the
+    // whole PM2 instance. Every path must respond (or bail) and never throw.
+    try {
+      const uploaded = files && files.file;
+      const fileTempUrl = uploaded && uploaded.path;
 
-    if (!filename) {
-      fs.unlinkSync(fileTempUrl);
-      ApiResponseHandler.error(
-        req,
-        res,
-        new Error(`File not found`),
-      );
+      // Best-effort cleanup so failed/aborted uploads never leak formidable
+      // temp files onto the single prod disk (success path is `mv`ed away by
+      // FileStorage.upload).
+      const cleanupTemp = () => {
+        if (fileTempUrl) {
+          fs.promises.unlink(fileTempUrl).catch(() => undefined);
+        }
+      };
+
+      // formidable invokes the callback with err on client abort, parser
+      // errors, and maxFileSize exceeded — with `files` still empty. The
+      // separate form.on('error') below may already have responded.
+      if (err) {
+        cleanupTemp();
+        if (!res.headersSent) {
+          const tooLarge = /maxFileSize/i.test(String(err.message || ''));
+          res.status(tooLarge ? 413 : 400).json({
+            message: tooLarge
+              ? 'File too large'
+              : 'Upload failed',
+            code: tooLarge ? 413 : 400,
+          });
+        }
+        return;
+      }
+
+      // Well-formed multipart body without a `file` part.
+      if (!uploaded || !fileTempUrl) {
+        if (!res.headersSent) {
+          res.status(400).json({
+            message: 'File not found',
+            code: 400,
+          });
+        }
+        return;
+      }
+
+      if (res.headersSent) {
+        cleanupTemp();
+        return;
+      }
+
+      FileStorage.upload(fileTempUrl, privateUrl)
+        .then((downloadUrl) => {
+          ApiResponseHandler.success(
+            req,
+            res,
+            downloadUrl,
+          );
+        })
+        .catch((error) => {
+          cleanupTemp();
+          ApiResponseHandler.error(req, res, error);
+        });
+    } catch (error) {
+      // Last-resort: never let an exception escape into the event emitter.
+      console.error('file/upload handler error:', error);
+      try {
+        if (!res.headersSent) {
+          res.status(400).json({
+            message: 'Upload failed',
+            code: 400,
+          });
+        }
+      } catch {
+        /* nothing left to do */
+      }
+    }
+  });
+
+  // Fallback: parse errors normally respond via the callback above (its internal
+  // error listener runs first); this only fires if that path somehow didn't.
+  // These are client-side failures (abort/malformed multipart) → 400, not 500.
+  form.on('error', function (error) {
+    if (res.headersSent) {
       return;
     }
-
-    FileStorage.upload(fileTempUrl, privateUrl)
-      .then((downloadUrl) => {
-        ApiResponseHandler.success(
-          req,
-          res,
-          downloadUrl,
-        );
-      })
-      .catch((error) => {
-        ApiResponseHandler.error(req, res, error);
-      });
+    res.status(400).json({
+      message: 'Upload failed',
+      code: 400,
+    });
   });
 
-  form.on('error', function (error) {
-    return ApiResponseHandler.error(req, res, error);
-  });
-  
   return;
 };

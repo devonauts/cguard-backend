@@ -19,6 +19,37 @@ import GuardPerformanceService from '../../services/guardPerformanceService';
 const CHUNK = Math.max(1, Number(process.env.PERF_LEADERBOARD_CHUNK) || 6);
 const MAX_GUARDS = Math.max(1, Number(process.env.PERF_LEADERBOARD_MAX_GUARDS) || 200);
 
+// In-process TTL cache: the leaderboard is analytics (tolerates staleness) but
+// costs hundreds-to-thousands of queries to compute, so serve repeats of the
+// same (tenant, period) from memory for 5 minutes.
+const CACHE_TTL_MS = Math.max(0, Number(process.env.PERF_LEADERBOARD_CACHE_MS) || 5 * 60 * 1000);
+const CACHE_MAX = 200;
+const leaderboardCache = new Map<string, { at: number; payload: any }>();
+
+function cacheGet(key: string): any | null {
+  const entry = leaderboardCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.at >= CACHE_TTL_MS) {
+    leaderboardCache.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+
+function cacheSet(key: string, payload: any) {
+  if (leaderboardCache.size >= CACHE_MAX) {
+    const cutoff = Date.now() - CACHE_TTL_MS;
+    for (const [k, e] of leaderboardCache) {
+      if (e.at < cutoff) leaderboardCache.delete(k);
+    }
+    if (leaderboardCache.size >= CACHE_MAX) {
+      const oldest = leaderboardCache.keys().next().value;
+      if (oldest !== undefined) leaderboardCache.delete(oldest);
+    }
+  }
+  leaderboardCache.set(key, { at: Date.now(), payload });
+}
+
 export default async (req, res) => {
   try {
     new PermissionChecker(req).validateHas(Permissions.values.securityGuardRead);
@@ -28,6 +59,10 @@ export default async (req, res) => {
     if (!tenantId) return ApiResponseHandler.success(req, res, { guards: [] });
 
     const periodDays = Math.min(180, Math.max(7, Number(req.query.period) || 30));
+
+    const cacheKey = `${tenantId}:${periodDays}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return ApiResponseHandler.success(req, res, cached);
 
     const guards = await db.securityGuard.findAll({
       where: { tenantId, deletedAt: null },
@@ -72,7 +107,7 @@ export default async (req, res) => {
       ? Math.round(withData.reduce((s, r) => s + (r.score || 0), 0) / withData.length)
       : null;
 
-    return ApiResponseHandler.success(req, res, {
+    const payload = {
       period: periodDays,
       averageScore,
       counts: {
@@ -84,7 +119,9 @@ export default async (req, res) => {
         poor: withData.filter((r) => r.tier === 'poor').length,
       },
       guards: results,
-    });
+    };
+    cacheSet(cacheKey, payload);
+    return ApiResponseHandler.success(req, res, payload);
   } catch (error) {
     return ApiResponseHandler.error(req, res, error);
   }

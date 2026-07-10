@@ -197,6 +197,25 @@ export default function (sequelize) {
           name: 'idx_guardshift_active',
           fields: ['tenantId', 'guardNameId', 'punchOutTime'],
         },
+        // Forced clock-out sweep (every 60s, cross-tenant):
+        // WHERE punchOutTime IS NULL AND scheduledEnd <= ?. Open shifts are the
+        // tiny hot subset, so punchOutTime leads; scheduledEnd is the range.
+        {
+          name: 'idx_gs_open_scheduled',
+          fields: ['punchOutTime', 'scheduledEnd'],
+        },
+        // RepeatedLateness hourly sweep: WHERE punchInTime > NOW() - 7 DAY on
+        // this paranoid table.
+        {
+          name: 'idx_gs_deleted_punchin',
+          fields: ['deletedAt', 'punchInTime'],
+        },
+        // Clock-in relevo/passdown lookup: tenantId + stationNameId +
+        // punchOutTime >= window, ORDER BY punchOutTime DESC LIMIT 1.
+        {
+          name: 'idx_gs_relevo',
+          fields: ['tenantId', 'stationNameId', 'punchOutTime'],
+        },
       ],
       timestamps: true,
       paranoid: true,

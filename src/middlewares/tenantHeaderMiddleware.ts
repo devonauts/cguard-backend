@@ -16,8 +16,14 @@ export async function tenantFromHeaderMiddleware(req, res, next) {
 
     if (!tenantId) return next();
 
-    // Find tenant and set as currentTenant
-    const tenant = await new TenantService(req).findById(tenantId);
+    // Find tenant and set as currentTenant. Reuse the tenant AuthService.findByToken
+    // already loaded onto req.currentTenant (same tenant + settings + logo include)
+    // when the header matches it, instead of re-querying the identical row.
+    const preloaded = req.currentTenant;
+    const tenant =
+      preloaded && preloaded.id === tenantId
+        ? preloaded
+        : await new TenantService(req).findById(tenantId);
 
     // If there is a currentUser, ensure membership
     if (!isUserInTenant(req.currentUser, tenant)) {

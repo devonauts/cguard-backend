@@ -53,6 +53,7 @@ import {
   estimateCost,
 } from './communicationSettingsService';
 import { normalizeToE164 } from './phone';
+import { getUserDeviceRows } from '../pushService';
 
 const PROVIDERS: Record<Channel, CommunicationProvider> = {
   push: pushProvider,
@@ -84,22 +85,15 @@ const TEMPLATE_BY_TYPE: Partial<Record<MessageType, string>> = {
 interface ResolvedRecipients {
   /** userId for the push provider (token-resolved downstream). */
   pushUserId: string | null;
+  /** The user's device rows, resolved ONCE per route() and threaded to the push
+   *  provider so neither it nor its pushToUser fallback re-queries them. */
+  deviceRows: any[];
   /** Whether the user currently has at least one active push token. */
   hasPushToken: boolean;
   /** E.164 phone for whatsapp/sms. */
   phone: string | null;
   /** Email address for the email channel. */
   email: string | null;
-}
-
-/** Does this user have any active push token? Drives the shift-reminder rule. */
-async function userHasPushToken(db: any, tenantId: string, userId: string): Promise<boolean> {
-  try {
-    const rows = await db.deviceIdInformation.findAll({ where: { tenantId, userId } });
-    return (rows || []).some((r: any) => !!(r.pushToken || r.deviceId));
-  } catch {
-    return false;
-  }
 }
 
 /** Look up a user's phone + email from the users table (best-effort). */
@@ -141,11 +135,14 @@ async function resolveRecipients(
     ? normalizeToE164(phone, settings.default_country_code)
     : null;
 
-  const hasPushToken = intent.userId
-    ? await userHasPushToken(db, intent.tenantId, intent.userId)
-    : false;
+  // Resolve device rows ONCE: they drive both the shift-reminder rule
+  // (hasPushToken) and the actual push send downstream.
+  const deviceRows = intent.userId
+    ? await getUserDeviceRows(db, intent.tenantId, intent.userId)
+    : [];
+  const hasPushToken = deviceRows.some((r: any) => !!(r.pushToken || r.deviceId));
 
-  return { pushUserId, hasPushToken, phone: normalizedPhone, email };
+  return { pushUserId, deviceRows, hasPushToken, phone: normalizedPhone, email };
 }
 
 // ---------------------------------------------------------------------------
@@ -369,10 +366,13 @@ async function attemptChannel(
     }
   }
 
-  // 4) Send.
+  // 4) Send. Push gets the pre-resolved device rows (resolved once in
+  //    resolveRecipients) so the provider doesn't re-query them.
   let result: SendResult;
   try {
-    result = await provider.send(db, msg);
+    result = channel === 'push'
+      ? await pushProvider.send(db, msg, recipients.deviceRows)
+      : await provider.send(db, msg);
   } catch (e: any) {
     result = { status: 'failed', channel, error: e?.message || String(e) };
   }

@@ -18,6 +18,10 @@ export default async (req, res, next) => {
         tenantId,
         punchOutTime: null,
       },
+      // Only the fields the map consumes — a bare findAll would hydrate every
+      // open shift's TEXT blobs (selfie, sessions JSON, checklist) on a poll
+      // that every open dashboard hits every few seconds.
+      attributes: ['id', 'guardNameId', 'punchInLatitude', 'punchInLongitude', 'punchInTime'],
       include: [
         {
           model: db.securityGuard,

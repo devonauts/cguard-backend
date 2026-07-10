@@ -21,10 +21,19 @@ export default async (req, res) => {
     const where: any = { tenantId };
     if (status) where.status = status;
 
+    // Limit clamp: the CRM AlarmQueue defaults to "all" (no status) and polls
+    // every 20s, so an unbounded list serializes the entire tenant case history
+    // per poll. Default 500 rows (priority-first, newest-first — more than any
+    // healthy open queue), honor an explicit ?limit up to 1000.
+    const requestedLimit = Number((req.query || {}).limit);
+    const limit =
+      Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(Math.floor(requestedLimit), 1000)
+        : 500;
+
     // Lean list: explicit columns only (drop the stepProgress JSON blob, which
     // is only rendered in the case detail), and scope the panel include to the
-    // two fields the queue renders (name + accountNumber). No limit clamp — the
-    // queue must show every open case for the chosen status.
+    // two fields the queue renders (name + accountNumber).
     const cases = await db.alarmCase.findAll({
       where,
       attributes: [
@@ -66,6 +75,7 @@ export default async (req, res) => {
         ['priority', 'ASC'],
         ['createdAt', 'DESC'],
       ],
+      limit,
     });
 
     await ApiResponseHandler.success(req, res, cases);

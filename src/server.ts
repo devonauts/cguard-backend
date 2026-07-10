@@ -600,122 +600,199 @@ async function runAttendanceDetectionScheduler() {
     const now = new Date();
 
     // Shifts that have started within the last 24h (window where late/no-show/
-    // missed-clockout become detectable). Cap to keep each tick bounded.
-    const shifts = await database.shift.findAll({
-      where: {
-        startTime: { [Op.lte]: now, [Op.gte]: new Date(now.getTime() - 24 * 3600 * 1000) },
-      },
-      limit: 2000,
-    });
+    // missed-clockout become detectable). Paged deterministically (ORDER BY
+    // startTime,id) so the whole window is evaluated — no silent truncation —
+    // with a hard cap to keep each tick bounded (logged when it truncates).
+    const PAGE_SIZE = 500;
+    const MAX_SHIFTS_PER_TICK = 10000;
 
     const settingsCache: Record<string, any> = {};
     const settingsFor = async (tenantId: string) =>
       settingsCache[tenantId] || (settingsCache[tenantId] = await getNominaSettings(database, tenantId));
 
     let flagged = 0;
-    for (const sh of shifts) {
-      const shift = sh.get({ plain: true });
-      const settings = await settingsFor(shift.tenantId);
-      if (!settings.general.timeClockEnabled) continue;
-
-      const punch = await database.guardShift.findOne({
-        where: { shiftId: shift.id, tenantId: shift.tenantId },
-        attributes: ['id', 'punchOutTime'],
-      });
-      const spec = detectForShift(
-        {
-          now,
-          shiftStart: new Date(shift.startTime),
-          shiftEnd: new Date(shift.endTime),
-          hasClockIn: !!punch,
-          hasClockOut: !!(punch && punch.punchOutTime),
+    let scanned = 0;
+    for (;;) {
+      const page = await database.shift.findAll({
+        where: {
+          startTime: { [Op.lte]: now, [Op.gte]: new Date(now.getTime() - 24 * 3600 * 1000) },
         },
-        settings,
-      );
-      if (!spec) continue;
-
-      const existing = await database.attendanceException.findOne({
-        where: { tenantId: shift.tenantId, shiftId: shift.id, type: spec.type, status: 'open' },
-        attributes: ['id'],
+        order: [['startTime', 'ASC'], ['id', 'ASC']],
+        limit: PAGE_SIZE,
+        offset: scanned,
       });
-      if (existing) continue;
+      if (!page.length) break;
+      scanned += page.length;
 
-      const sg = await database.securityGuard.findOne({
-        where: { guardId: shift.guardId, tenantId: shift.tenantId },
-        attributes: ['id', 'fullName'],
-      });
-      const station = await database.station.findByPk(shift.stationId, { attributes: ['stationName'] });
-
-      const row = await database.attendanceException.create({
-        type: spec.type,
-        severity: spec.severity,
-        status: 'open',
-        reason: spec.reason || null,
-        meta: spec.meta ? JSON.stringify(spec.meta) : null,
-        detectedAt: now,
-        guardShiftId: punch ? punch.id : null,
-        shiftId: shift.id,
-        guardId: sg?.id || null,
-        stationId: shift.stationId || null,
-        postSiteId: shift.postSiteId || null,
-        tenantId: shift.tenantId,
-      });
-      flagged++;
-
-      const eventType = EXCEPTION_EVENT[spec.type];
-      if (eventType) {
-        try {
-          await dispatch(eventType, {
-            guardName: sg?.fullName || 'Guardia',
-            stationName: station?.stationName || null,
-            reason: spec.reason || '',
-            type: spec.type,
-          }, {
-            database,
-            tenantId: shift.tenantId,
-            sourceEntityType: 'attendanceException',
-            sourceEntityId: row.id,
-            extraEmails: settings.notifications?.customEmails || [],
-            assignedPostSiteId:
-              settings.notifications?.assignedSupervisorsOnly && shift.postSiteId
-                ? shift.postSiteId
-                : undefined,
-          });
-        } catch { /* best-effort */ }
+      // Skip tenants with the time clock disabled (settings cached per tenant).
+      const candidates: Array<{ shift: any; settings: any }> = [];
+      for (const sh of page) {
+        const shift = sh.get({ plain: true });
+        const settings = await settingsFor(shift.tenantId);
+        if (!settings.general.timeClockEnabled) continue;
+        candidates.push({ shift, settings });
       }
 
-      // Also notify the affected GUARD (in-app + email) with guard-facing copy
-      // for lateness / no-show only. Deduped: this whole block runs once per
-      // (shiftId,type) thanks to the `existing` open-exception gate above.
-      if (spec.type === 'late_arrival' || spec.type === 'no_call_no_show') {
-        try {
-          // Resolve the guard's email: prefer the linked user's email, then the
-          // securityGuard.email. If neither exists, skip silently.
-          let guardEmail: string | null = null;
-          const guardUser = shift.guardId
-            ? await database.user.findByPk(shift.guardId, { attributes: ['id', 'email'] })
+      // Batch the per-shift punch lookup into ONE query for the page.
+      const punchMap = new Map<string, any>();
+      if (candidates.length) {
+        const punches = await database.guardShift.findAll({
+          where: { shiftId: { [Op.in]: candidates.map((c) => c.shift.id) } },
+          attributes: ['id', 'punchOutTime', 'shiftId', 'tenantId'],
+        });
+        for (const p of punches) {
+          const key = `${p.shiftId}|${p.tenantId}`;
+          if (!punchMap.has(key)) punchMap.set(key, p);
+        }
+      }
+
+      const hits: Array<{ shift: any; settings: any; punch: any; spec: any }> = [];
+      for (const c of candidates) {
+        const punch = punchMap.get(`${c.shift.id}|${c.shift.tenantId}`) || null;
+        const spec = detectForShift(
+          {
+            now,
+            shiftStart: new Date(c.shift.startTime),
+            shiftEnd: new Date(c.shift.endTime),
+            hasClockIn: !!punch,
+            hasClockOut: !!(punch && punch.punchOutTime),
+          },
+          c.settings,
+        );
+        if (spec) hits.push({ ...c, punch, spec });
+      }
+
+      // Dedup (one open exception per shiftId+type): ONE query for the page.
+      let fresh = hits;
+      if (hits.length) {
+        const existing = await database.attendanceException.findAll({
+          where: { shiftId: { [Op.in]: hits.map((h) => h.shift.id) }, status: 'open' },
+          attributes: ['shiftId', 'type', 'tenantId'],
+        });
+        const existingSet = new Set(
+          existing.map((e: any) => `${e.tenantId}|${e.shiftId}|${e.type}`),
+        );
+        fresh = hits.filter(
+          (h) => !existingSet.has(`${h.shift.tenantId}|${h.shift.id}|${h.spec.type}`),
+        );
+      }
+
+      if (fresh.length) {
+        // Batch the guard/station/user context lookups for the flagged shifts.
+        const guardIds = [...new Set(fresh.map((h) => h.shift.guardId).filter(Boolean))];
+        const sgMap = new Map<string, any>();
+        const userMap = new Map<string, any>();
+        if (guardIds.length) {
+          const sgs = await database.securityGuard.findAll({
+            where: {
+              guardId: { [Op.in]: guardIds },
+              tenantId: { [Op.in]: [...new Set(fresh.map((h) => h.shift.tenantId))] },
+            },
+            attributes: ['id', 'fullName', 'email', 'guardId', 'tenantId'],
+          });
+          for (const g of sgs) {
+            const key = `${g.guardId}|${g.tenantId}`;
+            if (!sgMap.has(key)) sgMap.set(key, g);
+          }
+          const users = await database.user.findAll({
+            where: { id: { [Op.in]: guardIds } },
+            attributes: ['id', 'email'],
+          });
+          for (const u of users) userMap.set(String(u.id), u);
+        }
+        const stationIds = [...new Set(fresh.map((h) => h.shift.stationId).filter(Boolean))];
+        const stationMap = new Map<string, any>();
+        if (stationIds.length) {
+          const stations = await database.station.findAll({
+            where: { id: { [Op.in]: stationIds } },
+            attributes: ['id', 'stationName'],
+          });
+          for (const st of stations) stationMap.set(String(st.id), st);
+        }
+
+        for (const h of fresh) {
+          const { shift, settings, punch, spec } = h;
+          const sg = shift.guardId
+            ? sgMap.get(`${shift.guardId}|${shift.tenantId}`) || null
             : null;
-          guardEmail = guardUser?.email || null;
-          if (!guardEmail && sg?.id) {
-            const sgRow = await database.securityGuard.findByPk(sg.id, { attributes: ['email'] });
-            guardEmail = sgRow?.email || null;
+          const station = shift.stationId
+            ? stationMap.get(String(shift.stationId)) || null
+            : null;
+
+          const row = await database.attendanceException.create({
+            type: spec.type,
+            severity: spec.severity,
+            status: 'open',
+            reason: spec.reason || null,
+            meta: spec.meta ? JSON.stringify(spec.meta) : null,
+            detectedAt: now,
+            guardShiftId: punch ? punch.id : null,
+            shiftId: shift.id,
+            guardId: sg?.id || null,
+            stationId: shift.stationId || null,
+            postSiteId: shift.postSiteId || null,
+            tenantId: shift.tenantId,
+          });
+          flagged++;
+
+          const eventType = EXCEPTION_EVENT[spec.type];
+          if (eventType) {
+            try {
+              await dispatch(eventType, {
+                guardName: sg?.fullName || 'Guardia',
+                stationName: station?.stationName || null,
+                reason: spec.reason || '',
+                type: spec.type,
+              }, {
+                database,
+                tenantId: shift.tenantId,
+                sourceEntityType: 'attendanceException',
+                sourceEntityId: row.id,
+                extraEmails: settings.notifications?.customEmails || [],
+                assignedPostSiteId:
+                  settings.notifications?.assignedSupervisorsOnly && shift.postSiteId
+                    ? shift.postSiteId
+                    : undefined,
+              });
+            } catch { /* best-effort */ }
           }
-          if (guardEmail) {
-            const selfEvent =
-              spec.type === 'late_arrival' ? 'attendance.late_self' : 'attendance.no_show_self';
-            await dispatch(selfEvent, {
-              stationName: station?.stationName || null,
-              minutesLate: spec.meta?.minutesLate ?? null,
-            }, {
-              database,
-              tenantId: shift.tenantId,
-              sourceEntityType: 'attendanceException',
-              sourceEntityId: row.id,
-              recipientUserId: guardUser?.id || undefined,
-              recipientEmail: guardEmail,
-            });
+
+          // Also notify the affected GUARD (in-app + email) with guard-facing copy
+          // for lateness / no-show only. Deduped: this whole block runs once per
+          // (shiftId,type) thanks to the open-exception gate above.
+          if (spec.type === 'late_arrival' || spec.type === 'no_call_no_show') {
+            try {
+              // Resolve the guard's email: prefer the linked user's email, then the
+              // securityGuard.email. If neither exists, skip silently.
+              const guardUser = shift.guardId ? userMap.get(String(shift.guardId)) || null : null;
+              let guardEmail: string | null = guardUser?.email || null;
+              if (!guardEmail && sg) guardEmail = sg.email || null;
+              if (guardEmail) {
+                const selfEvent =
+                  spec.type === 'late_arrival' ? 'attendance.late_self' : 'attendance.no_show_self';
+                await dispatch(selfEvent, {
+                  stationName: station?.stationName || null,
+                  minutesLate: spec.meta?.minutesLate ?? null,
+                }, {
+                  database,
+                  tenantId: shift.tenantId,
+                  sourceEntityType: 'attendanceException',
+                  sourceEntityId: row.id,
+                  recipientUserId: guardUser?.id || undefined,
+                  recipientEmail: guardEmail,
+                });
+              }
+            } catch { /* best-effort */ }
           }
-        } catch { /* best-effort */ }
+        }
+      }
+
+      if (page.length < PAGE_SIZE) break; // window exhausted
+      if (scanned >= MAX_SHIFTS_PER_TICK) {
+        console.warn(
+          `[attendance] detection tick truncated at ${MAX_SHIFTS_PER_TICK} shifts — more remain in the 24h window`,
+        );
+        break;
       }
     }
     if (flagged) console.log(`[attendance] detection flagged ${flagged} exception(s)`);

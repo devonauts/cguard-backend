@@ -73,11 +73,9 @@ export async function processPendingJobs() {
       }
     }
   } finally {
-    // close sequelize connection
-    try {
-      const { sequelize } = db;
-      if (sequelize && typeof sequelize.close === 'function') await sequelize.close();
-    } catch (_) {}
+    // NOTE: deliberately no sequelize.close() here — models() now returns the
+    // process-wide singleton, so closing it would kill the shared pool. The
+    // standalone runner (scripts/processReportJobs.ts) process.exit()s anyway.
   }
 }
 

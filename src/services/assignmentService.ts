@@ -1,4 +1,4 @@
-import { generateShiftsForAssignment } from './shiftGenerationService';
+import { generateShiftsForAssignment, MAX_ASSIGNMENT_HORIZON_DAYS } from './shiftGenerationService';
 import { resolveGuardUserId } from './guardIdResolver';
 
 /**
@@ -50,6 +50,30 @@ export async function createAssignment(
   // start date is no longer required — a guard "dropped into" a station follows the
   // station's horario from today. startDate only bounds when shifts begin.
   const startDate = input.startDate || new Date().toISOString().slice(0, 10);
+
+  // Bound the generation window at the API boundary: endDate must parse, must not
+  // precede startDate, and must stay within the yearly generation horizon. A
+  // typo'd year (e.g. 9999-12-31) would otherwise drive a multi-million-day
+  // shift-generation walk + bulkCreate. The generator also clamps defensively.
+  if (input.endDate) {
+    const end = new Date(input.endDate);
+    if (isNaN(end.getTime())) {
+      throw new AssignmentValidationError('La fecha de fin no es válida (usa el formato YYYY-MM-DD).');
+    }
+    const start = new Date(startDate);
+    if (!isNaN(start.getTime()) && end < start) {
+      throw new AssignmentValidationError('La fecha de fin no puede ser anterior a la fecha de inicio.');
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const genStart = !isNaN(start.getTime()) && start > today ? start : today;
+    const maxEnd = new Date(genStart.getTime() + MAX_ASSIGNMENT_HORIZON_DAYS * 24 * 60 * 60 * 1000);
+    if (end > maxEnd) {
+      throw new AssignmentValidationError(
+        `La fecha de fin no puede superar el horizonte de generación de ${MAX_ASSIGNMENT_HORIZON_DAYS} días (máximo ${maxEnd.toISOString().slice(0, 10)}).`,
+      );
+    }
+  }
 
   // Resolve the incoming guard reference (a user id OR a securityGuard id from
   // the autocomplete) to the underlying users.id. The assignment and every

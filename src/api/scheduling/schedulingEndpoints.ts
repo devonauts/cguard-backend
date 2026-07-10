@@ -977,10 +977,17 @@ export async function schedulerOptimizeSacafrancos(req, res) {
     const data = req.body?.data || req.body || {};
     const sacafrancoRotationStyleId = data.rotationStyleId || undefined;
 
-    const { optimizeSacafrancos } = await import('../../services/shiftGenerationService');
-    const result = await optimizeSacafrancos(req.database, tenantId, userId, sacafrancoRotationStyleId);
-
-    await ApiResponseHandler.success(req, res, result);
+    const { optimizeSacafrancos, SacafrancoOptimizeInProgressError } = await import('../../services/shiftGenerationService');
+    try {
+      const result = await optimizeSacafrancos(req.database, tenantId, userId, sacafrancoRotationStyleId);
+      await ApiResponseHandler.success(req, res, result);
+    } catch (e: any) {
+      if (e instanceof SacafrancoOptimizeInProgressError) {
+        res.status(409).send({ message: e.message });
+        return;
+      }
+      throw e;
+    }
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
   }

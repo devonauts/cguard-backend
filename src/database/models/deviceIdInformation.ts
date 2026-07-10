@@ -48,7 +48,13 @@ export default function (sequelize) {
             deletedAt: null,
           },
         },
-
+        // Push token resolution — the hot lookup key for every push
+        // (messageRouter.userHasPushToken / pushProvider.resolveTokenRows):
+        // WHERE tenantId = ? AND userId = ?.
+        {
+          name: 'idx_device_tenant_user',
+          fields: ['tenantId', 'userId'],
+        },
       ],
       timestamps: true,
       paranoid: true,

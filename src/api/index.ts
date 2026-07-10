@@ -8,7 +8,9 @@ import { databaseMiddleware } from '../middlewares/databaseMiddleware';
 import bodyParser from 'body-parser';
 import multer from 'multer';
 import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { createRateLimiter } from './apiRateLimiter';
+import Error401 from '../errors/Error401';
 import { languageMiddleware } from '../middlewares/languageMiddleware';
 import authSocial from './auth/authSocial';
 import setupSwaggerUI from './apiDocumentation';
@@ -137,8 +139,17 @@ app.post(
   require('./email/sendgridWebhook').sendgridEventWebhook,
 );
 
-// Proxy endpoints for Google Places (server-side) to avoid CORS issues
-app.get('/api/places/autocomplete', (req, res) => {
+// Proxy endpoints for Google Places (server-side) to avoid CORS issues.
+// Mounted before authMiddleware (mobile clients call it without a session), so
+// without its own limiter every anonymous hit spends paid Google API quota —
+// give it a tight per-IP budget.
+const placesRateLimiter = createRateLimiter({
+  name: 'places',
+  max: Number(process.env.RATE_LIMIT_PLACES_MAX) || 30,
+  windowMs: 60 * 1000,
+  message: 'errors.429',
+});
+app.get('/api/places/autocomplete', placesRateLimiter, (req, res) => {
   const input = String(req.query.input || '');
   const lang = String(req.query.language || 'es');
   const key = process.env.GOOGLE_MAPS_API_KEY || process.env.FLUTTER_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
@@ -157,7 +168,7 @@ app.get('/api/places/autocomplete', (req, res) => {
   });
 });
 
-app.get('/api/places/details', (req, res) => {
+app.get('/api/places/details', placesRateLimiter, (req, res) => {
   const placeId = String(req.query.place_id || '');
   const key = process.env.GOOGLE_MAPS_API_KEY || process.env.FLUTTER_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) return res.status(500).json({ message: 'maps_key_missing' });
@@ -258,16 +269,61 @@ app.use(
 // Parse multipart/form-data for import endpoints so frontends
 // that send FormData (files or JSON fields) can provide the
 // `data` and `importHash` fields as text form fields or upload files.
-const multipartParser = multer();
-app.use((req, res, next) => {
+// Limits are mandatory: bare multer() is memoryStorage with fileSize=Infinity
+// and no file-count cap, so a single unauthenticated POST to any */import URL
+// could buffer gigabytes on the heap of the box shared with MySQL.
+const multipartParser = multer({
+  limits: {
+    fileSize: 20 * 1024 * 1024,
+    files: 5,
+    fields: 100,
+    fieldSize: 1024 * 1024,
+  },
+});
+// Dedicated limiter for import posts. Built with express-rate-limit directly
+// because createRateLimiter's shared skip exempts every URL ending in
+// '/import', so a limiter built there would never fire on these routes.
+// Budget is generous on purpose: the CRM importers post ONE request PER ROW
+// (see frontend visitorLogService.import), so a big CSV is thousands of
+// legitimate posts — this is an abuse backstop, not a throttle. Keyed per
+// user (not per IP) so offices behind one NAT don't share a bucket.
+const importRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_IMPORT_MAX) || 2000,
+  message: 'errors.429',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => String(req.currentUser?.id || req.ip),
+  validate: false as any,
+});
+app.use((req: any, res, next) => {
   if (
     req.originalUrl &&
     (req.originalUrl.endsWith('/import') || req.originalUrl.endsWith('/import-file')) &&
     req.method === 'POST'
   ) {
-    // Accept both fields and files for import endpoints (supports both
-    // `/import` and `/import-file` route suffixes).
-    return multipartParser.any()(req, res, next);
+    // Every import route is authenticated + permissioned downstream, but
+    // authMiddleware passes tokenless requests through — reject them HERE,
+    // before any multipart bytes are buffered into memory.
+    if (!req.currentUser) {
+      return ApiResponseHandler.error(req, res, new Error401());
+    }
+    return importRateLimiter(req, res, () => {
+      // Accept both fields and files for import endpoints (supports both
+      // `/import` and `/import-file` route suffixes). Multer limit violations
+      // surface as MulterError via next(err) → translate to 413/400 instead of
+      // the terminal handler's generic 500.
+      multipartParser.any()(req, res, (err) => {
+        if (!err) {
+          return next();
+        }
+        const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+        return res.status(tooLarge ? 413 : 400).json({
+          message: tooLarge ? 'File too large' : 'Upload failed',
+          code: tooLarge ? 413 : 400,
+        });
+      });
+    });
   }
   return next();
 });

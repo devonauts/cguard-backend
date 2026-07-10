@@ -87,6 +87,16 @@ router.get('/health', async (req: Request, res: Response) => {
     health.status = 'degraded';
   }
 
+  // Realtime cluster delivery: degraded = PM2 cluster worker without a working
+  // socket.io Redis adapter (cross-instance emits, incl. panic alerts, are lost).
+  try {
+    const realtime = require('../lib/realtime').getRealtimeHealth();
+    (health.checks as any).realtime = realtime;
+    if (realtime?.degraded && health.status === 'healthy') {
+      health.status = 'degraded';
+    }
+  } catch { /* realtime module optional */ }
+
   // Return appropriate status code
   const statusCode = health.status === 'unhealthy' ? 503 : 200;
   res.status(statusCode).json(health);

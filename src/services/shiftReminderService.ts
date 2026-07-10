@@ -52,9 +52,19 @@ export async function runShiftReminders(db: any): Promise<void> {
     if (!s.guardId) continue;
     const start = new Date(s.startTime).getTime();
 
+    // Offsets already claimed per the loaded row — cheap in-memory pre-filter so
+    // past offsets don't re-issue a no-op claim UPDATE on every tick. The atomic
+    // UPDATE below remains the cluster-safe arbiter for anything that slips through.
+    let sentKeys: string[] = [];
+    if (Array.isArray(s.remindersSent)) sentKeys = s.remindersSent;
+    else if (s.remindersSent) {
+      try { sentKeys = JSON.parse(s.remindersSent) || []; } catch { sentKeys = []; }
+    }
+
     for (const off of OFFSETS) {
       const remindAt = start - off.ms;
       if (now < remindAt || now >= start) continue; // not due yet, or already started
+      if (sentKeys.includes(off.key)) continue; // already claimed on a prior tick
 
       // Atomic, cluster-safe claim. Only one worker's UPDATE matches.
       let claimed = false;

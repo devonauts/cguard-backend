@@ -8,7 +8,7 @@
  * The mobile app registers its FCM token via POST /guard/me/device-token, stored
  * in deviceIdInformation; tokens are resolved here per tenant.
  */
-import { Op } from 'sequelize';
+import { Op, col, fn, where as whereClause } from 'sequelize';
 
 // Multi-project FCM: each cguard app can live in its OWN Firebase project, so we
 // must send each device's push via the project its token was minted for — else
@@ -121,16 +121,22 @@ export async function sendToTokens(tokens: string[], payload: PushPayload, proje
     };
     // FCM caps sendEachForMulticast at 500 tokens/call. Single-tenant/user sends
     // are well under that, but a platform-wide broadcast is not — so chunk and
-    // aggregate the counts.
+    // aggregate the counts. Keep the PER-TOKEN outcomes (token → error code) so
+    // callers can prune dead tokens (registration-token-not-registered etc.);
+    // without them the dead-token cleanup in pushProvider can never run.
     let sent = 0;
     let failed = 0;
+    const responses: Array<{ token: string; success: boolean; errorCode: string | null }> = [];
     for (let i = 0; i < unique.length; i += 500) {
       const batch = unique.slice(i, i + 500);
       const res = await messaging.sendEachForMulticast({ tokens: batch, ...message });
       sent += res.successCount;
       failed += res.failureCount;
+      (res.responses || []).forEach((r: any, j: number) => {
+        responses.push({ token: batch[j], success: !!r?.success, errorCode: r?.error?.code || null });
+      });
     }
-    return { sent, failed };
+    return { sent, failed, responses };
   } catch (e: any) {
     console.warn('[push] send failed:', e?.message || e);
     return { sent: 0, error: true };
@@ -185,6 +191,37 @@ async function deliverToDevices(rows: any[], payload: PushPayload) {
   return { sent: (fcmRes.sent || 0) + (apnsRes.sent || 0), fcm: fcmRes, apns: apnsRes };
 }
 
+/** Lean column set for token resolution — `id` kept so rows stay updatable
+ *  (dead-token cleanup calls row.update). */
+const DEVICE_TOKEN_ATTRIBUTES = ['id', 'pushToken', 'deviceId', 'apnsToken', 'app'];
+
+/**
+ * Resolve a user's registered device rows ONCE. Callers that need both a
+ * token-presence check and the actual send (e.g. the communications router)
+ * thread these rows through instead of re-querying per step.
+ */
+export async function getUserDeviceRows(db: any, tenantId: string, userId: string): Promise<any[]> {
+  try {
+    if (!userId) return [];
+    const rows = await db.deviceIdInformation.findAll({
+      where: { tenantId, userId },
+      attributes: DEVICE_TOKEN_ATTRIBUTES,
+    });
+    return rows || [];
+  } catch (e: any) {
+    console.warn('[push] device row resolve failed:', e?.message || e);
+    return [];
+  }
+}
+
+/**
+ * `data.type` values that are SINGLE-guard routine receipts (one guard acted;
+ * supervisors want the acknowledgment). These must NOT buzz every guard device
+ * in the tenant — they are delivered to the supervisor/admin/dispatcher users
+ * only (see resolveSupervisorUserIds).
+ */
+const SUPERVISOR_AUDIENCE_TYPES = new Set(['memo.accepted', 'consigna.completed']);
+
 /**
  * Worker-app broadcast to a tenant (alarms, rondas, memos, orders, video dispatch).
  * Targets WORKER devices ONLY — client-app (Mi Seguridad) devices are excluded so
@@ -193,8 +230,50 @@ async function deliverToDevices(rows: any[], payload: PushPayload) {
  */
 export async function pushToTenant(db: any, tenantId: string, payload: PushPayload) {
   try {
+    // Per-guard routine receipts (memo confirmations / consigna completions)
+    // exist "so supervisors see the receipt" — narrow the audience to the
+    // supervisor/admin users' devices instead of the whole fleet.
+    const type = payload?.data?.type;
+    if (type && SUPERVISOR_AUDIENCE_TYPES.has(type)) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { resolveSupervisorUserIds } = require('./communication/operationalRecipients');
+      const userIds: string[] = await resolveSupervisorUserIds(db, tenantId);
+      if (!userIds.length) return { sent: 0, skipped: true };
+      const rows = await db.deviceIdInformation.findAll({
+        where: {
+          tenantId,
+          userId: { [Op.in]: userIds },
+          [Op.or]: [{ app: { [Op.ne]: 'client' } }, { app: null }],
+        },
+        attributes: DEVICE_TOKEN_ATTRIBUTES,
+      });
+      return deliverToDevices(rows, payload);
+    }
+
+    // TODO(product): audience — the remaining callers (patrol_start/patrol_complete
+    // per ronda, alarm_escalated per SLA breach, alarm/video dispatch) still
+    // broadcast to EVERY worker+supervisor device in the tenant. Whether those
+    // should target on-duty responders instead is a product decision; until then
+    // the query is kept lean (deliverable rows only, token columns only) and the
+    // FCM send is chunked at the 500-token multicast cap in sendToTokens.
     const rows = await db.deviceIdInformation.findAll({
-      where: { tenantId, [Op.or]: [{ app: { [Op.ne]: 'client' } }, { app: null }] },
+      where: {
+        tenantId,
+        [Op.or]: [{ app: { [Op.ne]: 'client' } }, { app: null }],
+        // Only rows that can actually be delivered to: an FCM pushToken, an
+        // APNs token, or a legacy long deviceId that IS the FCM token (short
+        // stable install-ids are never deliverable — see deliverToDevices).
+        [Op.and]: [
+          {
+            [Op.or]: [
+              { pushToken: { [Op.ne]: null } },
+              { apnsToken: { [Op.ne]: null } },
+              whereClause(fn('CHAR_LENGTH', col('deviceId')), { [Op.gt]: 64 }),
+            ],
+          },
+        ],
+      },
+      attributes: DEVICE_TOKEN_ATTRIBUTES,
     });
     return deliverToDevices(rows, payload);
   } catch (e: any) {
@@ -270,8 +349,10 @@ export async function pushToAll(db: any, payload: PushPayload, app?: BroadcastAp
   }
 }
 
-/** Resolve a single user's registered device tokens and push to them. */
-export async function pushToUser(db: any, tenantId: string, userId: string, payload: PushPayload) {
+/** Resolve a single user's registered device tokens and push to them. Callers
+ *  that already resolved the rows (communications router) pass `deviceRows` so
+ *  the lookup runs once per send, not 2-3 times. */
+export async function pushToUser(db: any, tenantId: string, userId: string, payload: PushPayload, deviceRows?: any[]) {
   try {
     if (!userId) return { sent: 0, skipped: true };
     // Device tokens are keyed by the `userId` column (see guardMeDeviceToken) and
@@ -279,7 +360,7 @@ export async function pushToUser(db: any, tenantId: string, userId: string, payl
     // `deviceId`, which resolved zero tokens for guards — fixed here.
     // Resolve THIS user's own devices and deliver each via its own transport
     // (a guard's worker device → FCM; a client user's Mi Seguridad device → APNs).
-    const rows = await db.deviceIdInformation.findAll({ where: { tenantId, userId } });
+    const rows = deviceRows ?? (await getUserDeviceRows(db, tenantId, userId));
     return deliverToDevices(rows, payload);
   } catch (e: any) {
     console.warn('[push] pushToUser failed:', e?.message || e);

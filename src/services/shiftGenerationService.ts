@@ -13,7 +13,31 @@
 import { wallClockToUtc } from '../lib/tenantTime';
 import { requiredHalves, TurnoHalf } from './scheduleCoverageService';
 
-const GENERATION_DAYS = 365; // Generate 1 full year of shifts
+export const GENERATION_DAYS = 365; // Generate 1 full year of shifts
+// Hard horizon for user-supplied endDates: one full calendar year (leap-safe).
+// Anything beyond is rejected at the API boundary and clamped in the generator.
+export const MAX_ASSIGNMENT_HORIZON_DAYS = GENERATION_DAYS + 1;
+
+/**
+ * Clamp a user-supplied generation end to the MAX_ASSIGNMENT_HORIZON_DAYS
+ * horizon from genStart. A typo'd far-future endDate (e.g. 9999-12-31) would
+ * otherwise walk millions of days and bulkCreate millions of rows, OOM-killing
+ * the PM2 worker. createAssignment rejects such input at the API boundary; this
+ * is the defense-in-depth backstop covering EVERY path into the day-walk
+ * (direct create/update, rephase, auto-assign, yearly regen, sacafranco
+ * optimization, orphan repair). An invalid endDate (NaN) passes through: the
+ * day-walk `while (cursor <= genEnd)` is then simply never entered.
+ */
+function clampGenEnd(genStart: Date, genEnd: Date, assignmentId: string): Date {
+  const maxEnd = new Date(genStart.getTime() + MAX_ASSIGNMENT_HORIZON_DAYS * 24 * 60 * 60 * 1000);
+  if (genEnd > maxEnd) {
+    console.warn(
+      `[shiftGen] clamping generation window for assignment ${assignmentId}: endDate ${genEnd.toISOString().slice(0, 10)} exceeds the ${MAX_ASSIGNMENT_HORIZON_DAYS}-day horizon (using ${maxEnd.toISOString().slice(0, 10)})`,
+    );
+    return maxEnd;
+  }
+  return genEnd;
+}
 
 /** Load the tenant's timezone (single source of truth for wall-clock times). */
 async function tenantTz(database: any, tenantId: string): Promise<string> {
@@ -120,17 +144,42 @@ async function computeFijoGaps(
   genEnd: Date,
 ): Promise<Map<string, FijoGap[]>> {
   const gapsByDay = new Map<string, FijoGap[]>();
+  if (!coveredStationIds.length) return gapsByDay;
   const epoch = getGlobalEpoch(genStart);
 
+  // Batch the lookups ONCE for all covered stations (3 queries total instead of
+  // 3 per station — SFs are global, so this used to be 3×N sequential round-trips
+  // per SF assignment). The per-station loop below then works purely in memory.
+  const stationRows = await database.station.findAll({
+    where: { id: coveredStationIds },
+    attributes: ['id', 'scheduleType', 'rotationStyleId', 'postSiteId'],
+  });
+  const stationById = new Map<string, any>(stationRows.map((s: any) => [String(s.id), s]));
+  const rotIds = Array.from(new Set(stationRows.map((s: any) => s.rotationStyleId).filter(Boolean)));
+  const rotRows = rotIds.length
+    ? await database.rotationStyle.findAll({
+        where: { id: rotIds },
+        attributes: ['id', 'dayShifts', 'nightShifts', 'restDays'],
+      })
+    : [];
+  const rotById = new Map<string, any>(rotRows.map((r: any) => [String(r.id), r]));
+  const fijoRows = await database.stationPosition.findAll({
+    where: { stationId: coveredStationIds, tenantId, deletedAt: null, type: 'fijo' },
+    attributes: ['stationId', 'platoonOffset', 'startTime', 'endTime'],
+  });
+  const fijosByStation = new Map<string, any[]>();
+  for (const f of fijoRows) {
+    const key = String(f.stationId);
+    if (!fijosByStation.has(key)) fijosByStation.set(key, []);
+    fijosByStation.get(key)!.push(f);
+  }
+
   for (const sid of coveredStationIds) {
-    const st = await database.station.findByPk(sid, { attributes: ['id', 'scheduleType', 'rotationStyleId', 'postSiteId'] });
+    const st = stationById.get(String(sid));
     if (!st || !st.rotationStyleId) continue;
-    const rot = await database.rotationStyle.findByPk(st.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+    const rot = rotById.get(String(st.rotationStyleId));
     if (!rot) continue;
-    const fijos = await database.stationPosition.findAll({
-      where: { stationId: sid, tenantId, deletedAt: null, type: 'fijo' },
-      attributes: ['platoonOffset', 'startTime', 'endTime'],
-    });
+    const fijos = fijosByStation.get(String(sid)) || [];
     if (!fijos.length) continue;
 
     const required = requiredHalves(st.scheduleType);
@@ -200,7 +249,9 @@ export async function computeShiftsForAssignment(
 
   // ─── AD-HOC (manual, non-rotation) ──────────────────────────────────────
   if (assignment.kind === 'adhoc') {
-    const genEnd = assignment.endDate ? new Date(assignment.endDate) : new Date(genStart);
+    const genEnd = assignment.endDate
+      ? clampGenEnd(genStart, new Date(assignment.endDate), assignment.id)
+      : new Date(genStart);
     const startHHmm = assignment.startTime || '07:00';
     const endHHmm = assignment.endTime || '19:00';
     const rows: ComputedShift[] = [];
@@ -241,7 +292,7 @@ export async function computeShiftsForAssignment(
 
   const { dayShifts, nightShifts, restDays } = rotationStyle;
   const genEnd = assignment.endDate
-    ? new Date(assignment.endDate)
+    ? clampGenEnd(genStart, new Date(assignment.endDate), assignment.id)
     : new Date(today.getTime() + GENERATION_DAYS * 24 * 60 * 60 * 1000);
 
   const dayStartTime = position.startTime || '07:00';
@@ -624,10 +675,10 @@ interface StationSpreadInfo {
  * peak per-block load. We keep the SF offset with no out-of-block gaps and the
  * fewest SFs.
  */
-function planStationsAndSf(
+async function planStationsAndSf(
   stations: StationSpreadInfo[],
   sfRot: { dayShifts: number; nightShifts: number; restDays: number },
-): { fijoOffsets: Map<string, number>; sfOffset: number; sfCount: number; L: number; dayLoad: number[]; nightLoad: number[]; outOfBlock: number } {
+): Promise<{ fijoOffsets: Map<string, number>; sfOffset: number; sfCount: number; L: number; dayLoad: number[]; nightLoad: number[]; outOfBlock: number }> {
   const sfCycle = Math.max(1, sfRot.dayShifts + sfRot.nightShifts + sfRot.restDays);
   const cycles = stations.map((s) => s.rot.dayShifts + s.rot.nightShifts + s.rot.restDays).filter((c) => c > 0);
   cycles.push(sfCycle);
@@ -651,12 +702,17 @@ function planStationsAndSf(
   let best: { fijoOffsets: Map<string, number>; sfOffset: number; sfCount: number; dayLoad: number[]; nightLoad: number[]; outOfBlock: number } | null = null;
 
   for (let sfOff = 0; sfOff < sfCycle; sfOff++) {
+    // Cooperative yield: this planner is O(sfCycle×stations×cycle×L) of pure
+    // synchronous CPU inside a request handler — let the event loop breathe at
+    // the outer loop boundaries so heartbeats/sockets on this worker don't stall.
+    await new Promise((resolve) => setImmediate(resolve));
     const dayLoad = new Array(L).fill(0);
     const nightLoad = new Array(L).fill(0);
     const fijoOffsets = new Map<string, number>();
     let outOfBlock = 0;
 
     for (const st of ordered) {
+      await new Promise((resolve) => setImmediate(resolve));
       const cycle = st.rot.dayShifts + st.rot.nightShifts + st.rot.restDays;
       if (cycle <= 0 || !st.fijos.length) continue;
       let bestO = 0, bestPen = Infinity, bestOob = 0;
@@ -729,7 +785,38 @@ function planStationsAndSf(
  *   stationOffset = (stationIndex * restDays - workDays + cycle) % cycle
  *   This makes station `i` rest starting on day `i * restDays` of the cycle
  */
+/** Thrown when an optimization is already running for the tenant (HTTP 409). */
+export class SacafrancoOptimizeInProgressError extends Error {
+  httpStatus = 409;
+  constructor() {
+    super('Ya hay una optimización de sacafrancos en curso para esta empresa. Espera a que termine e intenta de nuevo.');
+    this.name = 'SacafrancoOptimizeInProgressError';
+  }
+}
+
+// Per-tenant in-flight guard (module-level, per PM2 instance): a double-clicked
+// "Optimizar" would otherwise run two interleaved tenant-wide force-destroy /
+// recreate passes → duplicated or missing shifts + InnoDB lock waits.
+const optimizeInFlightTenants = new Set<string>();
+
 export async function optimizeSacafrancos(
+  database: any,
+  tenantId: string,
+  userId: string,
+  sacafrancoRotationStyleId?: string,
+): Promise<{ message: string; details: any }> {
+  if (optimizeInFlightTenants.has(tenantId)) {
+    throw new SacafrancoOptimizeInProgressError();
+  }
+  optimizeInFlightTenants.add(tenantId);
+  try {
+    return await doOptimizeSacafrancos(database, tenantId, userId, sacafrancoRotationStyleId);
+  } finally {
+    optimizeInFlightTenants.delete(tenantId);
+  }
+}
+
+async function doOptimizeSacafrancos(
   database: any,
   tenantId: string,
   userId: string,
@@ -811,7 +898,7 @@ export async function optimizeSacafrancos(
 
   // 6. Plan fijo offsets + the SF offset so a real day→night→rest SF covers every
   // gap feasibly (day-gaps land in the SF day-block, night-gaps in its night-block).
-  const plan = planStationsAndSf(spreadInfo, {
+  const plan = await planStationsAndSf(spreadInfo, {
     dayShifts: sfRotation.dayShifts, nightShifts: sfRotation.nightShifts, restDays: sfRotation.restDays,
   });
 
@@ -986,12 +1073,19 @@ export async function optimizeSacafrancos(
     );
   }
 
-  // 9. Regenerate shifts for all fixed + active SF assignments after offset/position rebalance
+  // 9. Regenerate shifts for all fixed + active SF assignments after offset/position rebalance.
+  // Lean attributes: exactly the AssignmentData fields generateShiftsForAssignment reads.
+  const regenAttributes = [
+    'id', 'guardId', 'stationId', 'positionId', 'rotationStyleId', 'startDate', 'endDate',
+    'platoonOffset', 'isRelief', 'coveredStationIds', 'kind', 'startTime', 'endTime',
+  ];
   const allFijoAssignments = await database.guardAssignment.findAll({
     where: { tenantId, status: 'active', deletedAt: null, positionId: fijoPositions.map((f: any) => f.id) },
+    attributes: regenAttributes,
   });
   const allSfAssignments = await database.guardAssignment.findAll({
     where: { tenantId, status: 'active', deletedAt: null, isRelief: true },
+    attributes: regenAttributes,
   });
 
   const regenAssignments = [...allFijoAssignments, ...allSfAssignments];

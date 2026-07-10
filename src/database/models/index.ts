@@ -10,7 +10,18 @@ const highlight = require('cli-highlight').highlight;
 
 const basename = path.basename(__filename);
 
+// Singleton: the first call builds the Sequelize instance + model graph; every
+// subsequent call (including direct require('../database/models').default()
+// call sites AND databaseInit()) returns the exact same object. Without this,
+// each call created a brand-new Sequelize instance with its own connection
+// pool that was never closed — a permanent MySQL connection + memory leak.
+let cachedDatabase: any = null;
+
 function models() {
+  if (cachedDatabase) {
+    return cachedDatabase;
+  }
+
   const database = {} as any;
 
   // Resolve dialect with precedence: env var -> config -> default 'mysql'
@@ -51,20 +62,23 @@ function models() {
         evict: Number(getConfig().DATABASE_POOL_EVICT) || Number(process.env.DATABASE_POOL_EVICT) || 1000,
       },
       // Self-heal transient DB failures at the driver layer: retry a query that hits
-      // a connection error (pool blip / "Too many connections" / dropped socket — the
-      // query never reached the DB) or a deadlock/lock-wait-timeout (MySQL rolled it
-      // back). Connection retries can't double-apply a write; this keeps a brief blip
-      // from ever surfacing to the request handler.
+      // a connection error (dropped socket — the query never reached the DB) or a
+      // deadlock/lock-wait-timeout (MySQL rolled it back). Connection retries can't
+      // double-apply a write; this keeps a brief blip from ever surfacing to the
+      // request handler. Deliberately NOT retried: pool-acquire timeout,
+      // ER_CON_COUNT_ERROR and "Too many connections" — those signal saturation, and
+      // re-queueing multiplies load exactly when the pool is starved. They must
+      // surface fast so authMiddleware's isInfrastructureError path can 503.
+      // (The generic /SequelizeConnectionError/ pattern is also omitted on purpose:
+      // the mysql dialect wraps ER_CON_COUNT_ERROR in the base ConnectionError, so
+      // that pattern would silently re-add retry-on-saturation. The specific
+      // subclasses + errno codes below still cover transient network blips.)
       retry: {
         max: 3,
         match: [
-          /SequelizeConnectionError/,
           /SequelizeConnectionRefusedError/,
           /SequelizeHostNotReachableError/,
           /SequelizeConnectionTimedOutError/,
-          /SequelizeConnectionAcquireTimeoutError/,
-          /ER_CON_COUNT_ERROR/,
-          /Too many connections/,
           /ETIMEDOUT/,
           /ECONNRESET/,
           /ECONNREFUSED/,
@@ -124,6 +138,8 @@ function models() {
 
   database.sequelize = sequelize;
   database.Sequelize = Sequelize;
+
+  cachedDatabase = database;
 
   return database;
 }

@@ -22,7 +22,27 @@ export default async (req, res) => {
     const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const cases = await db.alarmCase.findAll({ where: { tenantId, createdAt: { [Op.gte]: since } } });
+    // Lean scan: only the scalar columns the aggregation below reads — never
+    // the stepProgress JSON blob (detail-only; caseList drops it too). raw:true
+    // skips Sequelize instance hydration since we only read plain values.
+    const cases = await db.alarmCase.findAll({
+      where: { tenantId, createdAt: { [Op.gte]: since } },
+      attributes: [
+        'status',
+        'priority',
+        'category',
+        'assignedOperatorId',
+        'ackAt',
+        'dispatchAt',
+        'resolvedAt',
+        'closedAt',
+        'disposition',
+        'slaLevel',
+        'ecvSatisfied',
+        'createdAt',
+      ],
+      raw: true,
+    });
 
     const tta: number[] = [], ttd: number[] = [], ttr: number[] = [];
     let ackWithinSla = 0, ackedCount = 0, escalated = 0;

@@ -38,25 +38,29 @@ export default async (req: any, res: any) => {
       return ApiResponseHandler.success(req, res, { ok: false });
     }
 
-    const open = await db.guardShift.findOne({
-      where: { tenantId, guardNameId: securityGuard.id, punchOutTime: null },
-      order: [['punchInTime', 'DESC']],
-    });
-    if (!open) {
+    // Single atomic UPDATE on the open shift — no SELECT-then-save. This is the
+    // hottest write in the platform (every on-duty guard pings on a timer), and
+    // a findOne without attributes would drag the row's TEXT blobs (selfie,
+    // sessions JSON, checklist) over the wire per ping. affectedRows === 0 means
+    // no open shift → same no-op { ok: false } as before. Paranoid (deletedAt)
+    // filtering is applied by Model.update automatically.
+    const battery = num(body.battery);
+    const [affected] = await db.guardShift.update(
+      {
+        liveLatitude: lat,
+        liveLongitude: lng,
+        liveSpeed: num(body.speed),
+        liveHeading: num(body.heading),
+        liveAccuracy: num(body.accuracy),
+        // battery may arrive 0..1 (fraction) or 0..100 — normalize to whole %.
+        liveBattery: battery == null ? null : Math.round(battery <= 1 ? battery * 100 : battery),
+        liveLocationAt: new Date(),
+      },
+      { where: { tenantId, guardNameId: securityGuard.id, punchOutTime: null } },
+    );
+    if (!affected) {
       return ApiResponseHandler.success(req, res, { ok: false });
     }
-
-    const battery = num(body.battery);
-    await open.update({
-      liveLatitude: lat,
-      liveLongitude: lng,
-      liveSpeed: num(body.speed),
-      liveHeading: num(body.heading),
-      liveAccuracy: num(body.accuracy),
-      // battery may arrive 0..1 (fraction) or 0..100 — normalize to whole %.
-      liveBattery: battery == null ? null : Math.round(battery <= 1 ? battery * 100 : battery),
-      liveLocationAt: new Date(),
-    });
 
     await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) {

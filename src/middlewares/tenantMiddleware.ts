@@ -12,9 +12,17 @@ export async function tenantMiddleware(
   name,
 ) {
   try {
-    const tenant = await new TenantService(req).findById(
-      value,
-    );
+    // Reuse the tenant AuthService.findByToken already loaded and attached as
+    // req.currentTenant (tenant + settings + logo) when the token carried a
+    // tenantId — re-fetching the identical row here doubled the tenant query on
+    // every /tenant/:tenantId request. Only reused when the URL param matches
+    // the already-loaded tenant; any other :tenantId is still loaded fresh so
+    // the membership check below validates exactly what the URL asked for.
+    const preloaded = req.currentTenant;
+    const tenant =
+      preloaded && preloaded.id === value
+        ? preloaded
+        : await new TenantService(req).findById(value);
 
     // ── Tenant isolation ──────────────────────────────────────────────────
     // The middleware loads ANY tenant by id, so without this an authenticated

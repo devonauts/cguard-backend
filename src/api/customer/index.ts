@@ -1,9 +1,31 @@
 import multer from 'multer';
 
-// Memory-storage multipart parser for customer file uploads. `multipartParser`
+// Memory-storage multipart parsers for customer file uploads. `multipartParser`
 // in src/api/index.ts is module-local and not exported, so we instantiate our
-// own (same `multer()` default) and apply it per-route.
-const multipartParser = multer();
+// own and apply them per-route. Limits are mandatory: multer's default is
+// memoryStorage with fileSize=Infinity and no file-count cap, so an unbounded
+// request would buffer entirely on the heap of the box shared with MySQL.
+const profilePictureParser = multer({
+  limits: { fileSize: 15 * 1024 * 1024, files: 1, fields: 50 },
+});
+const incidentMediaParser = multer({
+  limits: { fileSize: 25 * 1024 * 1024, files: 10, fields: 50 },
+});
+
+// Multer reports limit violations by passing a MulterError to next(err), which
+// the terminal error handler would surface as a generic 500. Translate to a
+// clean 413 (size) / 400 (count/unexpected field) JSON error instead.
+const withMulterErrors = (parser) => (req, res, next) =>
+  parser(req, res, (err) => {
+    if (!err) {
+      return next();
+    }
+    const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+    return res.status(tooLarge ? 413 : 400).json({
+      message: tooLarge ? 'File too large' : 'Upload failed',
+      code: tooLarge ? 413 : 400,
+    });
+  });
 
 export default (app) => {
   /**
@@ -51,7 +73,7 @@ export default (app) => {
   // with a single `file` field. Returns { success, downloadUrl }.
   app.post(
     '/customer/me/profile-picture',
-    multipartParser.single('file'),
+    withMulterErrors(profilePictureParser.single('file')),
     require('./customerProfilePicture').default,
   );
 
@@ -92,7 +114,7 @@ export default (app) => {
   // Returns { success, incidentId, photoCount }. GET lists the client's incidents.
   app.post(
     '/customer/incidents',
-    multipartParser.array('file'),
+    withMulterErrors(incidentMediaParser.array('file', 10)),
     require('./customerIncidents').customerIncidentCreate,
   );
   app.get('/customer/incidents', require('./customerIncidents').customerIncidentList);

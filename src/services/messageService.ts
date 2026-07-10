@@ -163,11 +163,18 @@ export async function sendMessage(
       { tenantId, conversationId: conversation.id, senderUserId, senderType, body: encryptBody(String(body || '')), attachments: attachments.length ? attachments : null, clientMsgId, createdById: senderUserId, updatedById: senderUserId },
       { transaction },
     );
-    for (const r of recipients) {
-      await db.messageReceipt.create(
-        { tenantId, messageId: message.id, conversationId: conversation.id, recipientUserId: r.userId, deliveryStatus: 'pending' },
-        { transaction },
-      );
+    // ONE INSERT for the whole receipt fan-out — a large group send must not
+    // hold the transaction (and its pool connection) open for N sequential
+    // round-trips. (Per-row fallback only serves test doubles w/o bulkCreate.)
+    const receiptRows = recipients.map((r) => (
+      { tenantId, messageId: message.id, conversationId: conversation.id, recipientUserId: r.userId, deliveryStatus: 'pending' }
+    ));
+    if (receiptRows.length) {
+      if (typeof db.messageReceipt.bulkCreate === 'function') {
+        await db.messageReceipt.bulkCreate(receiptRows, { transaction });
+      } else {
+        for (const row of receiptRows) await db.messageReceipt.create(row, { transaction });
+      }
     }
     await conversation.update(
       { lastMessageAt: message.createdAt, lastMessagePreview: encryptBody(preview(body) || attachmentLabel(attachments)), updatedById: senderUserId },
@@ -208,12 +215,20 @@ async function getConversationRecipients(
 ): Promise<Recipient[]> {
   if (conversation.kind === 'group') {
     // Keep auto membership fresh so a newly-assigned guard receives this message.
+    // Re-deriving membership is O(members) sequential DB work, so skip it when
+    // the last sync (groupSyncedAt, stamped by syncGroupMembership) is fresh.
+    // Explicit membership operations (group create/update, the manual sync
+    // endpoint) still call syncGroupMembership directly and are never gated.
     if (conversation.anchorId) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { syncGroupMembership } = require('./groupMembershipService');
-        await syncGroupMembership(db, conversation.id, tenantId);
-      } catch (e: any) { console.warn('[message] group resync failed:', e?.message || e); }
+      const GROUP_SYNC_TTL_MS = 5 * 60 * 1000;
+      const syncedAt = conversation.groupSyncedAt ? new Date(conversation.groupSyncedAt).getTime() : 0;
+      if (!syncedAt || Date.now() - syncedAt >= GROUP_SYNC_TTL_MS) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { syncGroupMembership } = require('./groupMembershipService');
+          await syncGroupMembership(db, conversation.id, tenantId);
+        } catch (e: any) { console.warn('[message] group resync failed:', e?.message || e); }
+      }
     }
     const parts = await db.messageConversationParticipant.findAll({
       where: { tenantId, conversationId: conversation.id, deletedAt: null },

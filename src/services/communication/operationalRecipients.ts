@@ -9,6 +9,7 @@
  * legacy SMS path; this helper only feeds the NEW push/WhatsApp routing so a
  * supervisor is also reached on their device. Best-effort — never throws.
  */
+import { Op } from 'sequelize';
 
 /** Roles that oversee the whole tenant and always receive operational alerts. */
 const SUPERVISOR_ROLES = [
@@ -54,8 +55,18 @@ export async function resolveSupervisorUserIds(
       });
     }
 
+    // `roles` is a serialized JSON string-array, so LIKE '%<role>%' is a coarse
+    // SQL pre-filter that selects a SUPERSET (e.g. '%admin%' also matches
+    // 'superadmin', which is a target role anyway); the exact role check below
+    // still decides. This keeps the query from hydrating every guard row in a
+    // 10k-user tenant just to find the handful of supervisors.
     const tenantUsers = await db.tenantUser.findAll({
-      where: { tenantId, status: 'active' },
+      where: {
+        tenantId,
+        status: 'active',
+        [Op.or]: SUPERVISOR_ROLES.map((r) => ({ roles: { [Op.like]: `%${r}%` } })),
+      },
+      attributes: ['id', 'userId', 'roles'],
       include,
     });
 

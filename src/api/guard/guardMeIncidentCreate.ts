@@ -105,6 +105,7 @@ export default async (req: any, res: any) => {
     // full-screen red alarm with everything needed to call the police / dispatch
     // a supervisor; everything else is a normal `incident.created`. Best-effort —
     // never blocks the guard's report.
+    let notifyClientAfterAck: (() => Promise<void>) | null = null;
     try {
       const isPanic =
         data.isPanic === true ||
@@ -184,80 +185,105 @@ export default async (req: any, res: any) => {
       ).catch(() => {});
 
       // Notify the owning CLIENT (Mi Seguridad app) that an incident was reported at
-      // their site — with the evidence photo when present. Best-effort.
-      try {
-        const { notifyClient } = require('../../services/clientNotifyService');
-        let photoUrl = '';
+      // their site — with the evidence photo when present. Best-effort. Deferred
+      // until AFTER the guard's HTTP ack (it resolves photo files + recipients).
+      notifyClientAfterAck = async () => {
         try {
-          const imgFiles = await db.file.findAll({
-            where: { belongsTo: 'incident', belongsToColumn: 'imageUrl', belongsToId: incident.id },
-          });
-          const filled = await FileRepository.fillDownloadUrl(imgFiles);
-          photoUrl = (filled[0] && (filled[0].downloadUrl || filled[0].publicUrl)) || '';
-        } catch { /* photo optional */ }
+          const { notifyClient } = require('../../services/clientNotifyService');
+          let photoUrl = '';
+          try {
+            const imgFiles = await db.file.findAll({
+              where: { belongsTo: 'incident', belongsToColumn: 'imageUrl', belongsToId: incident.id },
+            });
+            const filled = await FileRepository.fillDownloadUrl(imgFiles);
+            photoUrl = (filled[0] && (filled[0].downloadUrl || filled[0].publicUrl)) || '';
+          } catch { /* photo optional */ }
 
-        await notifyClient(db, tenantId, { postSiteId, stationId }, {
-          eventType: 'incident.created',
-          title: isPanic ? '🚨 Alerta de pánico' : 'Nuevo incidente',
-          body: `${title}${stationName ? ` — ${stationName}` : ''}.`,
-          image: photoUrl || undefined,
-          data: {
-            incidentId: String(incident.id || ''),
-            incidentTitle: String(title || ''),
-            stationName: String(stationName || ''),
-            guardName: securityGuard ? String(securityGuard.fullName || '') : '',
-            priority: String(data.priority || (isPanic ? 'critical' : 'medium')),
-            photoUrl: String(photoUrl || ''),
-            stationId: String(stationId || ''),
-            postSiteId: String(postSiteId || ''),
-          },
-          sourceEntityType: 'incident',
-          sourceEntityId: String(incident.id),
-        });
-      } catch (e) {
-        console.warn('[guardIncident] client notify failed:', (e as any)?.message || e);
-      }
+          await notifyClient(db, tenantId, { postSiteId, stationId }, {
+            eventType: 'incident.created',
+            title: isPanic ? '🚨 Alerta de pánico' : 'Nuevo incidente',
+            body: `${title}${stationName ? ` — ${stationName}` : ''}.`,
+            image: photoUrl || undefined,
+            data: {
+              incidentId: String(incident.id || ''),
+              incidentTitle: String(title || ''),
+              stationName: String(stationName || ''),
+              guardName: securityGuard ? String(securityGuard.fullName || '') : '',
+              priority: String(data.priority || (isPanic ? 'critical' : 'medium')),
+              photoUrl: String(photoUrl || ''),
+              stationId: String(stationId || ''),
+              postSiteId: String(postSiteId || ''),
+            },
+            sourceEntityType: 'incident',
+            sourceEntityId: String(incident.id),
+          });
+        } catch (e) {
+          console.warn('[guardIncident] client notify failed:', (e as any)?.message || e);
+        }
+      };
     } catch (e) {
       console.warn('[guardIncident] dispatch failed', (e as any)?.message || e);
     }
 
     // Email the tenant's admins/supervisors so they're aware of the incident.
     // Best-effort; mailService throws when no transport is configured, so this
-    // only sends when email is actually set up.
-    try {
-      const targetRoles = ['admin', 'owner', 'operationsManager', 'securitySupervisor', 'dispatcher'];
-      const tenantUsers = await db.tenantUser.findAll({
-        where: { tenantId },
-        include: [{ model: db.user, as: 'user', attributes: ['email'] }],
-      });
-      const emails = Array.from(new Set(
-        (tenantUsers || [])
-          .filter((tu: any) => {
-            const roles = Array.isArray(tu.roles)
-              ? tu.roles
-              : (typeof tu.roles === 'string' ? tu.roles.split(',').map((r: string) => r.trim()) : []);
-            return roles.some((r: string) => targetRoles.includes(r)) && tu.user && tu.user.email;
-          })
-          .map((tu: any) => tu.user.email),
-      ));
-      if (emails.length) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { sendMail } = require('../../services/mailService');
-        const guardName = securityGuard ? securityGuard.fullName : 'Un guardia';
-        const sev = String(data.priority || 'medium');
-        const desc = data.content || data.description || '';
-        const text = `${guardName} reportó un incidente: "${title}" (prioridad: ${sev}). ${desc}`.trim();
-        const html =
-          `<p style="font-size:15px"><strong>Nuevo incidente reportado</strong></p>` +
-          `<p>${guardName} reportó: <strong>${title}</strong> (prioridad: ${sev}).</p>` +
-          (desc ? `<blockquote style="margin:10px 0;padding:8px 12px;border-left:3px solid #C8860A;color:#374151">${String(desc)}</blockquote>` : '') +
-          (data.location ? `<p>Ubicación: ${data.location}</p>` : '') +
-          `<p style="color:#6b7280;font-size:12px;margin-top:12px">CGuardPro · ${new Date().toLocaleString('es')}</p>`;
-        await sendMail({ to: emails, subject: `Incidente reportado: ${title}`, html, text });
+    // only sends when email is actually set up. Deferred until AFTER the ack —
+    // the tenantUser scan + SMTP round-trip must not delay the guard's report.
+    const emailAdminsAfterAck = async () => {
+      try {
+        const { Op } = db.Sequelize;
+        const targetRoles = ['admin', 'owner', 'operationsManager', 'securitySupervisor', 'dispatcher'];
+        // Coarse LIKE pre-filter on the serialized roles array (superset — the
+        // exact role check below still decides) + lean attributes, so a 10k-user
+        // tenant doesn't hydrate every row just to find a few admin emails.
+        const tenantUsers = await db.tenantUser.findAll({
+          where: {
+            tenantId,
+            [Op.or]: targetRoles.map((r: string) => ({ roles: { [Op.like]: `%${r}%` } })),
+          },
+          attributes: ['id', 'roles'],
+          include: [{ model: db.user, as: 'user', attributes: ['email'] }],
+        });
+        const emails = Array.from(new Set(
+          (tenantUsers || [])
+            .filter((tu: any) => {
+              const roles = Array.isArray(tu.roles)
+                ? tu.roles
+                : (typeof tu.roles === 'string' ? tu.roles.split(',').map((r: string) => r.trim()) : []);
+              return roles.some((r: string) => targetRoles.includes(r)) && tu.user && tu.user.email;
+            })
+            .map((tu: any) => tu.user.email),
+        ));
+        if (emails.length) {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { sendMail } = require('../../services/mailService');
+          const guardName = securityGuard ? securityGuard.fullName : 'Un guardia';
+          const sev = String(data.priority || 'medium');
+          const desc = data.content || data.description || '';
+          const text = `${guardName} reportó un incidente: "${title}" (prioridad: ${sev}). ${desc}`.trim();
+          const html =
+            `<p style="font-size:15px"><strong>Nuevo incidente reportado</strong></p>` +
+            `<p>${guardName} reportó: <strong>${title}</strong> (prioridad: ${sev}).</p>` +
+            (desc ? `<blockquote style="margin:10px 0;padding:8px 12px;border-left:3px solid #C8860A;color:#374151">${String(desc)}</blockquote>` : '') +
+            (data.location ? `<p>Ubicación: ${data.location}</p>` : '') +
+            `<p style="color:#6b7280;font-size:12px;margin-top:12px">CGuardPro · ${new Date().toLocaleString('es')}</p>`;
+          await sendMail({ to: emails, subject: `Incidente reportado: ${title}`, html, text });
+        }
+      } catch (e: any) {
+        console.warn('[guardIncident] email notify skipped/failed:', e?.message || e);
       }
-    } catch (e: any) {
-      console.warn('[guardIncident] email notify skipped/failed:', e?.message || e);
-    }
+    };
+
+    // The guard's app needs a sub-second ack (this is the panic path): the
+    // incident + alarm case are persisted and the panic.alert socket dispatch
+    // already fired above, so run the remaining fan-out (client push + admin
+    // email — DB scans and an SMTP round-trip) AFTER the response.
+    setImmediate(() => {
+      (async () => {
+        if (notifyClientAfterAck) await notifyClientAfterAck();
+        await emailAdminsAfterAck();
+      })().catch((e: any) => console.warn('[guardIncident] post-ack notify failed:', e?.message || e));
+    });
 
     return ApiResponseHandler.success(req, res, incident.get({ plain: true }));
   } catch (error) {

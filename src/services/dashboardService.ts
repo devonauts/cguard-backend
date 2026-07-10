@@ -2,6 +2,39 @@ import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import { Op } from 'sequelize';
 
+// ── In-process TTL cache for the assembled dashboard payload ───────────────
+// The dashboard is monthly-trend data polled by long-lived CRM tabs; 30s-stale
+// numbers are invisible to users but collapse the aggregate-query load from
+// every-page-load to at-most-once-per-30s per tenant per PM2 instance.
+const DASHBOARD_CACHE_TTL_MS = 30 * 1000;
+const DASHBOARD_CACHE_MAX = 200;
+const dashboardCache = new Map<string, { at: number; payload: any }>();
+
+function dashboardCacheGet(key: string): any | null {
+  const entry = dashboardCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.at >= DASHBOARD_CACHE_TTL_MS) {
+    dashboardCache.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+
+function dashboardCacheSet(key: string, payload: any) {
+  if (dashboardCache.size >= DASHBOARD_CACHE_MAX) {
+    // Sweep expired entries first; if still full, drop the oldest inserted.
+    const cutoff = Date.now() - DASHBOARD_CACHE_TTL_MS;
+    for (const [k, e] of dashboardCache) {
+      if (e.at < cutoff) dashboardCache.delete(k);
+    }
+    if (dashboardCache.size >= DASHBOARD_CACHE_MAX) {
+      const oldest = dashboardCache.keys().next().value;
+      if (oldest !== undefined) dashboardCache.delete(oldest);
+    }
+  }
+  dashboardCache.set(key, { at: Date.now(), payload });
+}
+
 export default class DashboardService {
   options: IServiceOptions;
 
@@ -9,34 +42,62 @@ export default class DashboardService {
     this.options = options;
   }
 
+  /** Trailing month windows (oldest first) with a `YYYY-MM` key matching
+   *  MySQL DATE_FORMAT(createdAt, '%Y-%m'), so N per-month queries collapse
+   *  into a single GROUP BY. */
+  private monthWindows(monthsBack: number): Array<{ key: string; start: Date }> {
+    const currentDate = new Date();
+    const windows: Array<{ key: string; start: Date }> = [];
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const start = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+      windows.push({ key, start });
+    }
+    return windows;
+  }
+
+  /** One GROUP BY month aggregate over the window → Map of 'YYYY-MM' -> value. */
+  private async monthlyAggregate(
+    model: any,
+    tenantId: string,
+    windowStart: Date,
+    aggregate: [string, string], // [fn, column] e.g. ['COUNT', 'id']
+  ): Promise<Record<string, number>> {
+    const database = this.options.database;
+    const rows = await model.findAll({
+      where: {
+        tenantId,
+        createdAt: { [Op.gte]: windowStart },
+      },
+      attributes: [
+        [database.sequelize.fn('DATE_FORMAT', database.sequelize.col('createdAt'), '%Y-%m'), 'ym'],
+        [database.sequelize.fn(aggregate[0], database.sequelize.col(aggregate[1])), 'value'],
+      ],
+      group: ['ym'],
+      raw: true,
+    });
+    const byMonth: Record<string, number> = {};
+    rows.forEach((r: any) => {
+      byMonth[r.ym] = Number(r.value) || 0;
+    });
+    return byMonth;
+  }
+
   async getClientAcquisitionStats() {
     const database = this.options.database;
     const tenant = SequelizeRepository.getCurrentTenant(this.options);
 
-    // Get client accounts created in the last 12 months
-    const monthsData: Array<{month: string, count: number}> = [];
-    const currentDate = new Date();
-    
-    for (let i = 11; i >= 0; i--) {
-      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 0);
-      
-      const count = await database.clientAccount.count({
-        where: {
-          tenantId: tenant.id,
-          createdAt: {
-            [Op.between]: [startDate, endDate]
-          }
-        }
-      });
+    // Client accounts created in the last 12 months — single GROUP BY query
+    // (was 12 sequential COUNTs).
+    const windows = this.monthWindows(12);
+    const byMonth = await this.monthlyAggregate(
+      database.clientAccount, tenant.id, windows[0].start, ['COUNT', 'id'],
+    );
 
-      monthsData.push({
-        month: startDate.toLocaleString('default', { month: 'short' }),
-        count
-      });
-    }
-
-    return monthsData;
+    return windows.map((w) => ({
+      month: w.start.toLocaleString('default', { month: 'short' }),
+      count: byMonth[w.key] || 0,
+    }));
   }
 
   async getIncidentTypeStats() {
@@ -69,30 +130,17 @@ export default class DashboardService {
     const database = this.options.database;
     const tenant = SequelizeRepository.getCurrentTenant(this.options);
 
-    // Get billing data for the last 12 months
-    const monthsData: Array<{month: string, revenue: number}> = [];
-    const currentDate = new Date();
-    
-    for (let i = 11; i >= 0; i--) {
-      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 0);
-      
-      const revenue = await database.billing.sum('montoPorPagar', {
-        where: {
-          tenantId: tenant.id,
-          createdAt: {
-            [Op.between]: [startDate, endDate]
-          }
-        }
-      });
+    // Billing data for the last 12 months — single GROUP BY query
+    // (was 12 sequential SUMs).
+    const windows = this.monthWindows(12);
+    const byMonth = await this.monthlyAggregate(
+      database.billing, tenant.id, windows[0].start, ['SUM', 'montoPorPagar'],
+    );
 
-      monthsData.push({
-        month: startDate.toLocaleString('default', { month: 'short' }),
-        revenue: revenue || 0
-      });
-    }
-
-    return monthsData;
+    return windows.map((w) => ({
+      month: w.start.toLocaleString('default', { month: 'short' }),
+      revenue: byMonth[w.key] || 0,
+    }));
   }
 
   async getClientPortfolioStats() {
@@ -210,81 +258,69 @@ export default class DashboardService {
     const database = this.options.database;
     const tenant = SequelizeRepository.getCurrentTenant(this.options);
 
-    // Get monthly incident and response data
-    const monthsData: Array<{month: string, incidents: number, responseTime: number}> = [];
-    const currentDate = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 0);
-      
-      const incidentCount = await database.incident.count({
-        where: {
-          tenantId: tenant.id,
-          createdAt: {
-            [Op.between]: [startDate, endDate]
-          }
-        }
-      });
+    // Monthly incident and response data — single GROUP BY query
+    // (was 7 sequential COUNTs).
+    const windows = this.monthWindows(7);
+    const byMonth = await this.monthlyAggregate(
+      database.incident, tenant.id, windows[0].start, ['COUNT', 'id'],
+    );
 
+    return windows.map((w) => {
+      const incidentCount = byMonth[w.key] || 0;
       // Calculate average response time (mock for now, could be real based on incident resolution times)
       const avgResponseTime = incidentCount > 0 ? Math.random() * 3 + 5 : 0; // 5-8 minutes
-
-      monthsData.push({
-        month: startDate.toLocaleString('default', { month: 'long' }),
+      return {
+        month: w.start.toLocaleString('default', { month: 'long' }),
         incidents: incidentCount,
-        responseTime: Math.round(avgResponseTime * 10) / 10
-      });
-    }
-
-    return monthsData;
+        responseTime: Math.round(avgResponseTime * 10) / 10,
+      };
+    });
   }
 
   async getCustomerSatisfactionStats() {
     const database = this.options.database;
     const tenant = SequelizeRepository.getCurrentTenant(this.options);
 
-    // Get client feedback data (using billing/service data as proxy)
-    const monthsData: Array<{month: string, satisfaction: number, quality: number}> = [];
-    const currentDate = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 0);
-      
-      const activeClients = await database.clientAccount.count({
+    // Client feedback data (using billing/service data as proxy).
+    // Was 14 sequential COUNTs — now 3 queries: pre-window client baseline +
+    // one GROUP BY month for new clients (cumulative = active) + one GROUP BY
+    // month for incidents.
+    const windows = this.monthWindows(7);
+    const [preWindowClients, clientsByMonth, incidentsByMonth] = await Promise.all([
+      database.clientAccount.count({
         where: {
           tenantId: tenant.id,
-          createdAt: {
-            [Op.lte]: endDate
-          }
-        }
-      });
+          createdAt: { [Op.lt]: windows[0].start },
+        },
+      }),
+      this.monthlyAggregate(database.clientAccount, tenant.id, windows[0].start, ['COUNT', 'id']),
+      this.monthlyAggregate(database.incident, tenant.id, windows[0].start, ['COUNT', 'id']),
+    ]);
 
-      // Calculate satisfaction based on active clients and incidents
-      const incidents = await database.incident.count({
-        where: {
-          tenantId: tenant.id,
-          createdAt: {
-            [Op.between]: [startDate, endDate]
-          }
-        }
-      });
+    let activeClients = preWindowClients;
+    return windows.map((w) => {
+      activeClients += clientsByMonth[w.key] || 0;
+      const incidents = incidentsByMonth[w.key] || 0;
 
       const satisfactionScore = activeClients > 0 ? Math.max(80, 100 - (incidents / activeClients) * 10) : 0;
       const qualityScore = satisfactionScore > 0 ? (satisfactionScore / 100) * 5 : 0;
 
-      monthsData.push({
-        month: startDate.toLocaleString('default', { month: 'long' }),
+      return {
+        month: w.start.toLocaleString('default', { month: 'long' }),
         satisfaction: Math.round(satisfactionScore),
-        quality: Math.round(qualityScore * 10) / 10
-      });
-    }
-
-    return monthsData;
+        quality: Math.round(qualityScore * 10) / 10,
+      };
+    });
   }
 
   async getAllDashboardStats() {
+    const tenant = SequelizeRepository.getCurrentTenant(this.options);
+    const cacheKey = tenant.id ? String(tenant.id) : null;
+    if (cacheKey) {
+      const cached = dashboardCacheGet(cacheKey);
+      if (cached) return cached;
+    }
+
     const [
       clientAcquisition,
       incidentTypes,
@@ -306,7 +342,7 @@ export default class DashboardService {
       this.getCustomerSatisfactionStats().catch(() => [])
     ]);
 
-    return {
+    const payload = {
       clientAcquisition,
       incidentTypes,
       revenue,
@@ -316,5 +352,8 @@ export default class DashboardService {
       securityPerformance,
       customerSatisfaction
     };
+
+    if (cacheKey) dashboardCacheSet(cacheKey, payload);
+    return payload;
   }
 }

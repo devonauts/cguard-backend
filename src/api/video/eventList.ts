@@ -15,6 +15,14 @@ export default async (req, res) => {
     if (req.query && req.query.deviceId) where.videoDeviceId = req.query.deviceId;
     if (req.query && req.query.type) where.type = req.query.type;
 
+    // Limit clamp: default 200 newest events, honor an explicit ?limit up to
+    // 1000 — the list was previously unbounded (every videoEvent ever).
+    const requestedLimit = Number(req.query && req.query.limit);
+    const limit =
+      Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(Math.floor(requestedLimit), 1000)
+        : 200;
+
     // Lean list: explicit columns, and DROP the `camera` include — the events
     // page resolves camera names from a separate cameras() fetch keyed by
     // videoCameraId, so the joined camera object was never read.
@@ -41,6 +49,7 @@ export default async (req, res) => {
         'updatedAt',
       ],
       order: [['at', 'DESC']],
+      limit,
     });
 
     const out = (rows || []).map((r: any) =>

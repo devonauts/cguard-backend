@@ -16,7 +16,7 @@
  * router's job per the rules.
  */
 import { CommunicationProvider, OutboundMessage, SendResult } from '../types';
-import { pushToUser, sendToTokens } from '../../pushService';
+import { getUserDeviceRows, pushToUser, sendToTokens } from '../../pushService';
 
 /** FCM error codes that mean "this token is dead, stop using it". */
 const DEAD_TOKEN_CODES = new Set([
@@ -25,21 +25,11 @@ const DEAD_TOKEN_CODES = new Set([
   'messaging/invalid-argument',
 ]);
 
-/** Resolve a user's registered device-token rows (with the row, for cleanup). */
-async function resolveTokenRows(
-  db: any,
-  tenantId: string,
-  userId: string,
-): Promise<Array<{ token: string; row: any }>> {
-  try {
-    const rows = await db.deviceIdInformation.findAll({ where: { tenantId, userId } });
-    return (rows || [])
-      .map((r: any) => ({ token: r.pushToken || r.deviceId, row: r }))
-      .filter((x: any) => !!x.token);
-  } catch (e: any) {
-    console.warn('[pushProvider] token resolve failed:', e?.message || e);
-    return [];
-  }
+/** Map already-resolved device rows to token rows (with the row, for cleanup). */
+function toTokenRows(rows: any[]): Array<{ token: string; row: any }> {
+  return (rows || [])
+    .map((r: any) => ({ token: r.pushToken || r.deviceId, row: r }))
+    .filter((x: any) => !!x.token);
 }
 
 /** Mark a single device row inactive (clear its push token) so it stops resolving. */
@@ -63,7 +53,7 @@ export class PushProvider implements CommunicationProvider {
     return true;
   }
 
-  async send(db: any, msg: OutboundMessage): Promise<SendResult> {
+  async send(db: any, msg: OutboundMessage, deviceRows?: any[]): Promise<SendResult> {
     const targetUserId = msg.userId || msg.recipient;
     if (!targetUserId) {
       return { status: 'skipped', channel: 'push', provider: 'firebase', skipReason: 'no_user' };
@@ -75,14 +65,16 @@ export class PushProvider implements CommunicationProvider {
 
     const payload = { title: msg.title || '', body: msg.body || '', data };
 
-    // Resolve tokens ourselves so we can (a) report "no token" precisely and
-    // (b) clean up dead tokens after the send.
-    const tokenRows = await resolveTokenRows(db, msg.tenantId, targetUserId);
+    // Device rows are resolved ONCE per recipient: the router resolves them up
+    // front and threads them here; only resolve ourselves when called directly.
+    const rows = deviceRows ?? (await getUserDeviceRows(db, msg.tenantId, targetUserId));
+    const tokenRows = toTokenRows(rows);
     if (tokenRows.length === 0) {
-      // No token: fall back to the legacy wrapper too (it may resolve via other
-      // columns / paths) — but if it also has nothing, report skipped.
+      // No FCM-ish token: fall back to the legacy wrapper WITH the rows we
+      // already resolved (it can still deliver to APNs-only client devices) —
+      // no re-query. If it also delivers nothing, report skipped.
       try {
-        const res: any = await pushToUser(db, msg.tenantId, targetUserId, payload);
+        const res: any = await pushToUser(db, msg.tenantId, targetUserId, payload, rows);
         const sent = res?.sent || 0;
         if (sent > 0) {
           return { status: 'sent', channel: 'push', provider: 'firebase', providerResponse: res };
@@ -99,12 +91,11 @@ export class PushProvider implements CommunicationProvider {
       const res: any = await sendToTokens(tokens, payload);
       const sent = res?.sent || 0;
 
-      // Best-effort dead-token cleanup. sendEachForMulticast surfaces per-token
-      // results in `res.responses` (firebase-admin BatchResponse); our wrapper
-      // returns successCount/failureCount. When the detailed responses are
-      // present, deactivate exactly the dead ones; otherwise, if the whole batch
-      // failed with zero successes, deactivate all resolved tokens.
-      await this.cleanupDeadTokens(res, tokens, tokenRows);
+      // Best-effort dead-token cleanup. sendToTokens returns the per-token
+      // outcomes ({ token, success, errorCode }) from sendEachForMulticast, so
+      // we deactivate exactly the tokens FCM reported as dead — never live
+      // tokens on a transient failure.
+      await this.cleanupDeadTokens(res, tokenRows);
 
       if (sent > 0) {
         return {
@@ -131,34 +122,26 @@ export class PushProvider implements CommunicationProvider {
     }
   }
 
-  /** Deactivate tokens FCM reported as dead (best-effort, never throws). */
+  /** Deactivate exactly the tokens FCM reported as dead (best-effort, never
+   *  throws). Consumes the token-keyed `responses` array sendToTokens returns.
+   *  When no per-token detail exists (send skipped or threw before FCM
+   *  responded) we deliberately deactivate NOTHING — a transient full-batch
+   *  failure must never wipe a user's live tokens. */
   private async cleanupDeadTokens(
     res: any,
-    tokens: string[],
     tokenRows: Array<{ token: string; row: any }>,
   ): Promise<void> {
     try {
+      const responses: any[] = Array.isArray(res?.responses) ? res.responses : [];
+      if (!responses.length) return;
+
       const byToken = new Map<string, any>();
       for (const tr of tokenRows) if (!byToken.has(tr.token)) byToken.set(tr.token, tr.row);
 
-      const responses: any[] = Array.isArray(res?.responses) ? res.responses : [];
-      if (responses.length === tokens.length && responses.length > 0) {
-        // Detailed per-token results available — deactivate only the dead ones.
-        for (let i = 0; i < responses.length; i += 1) {
-          const r = responses[i];
-          const code = r?.error?.code;
-          if (r && r.success === false && code && DEAD_TOKEN_CODES.has(code)) {
-            await deactivateToken(byToken.get(tokens[i]));
-          }
+      for (const r of responses) {
+        if (r && r.success === false && r.errorCode && DEAD_TOKEN_CODES.has(r.errorCode)) {
+          await deactivateToken(byToken.get(r.token));
         }
-        return;
-      }
-
-      // No per-token detail: if nothing was sent and nothing was a safe no-op
-      // (skipped), treat the tokens as dead and clear them.
-      const sent = res?.sent || 0;
-      if (sent === 0 && !res?.skipped && (res?.failed || 0) > 0) {
-        for (const token of tokens) await deactivateToken(byToken.get(token));
       }
     } catch (e: any) {
       console.warn('[pushProvider] dead-token cleanup failed:', e?.message || e);

@@ -109,6 +109,14 @@ interface Knobs {
 
 export default class GuardPerformanceService {
   private req: any;
+  // Per-instance memos for tenant-invariant reads. The leaderboard scores up
+  // to ~200 guards through ONE service instance, so these turn per-guard
+  // re-fetches (knobs, tenant timezone, ALL tenant inventory rows) into a
+  // single query each per request. Instances are request-scoped, so staleness
+  // is bounded by the request.
+  private _knobsPromise: Promise<Knobs> | null = null;
+  private _tenantTzPromise: Promise<string> | null = null;
+  private _tenantInventoryPromise: Promise<any[]> | null = null;
   constructor(req: any) {
     this.req = req;
   }
@@ -170,8 +178,14 @@ export default class GuardPerformanceService {
     });
   }
 
-  /** Load tenant knob overrides, falling back to env then hardcoded defaults. */
-  private async loadKnobs(): Promise<Knobs> {
+  /** Load tenant knob overrides, falling back to env then hardcoded defaults.
+   *  Memoized per instance (tenant-invariant). */
+  private loadKnobs(): Promise<Knobs> {
+    if (!this._knobsPromise) this._knobsPromise = this.fetchKnobs();
+    return this._knobsPromise;
+  }
+
+  private async fetchKnobs(): Promise<Knobs> {
     let row: any = null;
     try {
       if (this.db.performanceSettings) {
@@ -610,12 +624,21 @@ export default class GuardPerformanceService {
     const out = new Set<string>();
     if (!userId) return out;
     try {
+      // Only requests that can overlap the scoring window [from, now] — the
+      // unfiltered query pulled the guard's ENTIRE time-off history. One day
+      // of slack on the lower bound covers DATEONLY-vs-datetime boundaries.
+      const fromFloor = new Date(from.getTime() - DAY_MS);
       const reqs = await this.db.timeOffRequest.findAll({
         where: {
           guardId: userId,
           tenantId: this.tenantId,
           status: { [Op.in]: ['approved', 'Approved', 'aprobado', 'Aprobado'] },
           deletedAt: null,
+          startDate: { [Op.lte]: now },
+          [Op.or]: [
+            { endDate: { [Op.gte]: fromFloor } },
+            { endDate: null, startDate: { [Op.gte]: fromFloor } },
+          ],
         },
         attributes: ['startDate', 'endDate'],
       });
@@ -623,7 +646,15 @@ export default class GuardPerformanceService {
         const sd = r.startDate ? new Date(r.startDate) : null;
         const ed = r.endDate ? new Date(r.endDate) : sd;
         if (!sd) continue;
-        for (let t = sd.getTime(); t <= (ed as Date).getTime(); t += DAY_MS) {
+        // Clamp the day-by-day expansion to the scoring window: a corrupt or
+        // far-future endDate (nothing validates it) previously iterated one
+        // day per DAY_MS to year 9999. Whole-day steps from sd keep the same
+        // day keys as the unclamped loop.
+        const endMs = Math.min((ed as Date).getTime(), now.getTime());
+        let t = sd.getTime();
+        const loMs = fromFloor.getTime();
+        if (t < loMs) t += Math.floor((loMs - t) / DAY_MS) * DAY_MS;
+        for (; t <= endMs; t += DAY_MS) {
           out.add(new Date(t).toISOString().slice(0, 10));
         }
       }
@@ -676,9 +707,16 @@ export default class GuardPerformanceService {
       // Which of those stations actually require an inventory check?
       let stationsWithInventory = new Set<string>(stationIds.map(String));
       if (this.db.inventory) {
-        const invs = await this.db.inventory.findAll({
-          where: { tenantId: this.tenantId, deletedAt: null },
-        });
+        // Tenant-invariant: fetch ONCE per service instance (the leaderboard
+        // previously re-loaded every tenant inventory row per guard), and only
+        // the station-linkage column the loop below reads.
+        if (!this._tenantInventoryPromise) {
+          this._tenantInventoryPromise = this.db.inventory.findAll({
+            where: { tenantId: this.tenantId, deletedAt: null },
+            attributes: ['id', 'belongsToStation'],
+          });
+        }
+        const invs: any[] = (await this._tenantInventoryPromise) || [];
         const withInv = new Set<string>();
         for (const i of invs) {
           const sid = i.belongsToStation || i.stationId;
@@ -737,10 +775,13 @@ export default class GuardPerformanceService {
       const stationIds = stations.map((st: any) => st.id);
       if (!stationIds.length) return { score: null, due: 0, done: 0 };
 
-      const tenant = await db.tenant.findByPk(this.tenantId, {
-        attributes: ['timezone'],
-      });
-      const tz = tenant?.timezone || 'UTC';
+      // Tenant timezone is invariant — fetch once per service instance.
+      if (!this._tenantTzPromise) {
+        this._tenantTzPromise = db.tenant
+          .findByPk(this.tenantId, { attributes: ['timezone'] })
+          .then((t: any) => (t?.timezone || 'UTC') as string);
+      }
+      const tz: string = (await this._tenantTzPromise) || 'UTC';
 
       const orders = (
         await db.stationOrder.findAll({

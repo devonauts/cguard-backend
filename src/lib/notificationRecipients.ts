@@ -4,6 +4,7 @@
  *   - role-targeted events  → every tenant user holding one of the target roles
  *   - SPECIFIC events        → the single recipientUserId (or explicit overrides)
  */
+import { Op } from 'sequelize';
 
 export interface ResolvedRecipients {
   emails: string[];
@@ -58,6 +59,7 @@ export async function resolveRecipients(
       .split(',')
       .map((r) => r.trim())
       .filter(Boolean);
+    if (!targetRoles.length) return { emails: [], phones: [] };
 
     const narrow = !!opts.assignedPostSiteId;
     const include: any[] = [
@@ -73,7 +75,19 @@ export async function resolveRecipients(
       });
     }
 
-    const tenantUsers = await db.tenantUser.findAll({ where: { tenantId }, include });
+    // `roles` is a serialized JSON string-array, so LIKE '%<role>%' is a coarse
+    // SQL pre-filter selecting a SUPERSET; the exact role check below still
+    // decides. Combined with status='active' (archived/pending users must not
+    // be notified) this avoids hydrating the whole tenantUser table per event.
+    const tenantUsers = await db.tenantUser.findAll({
+      where: {
+        tenantId,
+        status: 'active',
+        [Op.or]: targetRoles.map((r) => ({ roles: { [Op.like]: `%${r}%` } })),
+      },
+      attributes: ['id', 'roles'],
+      include,
+    });
 
     for (const tu of tenantUsers || []) {
       const roles = Array.isArray(tu.roles)

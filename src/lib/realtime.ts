@@ -18,6 +18,7 @@
 import { Server as IOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
+import { createHash } from 'crypto';
 import { databaseInit } from '../database/databaseConnection';
 import AuthService from '../services/auth/authService';
 
@@ -28,6 +29,67 @@ export const SOCKET_PATH = '/api/socket.io';
 const SEE_ALL_ROLES = ['admin', 'operationsManager', 'owner'];
 
 let io: IOServer | null = null;
+let adapterAttached = false;
+
+/** PM2 cluster mode sets NODE_APP_INSTANCE on every worker. */
+function isPm2Cluster(): boolean {
+  const v = process.env.NODE_APP_INSTANCE;
+  return v !== undefined && v !== '';
+}
+
+// ─── Handshake auth cache ─────────────────────────────────────────────────────
+//
+// AuthService.findByToken is expensive (jwt.verify + a multi-join user hydrate,
+// ~4-5 queries). Every socket connect — including the reconnect stampede after
+// a PM2 reload drops all clients — used to pay it against the shared 25-conn
+// pool. A short TTL cache keyed by a hash of the token collapses the storm to
+// at most one resolve per token per TTL; 30 s of identity staleness is fine for
+// the socket handshake (REST auth stays uncached). Failures are never cached.
+const AUTH_CACHE_TTL_MS = 30_000;
+const AUTH_CACHE_MAX_ENTRIES = 5_000;
+const authCache = new Map<string, { user: any; expiresAt: number }>();
+const authInFlight = new Map<string, Promise<any>>();
+
+function tokenCacheKey(token: string): string {
+  // Never hold raw JWTs in memory — key by digest.
+  return createHash('sha256').update(token).digest('hex');
+}
+
+/** Resolve the user for a handshake token, via the TTL cache. */
+async function resolveSocketUser(token: string): Promise<any> {
+  const key = tokenCacheKey(token);
+  const hit = authCache.get(key);
+  if (hit) {
+    if (hit.expiresAt > Date.now()) return hit.user;
+    authCache.delete(key);
+  }
+
+  // Collapse concurrent handshakes with the same token onto one DB resolve
+  // (multiple tabs / retrying app all reconnect with the same JWT).
+  const inFlight = authInFlight.get(key);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    const database = await databaseInit();
+    const user: any = await AuthService.findByToken(String(token), { database });
+    if (user && user.id) {
+      // Size cap: evict oldest entries (Map preserves insertion order).
+      while (authCache.size >= AUTH_CACHE_MAX_ENTRIES) {
+        const oldest = authCache.keys().next().value;
+        if (oldest === undefined) break;
+        authCache.delete(oldest);
+      }
+      authCache.set(key, { user, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+    }
+    return user;
+  })();
+  authInFlight.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    authInFlight.delete(key);
+  }
+}
 
 /** All roles a user holds for a given tenant (from the user.tenants membership array). */
 function rolesForTenant(user: any, tenantId: string): string[] {
@@ -54,6 +116,105 @@ function belongsToTenant(user: any, tenantId: string): boolean {
 }
 
 /**
+ * Joins a connected socket to all its rooms based on the identity stashed in
+ * socket.data by the handshake middleware. Used at connection time AND to
+ * re-join sockets after a late Redis-adapter attach (swapping the adapter
+ * resets room state, so sockets that connected while degraded must re-join).
+ */
+function joinSocketRooms(socket: any): void {
+  const { userId, tenantId, roles, seeAll, superadmin, clientAccountId } =
+    (socket.data as any) || {};
+  if (!tenantId || !userId) return;
+  socket.join(`tenant:${tenantId}`);
+  socket.join(`tenant:${tenantId}:user:${userId}`);
+  (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
+  if (seeAll) socket.join(`tenant:${tenantId}:all`);
+
+  // Mi Seguridad customer connections join a per-clientAccount room so the
+  // backend can push live chat messages / coverage / status to a specific
+  // customer without touching the guard/CRM role rooms. Additive + isolated.
+  if (clientAccountId) socket.join(`tenant:${tenantId}:client:${clientAccountId}`);
+
+  // Platform phone center: superadmins join a shared 'superadmin' room so the
+  // Twilio SMS/voice events fan out to every connected superadmin browser.
+  if (superadmin) socket.join('superadmin');
+}
+
+/**
+ * One attempt to connect the Redis pub/sub pair and attach the cluster adapter.
+ * On success, re-joins any sockets that connected while we were degraded (the
+ * adapter swap resets room membership, including each socket's own sid room).
+ */
+async function tryAttachRedisAdapter(server: IOServer, redisUrl: string): Promise<boolean> {
+  let pubClient: any = null;
+  let subClient: any = null;
+  try {
+    pubClient = createClient({ url: redisUrl });
+    subClient = pubClient.duplicate();
+    pubClient.on('error', (e: any) => console.error('[realtime] redis pub error:', e?.message || e));
+    subClient.on('error', (e: any) => console.error('[realtime] redis sub error:', e?.message || e));
+    await Promise.all([pubClient.connect(), subClient.connect()]);
+    server.adapter(createAdapter(pubClient, subClient));
+    adapterAttached = true;
+
+    // Sockets already connected joined their rooms in the OLD (in-memory)
+    // adapter; restore their membership in the new one.
+    for (const socket of server.of('/').sockets.values()) {
+      try {
+        socket.join(socket.id);
+        joinSocketRooms(socket);
+      } catch { /* socket may be mid-disconnect */ }
+    }
+    console.log('[realtime] socket.io Redis adapter attached (cluster broadcast enabled)');
+    return true;
+  } catch (e: any) {
+    console.error('[realtime] Redis adapter connect failed:', e?.message || e);
+    try { pubClient?.disconnect?.().catch?.(() => {}); } catch { /* already closed */ }
+    try { subClient?.disconnect?.().catch?.(() => {}); } catch { /* already closed */ }
+    return false;
+  }
+}
+
+/**
+ * Retries the adapter attach with capped exponential backoff (5s → 5min),
+ * forever, instead of the old behavior of giving up after one boot-time
+ * failure and silently running single-worker for the life of the process.
+ */
+function scheduleAdapterRetry(server: IOServer, redisUrl: string, attempt: number): void {
+  const delayMs = Math.min(5_000 * 2 ** Math.min(attempt - 1, 6), 300_000);
+  console.error(
+    `[realtime] cross-instance broadcast DEGRADED — Redis adapter retry #${attempt} in ${Math.round(delayMs / 1_000)}s`,
+  );
+  const timer = setTimeout(async () => {
+    if (adapterAttached) return;
+    const attached = await tryAttachRedisAdapter(server, redisUrl);
+    if (!attached) scheduleAdapterRetry(server, redisUrl, attempt + 1);
+  }, delayMs);
+  if (typeof timer.unref === 'function') timer.unref();
+}
+
+/**
+ * Snapshot of realtime cluster-delivery health for the /api/health endpoint.
+ * `degraded` is true when we're on a PM2 cluster worker WITHOUT a working
+ * Redis adapter — i.e. cross-instance emits are being lost.
+ */
+export function getRealtimeHealth(): {
+  initialized: boolean;
+  clusterAdapter: 'attached' | 'retrying' | 'not_configured';
+  degraded: boolean;
+} {
+  return {
+    initialized: !!io,
+    clusterAdapter: adapterAttached
+      ? 'attached'
+      : process.env.REDIS_URL
+        ? 'retrying'
+        : 'not_configured',
+    degraded: !!io && !adapterAttached && isPm2Cluster(),
+  };
+}
+
+/**
  * Initialize the socket.io server on the given HTTP server. Safe to call once
  * at startup; subsequent calls return the existing instance.
  */
@@ -67,23 +228,27 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
   });
 
   // Cluster-wide broadcast via Redis (optional). Without it, an event emitted on
-  // one worker only reaches clients connected to that same worker.
+  // one worker only reaches clients connected to that same worker. A transient
+  // Redis failure at boot no longer abandons the adapter forever — we retry with
+  // capped exponential backoff until it attaches.
   const redisUrl = process.env.REDIS_URL;
   if (redisUrl) {
-    try {
-      const pubClient = createClient({ url: redisUrl });
-      const subClient = pubClient.duplicate();
-      pubClient.on('error', (e) => console.error('[realtime] redis pub error:', e?.message || e));
-      subClient.on('error', (e) => console.error('[realtime] redis sub error:', e?.message || e));
-      await Promise.all([pubClient.connect(), subClient.connect()]);
-      io.adapter(createAdapter(pubClient, subClient));
-      console.log('[realtime] socket.io Redis adapter attached (cluster broadcast enabled)');
-    } catch (e: any) {
+    const attached = await tryAttachRedisAdapter(io, redisUrl);
+    if (!attached) scheduleAdapterRetry(io, redisUrl, 1);
+  } else if (isPm2Cluster()) {
+    // Under PM2 cluster mode a missing REDIS_URL means cross-instance emits
+    // (panic alerts, alarm pushes, live map, client chat) silently reach ZERO
+    // sockets on the other worker(s). Make that unmissable and repeat hourly.
+    const alertMissingRedis = () =>
       console.error(
-        '[realtime] Redis adapter failed — running single-worker:',
-        e?.message || e,
+        '[realtime] *** REDIS_URL NOT SET UNDER PM2 CLUSTER *** socket.io is running ' +
+          'single-worker: realtime emits (incl. panic alerts) only reach sockets ' +
+          'connected to THIS instance. Set REDIS_URL and reload to restore ' +
+          'cross-instance delivery.',
       );
-    }
+    alertMissingRedis();
+    const missingRedisTimer = setInterval(alertMissingRedis, 60 * 60 * 1_000);
+    if (typeof missingRedisTimer.unref === 'function') missingRedisTimer.unref();
   } else {
     console.warn(
       '[realtime] REDIS_URL not set — socket.io running single-worker (no cross-cluster broadcast)',
@@ -99,8 +264,9 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
         (socket.handshake.auth as any)?.tenantId || (socket.handshake.query as any)?.tenantId;
       if (!token || !tenantId) return next(new Error('unauthorized'));
 
-      const database = await databaseInit();
-      const user: any = await AuthService.findByToken(String(token), { database });
+      // Cached identity resolve (30 s TTL) — collapses the post-reload
+      // reconnect stampede to one findByToken per distinct token per TTL.
+      const user: any = await resolveSocketUser(String(token));
       if (!user || !user.id) return next(new Error('unauthorized'));
       const superadmin = !!user.isSuperadmin;
 
@@ -151,22 +317,7 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
   });
 
   io.on('connection', (socket) => {
-    const { userId, tenantId, roles, seeAll, superadmin, clientAccountId } = (socket.data as any) || {};
-    if (!tenantId || !userId) return;
-    socket.join(`tenant:${tenantId}`);
-    socket.join(`tenant:${tenantId}:user:${userId}`);
-    (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
-    if (seeAll) socket.join(`tenant:${tenantId}:all`);
-
-    // Mi Seguridad customer connections join a per-clientAccount room so the
-    // backend can push live chat messages / coverage / status to a specific
-    // customer without touching the guard/CRM role rooms. Additive + isolated.
-    if (clientAccountId) socket.join(`tenant:${tenantId}:client:${clientAccountId}`);
-
-    // Platform phone center: superadmins join a shared 'superadmin' room so the
-    // Twilio SMS/voice events fan out to every connected superadmin browser.
-    if (superadmin) socket.join('superadmin');
-
+    joinSocketRooms(socket);
   });
 
   console.log(`[realtime] socket.io listening on ${SOCKET_PATH}`);
@@ -306,4 +457,4 @@ export function emitToClientAccount(
   }
 }
 
-export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, emitToTenant, emitToClientAccount, SOCKET_PATH };
+export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, emitToTenant, emitToClientAccount, getRealtimeHealth, SOCKET_PATH };

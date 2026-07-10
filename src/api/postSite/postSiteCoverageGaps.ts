@@ -23,6 +23,10 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 
+// Max analysable window. The CRM requests a week by default; ~3 months is the
+// sane operational ceiling for a per-day coverage walk.
+const MAX_RANGE_DAYS = 92;
+
 interface Interval {
   start: number; // ms timestamp
   end: number;
@@ -85,6 +89,19 @@ export default async (req: any, res: any) => {
     const toDate = req.query.to ? new Date(req.query.to as string) : (() => {
       const d = new Date(fromDate); d.setDate(d.getDate() + 6); d.setHours(23, 59, 59, 999); return d;
     })();
+
+    // Validate + clamp the window: the analysis below walks EVERY day of the
+    // range synchronously per station, so an unbounded from/to (e.g. to=9999)
+    // would pin this PM2 worker for minutes and blow up the response size.
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+      return res.status(400).send({ message: 'Parámetros "from"/"to" inválidos: deben ser fechas válidas (ISO).' });
+    }
+    if (toDate < fromDate) {
+      return res.status(400).send({ message: 'El parámetro "from" debe ser anterior o igual a "to".' });
+    }
+    if (toDate.getTime() - fromDate.getTime() > MAX_RANGE_DAYS * 24 * 60 * 60 * 1000) {
+      return res.status(400).send({ message: `El rango solicitado es demasiado amplio: máximo ${MAX_RANGE_DAYS} días.` });
+    }
 
     // ── 1. Stations for this post site ──────────────────────────────────────
     const stationsRaw = await db.station.findAll({

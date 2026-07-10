@@ -19,78 +19,118 @@ export default async (req: any, res: any) => {
     const userId = currentUser.id;
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
 
-    // Find the securityGuard record for this user
-    const securityGuard = await db.securityGuard.findOne({
-      where: { guardId: userId, tenantId, deletedAt: null },
-    });
-
-    // Find stations assigned to this guard (via junction table)
-    const stations = await db.station.findAll({
-      where: { tenantId, deletedAt: null },
-      include: [{
-        model: db.user,
-        as: 'assignedGuards',
-        where: { id: userId },
-        attributes: [],
-        through: { attributes: [] },
-      }],
-      attributes: [
-        'id', 'stationName', 'latitud', 'longitud', 'stationSchedule',
-        'startingTimeInDay', 'finishTimeInDay', 'numberOfGuardsInStation',
-        'geofenceRadius', 'postSiteId',
-      ],
-    });
-
-    // Current/upcoming shift for this guard
     const now = new Date();
-    const currentShift = await db.shift.findOne({
-      where: {
-        guardId: userId,
-        tenantId,
-        startTime: { [Op.lte]: now },
-        endTime: { [Op.gte]: now },
-      },
-      attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId'],
-      include: [{ model: db.station, as: 'station', attributes: ['id', 'stationName'] }],
-    });
+    // Rest-day gate window (for the shiftsToday lookup below).
+    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
 
-    const nextShift = !currentShift ? await db.shift.findOne({
-      where: {
-        guardId: userId,
-        tenantId,
-        startTime: { [Op.gt]: now },
-      },
-      attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId'],
-      include: [{ model: db.station, as: 'station', attributes: ['id', 'stationName'] }],
-      order: [['startTime', 'ASC']],
-    }) : null;
+    // Independent read-only lookups — run concurrently instead of sequentially
+    // (this is the worker-app dashboard, hit on every mount/foreground).
+    // Failure semantics preserved: shiftsToday and the Nómina settings were
+    // individually try/caught before, so they resolve to null on error instead
+    // of failing the whole request.
+    const [securityGuard, stations, currentShift, tenant, shiftsToday, nominaSettings] =
+      await Promise.all([
+        // The securityGuard record for this user
+        db.securityGuard.findOne({
+          where: { guardId: userId, tenantId, deletedAt: null },
+        }),
+        // Stations assigned to this guard (via junction table)
+        db.station.findAll({
+          where: { tenantId, deletedAt: null },
+          include: [{
+            model: db.user,
+            as: 'assignedGuards',
+            where: { id: userId },
+            attributes: [],
+            through: { attributes: [] },
+          }],
+          attributes: [
+            'id', 'stationName', 'latitud', 'longitud', 'stationSchedule',
+            'startingTimeInDay', 'finishTimeInDay', 'numberOfGuardsInStation',
+            'geofenceRadius', 'postSiteId',
+          ],
+        }),
+        // Current shift for this guard
+        db.shift.findOne({
+          where: {
+            guardId: userId,
+            tenantId,
+            startTime: { [Op.lte]: now },
+            endTime: { [Op.gte]: now },
+          },
+          attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId'],
+          include: [{ model: db.station, as: 'station', attributes: ['id', 'stationName'] }],
+        }),
+        // Tenant timezone — the single source of truth for shift time display.
+        db.tenant.findByPk(tenantId, { attributes: ['timezone'] }),
+        // Today's generated shifts (clock-in eligibility / rest-day gate).
+        db.shift.findAll({
+          where: {
+            guardId: userId,
+            tenantId,
+            startTime: { [Op.lte]: endOfDay },
+            endTime: { [Op.gte]: startOfDay },
+          },
+          attributes: ['stationId'],
+        }).catch(() => null),
+        // Nómina settings (early-clockout threshold + grace windows). Loaded
+        // ONCE per request — the clock-in-window block below reuses it.
+        (async () => {
+          try {
+            const { getNominaSettings } = require('../../services/attendanceService');
+            return await getNominaSettings(db, tenantId);
+          } catch {
+            return null;
+          }
+        })(),
+      ]);
 
-    // Active clock-in record (guardShift without punchOutTime)
-    let activeClockIn: any = null;
-    let clockOutRequest: any = null;
-    if (securityGuard) {
-      const clockIn = await db.guardShift.findOne({
+    // Dependent lookups: upcoming shift (only when none is active) + the open
+    // clock-in record — independent of each other, so also concurrent.
+    const [nextShift, clockIn] = await Promise.all([
+      !currentShift ? db.shift.findOne({
+        where: {
+          guardId: userId,
+          tenantId,
+          startTime: { [Op.gt]: now },
+        },
+        attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId'],
+        include: [{ model: db.station, as: 'station', attributes: ['id', 'stationName'] }],
+        order: [['startTime', 'ASC']],
+      }) : Promise.resolve(null),
+      securityGuard ? db.guardShift.findOne({
         where: {
           guardNameId: securityGuard.id,
           punchOutTime: null,
           tenantId,
         },
+        // Skip the heavy TEXT blobs (selfies, per-session JSON, device dump):
+        // the handler only reads id/scheduledEnd and the app doesn't need them
+        // on the dashboard — without this every poll ships the whole row.
+        attributes: {
+          exclude: ['punchInPhoto', 'punchOutPhoto', 'deviceInfo', 'sessions'],
+        },
         order: [['punchInTime', 'DESC']],
-      });
-      if (clockIn) {
-        activeClockIn = clockIn.get({ plain: true });
-        // The early-clock-out approval state for this open record (drives the
-        // worker-app clock-out button: request → pending → approved).
-        try {
-          const reqRow = await db.clockOutRequest.findOne({
-            where: { guardShiftId: clockIn.id, tenantId, deletedAt: null },
-            order: [['createdAt', 'DESC']],
-            attributes: ['id', 'status', 'scheduledEnd', 'reason', 'decisionNotes'],
-          });
-          if (reqRow) clockOutRequest = reqRow.get({ plain: true });
-        } catch {
-          /* ignore */
-        }
+      }) : Promise.resolve(null),
+    ]);
+
+    // Active clock-in record (guardShift without punchOutTime)
+    let activeClockIn: any = null;
+    let clockOutRequest: any = null;
+    if (clockIn) {
+      activeClockIn = clockIn.get({ plain: true });
+      // The early-clock-out approval state for this open record (drives the
+      // worker-app clock-out button: request → pending → approved).
+      try {
+        const reqRow = await db.clockOutRequest.findOne({
+          where: { guardShiftId: clockIn.id, tenantId, deletedAt: null },
+          order: [['createdAt', 'DESC']],
+          attributes: ['id', 'status', 'scheduledEnd', 'reason', 'decisionNotes'],
+        });
+        if (reqRow) clockOutRequest = reqRow.get({ plain: true });
+      } catch {
+        /* ignore */
       }
     }
 
@@ -107,19 +147,11 @@ export default async (req: any, res: any) => {
 
     // Early-clockout threshold (minutes before scheduled end that requires
     // approval) so the app can decide whether to show "request" vs "clock out".
-    let clockOutThresholdMin = 0;
-    let lateGraceMin = 5;
-    try {
-      const { getNominaSettings } = require('../../services/attendanceService');
-      const settings = await getNominaSettings(db, tenantId);
-      clockOutThresholdMin = Number(settings?.windows?.earlyClockoutThresholdMin ?? 0);
-      lateGraceMin = Number(settings?.windows?.lateGraceMin ?? 5);
-    } catch {
-      /* ignore */
-    }
+    // nominaSettings was loaded once in the parallel batch above.
+    const clockOutThresholdMin = Number(nominaSettings?.windows?.earlyClockoutThresholdMin ?? 0);
+    const lateGraceMin = Number(nominaSettings?.windows?.lateGraceMin ?? 5);
 
     // Tenant timezone is the single source of truth for shift time display.
-    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
     const tz = (tenant && tenant.timezone) || 'UTC';
     const withLabels = (s: any) => {
       if (!s) return null;
@@ -152,23 +184,13 @@ export default async (req: any, res: any) => {
     // a station where they have a SHIFT covering today. The rotation emits no
     // shift on a rest day, so this enforces rest even for permanently-assigned
     // fijos (an active assignment alone is NOT enough — Phase 7).
-    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+    // shiftsToday was loaded in the parallel batch above (null on lookup error).
     let clockInStationIds: string[] = [];
-    try {
-      const shiftsToday = await db.shift.findAll({
-        where: {
-          guardId: userId,
-          tenantId,
-          startTime: { [Op.lte]: endOfDay },
-          endTime: { [Op.gte]: startOfDay },
-        },
-        attributes: ['stationId'],
-      });
+    if (shiftsToday) {
       clockInStationIds = Array.from(
         new Set(shiftsToday.map((r: any) => r.stationId).filter(Boolean)),
       );
-    } catch {
+    } else {
       // If the shift lookup fails, leave eligibility unknown rather than wrongly
       // blocking — the controller still validates on the actual punch.
       clockInStationIds = stations.map((s: any) => s.id);
@@ -232,17 +254,21 @@ export default async (req: any, res: any) => {
           : clockInStationIds[0]) || null;
       if (targetStationId && !activeClockIn) {
         const { matchScheduledShift, getNominaSettings } = require('../../services/attendanceService');
-        const settings = await getNominaSettings(db, tenantId);
-        const targetStation = await db.station.findOne({
-          where: { id: targetStationId, tenantId, deletedAt: null },
-          attributes: ['id', 'clockInEarlyBufferMin', 'clockInLateGraceMin'],
-        });
-        const match = await matchScheduledShift(db, {
-          guardUserId: userId,
-          stationId: targetStationId,
-          tenantId,
-          at: now,
-        });
+        // Reuse the settings loaded in the parallel batch above — this used to
+        // be a second findByPk of the same row within one request.
+        const settings = nominaSettings ?? (await getNominaSettings(db, tenantId));
+        const [targetStation, match] = await Promise.all([
+          db.station.findOne({
+            where: { id: targetStationId, tenantId, deletedAt: null },
+            attributes: ['id', 'clockInEarlyBufferMin', 'clockInLateGraceMin'],
+          }),
+          matchScheduledShift(db, {
+            guardUserId: userId,
+            stationId: targetStationId,
+            tenantId,
+            at: now,
+          }),
+        ]);
         if (match.scheduledStart) {
           const effectiveEarly = targetStation && targetStation.clockInEarlyBufferMin != null
             ? Number(targetStation.clockInEarlyBufferMin)

@@ -44,6 +44,9 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   if (!bearer && !cookie) return next()
   const idToken = bearer || cookie
   try {
+    // findByToken also attaches req.currentTenant (tenant + settings + logo) when
+    // the token carries a tenantId; tenantMiddleware/tenantHeaderMiddleware reuse
+    // it instead of re-querying the same tenant row.
     const currentUser: any = await AuthService.findByToken(idToken, req)
     ;(req as any).currentUser = currentUser
 
