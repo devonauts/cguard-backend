@@ -22,6 +22,14 @@ import TenantRepository from '../../database/repositories/tenantRepository';
 import { tenantSubdomain } from '../tenantSubdomain';
 import Error401 from '../../errors/Error401';
 import isInfrastructureError from '../../errors/isInfrastructureError';
+import {
+  mintSessionClaims,
+  normalizeChannel,
+  parseActiveSessions,
+  singleSessionEnabled,
+  hasSuperadminRole,
+} from './sessionService';
+import { emitSessionSuperseded } from '../../lib/realtime';
 import dayjs from 'dayjs';
 import Roles from '../../security/roles';
 import RoleRepository from '../../database/repositories/roleRepository';
@@ -202,8 +210,15 @@ class AuthService {
           }
         }
 
+        const signupSessionClaims = await mintSessionClaims(
+          options.database,
+          existingUser,
+          normalizeChannel((options as any)?.body?.app),
+          transaction,
+        ).catch(() => ({}));
+
         const token = jwt.sign(
-          { id: existingUser.id },
+          { id: existingUser.id, ...signupSessionClaims },
           getConfig().AUTH_JWT_SECRET,
           { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
         );
@@ -328,8 +343,15 @@ class AuthService {
         }
       }
 
+      const newUserSessionClaims = await mintSessionClaims(
+        options.database,
+        newUser,
+        normalizeChannel((options as any)?.body?.app),
+        transaction,
+      ).catch(() => ({}));
+
       const token = jwt.sign(
-        { id: newUser.id },
+        { id: newUser.id, ...newUserSessionClaims },
         getConfig().AUTH_JWT_SECRET,
         { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
       );
@@ -448,23 +470,26 @@ class AuthService {
         console.warn('Could not mark lastLoginAt for user:', err);
       }
 
-      // SINGLE ACTIVE SESSION (opt-in): invalidate this user's prior tokens so a new
-      // login logs the account out of its other devices. findByToken rejects any
-      // token issued before jwtTokenInvalidBefore; the new token (signed below)
-      // survives via the 2s back-dating.
-      // DISABLED BY DEFAULT — it caused "random" logouts: any account used in more
-      // than one place (a 2nd tab/browser, the mobile app, a shared login, the demo)
-      // got kicked on every other login. Set ENFORCE_SINGLE_SESSION=true to re-enable.
-      // Explicit sign-out still invalidates the token (see authSignOut).
-      if (String(process.env.ENFORCE_SINGLE_SESSION || '').toLowerCase() === 'true') {
-        try {
-          await options.database.user.update(
-            { jwtTokenInvalidBefore: dayjs().subtract(2, 'second').toDate() },
-            { where: { id: user.id }, transaction },
-          );
-        } catch (err) {
-          console.warn('Could not set jwtTokenInvalidBefore:', err);
-        }
+      // SINGLE ACTIVE SESSION PER APP CHANNEL (seat enforcement). Mint a session
+      // id for this login's channel (web / worker / supervisor, from body.app)
+      // and rotate it in users.activeSessionIds — the previous device on the
+      // SAME channel is superseded (401 in findByToken) while other channels
+      // keep working (CRM web + mobile app coexist for one person). Always
+      // minted; ENFORCEMENT is gated by ENFORCE_SINGLE_SESSION=true so the
+      // flag can flip on without a code change. Demo accounts are exempt.
+      // (Replaces the old account-wide jwtTokenInvalidBefore version, which
+      // kicked EVERY other device incl. the mobile apps and shared demo logins.)
+      let sessionClaims: { sid?: string; ch?: string } = {};
+      const sessionChannel = normalizeChannel((options as any)?.body?.app);
+      try {
+        sessionClaims = await mintSessionClaims(
+          options.database,
+          user,
+          sessionChannel,
+          transaction,
+        );
+      } catch (err) {
+        console.warn('Could not mint session id:', err);
       }
 
       await SequelizeRepository.commitTransaction(transaction)
@@ -478,7 +503,9 @@ class AuthService {
         await logSecurityEvent(options.database, {
           tenantId: tenantId || null, userId: user.id, email: user.email,
           event: 'login', outcome: 'success', ip: ctx.ip, userAgent: ctx.userAgent,
-          detail: 'Inicio de sesión; sesiones anteriores cerradas (sesión única).',
+          detail: sessionClaims.sid && singleSessionEnabled()
+            ? `Inicio de sesión (${sessionChannel}); sesión anterior de este canal cerrada (sesión única).`
+            : 'Inicio de sesión.',
         });
       } catch { /* ignore */ }
 
@@ -676,7 +703,20 @@ class AuthService {
       // Transform `safeUser.tenants` (array) into single `tenant` object
       try {
         let tenantEntries = (safeUser && Array.isArray((safeUser as any).tenants)) ? (safeUser as any).tenants : [];
-        
+
+        // Single session: instantly kick this channel's PREVIOUS device (its
+        // socket joined tenant:<t>:user:<id> rooms). It re-checks /auth/me,
+        // gets 401 sessionSuperseded, and lands on login without waiting for
+        // its next organic request. The new device ignores its own sid.
+        if (sessionClaims.sid && singleSessionEnabled()) {
+          try {
+            const tenantIds = tenantEntries
+              .map((te: any) => te?.tenantId || te?.tenant?.id)
+              .filter(Boolean);
+            emitSessionSuperseded(tenantIds, user.id, sessionChannel, sessionClaims.sid);
+          } catch { /* best-effort */ }
+        }
+
         // Debug: log tenantEntries before transformation
         try {
           console.log('[AuthService] signin transformation - tenantEntries count:', tenantEntries.length);
@@ -695,7 +735,7 @@ class AuthService {
           (safeUser as any).tenant = null;
           delete (safeUser as any).tenants;
           const finalToken = jwt.sign(
-            { id: user.id },
+            { id: user.id, ...sessionClaims },
             getConfig().AUTH_JWT_SECRET,
             { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
           );
@@ -734,7 +774,7 @@ class AuthService {
           try { (safeUser as any).isSuperadmin = true; } catch (e) {}
 
           const finalToken = jwt.sign(
-            { id: user.id },
+            { id: user.id, ...sessionClaims },
             getConfig().AUTH_JWT_SECRET,
             { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
           );
@@ -807,7 +847,7 @@ class AuthService {
         
 
         const finalToken = jwt.sign(
-          { id: user.id, tenantId: tenantIdForToken },
+          { id: user.id, tenantId: tenantIdForToken, ...sessionClaims },
           getConfig().AUTH_JWT_SECRET,
           { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
         );
@@ -1006,6 +1046,28 @@ class AuthService {
               if (isTokenManuallyExpired) {
                 reject(new Error401());
                 return;
+              }
+
+              // SINGLE ACTIVE SESSION PER CHANNEL: a token is valid only while
+              // its sid is still the active session for its channel — a newer
+              // sign-in on the same channel supersedes it (the device gets 401
+              // and returns to login). Only sid-bearing tokens are checked, so
+              // pre-feature tokens age out naturally instead of mass-logging
+              // everyone out on deploy. Uses the ALREADY-LOADED user row (no
+              // extra DB read → no new infra-error surface). Superadmin-role
+              // accounts are platform staff, not tenant seats — exempt.
+              const tokenSid = (decoded as any)?.sid;
+              const tokenCh = (decoded as any)?.ch;
+              if (
+                user && tokenSid && tokenCh &&
+                singleSessionEnabled() &&
+                !hasSuperadminRole(user)
+              ) {
+                const active = parseActiveSessions((user as any).activeSessionIds)[tokenCh];
+                if (active && active !== tokenSid) {
+                  reject(new Error401(options?.language, 'auth.sessionSuperseded'));
+                  return;
+                }
               }
 
               // If the email sender id not configured,
@@ -1404,8 +1466,16 @@ class AuthService {
         );
       }
 
+      // Social/OAuth logins are always the CRM web channel.
+      const socialSessionClaims = await mintSessionClaims(
+        options.database,
+        user,
+        'web',
+        transaction,
+      ).catch(() => ({}));
+
       const token = jwt.sign(
-        { id: user.id },
+        { id: user.id, ...socialSessionClaims },
         getConfig().AUTH_JWT_SECRET,
         { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
       );

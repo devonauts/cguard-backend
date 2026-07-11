@@ -631,9 +631,12 @@ export default class TenantService {
           bypassPermissionValidation: true,
         });
 
-        // Generar nuevo JWT con el tenantId actualizado
+        // Generar nuevo JWT con el tenantId actualizado. Carry the CURRENT
+        // session's sid/ch forward — this is a token exchange, not a new
+        // device sign-in, so it must not supersede the session that made it.
+        const sessionClaims = (this.options as any)?.authTokenClaims || {};
         const newToken = jwt.sign(
-          { id: updatedUser.id, tenantId },
+          { id: updatedUser.id, tenantId, ...sessionClaims },
           getConfig().AUTH_JWT_SECRET,
           { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
         );
@@ -693,9 +696,11 @@ export default class TenantService {
         bypassPermissionValidation: true,
       });
 
-      // Generar nuevo JWT con el tenantId actualizado
+      // Generar nuevo JWT con el tenantId actualizado. Carry the CURRENT
+      // session's sid/ch forward — token exchange, not a new device sign-in.
+      const sessionClaims = (this.options as any)?.authTokenClaims || {};
       const newToken = jwt.sign(
-        { id: updatedUser.id, tenantId: tenantUser.tenant.id },
+        { id: updatedUser.id, tenantId: tenantUser.tenant.id, ...sessionClaims },
         getConfig().AUTH_JWT_SECRET,
         { expiresIn: getConfig().AUTH_JWT_EXPIRES_IN },
       );

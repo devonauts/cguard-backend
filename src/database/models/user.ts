@@ -124,6 +124,14 @@ export default function (sequelize, DataTypes) {
         type: DataTypes.DATE,
         allowNull: true,
       },
+      // Single active session per app channel (seat enforcement): JSON object
+      // mapping channel → session id, e.g. {"web":"<uuid>","worker":"<uuid>"}.
+      // Sign-in rotates its channel's id; findByToken 401s superseded tokens
+      // when ENFORCE_SINGLE_SESSION=true (see services/auth/sessionService).
+      activeSessionIds: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
       // Brute-force lockout: consecutive failed logins; when it crosses the
       // threshold lockedUntil is set and sign-in is blocked until it passes.
       failedLoginCount: {

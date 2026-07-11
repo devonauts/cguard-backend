@@ -58,6 +58,12 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     // this feature (no `sid`) are also superseded, forcing a one-time re-login.
     try {
       const decodedTok: any = jwt.decode(idToken)
+      // Expose the session claims so token-exchange flows (e.g. invitation
+      // acceptance re-signing a token with a new tenantId) can carry the
+      // CURRENT session forward instead of minting a new one.
+      if (decodedTok && (decodedTok.sid || decodedTok.ch)) {
+        ;(req as any).authTokenClaims = { sid: decodedTok.sid, ch: decodedTok.ch }
+      }
       if (decodedTok && decodedTok.clientAccountId) {
         const ca: any = await (req as any).database.clientAccount.findOne({
           where: { id: decodedTok.clientAccountId },

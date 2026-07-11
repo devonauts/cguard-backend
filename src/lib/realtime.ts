@@ -457,4 +457,30 @@ export function emitToClientAccount(
   }
 }
 
-export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, emitToTenant, emitToClientAccount, getRealtimeHealth, SOCKET_PATH };
+/**
+ * Single active session: tell a user's OTHER devices on `channel` that their
+ * session was just superseded by a new sign-in. Emitted to the per-user room
+ * in every tenant the user belongs to (sockets joined `tenant:<t>:user:<id>`
+ * at auth time). Clients that receive it re-check /auth/me — the superseded
+ * token gets 401 auth.sessionSuperseded — and land on the login screen
+ * immediately instead of on their next request. Payload carries the NEW sid
+ * so the device that just signed in can ignore its own event. Never throws.
+ */
+export function emitSessionSuperseded(
+  tenantIds: string[],
+  userId: string,
+  channel: string,
+  newSid: string,
+): void {
+  if (!io || !userId) return;
+  try {
+    for (const t of tenantIds || []) {
+      if (!t) continue;
+      io.to(`tenant:${t}:user:${userId}`).emit('session:superseded', { channel, sid: newSid });
+    }
+  } catch (e: any) {
+    console.error('[realtime] session emit failed:', e?.message || e);
+  }
+}
+
+export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, emitToTenant, emitToClientAccount, emitSessionSuperseded, getRealtimeHealth, SOCKET_PATH };
