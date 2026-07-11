@@ -21,6 +21,18 @@ function normalizeBranding(raw: any): { brandColor: string; headerColor: string 
   };
 }
 
+/**
+ * Read branding FRESH from a settings row (no cache) for the UI response — the
+ * cached getEmailBranding is per-PM2-instance, so a save on one instance could
+ * otherwise read stale on another for up to the TTL. The dispatcher still uses
+ * the cache (email volume; a minute of staleness there is fine).
+ */
+function brandingFromRecord(record: any): { brandColor: string; headerColor: string } {
+  let raw: any = record && (record.emailBranding || record.get?.('emailBranding'));
+  if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = null; } }
+  return normalizeBranding(raw || {});
+}
+
 /** A representative sample email body (guard check-in) for the live preview. */
 function sampleBodyHtml(): string {
   return `
@@ -63,12 +75,12 @@ export default (app) => {
       const tenantId = req.currentTenant.id;
 
       const preferences = await getEmailPreferences(db, tenantId);
-      const brand = await getEmailBranding(db, tenantId);
+      const record = await ensureSettings(db, tenantId, req.currentUser);
       return ApiResponseHandler.success(req, res, {
         catalog: EMAIL_CATALOG,
         preferences,
-        branding: { brandColor: brand.brandColor, headerColor: brand.headerColor },
-        logoUrl: brand.logoUrl || null,
+        branding: brandingFromRecord(record),
+        logoUrl: (record && (record.logoUrl || record.get?.('logoUrl'))) || null,
       });
     } catch (error) {
       return ApiResponseHandler.error(req, res, error);
@@ -110,12 +122,11 @@ export default (app) => {
       clearEmailBrandingCache(tenantId);
 
       const preferences = await getEmailPreferences(db, tenantId);
-      const brand = await getEmailBranding(db, tenantId);
       return ApiResponseHandler.success(req, res, {
         catalog: EMAIL_CATALOG,
         preferences,
-        branding: { brandColor: brand.brandColor, headerColor: brand.headerColor },
-        logoUrl: brand.logoUrl || null,
+        branding: brandingFromRecord(record),
+        logoUrl: (record && (record.logoUrl || record.get?.('logoUrl'))) || null,
       });
     } catch (error) {
       return ApiResponseHandler.error(req, res, error);
