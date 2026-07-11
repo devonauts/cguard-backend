@@ -28,6 +28,22 @@ export const SOCKET_PATH = '/api/socket.io';
 // targetRoles (matches the SEE_ALL set used for recipient resolution).
 const SEE_ALL_ROLES = ['admin', 'operationsManager', 'owner'];
 
+// Roles whose sessions may render the live supervision layers (the CRM
+// Control Center / operations map). Mirrors the CRM's /dashboard role set.
+// Deliberately excludes securityGuard and customer so high-frequency position
+// streams (supervisor GPS pings) never fan out to every guard phone.
+const SUPERVISION_ROLES = [
+  'admin',
+  'operationsManager',
+  'securitySupervisor',
+  'hrManager',
+  'clientAccountManager',
+  'dispatcher',
+  'administrativeSupervisor',
+  'administrativeAssistant',
+  'secretary',
+];
+
 let io: IOServer | null = null;
 let adapterAttached = false;
 
@@ -129,6 +145,13 @@ function joinSocketRooms(socket: any): void {
   socket.join(`tenant:${tenantId}:user:${userId}`);
   (roles || []).forEach((r: string) => socket.join(`tenant:${tenantId}:role:${r}`));
   if (seeAll) socket.join(`tenant:${tenantId}:all`);
+
+  // Narrow room for high-frequency live-map streams (e.g. supervisor GPS
+  // pings' `location:update`): only supervision-capable sessions join it, so
+  // those emits don't reach every guard phone in the tenant.
+  if (seeAll || (roles || []).some((r: string) => SUPERVISION_ROLES.includes(r))) {
+    socket.join(`tenant:${tenantId}:supervision`);
+  }
 
   // Mi Seguridad customer connections join a per-clientAccount room so the
   // backend can push live chat messages / coverage / status to a specific
@@ -431,6 +454,23 @@ export function emitToTenant(tenantId: string, event: string, payload: any): voi
 }
 
 /**
+ * Emit a high-frequency live-map event (e.g. a supervisor GPS ping's
+ * `location:update`) ONLY to the tenant's supervision room — sessions whose
+ * roles can render the Control Center map (see SUPERVISION_ROLES +
+ * joinSocketRooms). Unlike emitToTenant, this never reaches guard phones, so
+ * per-ping fan-out stays proportional to open dashboards, not tenant size.
+ * No-op if the socket server isn't initialized. Never throws.
+ */
+export function emitToSupervision(tenantId: string, event: string, payload: any): void {
+  if (!io || !tenantId) return;
+  try {
+    io.to(`tenant:${tenantId}:supervision`).emit(event, payload);
+  } catch (e: any) {
+    console.error('[realtime] supervision emit failed:', e?.message || e);
+  }
+}
+
+/**
  * Emit a real-time event to a single Mi Seguridad customer (every socket that
  * authenticated with that clientAccount's JWT joined `tenant:<id>:client:<caId>`).
  * Used to replace the client app's chat/status polling: a `message:new`,
@@ -483,4 +523,4 @@ export function emitSessionSuperseded(
   }
 }
 
-export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, emitToTenant, emitToClientAccount, emitSessionSuperseded, getRealtimeHealth, SOCKET_PATH };
+export default { initRealtime, emitPlatformEvent, emitSuperadminEvent, emitToTenant, emitToSupervision, emitToClientAccount, emitSessionSuperseded, getRealtimeHealth, SOCKET_PATH };

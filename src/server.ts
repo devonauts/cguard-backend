@@ -250,13 +250,15 @@ nodeSetInterval(() => { runJob("OpsDigest", () => require('./lib/opsDigest').sen
 // off-box S3. Plus a boot-time run if the newest backup is stale (>20h) so a
 // long gap self-heals without waiting a full day.
 nodeSetInterval(() => { runJob("DbBackup", () => require('./lib/dbBackup').runBackup()); }, 24 * 60 * 60 * 1000);
-leaderTimeout(() => { require('./lib/dbBackup').runBackupIfStale().catch(() => {}); }, 3 * 60 * 1000);
+leaderTimeout(() => { runJob("DbBackup", () => require('./lib/dbBackup').runBackupIfStale()); }, 3 * 60 * 1000);
 
 // Sync guard duty status every 5 minutes based on active shifts
 nodeSetInterval(() => { runJob("DutySync", syncGuardDutyStatus); }, 5 * 60 * 1000);
 
-// Run once on startup after a short delay
-leaderTimeout(() => syncGuardDutyStatus(), 10000);
+// Run once on startup after a short delay. NOTE: boot kicks (here and below) go
+// through runJob too, so its in-flight guard prevents a slow boot run from
+// overlapping the first interval tick.
+leaderTimeout(() => runJob("DutySync", syncGuardDutyStatus), 10000);
 
 /**
  * Consigna scheduler — every minute, find active station consignas whose
@@ -272,25 +274,49 @@ async function runConsignaScheduler() {
     const { Op } = require('sequelize');
     const now = new Date();
 
+    // Lean load: only the columns the recurrence check + notification need
+    // (drops description TEXT etc. — this scans ALL notify-enabled consignas
+    // platform-wide every minute, so row width matters).
     const orders = await database.stationOrder.findAll({
       where: { active: true, notifyEnabled: true, deletedAt: null },
+      attributes: [
+        'id', 'tenantId', 'stationId', 'title', 'time', 'recurrence',
+        'days', 'dayOfMonth', 'date', 'notifyMinutesBefore', 'lastNotifiedAt',
+      ],
     });
+    // One query for every involved tenant's timezone (was one query per tenant).
     const tzCache: Record<string, string> = {};
-    const tzFor = async (tenantId: string) => {
-      if (tzCache[tenantId]) return tzCache[tenantId];
-      const tn = await database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
-      return (tzCache[tenantId] = tn?.timezone || 'UTC');
-    };
+    if (orders.length) {
+      const tenantIds = [...new Set(orders.map((o: any) => o.tenantId))];
+      const tenants = await database.tenant.findAll({
+        where: { id: { [Op.in]: tenantIds } },
+        attributes: ['id', 'timezone'],
+      });
+      for (const t of tenants) tzCache[t.id] = t.timezone || 'UTC';
+    }
     for (const o of orders) {
       const order = o.get({ plain: true });
-      const tz = await tzFor(order.tenantId);
+      const tz = tzCache[order.tenantId] || 'UTC';
       if (!isDueOn(order, now, tz)) continue;
       const due = dueAt(order, now, tz);
       const notifyMoment = new Date(due.getTime() - (Number(order.notifyMinutesBefore) || 0) * 60000);
       // fire only inside a 15-min window after the notify moment
       if (now < notifyMoment || now.getTime() - notifyMoment.getTime() > 15 * 60000) continue;
-      // already pushed for this occurrence?
+      // already pushed for this occurrence? (cheap pre-check on the loaded row)
       if (order.lastNotifiedAt && new Date(order.lastNotifiedAt) >= notifyMoment) continue;
+      // Atomic per-occurrence claim (conditional UPDATE — same pattern as the
+      // trial/radio-check schedulers): only the worker whose UPDATE matches
+      // proceeds, so an overlapping tick or a leader hand-off can't double-send.
+      const [claimed] = await database.stationOrder.update(
+        { lastNotifiedAt: now },
+        {
+          where: {
+            id: order.id,
+            [Op.or]: [{ lastNotifiedAt: null }, { lastNotifiedAt: { [Op.lt]: notifyMoment } }],
+          },
+        },
+      );
+      if (!claimed) continue;
 
       // resolve the station's assigned guards → their device tokens
       const station = await database.station.findOne({
@@ -301,7 +327,7 @@ async function runConsignaScheduler() {
       const userIds = (station?.assignedGuards || []).map((u: any) => u.id);
       let tokens: string[] = [];
       if (userIds.length) {
-        const devices = await database.deviceIdInformation.findAll({ where: { tenantId: order.tenantId, createdById: { [Op.in]: userIds } } });
+        const devices = await database.deviceIdInformation.findAll({ where: { tenantId: order.tenantId, createdById: { [Op.in]: userIds } }, attributes: ['deviceId'] });
         tokens = devices.map((d: any) => d.deviceId).filter(Boolean);
       }
       const title = `Consigna: ${order.title}`;
@@ -317,7 +343,6 @@ async function runConsignaScheduler() {
           sourceEntityType: 'stationOrder', sourceEntityId: order.id,
         });
       } catch { /* ignore */ }
-      await o.update({ lastNotifiedAt: now });
       console.log(`[Consigna] notified "${order.title}" -> ${tokens.length} device(s)`);
     }
   } catch (err) {
@@ -327,7 +352,7 @@ async function runConsignaScheduler() {
 
 // Check due consignas every minute
 nodeSetInterval(() => { runJob("Consigna", runConsignaScheduler); }, 60 * 1000);
-leaderTimeout(() => runConsignaScheduler(), 20000);
+leaderTimeout(() => runJob("Consigna", runConsignaScheduler), 20000);
 
 /**
  * Radio check (pase de novedades) scheduler. Two jobs each minute:
@@ -411,7 +436,7 @@ async function runRadioCheckScheduler() {
 }
 
 nodeSetInterval(() => { runJob("RadioCheck", runRadioCheckScheduler); }, 60 * 1000);
-leaderTimeout(() => runRadioCheckScheduler(), 35000);
+leaderTimeout(() => runJob("RadioCheck", runRadioCheckScheduler), 35000);
 
 /**
  * Forced clock-out — auto-closes shifts whose scheduled end passed (+grace) while
@@ -430,7 +455,7 @@ async function runForcedClockOutScheduler() {
 }
 
 nodeSetInterval(() => { runJob("ForcedClockOut", runForcedClockOutScheduler); }, 60 * 1000);
-leaderTimeout(() => runForcedClockOutScheduler(), 45000);
+leaderTimeout(() => runJob("ForcedClockOut", runForcedClockOutScheduler), 45000);
 
 // Supervisor forced clock-out — same idea over supervisorShift (never touches
 // guardShift). Force-closes a supervisor punch left open past their turno end.
@@ -444,7 +469,7 @@ async function runSupervisorForcedClockOutScheduler() {
   }
 }
 nodeSetInterval(() => { runJob("SupervisorForcedClockOut", runSupervisorForcedClockOutScheduler); }, 60 * 1000);
-leaderTimeout(() => runSupervisorForcedClockOutScheduler(), 50000);
+leaderTimeout(() => runJob("SupervisorForcedClockOut", runSupervisorForcedClockOutScheduler), 50000);
 
 /**
  * Shift reminders — push notifications to whoever is assigned a station turno
@@ -463,7 +488,7 @@ async function runShiftReminderScheduler() {
 }
 
 nodeSetInterval(() => { runJob("ShiftReminders", runShiftReminderScheduler); }, 5 * 60 * 1000);
-leaderTimeout(() => runShiftReminderScheduler(), 60000);
+leaderTimeout(() => runJob("ShiftReminders", runShiftReminderScheduler), 60000);
 
 /**
  * Trial scheduler — sends reminder emails as a tenant's 14-day trial winds down
@@ -560,7 +585,7 @@ async function runTrialScheduler() {
 
 // Check trials a few times a day.
 nodeSetInterval(() => { runJob("TrialBilling", runTrialScheduler); }, 6 * 60 * 60 * 1000);
-leaderTimeout(() => runTrialScheduler(), 30000);
+leaderTimeout(() => runJob("TrialBilling", runTrialScheduler), 30000);
 
 /**
  * Seat reconciliation — once a day, push each active tenant's current
@@ -582,7 +607,7 @@ async function runSeatReconcile() {
 
 // Reconcile seats once a day.
 nodeSetInterval(() => { runJob("SeatReconcile", runSeatReconcile); }, 24 * 60 * 60 * 1000);
-leaderTimeout(() => runSeatReconcile(), 60000);
+leaderTimeout(() => runJob("SeatReconcile", runSeatReconcile), 60000);
 
 /**
  * Attendance detection (Nómina) — every 5 minutes, scan recently-started shifts
@@ -803,7 +828,7 @@ async function runAttendanceDetectionScheduler() {
 
 // Detect attendance exceptions every 5 minutes.
 nodeSetInterval(() => { runJob("AttendanceDetection", runAttendanceDetectionScheduler); }, 5 * 60 * 1000);
-leaderTimeout(() => runAttendanceDetectionScheduler(), 45000);
+leaderTimeout(() => runJob("AttendanceDetection", runAttendanceDetectionScheduler), 45000);
 
 /**
  * Repeated-lateness (Nómina) — hourly, flag guards with 3+ late punches in the
@@ -869,7 +894,7 @@ async function runRepeatedLatenessScheduler() {
 
 // Repeated-lateness check hourly.
 nodeSetInterval(() => { runJob("RepeatedLateness", runRepeatedLatenessScheduler); }, 60 * 60 * 1000);
-leaderTimeout(() => runRepeatedLatenessScheduler(), 90000);
+leaderTimeout(() => runJob("RepeatedLateness", runRepeatedLatenessScheduler), 90000);
 
 /**
  * Document-expiry alerts (Feature #20) — once a day, scan every tenant's
@@ -891,7 +916,7 @@ async function runDocumentExpiryAlerts() {
 
 // Check document expiry once a day.
 nodeSetInterval(() => { runJob("DocumentExpiryAlerts", runDocumentExpiryAlerts); }, 24 * 60 * 60 * 1000);
-leaderTimeout(() => runDocumentExpiryAlerts(), 75000);
+leaderTimeout(() => runJob("DocumentExpiryAlerts", runDocumentExpiryAlerts), 75000);
 
 /**
  * Customer summary digest (Feature #21) — once a day, aggregate each active

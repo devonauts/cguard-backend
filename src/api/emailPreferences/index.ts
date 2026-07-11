@@ -3,6 +3,36 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import { EMAIL_CATALOG } from '../../lib/emailCatalog';
 import { getEmailPreferences } from '../../lib/emailPrefs';
+import {
+  renderNotificationEmail,
+  getEmailBranding,
+  clearEmailBrandingCache,
+  safeHex,
+  DEFAULT_BRAND_COLOR,
+  DEFAULT_HEADER_COLOR,
+} from '../../lib/emailLayout';
+
+/** Normalize a branding blob to the two safe hex colors we persist. */
+function normalizeBranding(raw: any): { brandColor: string; headerColor: string } {
+  const b = raw && typeof raw === 'object' ? raw : {};
+  return {
+    brandColor: safeHex(b.brandColor, DEFAULT_BRAND_COLOR),
+    headerColor: safeHex(b.headerColor, DEFAULT_HEADER_COLOR),
+  };
+}
+
+/** A representative sample email body (guard check-in) for the live preview. */
+function sampleBodyHtml(): string {
+  return `
+    <h2 style="margin:0 0 12px;color:#0A0E16;font-size:20px;">✅ Guardia inició turno</h2>
+    <p style="margin:6px 0;"><strong>Guardia:</strong> Juan Pérez</p>
+    <p style="margin:6px 0;"><strong>Sitio:</strong> Edificio Central</p>
+    <p style="margin:6px 0;"><strong>Puesto:</strong> Garita Principal</p>
+    <p style="margin:6px 0;"><strong>Hora de entrada:</strong> 07:58</p>
+    <p style="margin:16px 0 4px"><strong>Consignas pendientes</strong></p>
+    <ul style="margin:0 0 8px"><li>Verificar cámaras del lobby</li><li>Registrar visitantes en bitácora</li></ul>
+  `;
+}
 
 /**
  * Tenant email preferences — one on/off switch per email the platform sends
@@ -33,23 +63,26 @@ export default (app) => {
       const tenantId = req.currentTenant.id;
 
       const preferences = await getEmailPreferences(db, tenantId);
+      const brand = await getEmailBranding(db, tenantId);
       return ApiResponseHandler.success(req, res, {
         catalog: EMAIL_CATALOG,
         preferences,
+        branding: { brandColor: brand.brandColor, headerColor: brand.headerColor },
+        logoUrl: brand.logoUrl || null,
       });
     } catch (error) {
       return ApiResponseHandler.error(req, res, error);
     }
   });
 
-  // PUT — merge the provided on/off map (known, non-locked keys only).
+  // PUT — merge the provided on/off map (known, non-locked keys only) + branding.
   app.put('/tenant/:tenantId/email-preferences', async (req, res) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.settingsEdit);
       const db = req.database;
       const tenantId = req.currentTenant.id;
       const body = req.body.data || req.body || {};
-      const incoming = body.preferences || body || {};
+      const incoming = body.preferences || {};
 
       const record = await ensureSettings(db, tenantId, req.currentUser);
       const current = (record.emailPreferences && typeof record.emailPreferences === 'object')
@@ -63,17 +96,62 @@ export default (app) => {
         }
       }
 
-      record.emailPreferences = current;
-      await record.update({
+      const update: any = {
         emailPreferences: current,
         updatedById: req.currentUser && req.currentUser.id,
-      });
+      };
+      // Branding is optional; only touch it when provided (keeps the endpoint's
+      // "never disturb logo/theme" guarantee for callers that only save toggles).
+      if (body.branding && typeof body.branding === 'object') {
+        update.emailBranding = normalizeBranding(body.branding);
+      }
+      record.emailPreferences = current;
+      await record.update(update);
+      clearEmailBrandingCache(tenantId);
 
       const preferences = await getEmailPreferences(db, tenantId);
+      const brand = await getEmailBranding(db, tenantId);
       return ApiResponseHandler.success(req, res, {
         catalog: EMAIL_CATALOG,
         preferences,
+        branding: { brandColor: brand.brandColor, headerColor: brand.headerColor },
+        logoUrl: brand.logoUrl || null,
       });
+    } catch (error) {
+      return ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // POST /email-preferences/preview — render a sample transactional email with
+  // DRAFT branding (from the request) + the tenant's real logo, so the CRM shows
+  // exactly how emails will look before saving. Returns { html }.
+  app.post('/tenant/:tenantId/email-preferences/preview', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.settingsRead);
+      const db = req.database;
+      const tenantId = req.currentTenant.id;
+      const body = req.body.data || req.body || {};
+
+      const saved = await getEmailBranding(db, tenantId);
+      const draft = normalizeBranding(body.branding || {});
+      // Draft overrides saved so the preview updates live as the user picks colors.
+      const brandColor = body.branding ? draft.brandColor : saved.brandColor;
+      const headerColor = body.branding ? draft.headerColor : saved.headerColor;
+
+      const html = renderNotificationEmail({
+        tenantName: saved.tenantName,
+        logoUrl: saved.logoUrl,
+        brandColor,
+        headerColor,
+        eyebrow: 'Notificación',
+        title: 'Guardia inició turno',
+        body: '',
+        bodyHtml: sampleBodyHtml(),
+        ctaText: 'Ver en el panel',
+        ctaUrl: 'https://app.cguardpro.com',
+      });
+
+      return ApiResponseHandler.success(req, res, { html });
     } catch (error) {
       return ApiResponseHandler.error(req, res, error);
     }

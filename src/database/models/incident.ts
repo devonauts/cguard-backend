@@ -161,7 +161,13 @@ export default function (sequelize) {
             deletedAt: null,
           },
         },
-
+        // Incident lists (IncidentRepository.findAndCountAll default order;
+        // control center sends orderBy=createdAt_DESC explicitly):
+        // WHERE tenantId = ? ORDER BY createdAt DESC.
+        {
+          name: 'idx_inc_tenant_created',
+          fields: ['tenantId', 'createdAt'],
+        },
       ],
       timestamps: true,
       paranoid: true,

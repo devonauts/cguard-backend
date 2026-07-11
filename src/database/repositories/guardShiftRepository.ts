@@ -616,6 +616,17 @@ class GuardShiftRepository {
 
     const where = { [Op.and]: whereAnd };
 
+    // Defensive pagination: omitting ?limit used to return the ENTIRE tenant
+    // shift history (limit: undefined → no LIMIT). Default well above every
+    // real consumer's page size (CRM Nómina sends limit=1000, guard profile 20,
+    // post-site views 999, worker app ≤300; the internal no-limit callers —
+    // patrolLogService / securityGuardOnDutyPatch — only look at a guard's few
+    // OPEN shifts) and hard-cap so a single request can never dump the table.
+    const effectiveLimit = Math.min(
+      Number(limit) > 0 ? Number(limit) : 1000,
+      5000,
+    );
+
     let {
       rows,
       count,
@@ -626,9 +637,10 @@ class GuardShiftRepository {
       // metadata in every row (each photo is a large TEXT blob → a 100-row page
       // could be tens of MB). The Nómina table renders neither; the selfie/detail
       // is loaded from GET /attendance/:id when a row is opened. `sessions` is
-      // kept (the table shows the session count).
+      // kept (the table shows the session count) but its per-session selfie is
+      // stripped below.
       attributes: { exclude: ['punchInPhoto', 'punchOutPhoto', 'deviceInfo'] },
-      limit: limit ? Number(limit) : undefined,
+      limit: effectiveLimit,
       offset: offset ? Number(offset) : undefined,
       order: orderBy
         ? [orderBy.split('_')]
@@ -642,6 +654,20 @@ class GuardShiftRepository {
       rows,
       options,
     );
+
+    // LEAN list, part 2: `sessions` itself must ship (the Nómina table shows
+    // "·N sesiones" and the profile/detail sheets read session.in/.out), but
+    // each session embeds the clock-in selfie as base64 (`inPhoto`,
+    // attendanceService.appendSession) — the same blob class excluded above as
+    // punchInPhoto. Strip only the photo per session; the detail path
+    // (findById → GET /attendance/:id) keeps the full sessions.
+    for (const row of rows as any[]) {
+      if (row && Array.isArray(row.sessions)) {
+        row.sessions = row.sessions.map(
+          ({ inPhoto, ...lean }: any) => lean,
+        );
+      }
+    }
 
     return { rows, count };
   }

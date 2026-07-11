@@ -21,7 +21,18 @@ export default async (req, res, next) => {
       // Only the fields the map consumes — a bare findAll would hydrate every
       // open shift's TEXT blobs (selfie, sessions JSON, checklist) on a poll
       // that every open dashboard hits every few seconds.
-      attributes: ['id', 'guardNameId', 'punchInLatitude', 'punchInLongitude', 'punchInTime'],
+      attributes: [
+        'id',
+        'guardNameId',
+        'punchInLatitude',
+        'punchInLongitude',
+        'punchInTime',
+        // Live telemetry (guardMeLocation ping) — preferred over the static
+        // clock-in snapshot so the map tracks the guard, not the punch-in spot.
+        'liveLatitude',
+        'liveLongitude',
+        'liveLocationAt',
+      ],
       include: [
         {
           model: db.securityGuard,
@@ -37,15 +48,23 @@ export default async (req, res, next) => {
     const rows = (openShifts || []).map((r) => {
       const plain = r.get({ plain: true });
       const guard = plain.guardName || null;
+      // Prefer the live GPS ping (continuously refreshed by the worker app's
+      // guardMeLocation) over the clock-in snapshot, which is static for the
+      // whole shift. Fall back to punch-in coords when the guard hasn't pinged
+      // yet. Field names are unchanged (consumers read latitude/longitude and
+      // show punchInTime as "last seen"), only the values get fresher — so the
+      // timestamp follows the coordinate source to keep "last seen" truthful.
+      const hasLive = plain.liveLatitude != null && plain.liveLongitude != null;
       return {
         guardShiftId: plain.id,
         guardId: guard ? guard.id : null,
         userId: guard ? guard.guardId : null,
         fullName: guard ? guard.fullName : null,
         isOnDuty: guard ? guard.isOnDuty : null,
-        latitude: plain.punchInLatitude || null,
-        longitude: plain.punchInLongitude || null,
-        punchInTime: plain.punchInTime || null,
+        latitude: hasLive ? plain.liveLatitude : plain.punchInLatitude || null,
+        longitude: hasLive ? plain.liveLongitude : plain.punchInLongitude || null,
+        punchInTime:
+          (hasLive && plain.liveLocationAt) || plain.punchInTime || null,
       };
     });
 

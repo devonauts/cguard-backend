@@ -51,6 +51,15 @@ function escapeMultiline(s: string): string {
   return escapeHtml(s).replace(/\r\n|\r|\n/g, '<br>');
 }
 
+/** Default brand accent (gold) + header (navy) when a tenant hasn't customized. */
+export const DEFAULT_BRAND_COLOR = '#C8860A';
+export const DEFAULT_HEADER_COLOR = '#0A0E16';
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+export function safeHex(v: any, fallback: string): string {
+  const s = String(v || '').trim();
+  return HEX_RE.test(s) ? s : fallback;
+}
+
 export interface NotificationEmailInput {
   tenantName?: string;
   logoUrl?: string;
@@ -58,9 +67,19 @@ export interface NotificationEmailInput {
   title: string;
   /** Plain text, may contain \n — escaped + nl2br by the renderer. */
   body: string;
+  /**
+   * Raw HTML content for the body slot (already-trusted template fragment).
+   * When set, it REPLACES the title+body text block entirely — used to wrap the
+   * per-event emailHtml() fragments in the branded shell without escaping.
+   */
+  bodyHtml?: string;
   ctaText?: string;
   ctaUrl?: string;
   year?: number;
+  /** Accent color (eyebrow, divider, CTA). Defaults to gold. */
+  brandColor?: string;
+  /** Header bar background. Defaults to dark navy (keeps white text legible). */
+  headerColor?: string;
 }
 
 /** Minimal inline-styled fallback used when the template file can't be loaded. */
@@ -106,20 +125,85 @@ export function renderNotificationEmail(input: NotificationEmailInput): string {
       rendered = rendered.replace(/<img[^>]*\{\{logoUrl\}\}[^>]*\/?\s*>/g, '');
     }
 
+    // Body slot: a trusted HTML fragment REPLACES the whole title+body block;
+    // otherwise render the escaped title + nl2br body text.
+    if (input.bodyHtml != null) {
+      rendered = rendered.replace(
+        /<!--CONTENT_START-->[\s\S]*?<!--CONTENT_END-->/g,
+        String(input.bodyHtml),
+      );
+    } else {
+      rendered = rendered.replace(/<!--CONTENT_START-->|<!--CONTENT_END-->/g, '');
+      rendered = rendered.replace(/{{title}}/g, escapeHtml(title));
+      rendered = rendered.replace(/{{body}}/g, escapeMultiline(body));
+    }
+
     const tenantName = escapeHtml(input.tenantName || '');
     const eyebrow = escapeHtml(input.eyebrow || 'Notificación');
     const year = String(input.year || new Date().getFullYear());
+    const brandColor = safeHex(input.brandColor, DEFAULT_BRAND_COLOR);
+    const headerColor = safeHex(input.headerColor, DEFAULT_HEADER_COLOR);
 
     rendered = rendered.replace(/{{tenantName}}/g, tenantName);
     rendered = rendered.replace(/{{eyebrow}}/g, eyebrow);
     rendered = rendered.replace(/{{title}}/g, escapeHtml(title));
-    rendered = rendered.replace(/{{body}}/g, escapeMultiline(body));
     rendered = rendered.replace(/{{year}}/g, year);
+    rendered = rendered.replace(/{{brandColor}}/g, brandColor);
+    rendered = rendered.replace(/{{headerColor}}/g, headerColor);
 
     return rendered;
   } catch (e) {
     return fallbackHtml(title, body);
   }
+}
+
+export interface TenantEmailBranding {
+  brandColor: string;
+  headerColor: string;
+  logoUrl: string;
+  tenantName: string;
+}
+
+/**
+ * Resolve a tenant's email branding (accent + header color, logo, name) from
+ * the settings row + tenant. Best-effort — always returns usable defaults.
+ * Cached briefly so the dispatcher doesn't re-query on every email.
+ */
+const brandingCache = new Map<string, { at: number; value: TenantEmailBranding }>();
+const BRANDING_TTL_MS = 60_000;
+
+export async function getEmailBranding(db: any, tenantId: string): Promise<TenantEmailBranding> {
+  const fallback: TenantEmailBranding = {
+    brandColor: DEFAULT_BRAND_COLOR,
+    headerColor: DEFAULT_HEADER_COLOR,
+    logoUrl: '',
+    tenantName: '',
+  };
+  if (!db || !tenantId) return fallback;
+  const cached = brandingCache.get(tenantId);
+  if (cached && Date.now() - cached.at < BRANDING_TTL_MS) return cached.value;
+  try {
+    const settings = await db.settings.findOne({ where: { tenantId } });
+    let branding: any = settings && (settings.emailBranding || settings.get?.('emailBranding'));
+    if (typeof branding === 'string') { try { branding = JSON.parse(branding); } catch { branding = null; } }
+    const tenant = await db.tenant.findByPk(tenantId, { attributes: ['name'] });
+    const value: TenantEmailBranding = {
+      brandColor: safeHex(branding?.brandColor, DEFAULT_BRAND_COLOR),
+      headerColor: safeHex(branding?.headerColor, DEFAULT_HEADER_COLOR),
+      logoUrl: (settings && (settings.logoUrl || settings.get?.('logoUrl'))) || '',
+      tenantName: (tenant && tenant.name) || '',
+    };
+    brandingCache.set(tenantId, { at: Date.now(), value });
+    return value;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Invalidate the branding cache for a tenant (call after a branding save). */
+export function clearEmailBrandingCache(tenantId?: string) {
+  if (tenantId) brandingCache.delete(tenantId);
+  else brandingCache.clear();
 }
 
 export default renderNotificationEmail;

@@ -51,6 +51,30 @@ export default function (sequelize, DataTypes) {
           );
         },
       },
+      // Per-tenant transactional-email branding (accent + header color) applied
+      // to the shared email shell (lib/emailLayout.ts). JSON text:
+      // { brandColor?: '#RRGGBB', headerColor?: '#RRGGBB' }. Missing = defaults
+      // (gold accent / navy header). Logo reuses settings.logoUrl.
+      emailBranding: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get(this: any) {
+          const raw = this.getDataValue('emailBranding');
+          if (!raw) return {};
+          if (typeof raw !== 'string') return raw;
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        },
+        set(this: any, val: any) {
+          this.setDataValue(
+            'emailBranding',
+            val == null ? null : typeof val === 'string' ? val : JSON.stringify(val),
+          );
+        },
+      },
       // Per-tenant notification-channel map (Configuración → Notificaciones),
       // keyed by row id: { [rowId]: { dashboard, email, sms } }. JSON text.
       notificationPreferences: {

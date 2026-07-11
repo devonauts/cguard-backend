@@ -18,34 +18,37 @@ export async function syncGuardDutyStatus() {
   try {
     const database = await databaseInit();
 
-    // securityGuards that currently have an OPEN guardShift (punchOutTime IS NULL).
-    // guardShift.guardNameId references securityGuard.id.
-    const [openRows]: any = await database.sequelize.query(
-      `SELECT DISTINCT gs.guardNameId AS sgId
-         FROM guardShifts gs
-        WHERE gs.deletedAt IS NULL
-          AND gs.punchOutTime IS NULL
-          AND gs.guardNameId IS NOT NULL`,
+    // Set-based reconcile: two UPDATEs that touch ONLY mismatched rows, instead
+    // of loading every securityGuard platform-wide and updating one row at a
+    // time. guardShift.guardNameId references securityGuard.id; an open
+    // guardShift (punchOutTime IS NULL) means "on duty". updatedAt is bumped to
+    // match what the previous per-row guard.update() did.
+    const [onRes]: any = await database.sequelize.query(
+      `UPDATE securityGuards sg
+          SET sg.isOnDuty = true, sg.updatedAt = NOW()
+        WHERE sg.deletedAt IS NULL
+          AND sg.isOnDuty = false
+          AND EXISTS (
+                SELECT 1 FROM guardShifts gs
+                 WHERE gs.guardNameId = sg.id
+                   AND gs.deletedAt IS NULL
+                   AND gs.punchOutTime IS NULL
+              )`,
     );
-    const onDutyIds = new Set((openRows || []).map((r: any) => r.sgId));
-
-    const allGuards = await database.securityGuard.findAll({
-      where: { deletedAt: null },
-      attributes: ['id', 'isOnDuty'],
-    });
-
-    let onCount = 0;
-    let offCount = 0;
-    for (const guard of allGuards) {
-      const shouldBeOnDuty = onDutyIds.has(guard.id);
-      if (shouldBeOnDuty && !guard.isOnDuty) {
-        await guard.update({ isOnDuty: true });
-        onCount++;
-      } else if (!shouldBeOnDuty && guard.isOnDuty) {
-        await guard.update({ isOnDuty: false });
-        offCount++;
-      }
-    }
+    const [offRes]: any = await database.sequelize.query(
+      `UPDATE securityGuards sg
+          SET sg.isOnDuty = false, sg.updatedAt = NOW()
+        WHERE sg.deletedAt IS NULL
+          AND sg.isOnDuty = true
+          AND NOT EXISTS (
+                SELECT 1 FROM guardShifts gs
+                 WHERE gs.guardNameId = sg.id
+                   AND gs.deletedAt IS NULL
+                   AND gs.punchOutTime IS NULL
+              )`,
+    );
+    const onCount = Number(onRes?.affectedRows ?? onRes?.rowCount ?? 0);
+    const offCount = Number(offRes?.affectedRows ?? offRes?.rowCount ?? 0);
 
     if (onCount > 0 || offCount > 0) {
       console.log(`[DutySync] Reconciled cache: ${onCount} on-duty, ${offCount} off-duty`);

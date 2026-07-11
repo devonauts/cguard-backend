@@ -97,15 +97,52 @@ export async function stationPositionCreate(req, res) {
  * `generateShiftsForAssignment` force-deletes future shifts and recreates them
  * from the CURRENT position hours, so this keeps generated shifts from drifting
  * away from the turno. Best-effort: a regen failure never fails the mutation.
+ *
+ * Coalescing: a burst of position mutations for the same station must NOT stack
+ * N full-year regens. Per station we keep one in-flight run; late callers mark
+ * it dirty and share its promise, and the loop re-runs ONCE after the current
+ * pass so the final rebuild always reads the latest committed positions. Every
+ * caller still awaits until a pass that started AFTER its own DB write has
+ * finished (the CRM re-fetches /scheduler/overview immediately after the
+ * mutation response, so shifts must be persisted before we respond).
  */
+const stationRegenInFlight = new Map<
+  string,
+  { dirty: boolean; latest: { database: any; tenantId: string; userId: string }; running: Promise<void> }
+>();
+
 async function regenerateStationShiftsSafe(req: any, stationId: string) {
   if (!stationId) return;
-  try {
-    const { regenerateStationShifts } = await import('../../services/shiftGenerationService');
-    await regenerateStationShifts(req.database, stationId, req.currentTenant.id, req.currentUser.id);
-  } catch (e) {
-    console.error('[stationPosition] shift regeneration failed:', (e as any)?.message || e);
+  const latest = { database: req.database, tenantId: req.currentTenant.id, userId: req.currentUser.id };
+  const key = `${latest.tenantId}|${stationId}`;
+
+  const existing = stationRegenInFlight.get(key);
+  if (existing) {
+    // A regen is mid-flight; it may have read positions from before our write.
+    // Flag a single follow-up pass and wait for it — never a second parallel run.
+    existing.dirty = true;
+    existing.latest = latest;
+    return existing.running;
   }
+
+  const entry = { dirty: false, latest, running: Promise.resolve() };
+  entry.running = (async () => {
+    do {
+      entry.dirty = false;
+      const args = entry.latest;
+      try {
+        const { regenerateStationShifts } = await import('../../services/shiftGenerationService');
+        await regenerateStationShifts(args.database, stationId, args.tenantId, args.userId);
+      } catch (e) {
+        console.error('[stationPosition] shift regeneration failed:', (e as any)?.message || e);
+      }
+    } while (entry.dirty);
+    // Deleted in the same synchronous continuation as the final dirty check, so
+    // no caller can observe (and dirty-flag) an entry whose loop already exited.
+    stationRegenInFlight.delete(key);
+  })();
+  stationRegenInFlight.set(key, entry);
+  return entry.running;
 }
 
 // PUT /tenant/:tenantId/station/:stationId/positions/:positionId
@@ -680,6 +717,20 @@ export async function schedulerAutoAssign(req, res) {
       return haversineDistance(gLat, gLng, sLat, sLng);
     };
 
+    // Guard homes and station coordinates never change within this request, so
+    // each (guard, station) distance is computed at most once; the demand loops
+    // below revisit the same stations for every open slot.
+    const distanceCache = new Map<string, number>();
+    const getDistanceCached = (guard: any, station: any): number => {
+      const key = `${guard.id}|${station.id}`;
+      let d = distanceCache.get(key);
+      if (d === undefined) {
+        d = getDistanceM(guard, station.latitud, station.longitud);
+        distanceCache.set(key, d);
+      }
+      return d;
+    };
+
     // Group positions by station
     let positionsByStation = new Map<string, any[]>();
     positions.forEach((p: any) => { const list = positionsByStation.get(p.stationId) || []; list.push(p.get({ plain: true })); positionsByStation.set(p.stationId, list); });
@@ -779,11 +830,19 @@ export async function schedulerAutoAssign(req, res) {
       }
     }
 
-    // Assign titulares to nearest open positions
+    // Assign titulares to nearest open positions. Demand is grouped by station,
+    // and taking the head (shift) keeps the remaining pool sorted for that same
+    // station, so we only re-sort when the slot's station changes — the picks
+    // are identical to sorting every slot (sort is stable, so a re-sort of an
+    // already-sorted pool is a no-op even across equal distances).
     let guardsLeft = [...titulares];
+    let titularSortedStationId: string | null = null;
     for (const slot of demand) {
       if (guardsLeft.length === 0) break;
-      guardsLeft.sort((a: any, b: any) => getDistanceM(a, slot.station.latitud, slot.station.longitud) - getDistanceM(b, slot.station.latitud, slot.station.longitud));
+      if (titularSortedStationId !== slot.stationId) {
+        guardsLeft.sort((a: any, b: any) => getDistanceCached(a, slot.station) - getDistanceCached(b, slot.station));
+        titularSortedStationId = slot.stationId;
+      }
       const best: any = guardsLeft.shift();
       newAssignments.push({
         guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,
@@ -805,9 +864,15 @@ export async function schedulerAutoAssign(req, res) {
     }
 
     let sacafLeft = [...sacafrancos];
+    let sacafSortedStationId: string | null = null;
     for (const slot of reliefDemand) {
-      if (sacafLeft.length === 0) { sacafLeft = [...sacafrancos]; if (sacafLeft.length === 0) break; }
-      sacafLeft.sort((a: any, b: any) => getDistanceM(a, slot.station.latitud, slot.station.longitud) - getDistanceM(b, slot.station.latitud, slot.station.longitud));
+      // Refilling restores the ORIGINAL pool order, so the sorted-for marker
+      // must reset to force a re-sort (matching the always-sort behavior).
+      if (sacafLeft.length === 0) { sacafLeft = [...sacafrancos]; sacafSortedStationId = null; if (sacafLeft.length === 0) break; }
+      if (sacafSortedStationId !== slot.stationId) {
+        sacafLeft.sort((a: any, b: any) => getDistanceCached(a, slot.station) - getDistanceCached(b, slot.station));
+        sacafSortedStationId = slot.stationId;
+      }
       const best: any = sacafLeft.shift();
       newAssignments.push({
         guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,

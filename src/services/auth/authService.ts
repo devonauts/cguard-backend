@@ -385,7 +385,9 @@ class AuthService {
     const transaction = await SequelizeRepository.createTransaction(
       options.database,
     )
-    let committed = false;
+    // True once the transaction has been committed OR rolled back on purpose
+    // (unverified-email branch) — the catch blocks must not touch it again.
+    let transactionFinished = false;
     try {
       email = email.toLowerCase()
 
@@ -435,12 +437,21 @@ class AuthService {
       } catch { /* best-effort */ }
 
       if (!user.emailVerified) {
+        // This branch always fails the signin, so finish the transaction FIRST:
+        // the slow SMTP round-trip below used to run with the transaction (and
+        // its pool connection) still open, pinning a connection for seconds.
+        // Rolling back here matches the previous outcome (the outer catch
+        // rolled these writes back anyway) while letting the verification-token
+        // write inside the email helper commit on its own — before, the token
+        // was rolled back AFTER the email went out, mailing a dead link.
+        await SequelizeRepository.rollbackTransaction(transaction)
+        transactionFinished = true;
         if (EmailSender.isConfigured) {
           await this.sendEmailAddressVerificationEmail(
             options.language,
             user.email,
             tenantId,
-            { ...options, transaction, bypassPermissionValidation: true },
+            { ...options, transaction: undefined, bypassPermissionValidation: true },
           )
         }
         throw new Error400(options.language, 'auth.emailNotVerified')
@@ -493,7 +504,7 @@ class AuthService {
       }
 
       await SequelizeRepository.commitTransaction(transaction)
-      committed = true;
+      transactionFinished = true;
 
       // Audit the successful login (best-effort, outside the transaction).
       try {
@@ -854,13 +865,13 @@ class AuthService {
 
         return { token: finalToken, user: safeUser };
       } catch (err) {
-        if (!committed) {
+        if (!transactionFinished) {
           await SequelizeRepository.rollbackTransaction(transaction);
         }
         throw new Error400(options.language, (err && (err as any).message) || 'auth.invalidTenantConfiguration');
       }
     } catch (error) {
-      if (!committed) {
+      if (!transactionFinished) {
         await SequelizeRepository.rollbackTransaction(transaction)
       }
       throw error

@@ -16,12 +16,24 @@ export interface JobStat {
 
 const jobs: Record<string, JobStat> = {};
 
+// Overlap guard: a tick that runs longer than its interval must NOT overlap the
+// next one (double work, duplicate notifications, pool pressure). Every scheduler
+// funnels through runJob, so this one Set guards them all — an in-flight job name
+// simply skips the new tick. Per-process; the cluster leader gate handles
+// cross-instance exclusivity.
+const inFlight = new Set<string>();
+
 function ensure(name: string): JobStat {
   return (jobs[name] ||= { name, runs: 0, errors: 0, lastStatus: undefined });
 }
 
 /** Wrap a scheduler tick so its health is tracked. Never throws to the caller. */
 export async function runJob(name: string, fn: () => Promise<void> | void): Promise<void> {
+  if (inFlight.has(name)) {
+    console.warn(`[job:${name}] previous tick still running — skipping this tick`);
+    return;
+  }
+  inFlight.add(name);
   const j = ensure(name);
   j.lastStatus = 'running';
   const started = Date.now();
@@ -36,6 +48,7 @@ export async function runJob(name: string, fn: () => Promise<void> | void): Prom
     j.errors++;
     console.error(`[job:${name}] error:`, j.lastError);
   } finally {
+    inFlight.delete(name);
     j.lastRunAt = new Date().toISOString();
     j.lastDurationMs = Date.now() - started;
     void publishJobs();

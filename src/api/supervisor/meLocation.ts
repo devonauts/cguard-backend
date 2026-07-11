@@ -7,7 +7,7 @@
 import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
-import { emitToTenant } from '../../lib/realtime';
+import { emitToSupervision } from '../../lib/realtime';
 
 export const updateMyLocation = async (req: any, res: any) => {
   try {
@@ -30,12 +30,22 @@ export const updateMyLocation = async (req: any, res: any) => {
     );
 
     try {
-      emitToTenant(tenantId, 'location:update', {
+      const name = req.currentUser?.fullName || req.currentUser?.email || 'Supervisor';
+      // Supervision room only (Control Center dashboards) — NOT the whole
+      // tenant room: at scale a tenant-wide emit fanned every supervisor GPS
+      // ping out to every connected guard phone. Payload keeps the original
+      // fields and adds the id/lat/lng/label aliases the CRM map upserts by
+      // (same shape the demo orchestrator emits, which the CRM was built on).
+      emitToSupervision(tenantId, 'location:update', {
+        id: `sup-${userId}`,
         kind: 'supervisor',
         userId,
-        name: req.currentUser?.fullName || req.currentUser?.email || 'Supervisor',
+        name,
+        label: name,
         latitude: Number(lat),
         longitude: Number(lng),
+        lat: Number(lat),
+        lng: Number(lng),
         speed: data.speed ?? null,
         at: new Date().toISOString(),
       });

@@ -15,6 +15,7 @@
 import { storePlatformEvent } from './platformEventStore';
 import { getTemplate, TARGET_ROLES } from './notificationTemplates';
 import { sendMail } from '../services/mailService';
+import { renderNotificationEmail, getEmailBranding } from './emailLayout';
 import { sendSmsForTenant } from '../services/smsService';
 import { EVENT_EMAIL_KEY } from './emailCatalog';
 import { isEmailEnabled } from './emailPrefs';
@@ -48,6 +49,35 @@ export interface DispatchOptions {
    * when "assigned supervisors only" is enabled.
    */
   assignedPostSiteId?: string;
+}
+
+/**
+ * Wrap a per-event emailHtml() fragment in the tenant-branded email shell
+ * (logo, brand accent color, header, footer) so every transactional email is
+ * consistent + on-brand. Best-effort: any failure returns the bare fragment so
+ * the email still goes out.
+ */
+async function brandWrapEmail(
+  database: any,
+  tenantId: string,
+  subject: string,
+  fragmentHtml: string,
+): Promise<string> {
+  try {
+    const brand = await getEmailBranding(database, tenantId);
+    return renderNotificationEmail({
+      tenantName: brand.tenantName,
+      logoUrl: brand.logoUrl,
+      brandColor: brand.brandColor,
+      headerColor: brand.headerColor,
+      eyebrow: 'Notificación',
+      title: subject,
+      body: '',
+      bodyHtml: fragmentHtml,
+    });
+  } catch {
+    return fragmentHtml;
+  }
 }
 
 /**
@@ -125,7 +155,8 @@ export async function dispatch(
 
         if (prefs.email && allEmails.length) {
           const subject = template.emailSubject ? template.emailSubject(data) : title;
-          const html = template.emailHtml ? template.emailHtml(data) : `<p>${body}</p>`;
+          const fragment = template.emailHtml ? template.emailHtml(data) : `<p>${body}</p>`;
+          const html = await brandWrapEmail(opts.database, opts.tenantId, subject, fragment);
           sendMail({ to: allEmails, subject, html }).catch((err) => {
             console.error('[NotificationDispatcher] Email send failed:', err?.message || err);
           });
@@ -152,7 +183,8 @@ export async function dispatch(
         }
         if (emailAllowed) {
           const subject = template.emailSubject(data);
-          const html = template.emailHtml ? template.emailHtml(data) : `<p>${body}</p>`;
+          const fragment = template.emailHtml ? template.emailHtml(data) : `<p>${body}</p>`;
+          const html = await brandWrapEmail(opts.database, opts.tenantId, subject, fragment);
           sendMail({ to: opts.recipientEmail, subject, html }).catch((err) => {
             console.error('[NotificationDispatcher] Email send failed:', err?.message || err);
           });

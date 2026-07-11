@@ -216,6 +216,18 @@ export default function (sequelize) {
           name: 'idx_gs_relevo',
           fields: ['tenantId', 'stationNameId', 'punchOutTime'],
         },
+        // Default list order (GuardShiftRepository.findAndCountAll):
+        // WHERE tenantId = ? ORDER BY createdAt DESC.
+        {
+          name: 'idx_gs_tenant_created',
+          fields: ['tenantId', 'createdAt'],
+        },
+        // Nómina attendance list: WHERE tenantId = ? AND punchInTime BETWEEN ?
+        // AND ? ORDER BY punchInTime DESC (CRM sends orderBy=punchInTime_DESC).
+        {
+          name: 'idx_gs_tenant_punchin',
+          fields: ['tenantId', 'punchInTime'],
+        },
       ],
       timestamps: true,
       paranoid: true,

@@ -1285,7 +1285,14 @@ export default class UserRepository {
       options,
     );
 
-    // Eager-load tenantUser relation with assigned clients and post sites
+    // Eager-load tenantUser relation with assigned clients and post sites.
+    // PERF: this include mirrors EXACTLY the one _fillWithRelationsAndFiles
+    // uses for its getTenants() fallback, so the fill step can reuse the
+    // already-loaded association instead of re-running the same join on every
+    // authenticated request (AuthService.findByToken → findById). The tenant
+    // is deliberately left-joined (no `required: true`) so a tenant-less user
+    // row still loads; the fill step filters out null-tenant rows, which is
+    // equivalent to getTenants' `required: true` inner join.
     let record;
     try {
       record = await options.database.user.findByPk(id, {
@@ -1294,10 +1301,24 @@ export default class UserRepository {
           {
             model: options.database.tenantUser,
             as: 'tenants',
-              include: [
-              { model: options.database.clientAccount, as: 'assignedClients', attributes: ['id', 'name'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-              { model: options.database.businessInfo, as: 'assignedPostSites', attributes: ['id', 'companyName'], through: { attributes: [["security_guard_id", "securityGuardId"], 'createdAt', 'updatedAt'] } },
-              { model: options.database.tenant, as: 'tenant' },
+            include: [
+              {
+                model: options.database.tenant,
+                as: 'tenant',
+                include: ['settings'],
+              },
+              {
+                model: options.database.clientAccount,
+                as: 'assignedClients',
+                attributes: ['id', 'name'],
+                through: { attributes: [] },
+              },
+              {
+                model: options.database.businessInfo,
+                as: 'assignedPostSites',
+                attributes: ['id', 'companyName'],
+                through: { attributes: [] },
+              },
             ],
           },
         ],
@@ -1811,32 +1832,46 @@ export default class UserRepository {
       }),
     );
 
-    // Load tenant-user relationships and include assigned clients/post sites
-    output.tenants = await record.getTenants({
-      include: [
-        {
-          model: options.database.tenant,
-          as: 'tenant',
-          required: true,
-          include: ['settings'],
-        },
-        {
-          model: options.database.clientAccount,
-          as: 'assignedClients',
-          attributes: ['id', 'name'],
-          through: { attributes: [] },
-        },
-        {
-          model: options.database.businessInfo,
-          as: 'assignedPostSites',
-          attributes: ['id', 'companyName'],
-          through: { attributes: [] },
-        },
-      ],
-      transaction: SequelizeRepository.getTransaction(
-        options,
-      ),
-    });
+    // Load tenant-user relationships and include assigned clients/post sites.
+    // PERF: findById already eager-loads `tenants` with the exact include
+    // shape below, so reuse it instead of re-running the same join — this
+    // helper runs on EVERY authenticated request (AuthService.findByToken →
+    // findById). The JS filter replicates the `required: true` on the tenant
+    // include (drops tenantUser rows whose tenant is missing/soft-deleted).
+    // Callers that pass records without the association loaded (findByEmail,
+    // findByPhone, token lookups, ER_BAD_FIELD fallbacks…) still take the
+    // getTenants query below.
+    if (Array.isArray(record.tenants)) {
+      output.tenants = record.tenants.filter(
+        (tenantUser) => tenantUser.tenant,
+      );
+    } else {
+      output.tenants = await record.getTenants({
+        include: [
+          {
+            model: options.database.tenant,
+            as: 'tenant',
+            required: true,
+            include: ['settings'],
+          },
+          {
+            model: options.database.clientAccount,
+            as: 'assignedClients',
+            attributes: ['id', 'name'],
+            through: { attributes: [] },
+          },
+          {
+            model: options.database.businessInfo,
+            as: 'assignedPostSites',
+            attributes: ['id', 'companyName'],
+            through: { attributes: [] },
+          },
+        ],
+        transaction: SequelizeRepository.getTransaction(
+          options,
+        ),
+      });
+    }
 
     return output;
   }

@@ -680,6 +680,16 @@ class IncidentRepository {
 
     const where = { [Op.and]: whereAnd };
 
+    // Defensive pagination: omitting ?limit used to return the ENTIRE tenant
+    // incident history (limit: undefined → no LIMIT) through 5 joins plus the
+    // photo-signing pass. Default well above every real consumer's page size
+    // (CRM views send ≤999, worker app ≤500, control center 50) and hard-cap
+    // so a single request can never dump the table.
+    const effectiveLimit = Math.min(
+      Number(limit) > 0 ? Number(limit) : 1000,
+      5000,
+    );
+
     let {
       rows,
       count,
@@ -694,7 +704,7 @@ class IncidentRepository {
         exclude: ['internalNotes', 'actionsTaken', 'action', 'importHash'],
       },
       include,
-      limit: limit ? Number(limit) : undefined,
+      limit: effectiveLimit,
       offset: offset ? Number(offset) : undefined,
       order: orderBy
         ? [orderBy.split('_')]
