@@ -90,6 +90,10 @@ export function capture(err: any, meta: CaptureMeta = {}): void {
     if (ring.length > RING_MAX) ring.length = RING_MAX;
 
     // Persist best-effort. Lazy-require models to avoid a boot-time cycle.
+    // Skipped under NODE_ENV=test: the synchronous first require of the whole
+    // model graph through ts-node blocks the event loop for 10s+ and there is
+    // no test DB to insert into anyway (the in-memory ring above still records).
+    if (process.env.NODE_ENV === 'test') return;
     try {
       const models = require('../database/models').default;
       const db = models();
