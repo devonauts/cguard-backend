@@ -9,6 +9,9 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import PermissionChecker from '../../services/user/permissionChecker';
 import Permissions from '../../security/permissions';
+import Error400 from '../../errors/Error400';
+import { getStripeClient } from '../../services/stripe/stripeConfigService';
+import { tenantSubdomain } from '../../services/tenantSubdomain';
 import {
   getSettings,
   saveSettings,
@@ -73,5 +76,66 @@ export const walletGet = async (req: any, res: any) => {
     await ApiResponseHandler.success(req, res, await getWallet(db, tenantId));
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);
+  }
+};
+
+/**
+ * POST /tenant/:tenantId/communications/wallet/recharge — Stripe Checkout
+ * top-up for the unified communications wallet (WhatsApp + SMS via the
+ * router). Mirrors the legacy /sms-account/recharge flow: the session is
+ * fulfilled by the Stripe webhook (purpose=communications_recharge), which
+ * credits the wallet idempotently by session id.
+ */
+export const walletRecharge = async (req: any, res: any) => {
+  try {
+    new PermissionChecker(req).validateHas(Permissions.values.settingsEdit);
+    const { db } = ctx(req);
+    const currentTenant = req.currentTenant;
+    const currentUser = req.currentUser;
+    const data = (req.body && req.body.data) || req.body || {};
+
+    // Amount in cents, $5–$1000 (same bounds as the SMS wallet top-up).
+    const amountCents = Math.round(Number(data.amountCents || 0));
+    if (!Number.isFinite(amountCents) || amountCents < 500 || amountCents > 100000) {
+      throw new Error400(req.language, 'Monto inválido. Debe estar entre $5 y $1000.');
+    }
+
+    const stripe = await getStripeClient(db);
+    if (!stripe) {
+      throw new Error400(req.language, 'Stripe no está configurado en la plataforma.');
+    }
+    const returnUrl = `${tenantSubdomain.frontendUrl(currentTenant)}/setting/comunicaciones`;
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            unit_amount: amountCents,
+            product_data: {
+              name: 'Recarga de saldo de comunicaciones',
+              description: `Saldo para WhatsApp y SMS de ${currentTenant.name || 'su cuenta'}`,
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        tenantId: currentTenant.id,
+        purpose: 'communications_recharge',
+        amountCents: String(amountCents),
+      },
+      success_url: `${returnUrl}?recharge=success`,
+      cancel_url: `${returnUrl}?recharge=cancel`,
+      ...(currentTenant.planStripeCustomerId
+        ? { customer: currentTenant.planStripeCustomerId }
+        : { customer_email: currentUser?.email || undefined }),
+    });
+
+    return ApiResponseHandler.success(req, res, { url: session.url, id: session.id });
+  } catch (error) {
+    return ApiResponseHandler.error(req, res, error);
   }
 };

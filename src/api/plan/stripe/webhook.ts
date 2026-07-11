@@ -3,6 +3,7 @@ import Plans from '../../../security/plans';
 import ApiResponseHandler from '../../apiResponseHandler';
 import lodash from 'lodash';
 import { credit as creditSmsWallet } from '../../../services/smsAccountService';
+import { creditWalletFromRecharge } from '../../../services/communication/communicationSettingsService';
 import { resolveStripe } from '../../../services/stripe/stripeConfigService';
 import { upsertInvoiceFromStripe } from '../../../services/platformBillingService';
 
@@ -51,6 +52,30 @@ export default async (req, res) => {
         await creditSmsWallet(req.database, tenantId, amountCents, {
           reference: session.id,
           description: 'Recarga de saldo SMS (Stripe)',
+          currency: (session.currency || 'usd').toUpperCase(),
+        });
+      }
+
+      return ApiResponseHandler.success(req, res, { received: true });
+    }
+
+    // Unified communications wallet top-up (WhatsApp + SMS via the router).
+    // creditWalletFromRecharge dedupes by reference=session.id → retry-safe.
+    if (
+      event.type === 'checkout.session.completed' &&
+      lodash.get(event, 'data.object.metadata.purpose') === 'communications_recharge'
+    ) {
+      const session = event.data.object;
+      const tenantId = lodash.get(session, 'metadata.tenantId');
+      const amountCents =
+        Number(lodash.get(session, 'metadata.amountCents')) ||
+        Number(lodash.get(session, 'amount_total')) ||
+        0;
+
+      if (tenantId && amountCents > 0 && lodash.get(session, 'payment_status') !== 'unpaid') {
+        await creditWalletFromRecharge(req.database, tenantId, amountCents, {
+          reference: session.id,
+          description: 'Recarga de saldo de comunicaciones (Stripe)',
           currency: (session.currency || 'usd').toUpperCase(),
         });
       }

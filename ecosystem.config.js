@@ -70,6 +70,15 @@ module.exports = {
         // Firebase service-account for push (file lives outside the repo on the server)
         FIREBASE_SERVICE_ACCOUNT_FILE: '/home/cguardpro/firebase-service-account.json',
 
+        // Cross-instance realtime (socket.io Redis adapter + fleet-wide rate
+        // limiter). REQUIRED whenever `instances` > 1: without it, cross-worker
+        // emits — including PANIC/alarm broadcasts — only reach sockets on the
+        // emitting worker. Pinned here (not only in the untracked .env) so a
+        // re-provision or .env loss can't silently break panic delivery.
+        // dotenv does not override an already-set process.env, and .env also
+        // carries the same value, so this is a durable, consistent default.
+        REDIS_URL: process.env.REDIS_URL || 'redis://127.0.0.1:6379',
+
         // Database pool for production
         DATABASE_POOL_MAX: '50',
         DATABASE_POOL_MIN: '10',

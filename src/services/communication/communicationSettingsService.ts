@@ -176,6 +176,65 @@ export async function debitWallet(
   }
 }
 
+/**
+ * Idempotent recharge credit (safe under Stripe webhook retries): dedupes by a
+ * channel='wallet' ledger row in communicationLogs keyed on
+ * providerMessageId=reference (the checkout session id). The log row doubles
+ * as the visible ledger entry in the Comunicaciones log.
+ */
+export async function creditWalletFromRecharge(
+  db: any,
+  tenantId: string,
+  cents: number,
+  opts: { reference: string; description?: string; currency?: string },
+): Promise<WalletMoveResult & { duplicated?: boolean }> {
+  if (!(cents > 0)) {
+    throw Object.assign(new Error('cents must be positive'), { code: 400 });
+  }
+  const t = await db.sequelize.transaction();
+  try {
+    if (opts.reference) {
+      const existing = await db.communicationLog.findOne({
+        where: { tenantId, channel: 'wallet', providerMessageId: opts.reference },
+        transaction: t,
+      });
+      if (existing) {
+        const row = await ensureWallet(db, tenantId, t);
+        await t.commit();
+        return { ok: true, balanceAfterCents: row.balanceCents || 0, duplicated: true };
+      }
+    }
+    const row = await ensureWallet(db, tenantId, t);
+    const balanceAfter = (row.balanceCents || 0) + cents;
+    await row.update({ balanceCents: balanceAfter }, { transaction: t });
+    // Ledger entry. billedAmountCents is negative so period sums stay
+    // meaningful next to the positive debit rows the router logs on sends.
+    await db.communicationLog.create(
+      {
+        tenantId,
+        channel: 'wallet',
+        provider: 'stripe',
+        messageType: 'wallet_recharge',
+        status: 'delivered',
+        providerMessageId: opts.reference || null,
+        billedAmountCents: -cents,
+        currency: (opts.currency || 'USD').toUpperCase(),
+        providerResponse: {
+          description: opts.description || 'Recarga de saldo de comunicaciones',
+          creditedCents: cents,
+          balanceAfterCents: balanceAfter,
+        },
+      },
+      { transaction: t },
+    );
+    await t.commit();
+    return { ok: true, balanceAfterCents: balanceAfter };
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+}
+
 /** Atomically credit the wallet (recharge / refund). */
 export async function creditWallet(
   db: any,
@@ -386,6 +445,7 @@ export default {
   getWallet,
   debitWallet,
   creditWallet,
+  creditWalletFromRecharge,
   estimateCost,
   getMetaConfig,
   isMetaConfigured,
