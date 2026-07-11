@@ -11,6 +11,8 @@ export type EventType =
   | 'guard.checkout'
   | 'supervisor.checkin'
   | 'supervisor.checkout'
+  | 'staff.checkin'
+  | 'staff.checkout'
   | 'guard.late'
   | 'visitor.arrival'
   | 'visitor.departure'
@@ -253,6 +255,34 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     emailHtml: (d) => `
       <h2>🔚 Turno de supervisión finalizado</h2>
       ${d.supervisorName ? `<p><strong>Supervisor:</strong> ${esc(d.supervisorName)}</p>` : ''}
+      ${d.clockOutTime ? `<p><strong>Hora:</strong> ${esc(d.clockOutTime)}</p>` : ''}
+      ${d.observations ? `<p><strong>Novedades:</strong> ${esc(d.observations)}</p>` : ''}
+    `,
+  },
+  'staff.checkin': {
+    title: (d) => `✅ Administrativo en turno: ${d.staffName || 'Administrativo'}`,
+    body: (d) =>
+      `${d.staffName || 'Administrativo'} registró entrada${d.address ? ` — ${d.address}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+    emailSubject: (d) => `[CGuard] ${d.staffName || 'Administrativo'} registró entrada`,
+    emailHtml: (d) => checkinEmailHtml({
+      guardName: d.staffName,
+      siteName: d.address,
+      clockInTime: d.clockInTime,
+      photoUrl: d.photoUrl,
+    }),
+  },
+  'staff.checkout': {
+    title: (d) => `🔚 Administrativo fuera de turno: ${d.staffName || 'Administrativo'}`,
+    body: (d) =>
+      `${d.staffName || 'Administrativo'} registró salida${d.hoursWorked != null ? ` · ${d.hoursWorked} h` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+    emailSubject: (d) => `[CGuard] ${d.staffName || 'Administrativo'} registró salida`,
+    emailHtml: (d) => `
+      <h2>🔚 Turno administrativo finalizado</h2>
+      ${d.staffName ? `<p><strong>Administrativo:</strong> ${esc(d.staffName)}</p>` : ''}
       ${d.clockOutTime ? `<p><strong>Hora:</strong> ${esc(d.clockOutTime)}</p>` : ''}
       ${d.observations ? `<p><strong>Novedades:</strong> ${esc(d.observations)}</p>` : ''}
     `,

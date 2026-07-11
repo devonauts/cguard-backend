@@ -279,6 +279,20 @@ class Permissions {
         storage.supervisorProofImage,
       ]),
 
+      // === STAFF SELF-ATTENDANCE (web time clock for office/admin users) ===
+      // Office staff have no securityGuard row and no station, so they punch
+      // their own timesheet from the CRM web time clock. Granted to office +
+      // management roles (NOT field guards/supervisors — they have their own
+      // guard/supervisor punch that writes to their own tables).
+      staffMe: createPermission('staffMe', [
+        ...OFFICE_ROLES,
+        roles.admin,
+        roles.operationsManager,
+        roles.hrManager,
+        roles.clientAccountManager,
+        roles.dispatcher,
+      ]),
+
       // === PATROL CHECKPOINTS ===
       patrolCheckpointImport: createPermission('patrolCheckpointImport', SUPERVISOR_ROLES),
       patrolCheckpointCreate: createPermission('patrolCheckpointCreate', SUPERVISOR_ROLES),

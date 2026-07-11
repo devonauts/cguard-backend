@@ -73,6 +73,30 @@ export default function (sequelize, DataTypes) {
           );
         },
       },
+      // Team mobile hub: per-tenant customization of the worker & supervisor
+      // apps (accent color, display name/tagline, logo toggle, default theme,
+      // module visibility). JSON text; defaults merged in code
+      // (services/mobileAppSettingsService.ts). Missing key = default.
+      mobileAppSettings: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get(this: any) {
+          const raw = this.getDataValue('mobileAppSettings');
+          if (!raw) return {};
+          if (typeof raw !== 'string') return raw;
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        },
+        set(this: any, val: any) {
+          this.setDataValue(
+            'mobileAppSettings',
+            val == null ? null : typeof val === 'string' ? val : JSON.stringify(val),
+          );
+        },
+      },
       // Per-tenant unified-communications configuration (channel toggles, OTP
       // preference, wallet rules, per-event toggles). JSON text; defaults are
       // merged in code (see services/communication/communicationSettingsService.ts).

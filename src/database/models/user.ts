@@ -120,6 +120,25 @@ export default function (sequelize, DataTypes) {
       jwtTokenInvalidBefore: {
         type: DataTypes.DATE,
       },
+      // Optional office location for administrative/office self-attendance
+      // (web time clock). When set, the staff punch is validated + recorded
+      // against this point + radius; unset → free-form punch. See staffShift.
+      officeLatitude: {
+        type: DataTypes.DECIMAL(10, 7),
+        allowNull: true,
+      },
+      officeLongitude: {
+        type: DataTypes.DECIMAL(10, 7),
+        allowNull: true,
+      },
+      officeGeofenceRadiusM: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      officeAddress: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
       lastLoginAt: {
         type: DataTypes.DATE,
         allowNull: true,

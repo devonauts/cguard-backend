@@ -546,6 +546,15 @@ export default class UserRepository {
     if (Object.prototype.hasOwnProperty.call(data, 'firstName')) updatePayload.firstName = data.firstName ?? null;
     if (Object.prototype.hasOwnProperty.call(data, 'lastName')) updatePayload.lastName = data.lastName ?? null;
     if (Object.prototype.hasOwnProperty.call(data, 'phoneNumber')) updatePayload.phoneNumber = data.phoneNumber ?? null;
+    // Optional office location for administrative self-attendance (web time clock).
+    if (Object.prototype.hasOwnProperty.call(data, 'officeLatitude'))
+      updatePayload.officeLatitude = data.officeLatitude === '' || data.officeLatitude == null ? null : Number(data.officeLatitude);
+    if (Object.prototype.hasOwnProperty.call(data, 'officeLongitude'))
+      updatePayload.officeLongitude = data.officeLongitude === '' || data.officeLongitude == null ? null : Number(data.officeLongitude);
+    if (Object.prototype.hasOwnProperty.call(data, 'officeGeofenceRadiusM'))
+      updatePayload.officeGeofenceRadiusM = data.officeGeofenceRadiusM === '' || data.officeGeofenceRadiusM == null ? null : Number(data.officeGeofenceRadiusM);
+    if (Object.prototype.hasOwnProperty.call(data, 'officeAddress'))
+      updatePayload.officeAddress = data.officeAddress ?? null;
     updatePayload.updatedById = currentUser.id;
 
     if (Object.keys(updatePayload).length) {

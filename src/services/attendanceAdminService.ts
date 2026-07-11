@@ -65,12 +65,14 @@ export default class AttendanceAdminService {
       const isBroad = acl != null && Object.keys(acl).length === 0;
       if (!isBroad) return guardResult;
       const supRows = await this.listSupervisorShiftsForNomina(query.filter || query || {});
-      if (!supRows.length) return guardResult;
-      const merged = [...((guardResult as any).rows || []), ...supRows].sort(
+      const staffRows = await this.listStaffShiftsForNomina(query.filter || query || {});
+      const extra = [...supRows, ...staffRows];
+      if (!extra.length) return guardResult;
+      const merged = [...((guardResult as any).rows || []), ...extra].sort(
         (a: any, b: any) => new Date(b.punchInTime || 0).getTime() - new Date(a.punchInTime || 0).getTime(),
       );
       const limit = Number(query.limit) || merged.length;
-      return { rows: merged.slice(0, limit), count: ((guardResult as any).count || 0) + supRows.length };
+      return { rows: merged.slice(0, limit), count: ((guardResult as any).count || 0) + extra.length };
     } catch {
       return guardResult;
     }
@@ -138,26 +140,102 @@ export default class AttendanceAdminService {
     };
   }
 
+  /** Staff (administrative/office) shifts normalized to the record shape (role='administrative'). */
+  private async listStaffShiftsForNomina(filter: any): Promise<any[]> {
+    const db = this.db;
+    const tenantId = this.tenantId;
+    const { Op } = db.Sequelize;
+    if (!db.staffShift) return [];
+    const where: any = { tenantId };
+    const range = filter?.punchInTimeRange;
+    if (Array.isArray(range)) {
+      const [start, end] = range;
+      if (start) where.punchInTime = { ...(where.punchInTime || {}), [Op.gte]: new Date(start) };
+      if (end) where.punchInTime = { ...(where.punchInTime || {}), [Op.lte]: new Date(end) };
+    }
+    if (filter?.status && filter.status !== 'all') where.status = filter.status;
+    const rows = await db.staffShift.findAll({ where, order: [['punchInTime', 'DESC']], limit: 1000 });
+    if (!rows.length) return [];
+    const uids = [...new Set(rows.map((r: any) => String(r.userId)).filter(Boolean))];
+    const users = await db.user.findAll({
+      where: { id: { [Op.in]: uids } },
+      attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
+    });
+    const nameById = new Map<string, string>(
+      users.map((u: any): [string, string] => [
+        String(u.id),
+        String(u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || 'Administrativo'),
+      ]),
+    );
+    return rows.map((r: any) => this.normalizeStaffShift(r.get ? r.get({ plain: true }) : r, nameById));
+  }
+
+  /** Map a staffShift row → the attendance-record shape the CRM renders. */
+  private normalizeStaffShift(s: any, nameById: Map<string, string>): any {
+    return {
+      id: s.id,
+      role: 'administrative',
+      guardName: { id: s.userId, fullName: nameById.get(String(s.userId)) || 'Administrativo' },
+      guardNameId: s.userId,
+      stationName: null,
+      stationNameId: null,
+      punchInTime: s.punchInTime,
+      punchOutTime: s.punchOutTime,
+      hoursWorked: s.hoursWorked != null ? Number(s.hoursWorked) : null,
+      status: s.status,
+      lateMinutes: s.lateMinutes,
+      scheduledStart: null,
+      scheduledEnd: null,
+      shiftSchedule: null,
+      punchInLatitude: s.punchInLat != null ? Number(s.punchInLat) : null,
+      punchInLongitude: s.punchInLng != null ? Number(s.punchInLng) : null,
+      punchOutLatitude: s.punchOutLat != null ? Number(s.punchOutLat) : null,
+      punchOutLongitude: s.punchOutLng != null ? Number(s.punchOutLng) : null,
+      punchInPhoto: s.punchInPhoto,
+      punchInAddress: s.punchInAddress,
+      punchOutPhoto: s.punchOutPhoto,
+      observations: s.observations,
+      punchInDistanceM: s.punchInDistanceM ?? null,
+      punchInOutsideGeofence: s.punchInOutsideGeofence ?? null,
+      approvalStatus: null,
+      numberOfPatrolsDuringShift: 0,
+      numberOfIncidentsDurindShift: 0,
+      patrolsDone: 0,
+      dailyIncidents: 0,
+    };
+  }
+
   async findById(id: string) {
     try {
       return await GuardShiftRepository.findById(id, this.options);
     } catch (e) {
-      // Might be a supervisor shift (different table) — resolve + normalize.
+      // Might be a supervisor OR staff shift (different tables) — resolve + normalize.
       const db = this.db;
-      const row = await db.supervisorShift.findOne({ where: { id, tenantId: this.tenantId } });
-      if (!row) throw e;
-      const s = row.get ? row.get({ plain: true }) : row;
-      const user = await db.user.findOne({
-        where: { id: s.supervisorUserId },
-        attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
-      });
-      const nameById = new Map<string, string>([
-        [
-          String(s.supervisorUserId),
-          String((user && (user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email)) || 'Supervisor'),
-        ],
-      ]);
-      return this.normalizeSupervisorShift(s, nameById);
+      const supRow = await db.supervisorShift.findOne({ where: { id, tenantId: this.tenantId } });
+      if (supRow) {
+        const s = supRow.get ? supRow.get({ plain: true }) : supRow;
+        const user = await db.user.findOne({
+          where: { id: s.supervisorUserId },
+          attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
+        });
+        const nameById = new Map<string, string>([
+          [String(s.supervisorUserId), String((user && (user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email)) || 'Supervisor')],
+        ]);
+        return this.normalizeSupervisorShift(s, nameById);
+      }
+      const staffRow = db.staffShift ? await db.staffShift.findOne({ where: { id, tenantId: this.tenantId } }) : null;
+      if (staffRow) {
+        const s = staffRow.get ? staffRow.get({ plain: true }) : staffRow;
+        const user = await db.user.findOne({
+          where: { id: s.userId },
+          attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
+        });
+        const nameById = new Map<string, string>([
+          [String(s.userId), String((user && (user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email)) || 'Administrativo')],
+        ]);
+        return this.normalizeStaffShift(s, nameById);
+      }
+      throw e;
     }
   }
 
@@ -202,12 +280,23 @@ export default class AttendanceAdminService {
       ]);
     } catch { /* supervisors optional */ }
 
+    // Fold administrative/office staff (staffShift) too — same rationale.
+    let staffClockedInNow = 0, staffClockedInToday = 0;
+    try {
+      if (db.staffShift) {
+        [staffClockedInNow, staffClockedInToday] = await Promise.all([
+          db.staffShift.count({ where: { tenantId, punchOutTime: null } }),
+          db.staffShift.count({ where: { tenantId, punchInTime: { [Op.gte]: start, [Op.lt]: end } } }),
+        ]);
+      }
+    } catch { /* staff optional */ }
+
     const attendancePct =
-      scheduledToday > 0 ? Math.round(((clockedInToday + supClockedInToday) / scheduledToday) * 100) : null;
+      scheduledToday > 0 ? Math.round(((clockedInToday + supClockedInToday + staffClockedInToday) / scheduledToday) * 100) : null;
 
     return {
       scheduledToday,
-      clockedInNow: clockedInNow + supClockedInNow,
+      clockedInNow: clockedInNow + supClockedInNow + staffClockedInNow,
       lateToday: lateToday + supLateToday,
       noShowsToday,
       missedClockouts,
@@ -814,6 +903,50 @@ export default class AttendanceAdminService {
         }
       }
     } catch { /* supervisors optional */ }
+
+    // Administrative/office staff live in staffShift — fold identically, keyed
+    // 'stf:' and tagged role='administrative', so their hours reach payroll too.
+    try {
+      if (db.staffShift) {
+        const staffRows = await db.staffShift.findAll({
+          where: { tenantId, punchInTime: { [Op.gte]: from, [Op.lte]: to } },
+          attributes: ['id', 'userId', 'hoursWorked', 'status', 'lateMinutes', 'punchInTime'],
+          order: [['punchInTime', 'ASC']],
+        });
+        if (staffRows.length) {
+          const uids = [...new Set(staffRows.map((r: any) => String(r.userId)).filter(Boolean))];
+          const users = await db.user.findAll({
+            where: { id: { [Op.in]: uids } },
+            attributes: ['id', 'fullName', 'firstName', 'lastName', 'email'],
+          });
+          const nameById = new Map<string, string>(users.map((u: any): [string, string] => [
+            String(u.id),
+            String(u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || 'Administrativo'),
+          ]));
+          for (const r of staffRows as any[]) {
+            const s = r.get ? r.get({ plain: true }) : r;
+            const gid = 'stf:' + String(s.userId);
+            if (s.punchInTime) {
+              const dayKey = new Date(s.punchInTime).toISOString().slice(0, 10);
+              let ds = daysByGuard.get(gid);
+              if (!ds) { ds = new Set(); daysByGuard.set(gid, ds); }
+              ds.add(dayKey);
+            }
+            const a = byGuard.get(gid) || {
+              guardId: gid, guardName: nameById.get(String(s.userId)) || 'Administrativo',
+              shifts: 0, regularHours: 0, overtimeHours: 0, totalHours: 0,
+              lateCount: 0, missedClockouts: 0, noShows: 0, approvedCorrections: 0, payableHours: 0,
+            };
+            const total = Number(s.hoursWorked || 0);
+            a.shifts += 1;
+            a.totalHours += total;
+            a.regularHours += total;
+            if (s.status === 'late' || Number(s.lateMinutes || 0) > 0) a.lateCount += 1;
+            byGuard.set(gid, a);
+          }
+        }
+      }
+    } catch { /* staff optional */ }
 
     // Optional pay calculation — uses a per-guard rate override when present,
     // else the tenant default. Computed only when an effective rate > 0 exists.
