@@ -397,8 +397,25 @@ Highlights:
 - Uploads: crash-proof multipart handling, size/count limits, auth-before-buffer on imports, temp cleanup.
 - Dashboard ~45→~11 queries + 30s cache; leaderboard hoisted invariants + 5min cache.
 
-Remaining backlog (not fixed, tracked): userRepository `_fillWithRelationsAndFiles` redundant re-join
-(biggest per-request win left), repository no-limit defaults when ?limit omitted, live-map stale
-clock-in coords (behavior change — product call), supervisor GPS broadcast scope, dutySync full scan,
-Redis adapter + REDIS_URL on prod (required for cross-instance panic alerts — see realtime health check),
-rate-limit fail-open when Redis down, sign-in transaction over SMTP.
+## Backlog remediation (2026-07-11, round two)
+
+All remaining backlog items FIXED (verify-then-fix; shipped in a00f68c + 81ea399):
+- userRepository: the eager tenants join was 100% DISCARDED and re-queried — now reused (3->2 queries/request).
+- Sign-in: transaction no longer held across SMTP; BONUS BUG: rollback was erasing the just-mailed
+  verification token — every verification link mailed from signin was dead. Fixed.
+- Repositories: guardShift/incident lists default limit 1000 / cap 5000; attendance list strips
+  base64 selfies from sessions[] server-side; 3 list-sort indexes (z20260711 migration).
+- Supervisor GPS: narrowed from all-tenant-sockets to a supervision room; BONUS BUG: CRM was dropping
+  real supervisor pings (payload shape mismatch) — fixed additively.
+- Live map: uses live GPS telemetry (falls back to punch-in coords); truthful last-seen timestamp.
+- Schedulers: central in-flight overlap guard in runJob; consigna claim-first atomic dedupe + lean
+  batched queries; dutySync = 2 set-based UPDATEs (was full-platform scan + per-row updates).
+- autoAssign: per-(guard,station) distance cache + identity-sort skip (proven identical outcomes);
+  station-position CRUD regens coalesce per station (response still blocks — CRM refetches on save).
+- Rate limiter: Redis fail-open replaced with self-healing per-instance memory fallback (+ fixed a
+  boot-time unhandled-rejection crash and an offline-queue request-hang in the old path).
+- Test flake solved for real: errorTracker.capture's synchronous ts-node model-graph require was the
+  auth.roles timeout; suite now 316 passing in 3s.
+
+Deliberately NOT changed: SLA-escalation fleet-wide push audience (code comments say deliberate;
+now scalable) — narrowing is a product decision. REDIS_URL confirmed present on prod (adapter attached).
