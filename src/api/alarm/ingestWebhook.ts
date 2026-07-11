@@ -19,6 +19,13 @@ export default async (req, res) => {
     const body = req.body || {};
 
     const secret = process.env.ALARM_WEBHOOK_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+      // FAIL-CLOSED in production: without a shared secret, anyone who reaches
+      // this endpoint could inject forged alarm signals (life-safety). Refuse
+      // rather than accept unauthenticated alarms.
+      console.error('[alarm-webhook] REJECTED: ALARM_WEBHOOK_SECRET not set in production — refusing unauthenticated alarm ingest');
+      throw new Error401();
+    }
     if (secret) {
       const headerSig = String(
         req.headers['x-alarm-signature'] || req.headers['X-Alarm-Signature'] || '',

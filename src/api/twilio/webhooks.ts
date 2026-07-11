@@ -57,7 +57,14 @@ async function ensureSignature(req: Request, res: Response): Promise<boolean> {
   try {
     const cfg = await getTwilioConfig(db(req));
     if (!cfg.authToken) {
-      console.warn('[twilio webhook] no authToken configured — skipping signature validation');
+      // FAIL-CLOSED in production: without the auth token we can't validate the
+      // X-Twilio-Signature, so a forged SMS/voice callback must be rejected.
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[twilio webhook] REJECTED: no authToken configured in production — cannot validate signature');
+        res.status(403).send('Twilio signature validation not configured');
+        return false;
+      }
+      console.warn('[twilio webhook] no authToken configured — skipping signature validation (non-prod)');
       return true;
     }
     const sig = (req.headers['x-twilio-signature'] as string) || '';

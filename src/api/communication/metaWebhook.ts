@@ -97,7 +97,16 @@ export const metaWebhookVerify = async (req: any, res: any) => {
 
 /** Verify the X-Hub-Signature-256 header against appSecret (when configured). */
 function verifySignature(rawBody: string, header: string | undefined, appSecret: string): boolean {
-  if (!appSecret) return true; // not configured → skip (dev/sandbox)
+  if (!appSecret) {
+    // FAIL-CLOSED in production: no secret configured means we cannot verify,
+    // so a forged WhatsApp callback must be rejected — never trusted. Only
+    // dev/sandbox skips verification (to ease local testing).
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[meta-webhook] REJECTED: no app secret configured in production — cannot verify signature');
+      return false;
+    }
+    return true;
+  }
   if (!header || !header.startsWith('sha256=')) return false;
   try {
     const expected = crypto

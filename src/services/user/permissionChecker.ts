@@ -147,16 +147,10 @@ export default class PermissionChecker {
    * and throws a Error403 if it doesn't.
    */
   validateHas(permission) {
-    console.log('🔍 PermissionChecker.validateHas called with permission:', permission);
-    console.log('  👤 currentUser:', this.currentUser?.id, this.currentUser?.email);
-    console.log('  🏢 currentTenant:', this.currentTenant?.id);
-    console.log('  🌐 language:', this.language);
     
     if (!this.has(permission)) {
-      console.log('❌ Permission check failed - user does not have permission');
       throw new Error403(this.language);
     }
-    console.log('✅ Permission check passed');
   }
 
   /**
@@ -165,21 +159,16 @@ export default class PermissionChecker {
   has(permission) {
     assert(permission, 'permission is required');
     if (!this.currentUser) {
-      console.log('❌ No currentUser present in PermissionChecker.has');
       return false;
     }
 
     if (!this.isEmailVerified) {
-      console.log('❌ Email not verified');
       return false;
     }
-    console.log('✅ Email is verified');
 
     if (!this.hasPlanPermission(permission)) {
-      console.log('❌ Plan does not have permission');
       return false;
     }
-    console.log('✅ Plan has permission');
 
     // Shortcut: if the user has assigned clients or post sites for the
     // current tenant, allow some read permissions regardless of role.
@@ -202,27 +191,21 @@ export default class PermissionChecker {
 
         if (permission && permission.id) {
           if (permission.id === 'clientAccountRead' && hasAssignedClients) {
-            console.log('  ✅ Permission granted by assignedClients pivot (early)');
             return true;
           }
           if (permission.id === 'businessInfoRead' && hasAssignedPosts) {
-            console.log('  ✅ Permission granted by assignedPostSites pivot (early)');
             return true;
           }
           if (permission.id === 'userRead' && (hasAssignedClients || hasAssignedPosts)) {
-            console.log('  ✅ Permission granted by pivot for userRead (early)');
             return true;
           }
           if (permission.id === 'categoryRead' && (hasAssignedClients || hasAssignedPosts)) {
-            console.log('  ✅ Permission granted by pivot for categoryRead (early)');
             return true;
           }
           if (permission.id === 'securityGuardRead' && (hasAssignedClients || hasAssignedPosts)) {
-            console.log('  ✅ Permission granted by pivot for securityGuardRead (early)');
             return true;
           }
           if (permission.id === 'securityGuardEdit' && (hasAssignedClients || hasAssignedPosts)) {
-            console.log('  ✅ Permission granted by pivot for securityGuardEdit (early)');
             return true;
           }
         }
@@ -237,12 +220,9 @@ export default class PermissionChecker {
     // (Placeholder for future async lookup.)
 
     const rolePermission = this.hasRolePermission(permission);
-    console.log('🔍 Role permission result:', rolePermission);
     if (!rolePermission) {
-      console.log('❌ Role does not have permission');
       return false;
     }
-    console.log('✅ Role has permission');
     return true;
   }
 
@@ -283,7 +263,6 @@ export default class PermissionChecker {
       ),
     );
 
-    console.log('  🎯 Role permission result (static):', result);
 
     if (result) return true;
 
@@ -297,13 +276,10 @@ export default class PermissionChecker {
           for (const roleSlug of this.currentUserRolesIds) {
             const perms = map[roleSlug] || [];
             if (Array.isArray(perms) && perms.includes(permission.id)) {
-              console.log(`  ✅ Permission granted by tenant role '${roleSlug}' via DB permissions map`);
               return true;
             }
           }
-          console.log('  🔍 Dynamic role map present but did not contain permission for user roles');
         } else {
-          console.log('  🔍 No dynamic role map cached for tenant');
         }
       }
     } catch (e) {
@@ -318,10 +294,8 @@ export default class PermissionChecker {
         .find((t) => t.tenant.id === this.currentTenant.id);
       if (tenant && Array.isArray(tenant.permissions) && tenant.permissions.length) {
         if (tenant.permissions.includes(permission.id)) {
-          console.log(`  ✅ Permission granted by tenant.permissions attached to currentUser`);
           return true;
         }
-        console.log('  🔍 tenant.permissions present but did not contain permission');
       }
     } catch (e) {
       console.warn('  ⚠️ Tenant attached permissions check failed:', e);
@@ -399,7 +373,6 @@ export default class PermissionChecker {
    */
   get currentUserRolesIds() {
     if (!this.currentUser || !this.currentUser.tenants) {
-      console.log('❌ No currentUser or no tenants');
       return [];
     }
     const tenantIdToFind = this.currentTenant && this.currentTenant.id;
@@ -411,34 +384,24 @@ export default class PermissionChecker {
         .find((tenantUser) => (tenantUser.tenant && tenantUser.tenant.id === tenantIdToFind));
 
       if (!tenant) {
-        console.log('❌ No active tenantUser found for tenant:', tenantIdToFind);
-        console.log('  Available tenants:', this.currentUser.tenants.map(t => ({ id: t.tenant && t.tenant.id, status: t.status })));
         return [];
       }
 
-      console.log('✅ Found tenantUser for tenant:', tenantIdToFind);
     } else {
       // No currentTenant provided; fallback to first active tenantUser if present
       tenant = this.currentUser.tenants.find((tenantUser) => tenantUser.status === 'active');
       if (!tenant) {
-        console.log('❌ No active tenantUser found and no currentTenant provided');
         return [];
       }
-      console.log('⚠️ currentTenant missing; using first active tenantUser as fallback:', tenant.tenant && tenant.tenant.id);
     }
 
     // Handle both array and JSON string formats
     let roles = [];
-    console.log('  🔎 raw tenant.roles value:', tenant.roles);
     try {
-      console.log('  🔎 JSON.stringify tenant.roles:', JSON.stringify(tenant.roles));
     } catch (e) {
-      console.log('  🔎 JSON stringify tenant.roles failed:', e);
     }
     try {
-      console.log('  🔎 tenant object inspect:', safeStringify(tenant));
     } catch (e) {
-      console.log('  🔎 tenant inspect failed:', e);
     }
     if (Array.isArray(tenant.roles)) {
       roles = tenant.roles;
@@ -446,11 +409,9 @@ export default class PermissionChecker {
       try {
         roles = JSON.parse(tenant.roles);
       } catch (e) {
-        console.log('  ❌ Failed to parse roles JSON:', e);
         roles = [];
       }
     }
-    console.log('  🔎 parsed roles:', roles);
         return roles;
   }
 

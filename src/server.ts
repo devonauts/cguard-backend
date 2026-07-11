@@ -135,7 +135,52 @@ function startServer(port: number, attemptsLeft = 5) {
   return server;
 }
 
+/**
+ * Fail-fast secret assertion. In production a missing or known-default critical
+ * secret is a security incident waiting to happen (forged tokens, cross-tenant
+ * decryption), so we refuse to start rather than boot in a compromised state.
+ * Non-production is only warned, so local/dev still runs.
+ */
+function assertCriticalSecrets() {
+  const prod = process.env.NODE_ENV === 'production';
+  const problems: string[] = [];
+
+  const jwt = process.env.AUTH_JWT_SECRET || '';
+  const WEAK = new Set([
+    '', 'secret', 'changeme', 'default', 'jwt-secret', 'superadmin-jwt-secret',
+    'default-superadmin-key', 'cguard-insecure-fallback-key',
+  ]);
+  if (WEAK.has(jwt) || jwt.length < 16) {
+    problems.push('AUTH_JWT_SECRET is missing, too short, or a known-default value');
+  }
+  // secretBox derives its key from SETTINGS_ENC_KEY, else AUTH_JWT_SECRET, else
+  // an insecure literal — assert at least one strong source exists.
+  const encMaterial = process.env.SETTINGS_ENC_KEY || process.env.AUTH_JWT_SECRET || '';
+  if (WEAK.has(encMaterial) || encMaterial.length < 16) {
+    problems.push('No strong SETTINGS_ENC_KEY / AUTH_JWT_SECRET for secretBox encryption');
+  }
+  // Database credentials must be present.
+  for (const k of ['DATABASE_DATABASE', 'DATABASE_USERNAME', 'DATABASE_PASSWORD']) {
+    if (!process.env[k]) problems.push(`${k} is not set`);
+  }
+
+  if (problems.length) {
+    const msg = '[Startup] CRITICAL SECRET CHECK FAILED:\n  - ' + problems.join('\n  - ');
+    if (prod) {
+      console.error(msg + '\nRefusing to start in production with insecure configuration.');
+      process.exit(1);
+    } else {
+      console.warn(msg + '\n(non-production: continuing, but fix before deploying)');
+    }
+  } else {
+    console.log('[Startup] Critical secret check passed.');
+  }
+}
+
 async function boot() {
+  // Refuse to boot production with missing/default critical secrets.
+  assertCriticalSecrets();
+
   // Optional startup schema guard: set SCHEMA_VERIFY_ON_BOOT=true to fail fast
   // when DB schema is out of sync with Sequelize models.
   if (String(process.env.SCHEMA_VERIFY_ON_BOOT || '').toLowerCase() === 'true') {
