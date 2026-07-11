@@ -234,6 +234,11 @@ export async function runCustomerSummaryDigest(db: any): Promise<number> {
       if (mail && c.email) {
         try {
           const tenantName = tenantNameById.get(tenantId) || '';
+          let digestBrand: any = {};
+          try {
+            const { getEmailBranding } = require('../lib/emailLayout');
+            digestBrand = await getEmailBranding(db, tenantId);
+          } catch { /* defaults apply */ }
           const emailBody =
             `Este es tu resumen ${label} de seguridad:\n\n` +
             `• Incidentes: ${s.incidents}\n` +
@@ -243,6 +248,9 @@ export async function runCustomerSummaryDigest(db: any): Promise<number> {
             `• Cambios de turno (entradas): ${s.onDutyChanges}`;
           const html = mail.renderNotificationEmail({
             tenantName,
+            logoUrl: digestBrand.logoUrl,
+            brandColor: digestBrand.brandColor,
+            headerColor: digestBrand.headerColor,
             eyebrow: 'Resumen de seguridad',
             title,
             body: emailBody,

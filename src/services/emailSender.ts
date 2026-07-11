@@ -276,6 +276,29 @@ export default class EmailSender {
           const miSeguridadPublicUrl = `${(getConfig().FRONTEND_URL || 'https://app.cguardpro.com').replace(/\/+$/, '')}/assets/logo/miseguridad.png`;
           rendered = rendered.replace(/{{miSeguridadLogoUrl}}/g, miSeguridadPublicUrl);
 
+          // Per-tenant brand colors — recolor the account templates the same way
+          // the notification shell is branded (Preferencias de Correo). The
+          // hardcoded accent (#C8860A) and header navy (#0A0E16) become the
+          // tenant's chosen colors; both DEFAULT to those exact hexes, so this
+          // is a no-op until a tenant customizes. Best-effort — never blocks send.
+          if (tenantObj?.id) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const { getEmailBranding } = require('../lib/emailLayout');
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const db = require('../database/models').default();
+              const brand = await getEmailBranding(db, tenantObj.id);
+              if (brand?.brandColor && brand.brandColor.toUpperCase() !== '#C8860A') {
+                rendered = rendered.replace(/#C8860A/gi, brand.brandColor);
+              }
+              if (brand?.headerColor && brand.headerColor.toUpperCase() !== '#0A0E16') {
+                rendered = rendered.replace(/#0A0E16/gi, brand.headerColor);
+              }
+            } catch (e) {
+              console.warn('[EmailSender] brand color apply failed', (e as any)?.message || e);
+            }
+          }
+
           // Replace common placeholders
           if (this.variables) {
             const renderedLink = this.variables.link || this.variables.invitationLink || this.variables.inviteLink || this.variables.registrationLink || this.variables.verifyLink || this.variables.verificationLink || '';

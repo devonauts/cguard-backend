@@ -91,6 +91,15 @@ export class EmailProvider implements CommunicationProvider {
 
     // Resolve the tenant's branding for the global notification template.
     const { tenantName, logoUrl } = await resolveTenantBranding(_db, msg.tenantId);
+    // Brand colors (accent + header) from Preferencias de Correo.
+    let brandColor: string | undefined;
+    let headerColor: string | undefined;
+    try {
+      const { getEmailBranding } = require('../../../lib/emailLayout');
+      const brand = await getEmailBranding(_db, msg.tenantId);
+      brandColor = brand?.brandColor;
+      headerColor = brand?.headerColor;
+    } catch { /* defaults apply in the renderer */ }
 
     // CTA: msg.deepLink is a cguardpro:// scheme that email clients can't open
     // reliably, so we never put it in the button. Only render a CTA when a real
@@ -102,6 +111,8 @@ export class EmailProvider implements CommunicationProvider {
     const html = renderNotificationEmail({
       tenantName,
       logoUrl,
+      brandColor,
+      headerColor,
       eyebrow: EYEBROW_BY_TYPE[msg.messageType] || 'Notificación',
       title: msg.title || subject,
       body,
