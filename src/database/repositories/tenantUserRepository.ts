@@ -1,6 +1,7 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import { invitationTokenExpiry } from '../../services/auth/invitationToken';
 import AuditLogRepository from './auditLogRepository';
+import { invalidateCachedIdentity } from '../../lib/authIdentityCache';
 import Error400 from '../../errors/Error400';
 import Error404 from '../../errors/Error404';
 import Roles from '../../security/roles';
@@ -196,6 +197,9 @@ export default class TenantUserRepository {
       },
       options,
     );
+    // Membership/roles changed → drop the cached identity so the tenant list +
+    // roles in the auth snapshot refresh on the user's next request.
+    invalidateCachedIdentity(user.id);
     return created;
   }
 
@@ -219,6 +223,10 @@ export default class TenantUserRepository {
     );
 
     await tenantUser.destroy({ transaction });
+
+    // Membership revoked → drop the cached identity so the removed tenant stops
+    // appearing in the user's auth snapshot immediately.
+    invalidateCachedIdentity(id);
 
     await AuditLogRepository.log(
       {

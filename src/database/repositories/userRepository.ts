@@ -1,6 +1,7 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 import FileRepository from './fileRepository';
 import AuditLogRepository from './auditLogRepository';
+import { invalidateCachedIdentity } from '../../lib/authIdentityCache';
 import crypto from 'crypto';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
@@ -206,6 +207,9 @@ export default class UserRepository {
       { transaction },
     );
 
+    // Self-service profile change → drop the cached identity snapshot.
+    invalidateCachedIdentity(id);
+
     // If client provided base64 images in data.avatars, process and upload them
     try {
       const StorageConfig = require('../../security/storage').default;
@@ -331,6 +335,9 @@ export default class UserRepository {
     }
 
     await user.update(data, { transaction });
+
+    // Password / token-invalidation change → drop the cached identity snapshot.
+    invalidateCachedIdentity(id);
 
     await AuditLogRepository.log(
       {
@@ -495,6 +502,10 @@ export default class UserRepository {
       },
       { transaction },
     );
+
+    // Profile changed → drop the cached hydrated identity so the new name/contact
+    // (and any role/membership change in this request) reflect immediately.
+    invalidateCachedIdentity(id);
 
     await FileRepository.replaceRelationFiles(
       {

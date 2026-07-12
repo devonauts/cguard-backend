@@ -29,15 +29,16 @@ export function getBackupStatus(): any {
       .sort((a, b) => (a.at < b.at ? 1 : -1))
       .slice(0, 20);
   } catch { /* dir may not exist yet */ }
-  const offsiteProvider = process.env.BACKUP_S3_BUCKET ? 's3' : process.env.BACKUP_GCS_BUCKET ? 'gcs' : null;
+  const offsiteConfigured = !!process.env.BACKUP_SSH_HOST;
   return {
     ...lastStatus,
     dir: BACKUP_DIR,
     keep: KEEP,
     mirrorDir: process.env.BACKUP_MIRROR_DIR || null,
     mirrorConfigured: !!process.env.BACKUP_MIRROR_DIR,
-    offsiteProvider,
-    offsiteConfigured: !!offsiteProvider,
+    offsiteProvider: offsiteConfigured ? 'ssh' : null,
+    offsiteHost: process.env.BACKUP_SSH_HOST || null,
+    offsiteConfigured,
     offsiteEncrypted: !!process.env.BACKUP_ENCRYPTION_KEY,
     recent,
   };
@@ -121,17 +122,24 @@ function mirrorBackup(file: string): boolean {
   }
 }
 
-// ── Offsite (cloud) replication ──────────────────────────────────────────────
+// ── Offsite replication (self-hosted, encrypted rsync-over-SSH) ───────────────
 // The audit's #1 CRITICAL: backups were local-only, so a disk/theft/ransomware
-// event lost all history (legal evidence). This mirrors each dump to S3 or GCS,
+// event lost all history (legal evidence). This ships each dump to a SECOND
+// MACHINE YOU OWN over SSH (ideally in another location) — no cloud, no S3 —
 // AES-256-GCM-encrypted at rest when BACKUP_ENCRYPTION_KEY is set.
 //
 // Env:
-//   BACKUP_S3_BUCKET (+ BACKUP_S3_PREFIX, AWS_REGION/BACKUP_S3_REGION, AWS creds)
-//   BACKUP_GCS_BUCKET (+ BACKUP_GCS_PREFIX, GOOGLE_APPLICATION_CREDENTIALS)
-//   BACKUP_ENCRYPTION_KEY — 32 bytes as 64-hex or base64 (strongly recommended;
+//   BACKUP_SSH_HOST — remote host (e.g. "192.168.1.50" or "user@host"). Enables offsite.
+//   BACKUP_SSH_USER — remote user (optional if already in BACKUP_SSH_HOST)
+//   BACKUP_SSH_PATH — remote directory (default "cguard-db-backups", relative to $HOME)
+//   BACKUP_SSH_PORT — default 22
+//   BACKUP_SSH_KEY  — path to the SSH private key (optional; else default agent/key)
+//   BACKUP_ENCRYPTION_KEY — 32 bytes as 64-hex or base64 (STRONGLY recommended;
 //                           a DB dump is full of PII + legal records)
 //   BACKUP_OFFSITE_KEEP (default 30)
+// Setup on the remote box: add this server's public key to ~/.ssh/authorized_keys.
+// Restore: pull the .enc back and run decryptBackup() (see bottom of file).
+import { execFile } from 'child_process';
 
 /** Parse the 32-byte AES key from env (64-hex or base64), or null if unusable. */
 function encryptionKey(): Buffer | null {
@@ -170,11 +178,35 @@ async function encryptFile(src: string, key: Buffer): Promise<string> {
   return dest;
 }
 
-/** Upload the dump (encrypted when a key is set) to S3 or GCS. Prunes old objects. */
+/** Run a binary with args (no shell → no quoting/injection surface). */
+function run(bin: string, args: string[], timeoutMs = 10 * 60 * 1000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(bin, args, { timeout: timeoutMs }, (err, _out, stderr) => {
+      if (err) { (err as any).stderr = stderr; reject(err); } else resolve();
+    });
+  });
+}
+
+/** The ssh transport args shared by rsync (-e) and the mkdir/prune ssh calls. */
+function sshParts(): { eString: string; sshArgs: string[]; target: string; remoteDir: string } | null {
+  const host = process.env.BACKUP_SSH_HOST;
+  if (!host) return null; // offsite not configured
+  const user = process.env.BACKUP_SSH_USER;
+  const target = user && !host.includes('@') ? `${user}@${host}` : host;
+  const port = String(process.env.BACKUP_SSH_PORT || '22').replace(/[^0-9]/g, '') || '22';
+  const keyPath = process.env.BACKUP_SSH_KEY;
+  const remoteDir = (process.env.BACKUP_SSH_PATH || 'cguard-db-backups').replace(/\/+$/, '');
+  const opts = ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes'];
+  const sshArgs = ['-p', port, ...(keyPath ? ['-i', keyPath] : []), ...opts];
+  // rsync's -e wants ONE string; keyPath is assumed space-free (document it).
+  const eString = `ssh -p ${port}${keyPath ? ` -i ${keyPath}` : ''} -o StrictHostKeyChecking=accept-new -o BatchMode=yes`;
+  return { eString, sshArgs, target, remoteDir };
+}
+
+/** Ship the dump (encrypted when a key is set) to a second box over SSH. Prunes old files. */
 async function uploadOffsite(file: string): Promise<any> {
-  const s3Bucket = process.env.BACKUP_S3_BUCKET;
-  const gcsBucket = process.env.BACKUP_GCS_BUCKET;
-  if (!s3Bucket && !gcsBucket) return null; // offsite not configured
+  const cfg = sshParts();
+  if (!cfg) return null; // BACKUP_SSH_HOST unset → offsite not configured
 
   const key = encryptionKey();
   let uploadPath = file;
@@ -186,54 +218,24 @@ async function uploadOffsite(file: string): Promise<any> {
       uploadPath = tmpEnc;
       encrypted = true;
     }
-    const objectName = path.basename(uploadPath);
+    const name = path.basename(uploadPath);
     const size = fs.statSync(uploadPath).size;
 
-    if (s3Bucket) {
-      const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-      const client = new S3Client({ region: process.env.AWS_REGION || process.env.BACKUP_S3_REGION || 'us-east-1' });
-      const prefix = (process.env.BACKUP_S3_PREFIX || 'db-backups').replace(/\/+$/, '');
-      const Key = `${prefix}/${objectName}`;
-      await client.send(new PutObjectCommand({
-        Bucket: s3Bucket, Key, Body: fs.createReadStream(uploadPath), ContentLength: size,
-        ServerSideEncryption: 'AES256',
-      }));
-      await pruneS3(client, s3Bucket, prefix).catch(() => {});
-      return { ok: true, provider: 's3', bucket: s3Bucket, key: Key, encrypted, sizeBytes: size };
-    }
-
-    // GCS
-    if (!gcsBucket) return null;
-    const { Storage } = require('@google-cloud/storage');
-    const storage = new Storage();
-    const prefix = (process.env.BACKUP_GCS_PREFIX || 'db-backups').replace(/\/+$/, '');
-    const destination = `${prefix}/${objectName}`;
-    await storage.bucket(gcsBucket).upload(uploadPath, { destination });
-    await pruneGcs(storage, gcsBucket, prefix).catch(() => {});
-    return { ok: true, provider: 'gcs', bucket: gcsBucket, key: destination, encrypted, sizeBytes: size };
+    // Ensure the remote directory exists, then rsync the file over.
+    await run('ssh', [...cfg.sshArgs, cfg.target, `mkdir -p '${cfg.remoteDir}'`]);
+    await run('rsync', ['-az', '--partial', '-e', cfg.eString, uploadPath, `${cfg.target}:${cfg.remoteDir}/`]);
+    await pruneRemote(cfg).catch(() => {});
+    return { ok: true, provider: 'ssh', host: cfg.target, path: `${cfg.remoteDir}/${name}`, encrypted, sizeBytes: size };
   } finally {
     if (tmpEnc) { try { fs.unlinkSync(tmpEnc); } catch { /* best-effort */ } }
   }
 }
 
-/** Keep only the newest OFFSITE_KEEP objects under the S3 prefix. */
-async function pruneS3(client: any, bucket: string, prefix: string): Promise<void> {
-  const { ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3');
-  const out = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: `${prefix}/` }));
-  const objs = (out.Contents || []).sort((a: any, b: any) => new Date(b.LastModified).getTime() - new Date(a.LastModified).getTime());
-  for (const o of objs.slice(OFFSITE_KEEP)) {
-    try { await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: o.Key })); } catch { /* skip */ }
-  }
-}
-
-/** Keep only the newest OFFSITE_KEEP objects under the GCS prefix. */
-async function pruneGcs(storage: any, bucket: string, prefix: string): Promise<void> {
-  const [files] = await storage.bucket(bucket).getFiles({ prefix: `${prefix}/` });
-  const sorted = (files || []).sort((a: any, b: any) =>
-    new Date(b.metadata?.updated || 0).getTime() - new Date(a.metadata?.updated || 0).getTime());
-  for (const f of sorted.slice(OFFSITE_KEEP)) {
-    try { await f.delete(); } catch { /* skip */ }
-  }
+/** Keep only the newest OFFSITE_KEEP backups in the remote directory. */
+async function pruneRemote(cfg: { sshArgs: string[]; target: string; remoteDir: string }): Promise<void> {
+  const cmd =
+    `cd '${cfg.remoteDir}' && ls -1t *.sql.gz.enc *.sql.gz 2>/dev/null | tail -n +${OFFSITE_KEEP + 1} | xargs -r rm -f`;
+  await run('ssh', [...cfg.sshArgs, cfg.target, cmd]);
 }
 
 /**
