@@ -16,7 +16,11 @@ import { Channel, CommunicationSettings, MetaConfig } from './types';
 export const DEFAULT_SETTINGS: CommunicationSettings = {
   push_enabled: true,
   whatsapp_enabled: false,
-  sms_enabled: false,
+  // SMS is ON by default: the wallet is the real gate. With
+  // wallet_required_for_paid_channels=true (default) an unfunded wallet
+  // skips every SMS (insufficient_balance), so enabling the channel is
+  // safe — fund the wallet and it just works; no toggle hunting.
+  sms_enabled: true,
   email_enabled: true,
   whatsapp_provider: 'meta',
   sms_provider: 'twilio',

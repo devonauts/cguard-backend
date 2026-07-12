@@ -891,7 +891,9 @@ describe('Communications — settings defaults', () => {
   it('exposes the documented defaults', () => {
     assert.strictEqual(DEFAULT_SETTINGS.push_enabled, true);
     assert.strictEqual(DEFAULT_SETTINGS.whatsapp_enabled, false);
-    assert.strictEqual(DEFAULT_SETTINGS.sms_enabled, false);
+    // SMS defaults ON — the funded-wallet requirement is the real gate
+    // (wallet_required_for_paid_channels below).
+    assert.strictEqual(DEFAULT_SETTINGS.sms_enabled, true);
     assert.strictEqual(DEFAULT_SETTINGS.email_enabled, true);
     assert.strictEqual(DEFAULT_SETTINGS.otp_preferred_channel, 'whatsapp');
     assert.strictEqual(DEFAULT_SETTINGS.default_country_code, '+593');
