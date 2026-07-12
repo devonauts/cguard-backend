@@ -54,6 +54,7 @@ import {
 } from './communicationSettingsService';
 import { normalizeToE164 } from './phone';
 import { getUserDeviceRows } from '../pushService';
+import { resolveTenantWhatsappConfig } from './whatsapp/tenantWhatsappService';
 
 const PROVIDERS: Record<Channel, CommunicationProvider> = {
   push: pushProvider,
@@ -338,8 +339,16 @@ async function attemptChannel(
   }
 
   // 3) Wallet gate for paid channels.
+  //    WhatsApp through a TENANT-OWNED account (Embedded Signup) is exempt:
+  //    Meta bills the tenant's own WABA directly, so CGuardPro neither gates
+  //    nor debits those sends. Only the legacy global-account fallback (where
+  //    the platform pays Meta) and Twilio SMS remain wallet-billed.
   let estimateCents = 0;
-  if (PAID_CHANNELS.includes(channel)) {
+  let tenantOwnedWhatsapp = false;
+  if (channel === 'whatsapp') {
+    tenantOwnedWhatsapp = !!(await resolveTenantWhatsappConfig(db, intent.tenantId).catch(() => null));
+  }
+  if (PAID_CHANNELS.includes(channel) && !tenantOwnedWhatsapp) {
     const country = settings.default_country_code;
     const est = await estimateCost(
       db,
@@ -379,8 +388,9 @@ async function attemptChannel(
   if (estimateCents && result.costEstimateCents == null) result.costEstimateCents = estimateCents;
 
   // 5) Debit wallet on a successful paid send (router owns the debit so billing +
-  //    logging stay in one place; providers must NOT debit).
-  if (PAID_CHANNELS.includes(channel) && (result.status === 'sent' || result.status === 'delivered')) {
+  //    logging stay in one place; providers must NOT debit). Tenant-owned
+  //    WhatsApp sends are never debited — Meta bills the tenant directly.
+  if (PAID_CHANNELS.includes(channel) && !tenantOwnedWhatsapp && (result.status === 'sent' || result.status === 'delivered')) {
     const billed = result.costEstimateCents ?? estimateCents;
     if (billed > 0) {
       const allowNeg = !!intent.critical;
