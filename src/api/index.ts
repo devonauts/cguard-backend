@@ -100,6 +100,21 @@ app.post(
   require('./communication/metaWebhook').metaWebhookReceive,
 );
 
+// Meta app compliance callbacks (no auth; signed_request HMAC validates).
+// Meta POSTs application/x-www-form-urlencoded — attach a urlencoded parser
+// per-route (the global body parser below is JSON-only).
+const metaUrlencoded = express.urlencoded({ extended: false });
+app.post(
+  '/communications/webhooks/meta/deauthorize',
+  metaUrlencoded,
+  require('./communication/metaCompliance').metaDeauthorize,
+);
+app.post(
+  '/communications/webhooks/meta/data-deletion',
+  metaUrlencoded,
+  require('./communication/metaCompliance').metaDataDeletion,
+);
+
 // Platform Twilio phone center webhooks (no auth; X-Twilio-Signature validates).
 // Mounted before authMiddleware. Twilio POSTs application/x-www-form-urlencoded,
 // and the global body parser below is JSON-only, so attach a urlencoded parser
@@ -369,6 +384,7 @@ require('./additionalService').default(routes);
 require('./patrolCheckpoint').default(routes);
 require('./patrolLog').default(routes);
 require('./patrol').default(routes);
+require('./payroll').default(routes);
 require('./visitorLog').default(routes);
 require('./visitorPreAuth').default(routes);
 require('./guardRating').default(routes);
