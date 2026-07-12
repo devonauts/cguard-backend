@@ -29,6 +29,25 @@ export const updateMyLocation = async (req: any, res: any) => {
       { where: { tenantId, supervisorUserId: userId } },
     );
 
+    // Append an immutable breadcrumb (the profile lat/lng above is overwritten
+    // each ping). Best-effort — never break the location ping over a trail row.
+    if (db.locationPing) {
+      try {
+        const recAt = data.recordedAt ? new Date(data.recordedAt) : new Date();
+        await db.locationPing.create({
+          tenantId,
+          subjectType: 'supervisor',
+          userId,
+          latitude: Number(lat),
+          longitude: Number(lng),
+          speed: data.speed != null ? Number(data.speed) : null,
+          heading: data.heading != null ? Number(data.heading) : null,
+          accuracy: data.accuracy != null ? Number(data.accuracy) : null,
+          recordedAt: Number.isNaN(recAt.getTime()) ? new Date() : recAt,
+        });
+      } catch { /* breadcrumb is best-effort */ }
+    }
+
     try {
       const name = req.currentUser?.fullName || req.currentUser?.email || 'Supervisor';
       // Supervision room only (Control Center dashboards) — NOT the whole

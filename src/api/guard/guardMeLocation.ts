@@ -62,6 +62,28 @@ export default async (req: any, res: any) => {
       return ApiResponseHandler.success(req, res, { ok: false });
     }
 
+    // Append an immutable breadcrumb so the CRM can draw the ACTUAL route walked
+    // (the live* columns above only keep the last-known dot). Best-effort — a
+    // trail insert must never break telemetry. Only when we have a real fix.
+    if (lat != null && lng != null && db.locationPing) {
+      try {
+        const recAt = body.recordedAt ? new Date(body.recordedAt) : new Date();
+        await db.locationPing.create({
+          tenantId,
+          subjectType: 'guard',
+          userId,
+          securityGuardId: securityGuard.id,
+          latitude: lat,
+          longitude: lng,
+          accuracy: num(body.accuracy),
+          speed: num(body.speed),
+          heading: num(body.heading),
+          battery: battery == null ? null : Math.round(battery <= 1 ? battery * 100 : battery),
+          recordedAt: Number.isNaN(recAt.getTime()) ? new Date() : recAt,
+        });
+      } catch { /* breadcrumb is best-effort */ }
+    }
+
     await ApiResponseHandler.success(req, res, { ok: true });
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

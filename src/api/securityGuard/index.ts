@@ -9,6 +9,11 @@ export default (app) => {
     `/tenant/:tenantId/security-guard/:id/performance`,
     require('./securityGuardPerformance').default,
   );
+  // Walked GPS trail (breadcrumb polyline) for a specific guard + time window
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/trail`,
+    require('./securityGuardTrail').default,
+  );
   app.get(
     `/security-guard/public`,
     require('./securityGuardPublicFind').default,

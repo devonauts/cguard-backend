@@ -240,6 +240,23 @@ async function runPlatformEventsCleanup() {
 
 initPlatformEvents();
 
+// Keep the append-only GPS breadcrumb table (locationPings) bounded — delete
+// trails older than LOCATION_TRAIL_RETENTION_DAYS (default 30). Leader-only via
+// runJob; best-effort.
+async function runLocationTrailCleanup() {
+  try {
+    const database = await databaseInit();
+    if (!database.locationPing) return;
+    const days = Number(process.env.LOCATION_TRAIL_RETENTION_DAYS) || 30;
+    const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+    const { Op } = require('sequelize');
+    const deleted = await database.locationPing.destroy({ where: { recordedAt: { [Op.lt]: cutoff } } });
+    if (deleted) console.log(`[LocationTrail] Purged ${deleted} pings older than ${days}d`);
+  } catch (err) {
+    console.error('[LocationTrail] Cleanup failed:', (err as any)?.message || err);
+  }
+}
+
 // C6: seed built-in roles as rows in the `roles` table on startup if missing.
 // Additive + best-effort; the FK-backed tenantUserRoles join relies on these.
 async function initBuiltInRoles() {
@@ -271,6 +288,7 @@ try {
 nodeSetInterval(() => {
   runJob("ExpiredInvitesCleanup", runExpiredInvitesCleanup);
   runJob("PlatformEventsCleanup", runPlatformEventsCleanup);
+  runJob("LocationTrailCleanup", runLocationTrailCleanup);
 }, 3 * 60 * 60 * 1000);
 
 // Observability: snapshot system/pool/slow/error metrics every minute (leader
