@@ -24,6 +24,11 @@ export default function (sequelize, DataTypes) {
       category: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'UTILITY' },
       bodyParamsCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+      // Meta review status (APPROVED | PENDING | REJECTED) — synced from the
+      // tenant's WABA by tenantWhatsappService.syncTemplates. NULL = unknown
+      // (e.g. the global seed templates).
+      status: { type: DataTypes.STRING(20), allowNull: true },
+      lastSyncAt: { type: DataTypes.DATE, allowNull: true },
     },
     {
       timestamps: true,

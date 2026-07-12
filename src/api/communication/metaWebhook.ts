@@ -38,6 +38,22 @@ function mapStatus(s: string): DeliveryStatus | null {
 }
 
 /**
+ * Resolve the tenant account that owns a WABA (entry.id on webhook payloads).
+ * Per-tenant accounts (Embedded Signup) route this way; when no row matches
+ * (legacy global number, or pre-migration DB) we fall back to the phone-based
+ * heuristics below. Best-effort; never throws.
+ */
+async function resolveAccountByWaba(db: any, wabaId: string): Promise<any | null> {
+  if (!db?.tenantWhatsappAccount || !wabaId) return null;
+  try {
+    return await db.tenantWhatsappAccount.findOne({ where: { wabaId: String(wabaId) } });
+  } catch (e: any) {
+    console.warn('[meta-webhook] resolveAccountByWaba failed:', e?.message || e);
+    return null;
+  }
+}
+
+/**
  * Resolve which tenant(s) own the WhatsApp conversation with an inbound phone.
  * The Meta business number is platform-global, so inbound events carry no tenant
  * context; we attribute them to the tenant(s) that have an outbound WhatsApp log
@@ -137,40 +153,104 @@ export const metaWebhookReceive = async (req: any, res: any) => {
     const body = req.body || {};
     const entries = Array.isArray(body.entry) ? body.entry : [];
     for (const entry of entries) {
-      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
-      for (const change of changes) {
-        const value = change?.value || {};
+      // Each entry is processed best-effort: a malformed entry must NEVER 500
+      // the webhook (Meta retries forever on non-200).
+      try {
+        // entry.id is the WABA id → the tenant's own account (Embedded Signup).
+        // Null for the legacy platform-global number → phone heuristics below.
+        const account = await resolveAccountByWaba(req.database, entry?.id);
+        const accountTenantId: string | null = account
+          ? account.tenantId || (account.get && account.get('tenantId')) || null
+          : null;
 
-        // Delivery statuses.
-        const statuses = Array.isArray(value.statuses) ? value.statuses : [];
-        for (const st of statuses) {
-          const mapped = mapStatus(st?.status);
-          const pmid = st?.id;
-          if (mapped && pmid) {
-            const at = st?.timestamp ? new Date(Number(st.timestamp) * 1000) : new Date();
-            await updateStatusByProviderMessageId(req.database, String(pmid), mapped, at).catch(
-              () => undefined,
-            );
+        const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+        for (const change of changes) {
+          const value = change?.value || {};
+          const field = String(change?.field || '');
+
+          // Delivery statuses — providerMessageId is globally unique, so this
+          // stays tenant-agnostic (the log row already carries the tenant).
+          const statuses = Array.isArray(value.statuses) ? value.statuses : [];
+          for (const st of statuses) {
+            const mapped = mapStatus(st?.status);
+            const pmid = st?.id;
+            if (mapped && pmid) {
+              const at = st?.timestamp ? new Date(Number(st.timestamp) * 1000) : new Date();
+              await updateStatusByProviderMessageId(req.database, String(pmid), mapped, at).catch(
+                () => undefined,
+              );
+            }
+          }
+
+          // Inbound messages → record lastInboundAt per (tenant, phone) so the
+          // provider can send free-form WhatsApp within Meta's 24h window.
+          const messages = Array.isArray(value.messages) ? value.messages : [];
+          for (const m of messages) {
+            const from = m?.from;
+            if (!from) continue;
+            // sanitize: only digits/+, cap length.
+            const clean = String(from).replace(/[^\d+]/g, '').slice(0, 24);
+            if (!clean) continue;
+            const at = m?.timestamp ? new Date(Number(m.timestamp) * 1000) : new Date();
+            if (accountTenantId) {
+              // Per-tenant number: the WABA identifies the tenant exactly.
+              await recordInbound(req.database, accountTenantId, clean, at).catch(() => undefined);
+            } else {
+              // Legacy global number: attribute the inbound to the tenant(s)
+              // that recently messaged this phone (the conversation owner).
+              const tenantIds = await resolveTenantsForPhone(req.database, clean).catch(() => []);
+              for (const tenantId of tenantIds) {
+                await recordInbound(req.database, tenantId, clean, at).catch(() => undefined);
+              }
+            }
+          }
+
+          // ── Per-tenant account events (need the WABA→tenant lookup) ──────
+          if (!accountTenantId) continue;
+
+          // Template review status: APPROVED / REJECTED / PENDING / PAUSED…
+          if (field === 'message_template_status_update') {
+            const name = value.message_template_name;
+            const lang = value.message_template_language;
+            const event = value.event ? String(value.event).toUpperCase().slice(0, 20) : null;
+            if (name && event && req.database?.whatsappTemplate) {
+              const where: any = { tenantId: accountTenantId, name: String(name) };
+              if (lang) where.languageCode = String(lang);
+              const tpl = await req.database.whatsappTemplate.findOne({ where }).catch(() => null);
+              if (tpl) {
+                await tpl
+                  .update({ status: event, active: event !== 'REJECTED', lastSyncAt: new Date() })
+                  .catch(() => undefined);
+              }
+            }
+          }
+
+          // Phone quality / messaging limit changes.
+          if (field === 'phone_number_quality_update') {
+            const patch: any = {};
+            if (value.event) patch.qualityRating = String(value.event).slice(0, 16);
+            if (value.current_limit) patch.messagingLimit = String(value.current_limit).slice(0, 32);
+            if (Object.keys(patch).length) {
+              await account.update(patch).catch(() => undefined);
+            }
+          }
+
+          // Account bans / disables → flag the connection as errored so the
+          // CRM shows the problem (sends will fail against Meta anyway).
+          if (field === 'account_update') {
+            const event = String(value.event || '').toUpperCase();
+            const banned =
+              event.includes('DISABL') || event.includes('BAN') || !!value.ban_info;
+            if (banned) {
+              console.warn(
+                `[meta-webhook] tenant=${accountTenantId} account_update event=${event} → status=error`,
+              );
+              await account.update({ status: 'error' }).catch(() => undefined);
+            }
           }
         }
-
-        // Inbound messages → record lastInboundAt per (tenant, phone) so the
-        // provider can send free-form WhatsApp within Meta's 24h window.
-        const messages = Array.isArray(value.messages) ? value.messages : [];
-        for (const m of messages) {
-          const from = m?.from;
-          if (!from) continue;
-          // sanitize: only digits/+, cap length.
-          const clean = String(from).replace(/[^\d+]/g, '').slice(0, 24);
-          if (!clean) continue;
-          const at = m?.timestamp ? new Date(Number(m.timestamp) * 1000) : new Date();
-          // The Meta number is platform-global; attribute the inbound to the
-          // tenant(s) that recently messaged this phone (the conversation owner).
-          const tenantIds = await resolveTenantsForPhone(req.database, clean).catch(() => []);
-          for (const tenantId of tenantIds) {
-            await recordInbound(req.database, tenantId, clean, at).catch(() => undefined);
-          }
-        }
+      } catch (e: any) {
+        console.warn('[meta-webhook] entry processing failed:', e?.message || e);
       }
     }
 

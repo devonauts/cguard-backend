@@ -12,10 +12,13 @@
  * Outside the 24h window, free-form text is NOT delivered by Meta, so we require
  * a template. OTP is AUTHENTICATION-template-only and never free-form text.
  *
- * NON-BREAKING / isolation: all Graph-API specifics live here. Credentials come
- * from communicationSettingsService.getMetaConfig (encrypted db → env fallback),
- * NEVER from the frontend. The router owns wallet debits + logging; this provider
- * only sends and returns a SendResult (with a cost ESTIMATE for the router).
+ * NON-BREAKING / isolation: all Graph-API specifics live here. Credentials are
+ * resolved PER TENANT first (the tenant's own WhatsApp Business account from
+ * tenantWhatsappAccounts, connected via Meta Embedded Signup), falling back to
+ * the legacy global config from communicationSettingsService.getMetaConfig
+ * (encrypted db → env) during rollout. NEVER from the frontend. The router owns
+ * wallet debits + logging; this provider only sends and returns a SendResult
+ * (with a cost ESTIMATE for the router).
  */
 import { CommunicationProvider, OutboundMessage, SendResult } from '../types';
 import {
@@ -24,6 +27,7 @@ import {
   estimateCost,
   getSettings,
 } from '../communicationSettingsService';
+import { resolveTenantWhatsappConfig } from '../whatsapp/tenantWhatsappService';
 import { isWithinWindow } from '../whatsappSessionService';
 import { toWhatsAppRecipient } from '../phone';
 
@@ -79,12 +83,19 @@ function buildTextPayload(to: string, body: string) {
 export class MetaWhatsAppProvider implements CommunicationProvider {
   channel = 'whatsapp' as const;
 
-  async isConfigured(db: any, _tenantId: string): Promise<boolean> {
+  async isConfigured(db: any, tenantId: string): Promise<boolean> {
+    // Per-tenant account first (Embedded Signup) …
+    const tenantCfg = await resolveTenantWhatsappConfig(db, tenantId).catch(() => null);
+    if (tenantCfg) return true;
+    // … falling back to the legacy global config during rollout.
     return isMetaConfigured(db);
   }
 
   async send(db: any, msg: OutboundMessage): Promise<SendResult> {
-    const cfg = await getMetaConfig(db).catch(() => null);
+    // Per-tenant account first (Embedded Signup); legacy global config fallback.
+    const cfg =
+      (await resolveTenantWhatsappConfig(db, msg.tenantId).catch(() => null)) ||
+      (await getMetaConfig(db).catch(() => null));
     if (!cfg || !cfg.accessToken || !cfg.phoneNumberId) {
       return { status: 'skipped', channel: 'whatsapp', provider: 'meta', skipReason: 'not_configured' };
     }
