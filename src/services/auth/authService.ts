@@ -33,6 +33,10 @@ import { emitSessionSuperseded } from '../../lib/realtime';
 import dayjs from 'dayjs';
 import Roles from '../../security/roles';
 import RoleRepository from '../../database/repositories/roleRepository';
+import {
+  getCachedIdentity,
+  setCachedIdentity,
+} from '../../lib/authIdentityCache';
 import SettingsService from '../settingsService';
 import { ensureBuiltInRolesForTenant } from '../roleSync';
 import {
@@ -1040,10 +1044,38 @@ class AuthService {
           const tokenTenantId = decoded?.tenantId;
           const tokenClientAccountId = decoded?.clientAccountId;
 
-          UserRepository.findById(id, {
-            ...options,
-            bypassPermissionValidation: true,
-          })
+          // Identity cache: the findById join (user→tenant→settings→clients→
+          // sites + avatars) is the dominant per-request DB cost. Serve the
+          // hydrated identity from a short-TTL cache, but ALWAYS re-read the two
+          // security-critical volatile columns (jwtTokenInvalidBefore +
+          // activeSessionIds) with a cheap PK lookup so forced-logout and
+          // single-active-session enforcement stay correct across the cluster.
+          // Kill-switch: AUTH_IDENTITY_CACHE_MS=0. See lib/authIdentityCache.ts.
+          const canCacheIdentity = !!(options && (options as any).database && (options as any).database.user);
+          (async () => {
+            let user: any = canCacheIdentity ? getCachedIdentity(id) : null;
+            if (user) {
+              const fresh: any = await (options as any).database.user.findByPk(id, {
+                attributes: ['id', 'jwtTokenInvalidBefore', 'activeSessionIds'],
+              });
+              if (!fresh) {
+                // User deleted since the snapshot was taken → treat as invalid.
+                reject(new Error401());
+                return;
+              }
+              user.jwtTokenInvalidBefore = fresh.jwtTokenInvalidBefore ?? null;
+              user.activeSessionIds = (fresh as any).activeSessionIds ?? null;
+            } else {
+              user = await UserRepository.findById(id, {
+                ...options,
+                bypassPermissionValidation: true,
+              });
+              // Snapshot the CLEAN hydrated user before any per-request mutation
+              // (emailVerified override / clientAccountId attach happen below).
+              if (user && canCacheIdentity) setCachedIdentity(id, user);
+            }
+            return user;
+          })()
             .then(async (user) => {
               const isTokenManuallyExpired =
                 user &&
