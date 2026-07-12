@@ -360,6 +360,7 @@ require('./tenant').default(routes);
 require('./file').default(routes);
 require('./user').default(routes);
 require('./settings').default(routes);
+require('./department').default(routes);
 require('./dashboard').default(routes);
 require('./role').default(routes);
 require('./bannerSuperiorApp').default(routes);

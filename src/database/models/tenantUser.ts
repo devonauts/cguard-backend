@@ -98,6 +98,13 @@ export default function (sequelize, DataTypes) {
         allowNull: true,
         defaultValue: { grant: [], deny: [] },
       },
+      // Internal org structure: which department (Settings › Departamentos)
+      // this member belongs to. One department per member; null = unassigned.
+      departmentId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: 'departments', key: 'id' },
+      },
     },
     {
       timestamps: true,
@@ -111,6 +118,11 @@ export default function (sequelize, DataTypes) {
         allowNull: false,
       },
       onDelete: 'CASCADE',
+    });
+
+    models.tenantUser.belongsTo(models.department, {
+      as: 'department',
+      foreignKey: { name: 'departmentId' },
     });
 
     models.tenantUser.belongsTo(models.user, {
