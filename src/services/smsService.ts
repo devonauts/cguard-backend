@@ -66,33 +66,56 @@ export async function sendSms(to: string | string[], body: string) {
 }
 
 /**
+ * FAIL-CLOSED per-segment floor when no communicationProviderRates row matches
+ * a recipient — mirrors the messageRouter's floor. Never bill 0 for a paid send.
+ */
+const FALLBACK_SMS_SEGMENT_CENTS = 10;
+
+/**
  * Send SMS on behalf of a tenant: via the tenant's own Twilio subaccount, paid
- * from its prepaid wallet (one debit per delivered message). Skips silently
- * when the subaccount/sender isn't provisioned or the balance is insufficient.
+ * from the UNIFIED communications wallet (communicationWallets — the legacy
+ * tenantSmsAccount balance was migrated there and retired, see migration
+ * z20260713b). Billing is PER SEGMENT at the recipient-country rate from
+ * communicationProviderRates (reserve → send → refund on failure). An
+ * smsTransaction ledger row is still written per send so the SMS history page
+ * keeps working. Skips silently when the subaccount/sender isn't provisioned
+ * or the balance is insufficient.
+ *
+ * `opts.title` lets callers (the notificationDispatcher) pass title + body
+ * separately so the central sanitizer joins them as 'title: body'.
  */
 export async function sendSmsForTenant(
   db: any,
   tenantId: string,
   to: string | string[],
   body: string,
+  opts: { title?: string } = {},
 ) {
   const {
     getAccount,
     ensureLocalAccount,
     subaccountClient,
-    debit,
   } = require('./smsAccountService');
+  const {
+    debitWallet,
+    creditWallet,
+    estimateCost,
+  } = require('./communication/communicationSettingsService');
+  const { toSmsBody } = require('./communication/smsText');
 
   const recipients = Array.from(
     new Set((Array.isArray(to) ? to : [to]).map(normalize).filter(Boolean) as string[]),
   );
   if (recipients.length === 0) return { sent: 0, skipped: true };
 
+  // Central sanitizer: emoji strip + accent folding + word-boundary truncation
+  // + the billable segment count (same pure function the unified router uses).
+  const sms = toSmsBody(opts.title, body);
+  if (!sms.text) return { sent: 0, skipped: true, reason: 'empty_body' };
+
   const snapshot = await getAccount(db, tenantId);
-  const price = snapshot.pricePerSmsCents;
   if (!snapshot.provisioned) return { sent: 0, skipped: true, reason: 'no_subaccount' };
   if (!snapshot.hasSender) return { sent: 0, skipped: true, reason: 'no_sender' };
-  if (snapshot.balanceCents < price) return { sent: 0, skipped: true, reason: 'insufficient_balance' };
 
   const row = await ensureLocalAccount(db, tenantId);
   const client = subaccountClient(row);
@@ -101,24 +124,70 @@ export async function sendSmsForTenant(
   const from = row.phoneNumber || null;
   const messagingServiceSid = row.messagingServiceSid || null;
 
-  let balance = snapshot.balanceCents;
   let sent = 0;
   for (const number of recipients) {
-    if (balance < price) break;
+    // Recipient-derived country pricing (longest-prefix match inside
+    // estimateCost); fail-closed floor when no rate row matches.
+    let price = 0;
     try {
-      const msg: any = { to: number, body: String(body || '').slice(0, 1500) };
+      const est = await estimateCost(db, 'twilio', 'sms', number, null);
+      const perSegment = est.matched ? est.costCents : FALLBACK_SMS_SEGMENT_CENTS;
+      price = perSegment * sms.segments;
+    } catch (e: any) {
+      console.error('[sms] estimateCost failed for', number, ':', e?.message || e);
+      price = FALLBACK_SMS_SEGMENT_CENTS * sms.segments;
+    }
+
+    // RESERVE before the Twilio call (refunded below on failure). debitWallet
+    // refuses on insufficient balance unless the tenant allows negative.
+    let reserved = 0;
+    let balanceAfter: number | null = null;
+    try {
+      const deb = await debitWallet(db, tenantId, price);
+      if (!deb.ok) {
+        console.warn('[sms] tenant send skipped (insufficient communications balance) to', number);
+        continue;
+      }
+      reserved = price;
+      balanceAfter = deb.balanceAfterCents;
+    } catch (e: any) {
+      console.error('[sms] wallet reserve debit FAILED for tenant', tenantId, ':', e?.message || e);
+      continue; // fail-closed: never send unbilled
+    }
+
+    try {
+      const msg: any = { to: number, body: sms.text.slice(0, 1500) };
       if (messagingServiceSid) msg.messagingServiceSid = messagingServiceSid;
       else msg.from = from;
       const res = await client.messages.create(msg);
-      const deb = await debit(db, tenantId, price, {
-        reference: res?.sid,
-        description: 'Envío de SMS',
-        smsCount: 1,
-      });
-      balance = deb.balanceAfterCents;
       sent += 1;
+
+      // Legacy ledger row (SMS history page) — best-effort.
+      try {
+        await db.smsTransaction.create({
+          tenantId,
+          type: 'debit',
+          amountCents: -price,
+          balanceAfterCents: balanceAfter,
+          smsCount: sms.segments,
+          currency: 'USD',
+          reference: res?.sid || null,
+          description: `Envío de SMS (${sms.segments} segmento${sms.segments === 1 ? '' : 's'})`,
+        });
+      } catch (e: any) {
+        console.warn('[sms] smsTransaction ledger write failed:', e?.message || e);
+      }
     } catch (e: any) {
       console.warn('[sms] tenant send failed to', number, ':', e?.message || e);
+      // Refund the reservation — the message never went out.
+      try {
+        await creditWallet(db, tenantId, reserved);
+      } catch (err: any) {
+        console.error(
+          `[sms] REFUND after failed send FAILED (tenant overcharged) tenant=${tenantId} cents=${reserved}:`,
+          err?.message || err,
+        );
+      }
     }
   }
   return { sent };

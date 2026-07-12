@@ -181,6 +181,12 @@ export async function debitWallet(
  * channel='wallet' ledger row in communicationLogs keyed on
  * providerMessageId=reference (the checkout session id). The log row doubles
  * as the visible ledger entry in the Comunicaciones log.
+ *
+ * RACE-SAFETY: the wallet row lock (ensureWallet with FOR UPDATE) is taken
+ * FIRST, then the dedupe findOne runs inside the same transaction. The row
+ * lock serializes concurrent same-tenant credits (e.g. a webhook retry racing
+ * the reconciliation sweep), so the second writer only checks the dedupe row
+ * AFTER the first has committed it — no double-credit window.
  */
 export async function creditWalletFromRecharge(
   db: any,
@@ -193,18 +199,18 @@ export async function creditWalletFromRecharge(
   }
   const t = await db.sequelize.transaction();
   try {
+    // Lock the wallet row BEFORE the dedupe check (see RACE-SAFETY above).
+    const row = await ensureWallet(db, tenantId, t);
     if (opts.reference) {
       const existing = await db.communicationLog.findOne({
         where: { tenantId, channel: 'wallet', providerMessageId: opts.reference },
         transaction: t,
       });
       if (existing) {
-        const row = await ensureWallet(db, tenantId, t);
         await t.commit();
         return { ok: true, balanceAfterCents: row.balanceCents || 0, duplicated: true };
       }
     }
-    const row = await ensureWallet(db, tenantId, t);
     const balanceAfter = (row.balanceCents || 0) + cents;
     await row.update({ balanceCents: balanceAfter }, { transaction: t });
     // Ledger entry. billedAmountCents is negative so period sums stay
@@ -269,15 +275,24 @@ export interface CostEstimate {
 }
 
 /**
- * Estimate the billed cost of a send. Resolves the most-specific active rate for
- * (provider, channel) matching country/messageType, preferring exact matches
- * over wildcards (NULL). Returns 0-cost when no rate is found (free channel).
+ * Estimate the billed cost of a send (SMS rates are PER SEGMENT — callers
+ * multiply by the segment count from smsText.toSmsBody).
+ *
+ * `countryOrRecipient` accepts either a bare country code ('+593') or a FULL
+ * E.164 recipient ('+593983212345') — rates are resolved by LONGEST-PREFIX
+ * match of rate.countryCode against the recipient, so pricing follows the
+ * DESTINATION of the message, not the tenant's default country. Rows with a
+ * NULL countryCode are wildcards. Exact messageType beats the type wildcard,
+ * but a longer country prefix always beats a shorter one.
+ *
+ * Returns matched:false (0-cost) when no rate row exists — PAID channels must
+ * NOT treat that as free (the router applies a hardcoded floor instead).
  */
 export async function estimateCost(
   db: any,
   provider: string,
   channel: Channel,
-  country?: string | null,
+  countryOrRecipient?: string | null,
   messageType?: string | null,
 ): Promise<CostEstimate> {
   try {
@@ -286,14 +301,24 @@ export async function estimateCost(
     });
     const list = rows.map((r: any) => (r.get ? r.get({ plain: true }) : r));
 
-    // Score: exact country (+2), exact messageType (+1). Wildcards still match
-    // but score lower; reject rows where a non-null field doesn't match.
+    // Canonical '+<digits>' target for prefix matching (the table is tiny, so
+    // candidate rows are fetched for provider+channel and matched in JS).
+    const targetDigits = countryOrRecipient
+      ? String(countryOrRecipient).replace(/\D/g, '')
+      : '';
+    const target = targetDigits ? `+${targetDigits}` : null;
+
+    // Score: country prefix length dominates (×10) so '+593' beats '+5' and a
+    // longer prefix always beats an exact-messageType wildcard-country row;
+    // exact messageType (+1) breaks ties. Reject rows where a non-null field
+    // doesn't match.
     let best: any = null;
     let bestScore = -1;
     for (const r of list) {
       let score = 0;
       if (r.countryCode != null) {
-        if (country && String(r.countryCode) === String(country)) score += 2;
+        const cc = `+${String(r.countryCode).replace(/\D/g, '')}`;
+        if (target && cc.length > 1 && target.startsWith(cc)) score += 100 + cc.length * 10;
         else continue;
       }
       if (r.messageType != null) {

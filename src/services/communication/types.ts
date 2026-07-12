@@ -31,6 +31,8 @@ export interface SendResult {
   error?: string;
   costEstimateCents?: number;
   billedAmountCents?: number;
+  /** SMS only: billable segments actually sent (from smsText.toSmsBody). */
+  segments?: number;
   /** Set when status === 'skipped' (e.g. 'insufficient_balance', 'not_configured'). */
   skipReason?: string;
 }

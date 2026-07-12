@@ -9,7 +9,8 @@
  *   - recipient resolution (userId → push tokens / phone / email),
  *   - channel selection + ordering per messageType (the routing rules below),
  *   - the per-tenant wallet gate (skip + log 'skipped' on insufficient balance),
- *   - the wallet debit after a successful paid send,
+ *   - the wallet billing around every paid send (reserve estimate → send →
+ *     refund on failure / adjust to actual SMS segments on success),
  *   - logging every single attempt to communicationLogs.
  *
  * ROUTING RULES (per the contract):
@@ -50,8 +51,10 @@ import {
   isChannelEnabled,
   getWallet,
   debitWallet,
+  creditWallet,
   estimateCost,
 } from './communicationSettingsService';
+import { toSmsBody } from './smsText';
 import { normalizeToE164 } from './phone';
 import { getUserDeviceRows } from '../pushService';
 import { resolveTenantWhatsappConfig } from './whatsapp/tenantWhatsappService';
@@ -65,6 +68,14 @@ const PROVIDERS: Record<Channel, CommunicationProvider> = {
 
 /** Channels considered "paid" — wallet-gated before send. */
 const PAID_CHANNELS: Channel[] = ['whatsapp', 'sms'];
+
+/**
+ * FAIL-CLOSED pricing floor (cents per unit — per SEGMENT for SMS): applied
+ * when estimateCost finds NO rate row for a paid channel. A missing rate must
+ * never mean "free" — Twilio still bills the platform per segment (Ecuador
+ * termination alone is ~17c/segment).
+ */
+const FALLBACK_PAID_UNIT_CENTS = 10;
 
 /** Default WhatsApp template name per messageType (global whatsappTemplates seeds). */
 const TEMPLATE_BY_TYPE: Partial<Record<MessageType, string>> = {
@@ -338,26 +349,38 @@ async function attemptChannel(
     return r;
   }
 
-  // 3) Wallet gate for paid channels.
+  // 3) Cost estimate + wallet gate for paid channels.
   //    WhatsApp through a TENANT-OWNED account (Embedded Signup) is exempt:
   //    Meta bills the tenant's own WABA directly, so CGuardPro neither gates
   //    nor debits those sends. Only the legacy global-account fallback (where
   //    the platform pays Meta) and Twilio SMS remain wallet-billed.
-  let estimateCents = 0;
   let tenantOwnedWhatsapp = false;
   if (channel === 'whatsapp') {
     tenantOwnedWhatsapp = !!(await resolveTenantWhatsappConfig(db, intent.tenantId).catch(() => null));
   }
-  if (PAID_CHANNELS.includes(channel) && !tenantOwnedWhatsapp) {
-    const country = settings.default_country_code;
+  const billable = PAID_CHANNELS.includes(channel) && !tenantOwnedWhatsapp;
+
+  let estimateCents = 0;
+  let perUnitCents = 0; // per SEGMENT for sms, per message for whatsapp
+  let estSegments = 1;
+  if (billable) {
+    // Rate follows the RECIPIENT number (longest country-prefix match inside
+    // estimateCost), not the tenant's default country — a +1 recipient of a
+    // +593 tenant must be priced as +1.
     const est = await estimateCost(
       db,
       channel === 'whatsapp' ? 'meta' : 'twilio',
       channel,
-      country,
+      msg.recipient || settings.default_country_code,
       intent.messageType,
     );
-    estimateCents = est.costCents;
+    // Fail-closed: a missing rate row on a paid channel is never free.
+    perUnitCents = est.matched ? est.costCents : FALLBACK_PAID_UNIT_CENTS;
+    if (channel === 'sms') {
+      // Same pure computation the Twilio provider performs on send.
+      estSegments = toSmsBody(msg.title, msg.body).segments || 1;
+    }
+    estimateCents = perUnitCents * estSegments;
 
     if (settings.wallet_required_for_paid_channels) {
       const wallet = await getWallet(db, intent.tenantId);
@@ -375,8 +398,56 @@ async function attemptChannel(
     }
   }
 
-  // 4) Send. Push gets the pre-resolved device rows (resolved once in
-  //    resolveRecipients) so the provider doesn't re-query them.
+  // Negative balance is allowed only for CRITICAL sends AND when the tenant
+  // opted in — the debit respects the same rule as the gate above.
+  const allowNegative = !!intent.critical && !!settings.allow_negative_communications_balance;
+
+  // 4a) RESERVE: debit the estimate BEFORE the provider call so a crash between
+  //     send and debit can never produce an unbilled paid send. Refunded on
+  //     failure, adjusted to actual segments on success (4c).
+  let reservedCents = 0;
+  if (billable && estimateCents > 0) {
+    try {
+      const deb = await debitWallet(db, intent.tenantId, estimateCents, undefined, {
+        allowNegative,
+      });
+      if (deb.ok) {
+        reservedCents = estimateCents;
+      } else if (settings.wallet_required_for_paid_channels) {
+        // Balance raced to insufficient between the gate and the reserve.
+        const r: SendResult = {
+          status: 'skipped',
+          channel,
+          skipReason: 'insufficient_balance',
+          costEstimateCents: estimateCents,
+        };
+        await logAttempt(db, intent, channel, msg, r);
+        return r;
+      } else {
+        console.error(
+          `[messageRouter] wallet reserve refused (insufficient) but wallet not required — sending UNBILLED tenant=${intent.tenantId} channel=${channel} cents=${estimateCents}`,
+        );
+      }
+    } catch (e: any) {
+      console.error(
+        `[messageRouter] wallet reserve debit FAILED tenant=${intent.tenantId} channel=${channel} cents=${estimateCents}:`,
+        e?.message || e,
+      );
+      if (settings.wallet_required_for_paid_channels) {
+        const r: SendResult = {
+          status: 'failed',
+          channel,
+          error: 'wallet_debit_failed',
+          costEstimateCents: estimateCents,
+        };
+        await logAttempt(db, intent, channel, msg, r);
+        return r;
+      }
+    }
+  }
+
+  // 4b) Send. Push gets the pre-resolved device rows (resolved once in
+  //     resolveRecipients) so the provider doesn't re-query them.
   let result: SendResult;
   try {
     result = channel === 'push'
@@ -387,17 +458,47 @@ async function attemptChannel(
   }
   if (estimateCents && result.costEstimateCents == null) result.costEstimateCents = estimateCents;
 
-  // 5) Debit wallet on a successful paid send (router owns the debit so billing +
-  //    logging stay in one place; providers must NOT debit). Tenant-owned
-  //    WhatsApp sends are never debited — Meta bills the tenant directly.
-  if (PAID_CHANNELS.includes(channel) && !tenantOwnedWhatsapp && (result.status === 'sent' || result.status === 'delivered')) {
-    const billed = result.costEstimateCents ?? estimateCents;
-    if (billed > 0) {
-      const allowNeg = !!intent.critical;
-      const deb = await debitWallet(db, intent.tenantId, billed, result.providerMessageId, {
-        allowNegative: allowNeg,
-      }).catch(() => null);
-      if (deb && deb.ok) result.billedAmountCents = billed;
+  // 4c) SETTLE (router owns billing; providers must NOT move wallet money).
+  //     Failure/skip → refund the reservation. Success → adjust the reservation
+  //     to the ACTUAL segments the provider reported (rate × segments).
+  if (billable) {
+    const success = result.status === 'sent' || result.status === 'delivered';
+    if (!success) {
+      if (reservedCents > 0) {
+        try {
+          await creditWallet(db, intent.tenantId, reservedCents, result.providerMessageId);
+        } catch (e: any) {
+          console.error(
+            `[messageRouter] REFUND after failed send FAILED (tenant overcharged) tenant=${intent.tenantId} channel=${channel} cents=${reservedCents}:`,
+            e?.message || e,
+          );
+        }
+      }
+    } else if (reservedCents > 0) {
+      const actualSegments =
+        channel === 'sms' && typeof result.segments === 'number' && result.segments > 0
+          ? result.segments
+          : estSegments;
+      const actualCents = perUnitCents * actualSegments;
+      try {
+        const diff = actualCents - reservedCents;
+        if (diff > 0) {
+          // Message already went out — settle the extra segments even if that
+          // dips negative (the amount is owed).
+          await debitWallet(db, intent.tenantId, diff, result.providerMessageId, {
+            allowNegative: true,
+          });
+        } else if (diff < 0) {
+          await creditWallet(db, intent.tenantId, -diff, result.providerMessageId);
+        }
+        result.billedAmountCents = actualCents;
+      } catch (e: any) {
+        console.error(
+          `[messageRouter] segment-adjust settle FAILED tenant=${intent.tenantId} channel=${channel} reserved=${reservedCents} actual=${actualCents}:`,
+          e?.message || e,
+        );
+        result.billedAmountCents = reservedCents; // what was actually captured
+      }
     }
   }
 

@@ -133,4 +133,33 @@ describe('PayrollService', () => {
       assert.ok(p.payroll.earnings.imponible > 720, `imponible ${p.payroll.earnings.imponible}`);
     });
   });
+
+  describe('previewRoster — whole-tenant rol de pagos + totals', () => {
+    function rosterService(guards: any[]) {
+      const db: any = {
+        guardShift: { findAll: async () => [shift(8)] }, // every guard: one 8h shift
+        securityGuard: { findAll: async () => guards.map((g) => ({ get: () => g })) },
+      };
+      sinon.stub(nominaSettingsModule, 'getNominaSettings').resolves({
+        payroll: { guardMonthlySalaries: {}, defaultMonthlySalary: 600, guardRates: {}, nightSurchargePct: 0.25 },
+      } as any);
+      return new PayrollService({ database: db, currentTenant: { id: TENANT } } as any);
+    }
+
+    it('returns one row per guard and totals that sum the rows', async () => {
+      const svc = rosterService([
+        { id: 'g1', fullName: 'Ana', hiringContractDate: null },
+        { id: 'g2', fullName: 'Beto', hiringContractDate: null },
+        { id: 'g3', fullName: 'Caro', hiringContractDate: null },
+      ]);
+      const roster: any = await svc.previewRoster({ year: 2025, month: 6 });
+      assert.strictEqual(roster.count, 3);
+      assert.strictEqual(roster.rows.length, 3);
+      const sumNet = roster.rows.reduce((s: number, r: any) => s + r.payroll.netPay, 0);
+      assert.ok(Math.abs(roster.totals.netPay - Math.round(sumNet * 100) / 100) < 0.02, `totals.netPay ${roster.totals.netPay} vs ${sumNet}`);
+      // Each guard on $600 pays IESS 9.45% → total personal ≈ 3 × 56.7.
+      assert.ok(Math.abs(roster.totals.iessPersonal - 3 * 600 * 0.0945) < 0.05, `iess ${roster.totals.iessPersonal}`);
+      assert.strictEqual(roster.rows[0].guardName, 'Ana');
+    });
+  });
 });

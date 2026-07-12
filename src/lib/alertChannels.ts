@@ -46,14 +46,17 @@ async function smsAlert(alert: { title: string; body: string }): Promise<void> {
   const to = (process.env.ALERT_SMS_TO || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (!to.length) return;
   try {
-    // Reuse whatever SMS sender the comms layer exposes (Twilio). Best-effort:
-    // if the module/shape isn't present we simply skip SMS.
-    const sms = tryRequire('../services/communication/providers/smsProvider')
-      || tryRequire('../services/twilioService');
-    const send = sms?.sendSms || sms?.default?.sendSms || sms?.sendSMS;
+    // These are PLATFORM ops alerts (superadmin), so they go out through the
+    // platform Twilio number (twilio/twilioClient — the superadmin phone
+    // center), NOT a tenant subaccount and never a tenant wallet. Best-effort:
+    // if the module/config isn't present we simply skip SMS.
+    const twilioClient = tryRequire('../services/twilio/twilioClient');
+    const send = twilioClient?.sendSms || twilioClient?.default?.sendSms;
     if (typeof send !== 'function') return;
+    const { databaseInit } = require('../database/databaseConnection');
+    const db = await databaseInit();
     const text = `[CGuardPro] ${alert.title}: ${alert.body}`.slice(0, 300);
-    for (const n of to) { try { await send({ to: n, body: text }); } catch { /* per-number best-effort */ } }
+    for (const n of to) { try { await send(db, { to: n, body: text }); } catch { /* per-number best-effort */ } }
   } catch (e: any) {
     console.error('[alert:sms]', e?.message || e);
   }

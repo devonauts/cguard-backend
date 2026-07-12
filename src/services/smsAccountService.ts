@@ -1,14 +1,17 @@
 /**
- * Per-tenant SMS account: Twilio subaccount provisioning + prepaid wallet.
+ * Per-tenant SMS account: Twilio subaccount provisioning + number management.
  *
  * - Each tenant gets its own Twilio subaccount (created under the platform
  *   master account: TWILIO_MASTER_ACCOUNT_SID / TWILIO_MASTER_AUTH_TOKEN).
- * - A prepaid wallet (balanceCents) is topped up by the tenant via Stripe and
- *   debited as messages are sent. Every movement is recorded in smsTransactions.
+ * - The LEGACY prepaid wallet on tenantSmsAccounts is RETIRED: balances were
+ *   migrated into communicationWallets (z20260713b) and message billing now
+ *   debits that unified wallet (smsService / messageRouter). The local `debit`
+ *   here remains only for the one-time number-purchase fee; smsTransactions
+ *   stays as the SMS history ledger.
  *
  * Everything degrades gracefully: with no master credentials, provisioning is a
- * clear no-op and the wallet still works (recharge credits balance; sending is
- * skipped until Twilio is configured and a sender number is attached).
+ * clear no-op; sending is skipped until Twilio is configured and a sender
+ * number is attached.
  */
 import { encryptPrivateUrl, decryptPrivateUrl } from '../utils/privateUrlEncryption';
 
@@ -110,62 +113,11 @@ export async function provisionSubaccount(db: any, tenant: any): Promise<any> {
   return getAccount(db, tenantId);
 }
 
-/**
- * Credit the wallet (recharge). Idempotent by `reference` — a repeated webhook
- * with the same Stripe session id will not double-credit.
- */
-export async function credit(
-  db: any,
-  tenantId: string,
-  amountCents: number,
-  opts: { reference?: string; description?: string; currency?: string } = {},
-): Promise<{ balanceAfterCents: number; duplicated?: boolean }> {
-  if (!(amountCents > 0)) throw Object.assign(new Error('amountCents must be positive'), { code: 400 });
-
-  const t = await db.sequelize.transaction();
-  try {
-    if (opts.reference) {
-      const existing = await db.smsTransaction.findOne({
-        where: { tenantId, reference: opts.reference, type: 'recharge' },
-        transaction: t,
-      });
-      if (existing) {
-        const acc = await db.tenantSmsAccount.findOne({ where: { tenantId }, transaction: t });
-        await t.commit();
-        return { balanceAfterCents: acc ? acc.balanceCents : 0, duplicated: true };
-      }
-    }
-
-    const [row] = await db.tenantSmsAccount.findOrCreate({
-      where: { tenantId },
-      defaults: { tenantId, balanceCents: 0, currency: opts.currency || 'USD', status: 'inactive' },
-      transaction: t,
-      lock: t.LOCK.UPDATE,
-    });
-
-    const balanceAfter = (row.balanceCents || 0) + amountCents;
-    await row.update({ balanceCents: balanceAfter }, { transaction: t });
-
-    await db.smsTransaction.create(
-      {
-        tenantId,
-        type: 'recharge',
-        amountCents,
-        balanceAfterCents: balanceAfter,
-        currency: opts.currency || row.currency || 'USD',
-        reference: opts.reference || null,
-        description: opts.description || 'Recarga de saldo SMS',
-      },
-      { transaction: t },
-    );
-
-    await t.commit();
-    return { balanceAfterCents: balanceAfter };
-  } catch (err) {
-    await t.rollback();
-    throw err;
-  }
-}
+// NOTE: the legacy `credit()` recharge function was REMOVED — the prepaid
+// tenantSmsAccount wallet is retired (balances migrated to communicationWallets
+// by z20260713b) and all recharges land in the unified wallet via
+// communicationSettingsService.creditWalletFromRecharge. `debit()` below stays
+// only for the one-time number-purchase fee in buyNumber().
 
 /**
  * Debit the wallet for a sent message. Returns ok=false (without spending) when

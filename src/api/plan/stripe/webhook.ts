@@ -2,7 +2,6 @@ import TenantService from '../../../services/tenantService';
 import Plans from '../../../security/plans';
 import ApiResponseHandler from '../../apiResponseHandler';
 import lodash from 'lodash';
-import { credit as creditSmsWallet } from '../../../services/smsAccountService';
 import { creditWalletFromRecharge } from '../../../services/communication/communicationSettingsService';
 import { resolveStripe } from '../../../services/stripe/stripeConfigService';
 import { upsertInvoiceFromStripe } from '../../../services/platformBillingService';
@@ -34,9 +33,13 @@ export default async (req, res) => {
       webhookSecret,
     );
 
-    // SMS wallet top-up — one-time payment, identified by session metadata.
-    // Handle before the plan logic (it has price_data, not a plan price id).
-    // creditSmsWallet dedupes by reference=session.id, so retries are safe.
+    // LEGACY SMS top-up — the /sms-account/recharge endpoint that created these
+    // sessions is RETIRED (single-wallet consolidation, see z20260713b). This
+    // branch stays only for in-flight checkout sessions created before the
+    // retirement, and its credit now lands in the UNIFIED communicationWallet
+    // (the legacy tenantSmsAccount balance is zeroed/migrated) so a straggler
+    // payment ends up in the wallet that actually bills sends.
+    // creditWalletFromRecharge dedupes by reference=session.id → retry-safe.
     if (
       event.type === 'checkout.session.completed' &&
       lodash.get(event, 'data.object.metadata.purpose') === 'sms_recharge'
@@ -49,9 +52,9 @@ export default async (req, res) => {
         0;
 
       if (tenantId && amountCents > 0 && lodash.get(session, 'payment_status') !== 'unpaid') {
-        await creditSmsWallet(req.database, tenantId, amountCents, {
+        await creditWalletFromRecharge(req.database, tenantId, amountCents, {
           reference: session.id,
-          description: 'Recarga de saldo SMS (Stripe)',
+          description: 'Recarga de saldo SMS (Stripe, endpoint retirado → billetera de comunicaciones)',
           currency: (session.currency || 'usd').toUpperCase(),
         });
       }

@@ -143,11 +143,13 @@ export default class PayrollService {
       otherDeductions?: number;
       projectedAnnualIncomeTax?: number;
     },
+    /** Preloaded context so a roster run doesn't refetch settings/guard per row. */
+    ctx?: { settings?: any; hiringContractDate?: Date | string | null },
   ): Promise<GuardPayrollPreview> {
     const { year, month } = opts;
     const aggregate = await this.aggregateGuardMonth(guardId, year, month);
 
-    const settings = await getNominaSettings(this.db, this.tenantId);
+    const settings = ctx?.settings ?? (await getNominaSettings(this.db, this.tenantId));
     const pr = settings.payroll;
 
     // Resolve the monthly salary + its provenance.
@@ -168,12 +170,16 @@ export default class PayrollService {
     }
 
     // Years of service from the guard's hiring date (fondos de reserva gate).
-    const guard = await this.db.securityGuard.findOne({
-      where: { id: guardId, tenantId: this.tenantId },
-      attributes: ['id', 'hiringContractDate'],
-    });
-    const yearsOfService = guard?.hiringContractDate
-      ? Math.max(0, Math.floor((Date.now() - new Date(guard.hiringContractDate).getTime()) / (365.25 * 24 * 3600 * 1000)))
+    let hiringContractDate: Date | string | null | undefined = ctx ? ctx.hiringContractDate : undefined;
+    if (!ctx) {
+      const guard = await this.db.securityGuard.findOne({
+        where: { id: guardId, tenantId: this.tenantId },
+        attributes: ['id', 'hiringContractDate'],
+      });
+      hiringContractDate = guard?.hiringContractDate;
+    }
+    const yearsOfService = hiringContractDate
+      ? Math.max(0, Math.floor((Date.now() - new Date(hiringContractDate).getTime()) / (365.25 * 24 * 3600 * 1000)))
       : 0;
 
     // Tenant overrides for the hour-multipliers / night surcharge.
@@ -205,5 +211,55 @@ export default class PayrollService {
     const payroll = computeEcuadorPayroll(input, year, overrides);
 
     return { aggregate, salarySource, monthlyRemuneration, yearsOfService, payroll };
+  }
+
+  /**
+   * The whole tenant's rol de pagos for a month — one row per active guard,
+   * plus tenant totals. This is what the CRM exports (Excel/PDF) for the
+   * accountant to run the transfers/checks. Settings + guards are loaded ONCE;
+   * the per-guard shift aggregation is the only per-row query.
+   */
+  async previewRoster(opts: {
+    year: number;
+    month: number;
+    decimoTerceroMensualizado?: boolean;
+    decimoCuartoMensualizado?: boolean;
+    fondosReservaMensualizado?: boolean;
+  }): Promise<any> {
+    const settings = await getNominaSettings(this.db, this.tenantId);
+    const guards = (
+      await this.db.securityGuard.findAll({
+        where: { tenantId: this.tenantId, deletedAt: null },
+        attributes: ['id', 'fullName', 'hiringContractDate'],
+        order: [['fullName', 'ASC']],
+      })
+    ).map((g: any) => g.get({ plain: true }));
+
+    const rows: any[] = [];
+    for (const g of guards) {
+      const p = await this.previewGuardMonth(g.id, opts, {
+        settings,
+        hiringContractDate: g.hiringContractDate,
+      });
+      rows.push({ guardId: g.id, guardName: g.fullName, ...p });
+    }
+
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const totals = rows.reduce(
+      (t, r) => {
+        t.imponible += r.payroll.earnings.imponible;
+        t.totalEarnings += r.payroll.earnings.totalEarnings;
+        t.iessPersonal += r.payroll.deductions.iessPersonal;
+        t.totalDeductions += r.payroll.deductions.totalDeductions;
+        t.iessPatronal += r.payroll.employerCost.iessPatronal;
+        t.employerCost += r.payroll.employerCost.totalCost;
+        t.netPay += r.payroll.netPay;
+        return t;
+      },
+      { imponible: 0, totalEarnings: 0, iessPersonal: 0, totalDeductions: 0, iessPatronal: 0, employerCost: 0, netPay: 0 },
+    );
+    Object.keys(totals).forEach((k) => (totals[k] = round2(totals[k])));
+
+    return { year: opts.year, month: opts.month, currency: 'USD', count: rows.length, rows, totals };
   }
 }

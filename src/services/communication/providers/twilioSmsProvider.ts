@@ -1,26 +1,22 @@
 /**
  * twilioSmsProvider — SMS delivery via Twilio, the unified-comms FALLBACK channel.
  *
- * NON-BREAKING + WALLET DECISION (important):
- *   The legacy `sendSmsForTenant` (src/services/smsService.ts) debits the LEGACY
- *   `tenantSmsAccount` prepaid wallet on each delivered message. In the unified
- *   layer, the MessageRouter is the single owner of billing and debits the
- *   `communicationWallet` after a successful send. If this provider called
- *   `sendSmsForTenant`, the tenant would be charged TWICE (once on each wallet).
- *
- *   To avoid the double-debit we do a LOW-LEVEL Twilio send here using the
- *   tenant's already-provisioned Twilio subaccount + sender (reusing
- *   `ensureLocalAccount` / `subaccountClient` from smsAccountService — the same
- *   infrastructure the legacy path uses) and leave ALL wallet movement to the
- *   router (communicationWallet via communicationSettingsService). We deliberately
- *   do NOT call `sendSmsForTenant` and do NOT touch tenantSmsAccount here.
- *
- *   This keeps the legacy SMS stack (sendSmsForTenant) untouched and working for
- *   its existing callers, while the unified layer bills exactly once.
+ * WALLET DECISION (important):
+ *   There is ONE billed wallet: `communicationWallet`. The MessageRouter is the
+ *   single owner of billing for router sends — it reserves/debits per SEGMENT
+ *   around this provider's send. The legacy `sendSmsForTenant`
+ *   (src/services/smsService.ts) bills the SAME communicationWallet for the
+ *   notification-matrix path (the legacy tenantSmsAccount balance was migrated
+ *   and retired — see z20260713b). This provider must therefore NEVER move
+ *   wallet money itself: it does a LOW-LEVEL Twilio send using the tenant's
+ *   already-provisioned Twilio subaccount + sender (reusing `ensureLocalAccount`
+ *   / `subaccountClient` from smsAccountService) and reports the billable
+ *   `segments` on the SendResult so the router can settle the exact amount.
  *
  * Recipient: OutboundMessage.recipient is the destination phone, E.164-normalized.
  */
 import { CommunicationProvider, OutboundMessage, SendResult } from '../types';
+import { toSmsBody } from '../smsText';
 
 /** E.164 normalization: keep a leading + and digits only; reject too-short. */
 function toE164(phone: string | undefined | null): string | null {
@@ -90,7 +86,15 @@ export class TwilioSmsProvider implements CommunicationProvider {
         return { status: 'skipped', channel: 'sms', provider: 'twilio', skipReason: 'no_sender' };
       }
 
-      const payload: any = { to, body: String(msg.body || '').slice(0, 1500) };
+      // Central sanitizer: strips emoji, folds non-GSM accents, truncates at a
+      // word boundary and yields the billable segment count. Pure function — the
+      // router recomputes the same value for its wallet estimate.
+      const sms = toSmsBody(msg.title, msg.body);
+      if (!sms.text) {
+        return { status: 'skipped', channel: 'sms', provider: 'twilio', skipReason: 'empty_body' };
+      }
+
+      const payload: any = { to, body: sms.text.slice(0, 1500) };
       if (messagingServiceSid) payload.messagingServiceSid = messagingServiceSid;
       else payload.from = from;
 
@@ -102,7 +106,8 @@ export class TwilioSmsProvider implements CommunicationProvider {
         channel: 'sms',
         provider: 'twilio',
         providerMessageId: res?.sid || undefined,
-        providerResponse: { sid: res?.sid, status: res?.status, to },
+        segments: sms.segments,
+        providerResponse: { sid: res?.sid, status: res?.status, to, segments: sms.segments, ucs2: sms.ucs2 },
       };
     } catch (e: any) {
       return {

@@ -37,11 +37,43 @@ export class SendPhoneVerificationUseCase {
         const expiresAt = Date.now() + 10 * 60 * 1000;
         verificationCodes.set(currentUser.id, { code, expiresAt });
 
-        // TODO: In production, send SMS via Twilio, AWS SNS, or similar service
-        // For now, we'll just log it (you can see it in console)
-        console.log(`[PHONE VERIFICATION] Code for ${phoneNumber}: ${code}`);
+        // Deliver the OTP through the unified communications layer (WhatsApp
+        // AUTHENTICATION template when preferred+enabled, else SMS — router
+        // wallet-gates and logs the attempt). Best-effort: verification still
+        // works in dev / on send failure via the console fallback below.
+        let delivered = false;
+        const db = options?.database;
+        const tenantId = options?.currentTenant?.id || null;
+        if (db && tenantId) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { sendOtp } = require('../../../services/communication/communicationService');
+                const { results } = await sendOtp(db, {
+                    tenantId,
+                    userId: currentUser.id,
+                    phone: phoneNumber,
+                    code,
+                });
+                delivered = (results || []).some(
+                    (r: any) => r && (r.status === 'sent' || r.status === 'delivered' || r.status === 'read'),
+                );
+            } catch (e: any) {
+                console.error('[PhoneVerification] OTP send failed:', e?.message || e);
+            }
+        }
 
-        return { message: 'Verification code sent', code }; // Remove 'code' in production
+        // Dev/fallback visibility: keep the code reachable when nothing was
+        // delivered (missing tenant/channels) or outside production.
+        if (!delivered || process.env.NODE_ENV !== 'production') {
+            console.log(`[PHONE VERIFICATION] Code for ${phoneNumber}: ${code}`);
+        }
+
+        // Echo the code back only outside production (dev/test flows rely on it).
+        return {
+            message: 'Verification code sent',
+            delivered,
+            ...(process.env.NODE_ENV !== 'production' ? { code } : {}),
+        };
     }
 }
 

@@ -673,6 +673,31 @@ nodeSetInterval(() => { runJob("SeatReconcile", runSeatReconcile); }, 24 * 60 * 
 leaderTimeout(() => runJob("SeatReconcile", runSeatReconcile), 60000);
 
 /**
+ * Recharge reconciliation — safety net for MISSED Stripe recharge webhooks:
+ * sweeps the last 48h of checkout sessions for PAID wallet top-ups
+ * (communications_recharge + the retired sms_recharge) and credits any that
+ * never landed. Idempotent via creditWalletFromRecharge's reference=session.id
+ * dedupe (taken under the wallet row lock), so re-scanning already-credited
+ * sessions is a no-op. Never throws.
+ */
+async function runRechargeReconciliation() {
+  try {
+    const database = await databaseInit();
+    const { reconcileRechargeSessions } = require('./services/communication/rechargeReconciliation');
+    const r = await reconcileRechargeSessions(database);
+    if (r && r.credited) {
+      console.log(`[RechargeReconciliation] credited ${r.credited} missed recharge(s) (${r.matched} paid recharge session(s) scanned)`);
+    }
+  } catch (err) {
+    console.error('[RechargeReconciliation] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+// Sweep every 6 hours + once shortly after boot (leader only).
+nodeSetInterval(() => { runJob("RechargeReconciliation", runRechargeReconciliation); }, 6 * 60 * 60 * 1000);
+leaderTimeout(() => runJob("RechargeReconciliation", runRechargeReconciliation), 2 * 60 * 1000);
+
+/**
  * Attendance detection (Nómina) — every 5 minutes, scan recently-started shifts
  * and flag late / no-call-no-show / missed-clock-out exceptions by comparing the
  * scheduled `shift` against the guard's `guardShift` punch (linked via shiftId).

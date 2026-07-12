@@ -86,9 +86,11 @@ export async function runShiftReminders(db: any): Promise<void> {
         const title = 'Recordatorio de turno';
         const body = `Tu turno en ${stationName} empieza ${off.when} (${timeLabelInTz(s.startTime, tz)}). No olvides marcar tu entrada.`;
         // Push-first via the unified communications layer: push → WhatsApp (if the
-        // guard has no device token or the tenant enables WA reminders) → SMS
-        // fallback. Wallet-gated + logged per attempt by the router; degrades
-        // gracefully (acts like the old pushToUser) when those channels are off.
+        // guard has no device token or the tenant enables WA reminders).
+        // Wallet-gated + logged per attempt by the router; degrades gracefully
+        // (acts like the old pushToUser) when those channels are off.
+        // DELIBERATE: no `critical` flag → the router never adds the SMS leg —
+        // shift reminders aren't critical and must not spend paid SMS segments.
         await sendShiftReminder(db, {
           tenantId: s.tenantId,
           userId: s.guardId,

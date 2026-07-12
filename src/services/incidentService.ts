@@ -120,6 +120,15 @@ export default class IncidentService {
             (siteName ? ` — ${siteName}` : '') +
             (guardName ? ` (${guardName})` : '') +
             '.';
+          // HIGH-severity incidents go out as CRITICAL: the router only adds
+          // the SMS leg to an incident_alert when critical is set (plus the
+          // tenant's critical_alert_sms_fallback), and critical also fans out
+          // instead of stopping at the first delivered channel. `priority` is a
+          // free string on the incident model — CRM/customer forms send
+          // 'alta'/'media'/'baja', the guard app and alarm bridge send
+          // 'critical'/'high'/'medium'.
+          const priorityStr = String(record.priority || '').toLowerCase();
+          const isHighSeverity = ['critical', 'high', 'alta'].includes(priorityStr);
           const userIds = await resolveSupervisorUserIds(db, tenantId, {
             assignedPostSiteId: record.postSiteId || null,
           });
@@ -130,6 +139,7 @@ export default class IncidentService {
                 userId,
                 title,
                 body,
+                critical: isHighSeverity,
                 incidentId: String(record.id),
                 data: {
                   type: 'incident.created',

@@ -56,6 +56,31 @@ export default (app) => {
     }
   });
 
+  // Whole-tenant rol de pagos for a month — one row per active guard + totals.
+  // This is what the CRM Rol de pagos page renders + exports for the accountant.
+  app.get(`${base}/roster`, async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(P.attendanceRead);
+      const now = new Date();
+      const year = req.query.year ? parseInt(String(req.query.year), 10) : now.getUTCFullYear();
+      const month = req.query.month ? parseInt(String(req.query.month), 10) : now.getUTCMonth() + 1;
+      if (!(month >= 1 && month <= 12)) {
+        return await ApiResponseHandler.error(req, res, Object.assign(new Error('month must be 1-12'), { code: 400 }));
+      }
+      const bool = (v: any) => v === true || v === 'true' || v === '1';
+      const roster = await new PayrollService(req).previewRoster({
+        year,
+        month,
+        decimoTerceroMensualizado: bool(req.query.decimoTerceroMensualizado),
+        decimoCuartoMensualizado: bool(req.query.decimoCuartoMensualizado),
+        fondosReservaMensualizado: bool(req.query.fondosReservaMensualizado),
+      });
+      await ApiResponseHandler.success(req, res, roster);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
   // Data-driven rol de pagos for one guard + month. Query: year, month (1-12),
   // and optional mensualizado flags / other earnings / deductions.
   app.get(`${base}/guard/:guardId`, async (req, res) => {

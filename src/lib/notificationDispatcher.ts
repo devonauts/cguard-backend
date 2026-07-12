@@ -163,8 +163,12 @@ export async function dispatch(
         }
 
         if (prefs.sms && phones.length) {
-          const smsBody = body ? `${title}\n${body}` : title;
-          sendSmsForTenant(opts.database, opts.tenantId, phones, smsBody).catch((err) => {
+          // Title + body go down separately: the central sanitizer (smsText)
+          // joins them as 'title: body', strips emoji (every template title
+          // starts with one), folds non-GSM accents and truncates to one
+          // GSM segment — so the title is no longer silently dropped and the
+          // send never falls into 70-char UCS-2 billing.
+          sendSmsForTenant(opts.database, opts.tenantId, phones, body, { title }).catch((err) => {
             console.error('[NotificationDispatcher] SMS send failed:', err?.message || err);
           });
         }
