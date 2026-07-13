@@ -49,6 +49,13 @@ export interface DispatchOptions {
    * when "assigned supervisors only" is enabled.
    */
   assignedPostSiteId?: string;
+  /**
+   * Department-manager routing: deliver this ROLE-TARGETED event to one
+   * specific user (in-app + email/SMS) instead of the whole role group —
+   * e.g. a time-off request goes to the requester's department responsable.
+   * Ignored on SPECIFIC-target templates.
+   */
+  routeToUserId?: string;
 }
 
 /**
@@ -101,12 +108,16 @@ export async function dispatch(
 
     const title = template.title(data);
     const body = template.body(data);
+    const routedUserId =
+      template.targetRoles !== TARGET_ROLES.SPECIFIC ? (opts.routeToUserId || null) : null;
     const targetRoles =
-      template.targetRoles === TARGET_ROLES.SPECIFIC ? null : template.targetRoles;
+      template.targetRoles === TARGET_ROLES.SPECIFIC || routedUserId
+        ? null
+        : template.targetRoles;
     const recipientUserId =
       template.targetRoles === TARGET_ROLES.SPECIFIC
         ? (opts.recipientUserId || null)
-        : null;
+        : routedUserId;
 
     // Per-tenant channel preferences (Configuración → Notificaciones).
     // Mapped events are governed by the matrix; unmapped events keep the legacy
@@ -131,14 +142,16 @@ export async function dispatch(
     if (rowId) {
       // ── Matrix-governed event: send Email / SMS per the saved switches ─────
       if (prefs.email || prefs.sms) {
+        // When routed to a department manager, resolve THAT user's email/phone
+        // via the SPECIFIC branch instead of the role group.
         const { emails, phones } = await resolveRecipients(
           opts.database,
           opts.tenantId,
-          template,
+          routedUserId ? { ...template, targetRoles: null } : template,
           {
-            recipientUserId: opts.recipientUserId,
-            recipientEmail: opts.recipientEmail,
-            recipientPhone: opts.recipientPhone,
+            recipientUserId: routedUserId || opts.recipientUserId,
+            recipientEmail: routedUserId ? undefined : opts.recipientEmail,
+            recipientPhone: routedUserId ? undefined : opts.recipientPhone,
             assignedPostSiteId: opts.assignedPostSiteId,
           },
         );

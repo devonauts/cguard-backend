@@ -47,9 +47,37 @@ export default class AttendanceAdminService {
   // ── Records ────────────────────────────────────────────────────────────────
   /** List attendance records (guardShifts) with ACL + attendance filters. */
   async list(query: any) {
+    const filter: any = { ...(query.filter || query) };
+
+    // Departamento filter (Settings › Departamentos): narrow every leg to the
+    // department's members. Each leg keys people differently — guardShift by
+    // securityGuard id, supervisor/staff shifts by USER id — so resolve both
+    // here once. departmentMemberUserIds also travels to the folding queries.
+    let departmentMemberUserIds: string[] | null = null;
+    if (filter.departmentId) {
+      const { Op } = this.db.Sequelize;
+      const members = await this.db.tenantUser.findAll({
+        where: { tenantId: this.tenantId, departmentId: filter.departmentId },
+        attributes: ['userId'],
+      });
+      const memberIds = members.map((m: any) => String(m.userId)).filter(Boolean);
+      departmentMemberUserIds = memberIds;
+      const sgRows = memberIds.length
+        ? await this.db.securityGuard.findAll({
+            where: {
+              tenantId: this.tenantId,
+              guardId: { [Op.in]: memberIds },
+            },
+            attributes: ['id'],
+          })
+        : [];
+      filter.guardNameIdIn = sgRows.map((g: any) => g.id);
+      delete filter.departmentId;
+    }
+
     const guardResult = await GuardShiftRepository.findAndCountAll(
       {
-        filter: query.filter || query,
+        filter,
         limit: query.limit,
         offset: query.offset,
         orderBy: query.orderBy,
@@ -64,8 +92,8 @@ export default class AttendanceAdminService {
       const acl = await this.payrollAclWhere();
       const isBroad = acl != null && Object.keys(acl).length === 0;
       if (!isBroad) return guardResult;
-      const supRows = await this.listSupervisorShiftsForNomina(query.filter || query || {});
-      const staffRows = await this.listStaffShiftsForNomina(query.filter || query || {});
+      const supRows = await this.listSupervisorShiftsForNomina(filter, departmentMemberUserIds);
+      const staffRows = await this.listStaffShiftsForNomina(filter, departmentMemberUserIds);
       const extra = [...supRows, ...staffRows];
       if (!extra.length) return guardResult;
       const merged = [...((guardResult as any).rows || []), ...extra].sort(
@@ -79,7 +107,10 @@ export default class AttendanceAdminService {
   }
 
   /** Supervisor shifts normalized to the attendance-record shape (role='supervisor'). */
-  private async listSupervisorShiftsForNomina(filter: any): Promise<any[]> {
+  private async listSupervisorShiftsForNomina(
+    filter: any,
+    departmentMemberUserIds: string[] | null = null,
+  ): Promise<any[]> {
     const db = this.db;
     const tenantId = this.tenantId;
     const { Op } = db.Sequelize;
@@ -91,6 +122,10 @@ export default class AttendanceAdminService {
       if (end) where.punchInTime = { ...(where.punchInTime || {}), [Op.lte]: new Date(end) };
     }
     if (filter?.status && filter.status !== 'all') where.status = filter.status;
+    if (departmentMemberUserIds) {
+      if (!departmentMemberUserIds.length) return [];
+      where.supervisorUserId = { [Op.in]: departmentMemberUserIds };
+    }
     const rows = await db.supervisorShift.findAll({ where, order: [['punchInTime', 'DESC']], limit: 1000 });
     if (!rows.length) return [];
     const uids = [...new Set(rows.map((r: any) => String(r.supervisorUserId)).filter(Boolean))];
@@ -141,7 +176,10 @@ export default class AttendanceAdminService {
   }
 
   /** Staff (administrative/office) shifts normalized to the record shape (role='administrative'). */
-  private async listStaffShiftsForNomina(filter: any): Promise<any[]> {
+  private async listStaffShiftsForNomina(
+    filter: any,
+    departmentMemberUserIds: string[] | null = null,
+  ): Promise<any[]> {
     const db = this.db;
     const tenantId = this.tenantId;
     const { Op } = db.Sequelize;
@@ -154,6 +192,10 @@ export default class AttendanceAdminService {
       if (end) where.punchInTime = { ...(where.punchInTime || {}), [Op.lte]: new Date(end) };
     }
     if (filter?.status && filter.status !== 'all') where.status = filter.status;
+    if (departmentMemberUserIds) {
+      if (!departmentMemberUserIds.length) return [];
+      where.userId = { [Op.in]: departmentMemberUserIds };
+    }
     const rows = await db.staffShift.findAll({ where, order: [['punchInTime', 'DESC']], limit: 1000 });
     if (!rows.length) return [];
     const uids = [...new Set(rows.map((r: any) => String(r.userId)).filter(Boolean))];

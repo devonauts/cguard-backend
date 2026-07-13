@@ -492,6 +492,21 @@ class GuardShiftRepository {
         });
       }
 
+      // Department filter (Nómina): pre-resolved securityGuard ids of the
+      // department's members. An empty array must match NOTHING (the caller
+      // resolved a department with no guard members).
+      if (filter.guardNameIdIn) {
+        const ids = (Array.isArray(filter.guardNameIdIn)
+          ? filter.guardNameIdIn
+          : [filter.guardNameIdIn]
+        ).filter(Boolean);
+        whereAnd.push(
+          ids.length
+            ? { guardNameId: { [Op.in]: ids } }
+            : { guardNameId: null },
+        );
+      }
+
       if (filter.completeInventoryCheck) {
         whereAnd.push({
           ['completeInventoryCheckId']: SequelizeFilterUtils.uuid(

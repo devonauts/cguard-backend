@@ -2,6 +2,7 @@ import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import TimeOffRequestRepository from '../database/repositories/timeOffRequestRepository';
 import { dispatch } from '../lib/notificationDispatcher';
+import { resolveDepartmentManagerUserId } from '../lib/departmentRouting';
 
 export default class TimeOffRequestService {
   options: IServiceOptions;
@@ -16,7 +17,18 @@ export default class TimeOffRequestService {
       const record = await TimeOffRequestRepository.create(data, { ...this.options, transaction });
       await SequelizeRepository.commitTransaction(transaction);
 
-      // Notify HR of time-off request
+      // Notify HR of the request — routed to the requester's department
+      // responsable when one exists (Settings › Departamentos), otherwise the
+      // whole HR/admin role group as before. record.guardId is the USER id.
+      const requesterUserId = record.guardId || this.options.currentUser?.id || null;
+      const managerUserId = requesterUserId
+        ? await resolveDepartmentManagerUserId(
+            this.options.database,
+            this.options.currentTenant?.id,
+            requesterUserId,
+          )
+        : null;
+
       dispatch('timeoff.requested', {
         guardName: record.employeeName || record.guardName ||
           this.options.currentUser?.fullName || this.options.currentUser?.email || null,
@@ -29,6 +41,7 @@ export default class TimeOffRequestService {
         tenantId: this.options.currentTenant?.id,
         sourceEntityType: 'timeOffRequest',
         sourceEntityId: record.id,
+        routeToUserId: managerUserId || undefined,
       }).catch(() => {});
 
       return record;
@@ -43,6 +56,25 @@ export default class TimeOffRequestService {
     try {
       const record = await TimeOffRequestRepository.updateStatus(id, data, { ...this.options, transaction });
       await SequelizeRepository.commitTransaction(transaction);
+
+      // Close the loop with the requester (in-app, SPECIFIC target). The
+      // templates existed but were never fired before.
+      const status = String(data?.status || '').toLowerCase();
+      if ((status === 'approved' || status === 'rejected') && record?.guardId) {
+        dispatch(status === 'approved' ? 'timeoff.approved' : 'timeoff.rejected', {
+          dateRange: record.startDate && record.endDate
+            ? `${record.startDate} – ${record.endDate}`
+            : (record.startDate || null),
+          reason: data?.comment || null,
+        }, {
+          database: this.options.database,
+          tenantId: this.options.currentTenant?.id,
+          recipientUserId: record.guardId,
+          sourceEntityType: 'timeOffRequest',
+          sourceEntityId: record.id,
+        }).catch(() => {});
+      }
+
       return record;
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(transaction);
