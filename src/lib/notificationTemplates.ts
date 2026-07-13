@@ -40,6 +40,8 @@ export type EventType =
   | 'attendance.late_self'
   | 'attendance.no_show_self'
   | 'attendance.outside_geofence'
+  | 'attendance.geofence_exit'
+  | 'attendance.geofence_return'
   | 'attendance.early_departure'
   | 'attendance.missed_clockout'
   | 'attendance.correction_submitted'
@@ -566,6 +568,23 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     emailSubject: (d) => `[CGuard] Marcación fuera de geocerca: ${d.guardName || 'Guardia'}`,
     emailHtml: (d) =>
       `<h2>📍 Marcación fuera de geocerca</h2><p><strong>Guardia:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.distanceM != null ? `<p><strong>Distancia:</strong> ${d.distanceM} m</p>` : ''}<p>Requiere revisión del supervisor.</p>`,
+  },
+  // Live geofence exit/return during an active shift (Reglas globales de
+  // puestos › alertas de geocerca). Fired from the location-ping pipeline.
+  'attendance.geofence_exit': {
+    title: (d) => `🚨 Salió de la geocerca: ${d.guardName || 'Vigilante'}`,
+    body: (d) => `${d.guardName || 'Vigilante'} salió de la geocerca durante su turno${d.stationName ? ` — ${d.stationName}` : ''}${d.distanceM != null ? ` (${d.distanceM} m del puesto)` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Vigilante fuera de geocerca: ${d.guardName || 'Vigilante'}`,
+    emailHtml: (d) =>
+      `<h2>🚨 Vigilante fuera de geocerca</h2><p><strong>Vigilante:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.distanceM != null ? `<p><strong>Distancia:</strong> ${d.distanceM} m</p>` : ''}<p>Salió del área de su puesto durante el turno. Verifique la situación.</p>`,
+  },
+  'attendance.geofence_return': {
+    title: (d) => `✅ Regresó a la geocerca: ${d.guardName || 'Vigilante'}`,
+    body: (d) => `${d.guardName || 'Vigilante'} volvió a entrar a la geocerca${d.stationName ? ` — ${d.stationName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
   },
   'attendance.early_departure': {
     title: (d) => `🔚 Salida anticipada: ${d.guardName || 'Guardia'}`,

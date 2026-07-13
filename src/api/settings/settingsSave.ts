@@ -3,6 +3,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import { resolveMobileAppSettings } from '../../services/mobileAppSettingsService';
+import { resolvePostRules } from '../../services/postRulesService';
 
 export default async (req, res, next) => {
   try {
@@ -16,6 +17,10 @@ export default async (req, res, next) => {
     // the row the mobile apps read from.
     if (settings.mobileAppSettings !== undefined) {
       settings.mobileAppSettings = resolveMobileAppSettings(settings.mobileAppSettings);
+    }
+    // Reglas globales de puestos: same rule — only known boolean keys land.
+    if (settings.postRules !== undefined) {
+      settings.postRules = resolvePostRules(settings.postRules);
     }
 
     const payload = await SettingsService.save(

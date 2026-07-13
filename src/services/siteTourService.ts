@@ -1,6 +1,7 @@
 import SequelizeRepository from '../database/repositories/sequelizeRepository';
 import { IServiceOptions } from './IServiceOptions';
 import { haversineDistance } from '../lib/geofence';
+import { getPostRules } from './postRulesService';
 
 /** Default checkpoint geofence radius (m) when the station defines none. Tighter
  *  than the clock-in default because a QR is a precise, single point. */
@@ -97,6 +98,23 @@ export default class SiteTourService {
       err.code = 400;
       throw err;
     }
+    // Regla global de puestos: rounds only count while ON DUTY. Enforced here
+    // (not just in the app) so off-shift scans can't pollute patrol data.
+    const rules = await getPostRules(this.options.database, tenantId);
+    if (rules.requireActiveShiftForRounds && securityGuardId) {
+      const activeShift = await this.options.database.guardShift.findOne({
+        where: { tenantId, guardNameId: securityGuardId, punchOutTime: null },
+        attributes: ['id'],
+      });
+      if (!activeShift) {
+        const err: any = new Error(
+          'Debes marcar tu entrada antes de escanear puntos de ronda.',
+        );
+        err.code = 400;
+        throw err;
+      }
+    }
+
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
     try {
       // tagIdentifier is only unique PER TENANT, so scope by tenantId — otherwise a

@@ -45,6 +45,11 @@ export default function (sequelize) {
       liveAccuracy: { type: DataTypes.FLOAT, allowNull: true },
       liveBattery: { type: DataTypes.INTEGER, allowNull: true },
       liveLocationAt: { type: DataTypes.DATE, allowNull: true },
+      // Geofence exit/return alerting state (postRules.geofenceExitAlert):
+      // last ALERTED side of the fence (null = unknown yet) + consecutive
+      // outside-ping streak used as GPS-jitter hysteresis before alerting.
+      liveGeofenceOutside: { type: DataTypes.BOOLEAN, allowNull: true },
+      liveGeofenceStreak: { type: DataTypes.INTEGER, allowNull: true },
       punchInChecklist: {
         type: DataTypes.TEXT,
         allowNull: true,

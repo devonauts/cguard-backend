@@ -52,6 +52,8 @@ export const EVENT_TO_ROW: Record<string, string> = {
   'attendance.late': 'attendance-exceptions',
   'attendance.no_show': 'attendance-exceptions',
   'attendance.outside_geofence': 'attendance-exceptions',
+  'attendance.geofence_exit': 'attendance-exceptions',
+  'attendance.geofence_return': 'attendance-exceptions',
   'attendance.early_departure': 'attendance-exceptions',
   'attendance.missed_clockout': 'attendance-exceptions',
   'attendance.correction_submitted': 'attendance-approvals',

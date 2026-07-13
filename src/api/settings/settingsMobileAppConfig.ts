@@ -13,6 +13,7 @@ import Error401 from '../../errors/Error401';
 import {
   resolveMobileAppSettings,
 } from '../../services/mobileAppSettingsService';
+import { resolvePostRules } from '../../services/postRulesService';
 
 export default async (req, res) => {
   try {
@@ -25,9 +26,12 @@ export default async (req, res) => {
     });
 
     const resolved = resolveMobileAppSettings(row ? (row as any).mobileAppSettings : null);
+    const postRules = resolvePostRules(row ? (row as any).postRules : null);
 
     await ApiResponseHandler.success(req, res, {
       ...resolved,
+      // Reglas de puestos the apps need for proactive UX (server re-enforces).
+      postRules,
       tenantName: tenant.name || null,
       // Canonical tenant logo (same source EmailSender uses).
       logoUrl: (row && (row as any).logoUrl) || null,
