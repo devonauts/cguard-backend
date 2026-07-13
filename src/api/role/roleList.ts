@@ -19,9 +19,14 @@ export default async (req, res, next) => {
       ? payload.rows
       : [];
 
+    // Fallback for tenants whose DB was never seeded with the built-in
+    // securitySupervisor role. Detect by slug/name — NOT by id: real DB rows
+    // carry UUID ids, so the old id-based check never matched and the
+    // synthetic row was appended even when the real one existed (duplicate
+    // "Supervisor de Seguridad" in the CRM).
     const hasSupervisorRole = rows.some((role) => {
-      const id = String(role?.id ?? role?.slug ?? role?.name ?? '').toLowerCase();
-      return id === 'securitysupervisor' || id.includes('supervisor');
+      const key = String(role?.slug ?? role?.name ?? '').toLowerCase();
+      return key === 'securitysupervisor';
     });
 
     if (noFilter && !hasSupervisorRole) {
@@ -30,6 +35,9 @@ export default async (req, res, next) => {
         name: Roles.values.securitySupervisor,
         slug: Roles.values.securitySupervisor,
         description: Roles.descriptions.securitySupervisor,
+        // Built-in: mark as system so the CRM shows "Predeterminado" and
+        // doesn't offer deleting a row that doesn't exist in the DB.
+        isSystem: true,
       };
 
       if (Array.isArray(payload)) {
