@@ -318,6 +318,30 @@ leaderTimeout(() => { runJob("DbBackup", () => require('./lib/dbBackup').runBack
 // Sync guard duty status every 5 minutes based on active shifts
 nodeSetInterval(() => { runJob("DutySync", syncGuardDutyStatus); }, 5 * 60 * 1000);
 
+// Guard inactivity alerts (Configuración Global de Vigilantes): on-duty guards
+// whose device went silent past the tenant threshold → guard.inactive.
+nodeSetInterval(() => {
+  runJob("GuardInactivity", async () => {
+    const database = await databaseInit();
+    const { runGuardInactivitySweep } = require('./services/guardInactivityService');
+    await runGuardInactivitySweep(database);
+  });
+}, 5 * 60 * 1000);
+
+// Guard credential/license expiry (daily; weekly re-alert until renewed).
+nodeSetInterval(() => {
+  runJob("LicenseExpiry", async () => {
+    const database = await databaseInit();
+    const { runLicenseExpirySweep } = require('./services/licenseExpiryService');
+    await runLicenseExpirySweep(database);
+  });
+}, 24 * 60 * 60 * 1000);
+leaderTimeout(() => runJob("LicenseExpiry", async () => {
+  const database = await databaseInit();
+  const { runLicenseExpirySweep } = require('./services/licenseExpiryService');
+  await runLicenseExpirySweep(database);
+}), 90 * 1000);
+
 // Run once on startup after a short delay. NOTE: boot kicks (here and below) go
 // through runJob too, so its in-flight guard prevents a slow boot run from
 // overlapping the first interval tick.

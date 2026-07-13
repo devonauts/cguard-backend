@@ -121,6 +121,29 @@ export default function (sequelize, DataTypes) {
           );
         },
       },
+      // Configuración global de vigilantes (inactivity alert, shift reminders,
+      // license expiry). JSON text; defaults merged in code
+      // (services/guardSettingsService.ts). Missing key = default.
+      guardSettings: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get(this: any) {
+          const raw = this.getDataValue('guardSettings');
+          if (!raw) return {};
+          if (typeof raw !== 'string') return raw;
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        },
+        set(this: any, val: any) {
+          this.setDataValue(
+            'guardSettings',
+            val == null ? null : typeof val === 'string' ? val : JSON.stringify(val),
+          );
+        },
+      },
       // Reglas globales de puestos (require-shift-for-rounds, geofence
       // exit/return alerts). JSON text; defaults merged in code
       // (services/postRulesService.ts). Missing key = default.

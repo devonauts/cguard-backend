@@ -15,6 +15,7 @@
 import { Op } from 'sequelize';
 import { timeLabelInTz } from '../lib/tenantTime';
 import { sendShiftReminder } from './communication/communicationService';
+import { getGuardSettings } from './guardSettingsService';
 
 interface Offset { key: string; ms: number; when: string }
 const OFFSETS: Offset[] = [
@@ -47,9 +48,20 @@ export async function runShiftReminders(db: any): Promise<void> {
   };
 
   let sent = 0;
+  // Per-tenant toggle (Configuración Global de Vigilantes › recordatorios).
+  const remindersEnabled: Record<string, boolean> = {};
+  const enabledFor = async (tenantId: string): Promise<boolean> => {
+    if (remindersEnabled[tenantId] === undefined) {
+      const gs = await getGuardSettings(db, tenantId);
+      remindersEnabled[tenantId] = gs.shiftRemindersEnabled;
+    }
+    return remindersEnabled[tenantId];
+  };
+
   for (const sh of shifts) {
     const s = sh.get({ plain: true });
     if (!s.guardId) continue;
+    if (s.tenantId && !(await enabledFor(String(s.tenantId)))) continue;
     const start = new Date(s.startTime).getTime();
 
     // Offsets already claimed per the loaded row — cheap in-memory pre-filter so

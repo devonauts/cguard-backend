@@ -50,6 +50,9 @@ export default function (sequelize) {
       // outside-ping streak used as GPS-jitter hysteresis before alerting.
       liveGeofenceOutside: { type: DataTypes.BOOLEAN, allowNull: true },
       liveGeofenceStreak: { type: DataTypes.INTEGER, allowNull: true },
+      // Last guard.inactive alert for this shift (one alert per silence
+      // episode — see guardInactivityService).
+      inactivityAlertAt: { type: DataTypes.DATE, allowNull: true },
       punchInChecklist: {
         type: DataTypes.TEXT,
         allowNull: true,

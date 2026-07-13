@@ -4,6 +4,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import { resolveMobileAppSettings } from '../../services/mobileAppSettingsService';
 import { resolvePostRules } from '../../services/postRulesService';
+import { resolveGuardSettings } from '../../services/guardSettingsService';
 
 export default async (req, res, next) => {
   try {
@@ -21,6 +22,10 @@ export default async (req, res, next) => {
     // Reglas globales de puestos: same rule — only known boolean keys land.
     if (settings.postRules !== undefined) {
       settings.postRules = resolvePostRules(settings.postRules);
+    }
+    // Configuración global de vigilantes: clamp to known keys/ranges.
+    if (settings.guardSettings !== undefined) {
+      settings.guardSettings = resolveGuardSettings(settings.guardSettings);
     }
 
     const payload = await SettingsService.save(

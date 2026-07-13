@@ -42,6 +42,8 @@ export type EventType =
   | 'attendance.outside_geofence'
   | 'attendance.geofence_exit'
   | 'attendance.geofence_return'
+  | 'guard.inactive'
+  | 'guard.license_expiring'
   | 'attendance.early_departure'
   | 'attendance.missed_clockout'
   | 'attendance.correction_submitted'
@@ -585,6 +587,32 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
     body: (d) => `${d.guardName || 'Vigilante'} volvió a entrar a la geocerca${d.stationName ? ` — ${d.stationName}` : ''}`,
     targetRoles: TARGET_ROLES.SUPERVISORS,
     sendEmail: false,
+  },
+  // Device silent while on duty (Configuración Global de Vigilantes › alerta
+  // de inactividad). Fired by the guardInactivityService sweep.
+  'guard.inactive': {
+    title: (d) => `📵 Sin señal del vigilante: ${d.guardName || 'Vigilante'}`,
+    body: (d) => `${d.guardName || 'Vigilante'} está de turno pero su dispositivo no reporta desde hace ${d.silentMinutes != null ? `${d.silentMinutes} min` : 'un buen rato'}${d.stationName ? ` — ${d.stationName}` : ''}. Verifique su estado.`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Sin señal del vigilante: ${d.guardName || 'Vigilante'}`,
+    emailHtml: (d) =>
+      `<h2>📵 Sin señal del vigilante</h2><p><strong>Vigilante:</strong> ${d.guardName || ''}</p>${d.stationName ? `<p><strong>Puesto:</strong> ${d.stationName}</p>` : ''}${d.silentMinutes != null ? `<p><strong>Sin reportar desde hace:</strong> ${d.silentMinutes} min</p>` : ''}<p>Está de turno pero su dispositivo dejó de reportar ubicación. Verifique su estado.</p>`,
+  },
+  // Credential/license approaching (or past) expiry — weekly reminder to HR
+  // until renewed. Fired by the licenseExpiryService daily sweep.
+  'guard.license_expiring': {
+    title: (d) =>
+      d.daysLeft != null && d.daysLeft < 0
+        ? `🪪 Credencial VENCIDA: ${d.guardName || 'Vigilante'}`
+        : `🪪 Credencial por vencer: ${d.guardName || 'Vigilante'}`,
+    body: (d) =>
+      `${d.licenseName || 'Credencial'} de ${d.guardName || 'vigilante'}${d.daysLeft != null && d.daysLeft < 0 ? ` venció el ${d.expiryDate}` : ` vence ${d.expiryDate}${d.daysLeft != null ? ` (en ${d.daysLeft} día(s))` : ''}`}.`,
+    targetRoles: TARGET_ROLES.HR,
+    sendEmail: true,
+    emailSubject: (d) => `[CGuard] Credencial ${d.daysLeft != null && d.daysLeft < 0 ? 'vencida' : 'por vencer'}: ${d.guardName || 'Vigilante'}`,
+    emailHtml: (d) =>
+      `<h2>🪪 Credencial ${d.daysLeft != null && d.daysLeft < 0 ? 'vencida' : 'por vencer'}</h2><p><strong>Vigilante:</strong> ${d.guardName || ''}</p><p><strong>Credencial:</strong> ${d.licenseName || ''}</p><p><strong>Vence:</strong> ${d.expiryDate || ''}${d.daysLeft != null && d.daysLeft >= 0 ? ` (en ${d.daysLeft} día(s))` : ''}</p><p>Gestione la renovación para evitar que el vigilante quede inhabilitado.</p>`,
   },
   'attendance.early_departure': {
     title: (d) => `🔚 Salida anticipada: ${d.guardName || 'Guardia'}`,
