@@ -15,6 +15,9 @@ export default function (sequelize) {
       punchInLat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       punchInLng: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       punchOutTime: { type: DataTypes.DATE, allowNull: true },
+      // Last guard.inactive alert for this shift (one alert per silence
+      // episode — see guardInactivityService supervisor leg).
+      inactivityAlertAt: { type: DataTypes.DATE, allowNull: true },
       punchOutLat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       punchOutLng: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
       observations: { type: DataTypes.TEXT, allowNull: true },

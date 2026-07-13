@@ -9,6 +9,8 @@ import { Op } from 'sequelize';
 export interface ResolvedRecipients {
   emails: string[];
   phones: string[];
+  /** Tenant-member USER ids of the resolved recipients (for app push). */
+  userIds: string[];
 }
 
 /** Roles that always receive role-targeted notifications, regardless of any
@@ -34,6 +36,7 @@ export async function resolveRecipients(
 ): Promise<ResolvedRecipients> {
   const emails = new Set<string>();
   const phones = new Set<string>();
+  const userIds = new Set<string>();
 
   try {
     // SPECIFIC target (template.targetRoles === null): single recipient.
@@ -51,7 +54,8 @@ export async function resolveRecipients(
       }
       if (email) emails.add(email);
       if (phone) phones.add(phone);
-      return { emails: [...emails], phones: [...phones] };
+      if (opts.recipientUserId) userIds.add(String(opts.recipientUserId));
+      return { emails: [...emails], phones: [...phones], userIds: [...userIds] };
     }
 
     // Role-targeted: collect everyone in the tenant holding a target role.
@@ -59,7 +63,7 @@ export async function resolveRecipients(
       .split(',')
       .map((r) => r.trim())
       .filter(Boolean);
-    if (!targetRoles.length) return { emails: [], phones: [] };
+    if (!targetRoles.length) return { emails: [], phones: [], userIds: [] };
 
     const narrow = !!opts.assignedPostSiteId;
     const include: any[] = [
@@ -85,7 +89,7 @@ export async function resolveRecipients(
         status: 'active',
         [Op.or]: targetRoles.map((r) => ({ roles: { [Op.like]: `%${r}%` } })),
       },
-      attributes: ['id', 'roles'],
+      attributes: ['id', 'userId', 'roles'],
       include,
     });
 
@@ -108,10 +112,11 @@ export async function resolveRecipients(
       const u = tu.user;
       if (u?.email) emails.add(u.email);
       if (u?.phoneNumber) phones.add(u.phoneNumber);
+      if (tu.userId) userIds.add(String(tu.userId));
     }
   } catch (err) {
     console.warn('[notificationRecipients] resolve failed:', (err as any)?.message || err);
   }
 
-  return { emails: [...emails], phones: [...phones] };
+  return { emails: [...emails], phones: [...phones], userIds: [...userIds] };
 }

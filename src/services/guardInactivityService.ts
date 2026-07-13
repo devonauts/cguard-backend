@@ -80,6 +80,71 @@ export async function runGuardInactivitySweep(db: any): Promise<void> {
       console.warn('[guardInactivity] shift sweep failed:', (err as any)?.message || err);
     }
   }
+
+  // ── Supervisores en patrullaje — same rule. Their app has no live* columns
+  // on the shift; last signal = latest supervisor locationPing (breadcrumb).
+  if (!db.supervisorShift) return;
+  const supShifts = await db.supervisorShift.findAll({
+    where: { punchOutTime: null },
+    attributes: ['id', 'tenantId', 'supervisorUserId', 'punchInTime', 'inactivityAlertAt'],
+    limit: 500,
+  });
+  for (const shift of supShifts) {
+    try {
+      const s = await settingsFor(String(shift.tenantId));
+      if (!s.inactivityAlert) continue;
+
+      let lastSeen: Date | null = shift.punchInTime ? new Date(shift.punchInTime) : null;
+      if (db.locationPing) {
+        const ping = await db.locationPing.findOne({
+          where: {
+            tenantId: shift.tenantId,
+            subjectType: 'supervisor',
+            userId: shift.supervisorUserId,
+            ...(lastSeen ? { recordedAt: { [Op.gte]: lastSeen } } : {}),
+          },
+          order: [['recordedAt', 'DESC']],
+          attributes: ['recordedAt'],
+        });
+        if (ping?.recordedAt && (!lastSeen || new Date(ping.recordedAt) > lastSeen)) {
+          lastSeen = new Date(ping.recordedAt);
+        }
+      }
+      if (!lastSeen) continue;
+      const silentMs = now - lastSeen.getTime();
+      if (silentMs < s.inactivityThresholdMin * 60_000) continue;
+      if (
+        shift.inactivityAlertAt &&
+        new Date(shift.inactivityAlertAt).getTime() >= lastSeen.getTime()
+      ) {
+        continue;
+      }
+
+      await shift.update({ inactivityAlertAt: new Date() });
+
+      const sup = await db.user.findByPk(shift.supervisorUserId, {
+        attributes: ['fullName', 'firstName', 'lastName', 'email'],
+      });
+      const name =
+        sup?.fullName ||
+        [sup?.firstName, sup?.lastName].filter(Boolean).join(' ') ||
+        sup?.email ||
+        'Supervisor';
+
+      dispatch('guard.inactive', {
+        guardName: name,
+        stationName: null,
+        silentMinutes: Math.floor(silentMs / 60_000),
+      }, {
+        database: db,
+        tenantId: String(shift.tenantId),
+        sourceEntityType: 'supervisorShift',
+        sourceEntityId: shift.id,
+      }).catch(() => {});
+    } catch (err) {
+      console.warn('[guardInactivity] supervisor sweep failed:', (err as any)?.message || err);
+    }
+  }
 }
 
 export default { runGuardInactivitySweep };

@@ -140,11 +140,11 @@ export async function dispatch(
     }
 
     if (rowId) {
-      // ── Matrix-governed event: send Email / SMS per the saved switches ─────
-      if (prefs.email || prefs.sms) {
+      // ── Matrix-governed event: Email / SMS / app-push per the switches ────
+      if (prefs.email || prefs.sms || prefs.dashboard) {
         // When routed to a department manager, resolve THAT user's email/phone
         // via the SPECIFIC branch instead of the role group.
-        const { emails, phones } = await resolveRecipients(
+        const { emails, phones, userIds } = await resolveRecipients(
           opts.database,
           opts.tenantId,
           routedUserId ? { ...template, targetRoles: null } : template,
@@ -173,6 +173,30 @@ export async function dispatch(
           sendMail({ to: allEmails, subject, html }).catch((err) => {
             console.error('[NotificationDispatcher] Email send failed:', err?.message || err);
           });
+        }
+
+        // ── App push (worker/supervisor apps) ─────────────────────────────
+        // Role-targeted CRM alerts also reach the recipients' phones. Mirrors
+        // the Panel switch (same row in Configuración › Notificaciones).
+        // SPECIFIC personal events are excluded on purpose: those flows
+        // (memos, self-reminders, time-off results) push through their own
+        // channel (communicationService) and would double-notify here.
+        if (
+          prefs.dashboard &&
+          template.targetRoles !== TARGET_ROLES.SPECIFIC &&
+          userIds.length
+        ) {
+          try {
+            const { pushToUser } = require('../services/pushService');
+            const pushData: Record<string, string> = { type: eventType };
+            if (opts.sourceEntityType) pushData.entityType = String(opts.sourceEntityType);
+            if (opts.sourceEntityId) pushData.entityId = String(opts.sourceEntityId);
+            for (const uid of userIds) {
+              pushToUser(opts.database, opts.tenantId, uid, { title, body, data: pushData }).catch(() => {});
+            }
+          } catch (err) {
+            console.warn('[NotificationDispatcher] push failed:', (err as any)?.message || err);
+          }
         }
 
         if (prefs.sms && phones.length) {
