@@ -59,6 +59,24 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // Resolve the incident type. The app sends incidentTypeId when the chosen
+    // label matched the tenant catalog; when it didn't (label drift, new
+    // tenant, custom taxonomy), it also sends incidentTypeName — find-or-create
+    // the catalog row by name so the TYPE is never silently lost.
+    let incidentTypeId = data.incidentTypeId || null;
+    if (!incidentTypeId && data.incidentTypeName && db.incidentType) {
+      try {
+        const name = String(data.incidentTypeName).trim().slice(0, 255);
+        if (name) {
+          const [typeRow] = await db.incidentType.findOrCreate({
+            where: { tenantId, name },
+            defaults: { name, active: true, tenantId, createdById: userId },
+          });
+          incidentTypeId = typeRow?.id || null;
+        }
+      } catch { /* type resolution is best-effort */ }
+    }
+
     const incident = await db.incident.create({
       title,
       subject: data.subject || title,
@@ -71,7 +89,7 @@ export default async (req: any, res: any) => {
       date: data.incidentAt ? new Date(data.incidentAt) : new Date(),
       incidentAt: data.incidentAt || new Date(),
       dateTime: data.incidentAt || new Date(),
-      incidentTypeId: data.incidentTypeId || null,
+      incidentTypeId,
       stationId,
       postSiteId,
       guardNameId: securityGuard ? securityGuard.id : null,

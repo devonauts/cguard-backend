@@ -106,6 +106,12 @@ export default (app) => {
     require('./guardMePatrolStart').default,
   );
 
+  // Finish a patrol — no-op when complete; alerts ops when finished incomplete
+  app.post(
+    `/tenant/:tenantId/guard/me/patrol/finish`,
+    require('./guardMePatrolFinish').default,
+  );
+
   // Update my own contact details (phone/address) — notifies HR in the CRM
   app.patch(
     `/tenant/:tenantId/guard/me/profile`,

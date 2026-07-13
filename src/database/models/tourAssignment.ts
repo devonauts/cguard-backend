@@ -17,6 +17,12 @@ export default function (sequelize) {
         type: DataTypes.DATE,
         allowNull: true,
       },
+      // Last "ronda perdida/incompleta" alert for this assignment (episode
+      // dedupe — see rondaMissedService).
+      missedNotifiedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       status: {
         type: DataTypes.STRING(50),
         allowNull: false,

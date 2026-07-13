@@ -328,6 +328,15 @@ nodeSetInterval(() => {
   });
 }, 5 * 60 * 1000);
 
+// Missed/overdue rondas (Configuración › Rondas › notificar perdidas/tarde).
+nodeSetInterval(() => {
+  runJob("RondaMissed", async () => {
+    const database = await databaseInit();
+    const { runRondaMissedSweep } = require('./services/rondaMissedService');
+    await runRondaMissedSweep(database);
+  });
+}, 5 * 60 * 1000);
+
 // Guard credential/license expiry (daily; weekly re-alert until renewed).
 nodeSetInterval(() => {
   runJob("LicenseExpiry", async () => {

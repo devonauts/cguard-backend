@@ -62,26 +62,41 @@ export async function notifyPatrol(
   opts: {
     tenantId: string;
     postSiteId?: string | null;
-    event: 'start' | 'complete';
+    event: 'start' | 'complete' | 'missed';
     routeName?: string;
     guardName?: string;
     settings: any;
     createdById?: string;
+    /** Extra context for 'missed' (e.g. "incompleta: 3 de 8 puntos"). */
+    detail?: string;
   },
 ) {
   try {
-    const { tenantId, postSiteId, event, routeName, guardName, settings, createdById } = opts;
-    const wantTenant = event === 'start' ? settings.notifyTenantOnStart : settings.notifyTenantOnComplete;
-    const wantClient = settings.notifyClient;
+    const { tenantId, postSiteId, event, routeName, guardName, settings, createdById, detail } = opts;
+    const wantTenant =
+      event === 'start'
+        ? settings.notifyTenantOnStart
+        : event === 'complete'
+          ? settings.notifyTenantOnComplete
+          : settings.notifyTenantOnMissed;
+    // Missed rondas are internal ops — never surfaced to the client app.
+    const wantClient = event !== 'missed' && settings.notifyClient;
     const wantEmail = event === 'complete' && !!settings.emailOnComplete;
     if (!wantTenant && !wantClient && !wantEmail) return;
 
-    const title = event === 'start' ? 'Ronda iniciada' : 'Ronda completada';
+    const title =
+      event === 'start'
+        ? 'Ronda iniciada'
+        : event === 'complete'
+          ? 'Ronda completada'
+          : '⚠️ Ronda perdida o incompleta';
     const route = routeName ? ` "${routeName}"` : '';
     const body =
       event === 'start'
-        ? `${guardName || 'Un guardia'} inició la ronda${route}.`
-        : `Ronda${route} completada por ${guardName || 'el guardia'}.`;
+        ? `${guardName || 'Un vigilante'} inició la ronda${route}.`
+        : event === 'complete'
+          ? `Ronda${route} completada por ${guardName || 'el vigilante'}.`
+          : `La ronda${route} de ${guardName || 'el vigilante'} no se completó${detail ? ` (${detail})` : ''}. Requiere verificación.`;
 
     if (wantTenant) {
       // PRIMARY CRM delivery: the CRM notification feed (bell) reads the
@@ -93,7 +108,8 @@ export async function notifyPatrol(
         const { storePlatformEvent } = require('../lib/platformEventStore');
         await storePlatformEvent(db, {
           tenantId,
-          eventType: event === 'start' ? 'patrol.started' : 'patrol.completed',
+          eventType:
+            event === 'start' ? 'patrol.started' : event === 'complete' ? 'patrol.completed' : 'patrol.missed',
           title,
           body: body.slice(0, 200),
           payload: { routeName: routeName || null, guardName: guardName || null, postSiteId: postSiteId || null },
@@ -165,7 +181,8 @@ export async function notifyPatrol(
       try {
         const { notifyClient } = require('./clientNotifyService');
         await notifyClient(db, tenantId, { postSiteId }, {
-          eventType: event === 'start' ? 'patrol.started' : 'patrol.completed',
+          eventType:
+            event === 'start' ? 'patrol.started' : event === 'complete' ? 'patrol.completed' : 'patrol.missed',
           title,
           body: body.slice(0, 200),
           data: { type: `patrol_${event}`, routeName: routeName || '' },
