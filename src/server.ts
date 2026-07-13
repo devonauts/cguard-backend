@@ -834,7 +834,7 @@ async function runAttendanceDetectionScheduler() {
               guardId: { [Op.in]: guardIds },
               tenantId: { [Op.in]: [...new Set(fresh.map((h) => h.shift.tenantId))] },
             },
-            attributes: ['id', 'fullName', 'email', 'guardId', 'tenantId'],
+            attributes: ['id', 'fullName', 'guardId', 'tenantId'],
           });
           for (const g of sgs) {
             const key = `${g.guardId}|${g.tenantId}`;
@@ -911,8 +911,7 @@ async function runAttendanceDetectionScheduler() {
               // Resolve the guard's email: prefer the linked user's email, then the
               // securityGuard.email. If neither exists, skip silently.
               const guardUser = shift.guardId ? userMap.get(String(shift.guardId)) || null : null;
-              let guardEmail: string | null = guardUser?.email || null;
-              if (!guardEmail && sg) guardEmail = sg.email || null;
+              const guardEmail: string | null = guardUser?.email || null;
               if (guardEmail) {
                 const selfEvent =
                   spec.type === 'late_arrival' ? 'attendance.late_self' : 'attendance.no_show_self';
