@@ -378,6 +378,7 @@ const es = {
     }
   },
   attendance: {
+    requestAlreadyDecided: 'Esta solicitud ya fue decidida.',
     errors: {
       locked: 'Este registro de asistencia está bloqueado porque su periodo de nómina está cerrado.',
     },

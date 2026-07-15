@@ -483,6 +483,12 @@ export default class AttendanceAdminService {
       where: { id, tenantId, deletedAt: null },
     });
     if (!reqRow) throw new Error404();
+    // Only a pending request can be decided — re-deciding an already
+    // approved/rejected/consumed row would re-notify the guard and could
+    // resurrect a consumed approval.
+    if (reqRow.status !== 'pending') {
+      throw new Error400(this.options.language, 'attendance.requestAlreadyDecided');
+    }
 
     await reqRow.update({
       status: decision,
@@ -573,6 +579,10 @@ export default class AttendanceAdminService {
       where: { id, tenantId, deletedAt: null },
     });
     if (!reqRow) throw new Error404();
+    // Only a pending request can be decided (see decideClockOutRequest).
+    if (reqRow.status !== 'pending') {
+      throw new Error400(this.options.language, 'attendance.requestAlreadyDecided');
+    }
 
     // On approval the late clock-in is allowed for the next 60 minutes only.
     const now = new Date();

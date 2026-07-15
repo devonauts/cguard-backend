@@ -378,6 +378,7 @@ const en = {
       }
     },
     attendance: {
+      requestAlreadyDecided: 'This request has already been decided.',
       errors: {
         locked: 'This attendance record is locked because its payroll period is closed.',
       },

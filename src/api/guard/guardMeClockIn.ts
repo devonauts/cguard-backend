@@ -209,6 +209,9 @@ export default async (req: any, res: any) => {
             tenantId,
             status: 'approved',
             createdAt: { [Op.gte]: startOfToday },
+            // The approval window (set at decision time, e.g. +60min) must not
+            // have lapsed — without this check an approval stays valid all day.
+            [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gte]: now } }],
             deletedAt: null,
           },
           order: [['createdAt', 'DESC']],
