@@ -174,7 +174,12 @@ export default async (req: any, res: any) => {
       scheduledEnd != null ? (scheduledEnd.getTime() - now.getTime()) / 60000 : null;
     // Early only when we KNOW the turno end and there's still more than the grace
     // window left. With no turno end we can't enforce a desired time → not early.
+    // Demo tenant: never early — the app-store reviewer clocks out at any moment
+    // (the clock-out controller applies the matching bypass).
+    const { configuredDemoTenantId } = require('../../services/demo/demoConstants');
+    const isDemoTenant = !!tenantId && tenantId === configuredDemoTenantId();
     const isEarlyClockOut =
+      !isDemoTenant &&
       !!activeClockIn &&
       minutesToScheduledEnd != null &&
       minutesToScheduledEnd > clockOutThresholdMin;
@@ -198,14 +203,11 @@ export default async (req: any, res: any) => {
     // Demo tenant (sales demos + app-store review): the reviewer must always see
     // the clock-in button regardless of schedule/rest-day. The punch controller
     // applies the matching bypass. Hard-gated to DEMO_TENANT_ID.
-    try {
-      const { configuredDemoTenantId } = require('../../services/demo/demoConstants');
-      if (tenantId && tenantId === configuredDemoTenantId()) {
-        clockInStationIds = Array.from(
-          new Set([...clockInStationIds, ...stations.map((s: any) => s.id)]),
-        );
-      }
-    } catch { /* never block the dashboard */ }
+    if (isDemoTenant) {
+      clockInStationIds = Array.from(
+        new Set([...clockInStationIds, ...stations.map((s: any) => s.id)]),
+      );
+    }
     const canClockIn = clockInStationIds.length > 0;
 
     // Guard profile photo (worker-app Profile screen). Prefer the guard's

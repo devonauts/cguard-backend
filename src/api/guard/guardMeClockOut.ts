@@ -90,7 +90,13 @@ export default async (req: any, res: any) => {
       ? Math.round((scheduledEnd.getTime() - now.getTime()) / 60000)
       : 0;
 
-    if (scheduledEnd && minutesEarly > thresholdMin) {
+    // Demo tenant (sales demos + app-store review): reviewers must be able to
+    // clock out at any moment without supervisor approval. Hard-gated to
+    // DEMO_TENANT_ID — every other tenant keeps the early-clock-out gate.
+    const { configuredDemoTenantId } = require('../../services/demo/demoConstants');
+    const demoBypass = !!tenantId && tenantId === configuredDemoTenantId();
+
+    if (!demoBypass && scheduledEnd && minutesEarly > thresholdMin) {
       const approved = await db.clockOutRequest.findOne({
         where: {
           guardShiftId: activeClock.id,
