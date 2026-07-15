@@ -364,6 +364,8 @@ export default class AttendanceAdminService {
       include: [
         { model: db.securityGuard, as: 'guard', attributes: ['id', 'fullName'] },
         { model: db.station, as: 'station', attributes: ['id', 'stationName'] },
+        // Who resolved/acknowledged it — needed for the CRM history trail.
+        { model: db.user, as: 'resolvedBy', attributes: ['id', 'firstName', 'lastName'] },
       ],
       order: [['detectedAt', 'DESC']],
       limit: query.limit ? Number(query.limit) : 50,
