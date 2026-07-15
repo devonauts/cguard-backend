@@ -19,6 +19,18 @@ import * as tenantUserClientAccounts from './tenantUserClientAccounts';
 const app = express();
 
 app.set('trust proxy', 1);
+
+// API responses are per-user, authenticated JSON — never cacheable. Without
+// this, express's default ETag plus the browser's heuristic caching produce
+// 304 Not Modified revalidations whose EMPTY body the frontend silently maps
+// to an empty list ("the page shows nothing but the data exists" — the same
+// bug businessInfoList once patched ad-hoc with a per-route no-store header).
+// Disabling ETags and sending no-store globally closes the entire class.
+app.disable('etag');
+app.use((_req: any, res: any, next: any) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 // CORS — explicit allowlist instead of reflecting ANY origin with credentials.
 // Allowed: configured web origins (CORS_ORIGINS env, comma-separated) + any
 // *.cguardpro.com host; plus the mobile app (Capacitor/Ionic webview origins:
