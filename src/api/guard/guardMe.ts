@@ -240,7 +240,10 @@ export default async (req: any, res: any) => {
       const startMs = new Date(currentShift.startTime).getTime();
       const lateMinutes = Math.max(0, Math.round((now.getTime() - startMs) / 60000));
       lateArrival = {
-        isLate: lateMinutes > lateGraceMin,
+        // Demo tenant: the punch controller bypasses the late gate, so never flag
+        // the reviewer as "late". Kept as a truthy object (isLate:false) so the
+        // app takes the backend value and skips its client-side late fallback.
+        isLate: !isDemoTenant && lateMinutes > lateGraceMin,
         lateMinutes,
         graceMin: lateGraceMin,
         shiftId: currentShift.id || null,
@@ -305,6 +308,11 @@ export default async (req: any, res: any) => {
     } catch {
       /* best-effort — leave default { state: 'none' } */
     }
+    // Demo tenant (sales demos / app-store review): the punch controller bypasses
+    // the clock-in window + late gate, so surface an OPEN window to the app —
+    // otherwise it shows the late-approval flow ("Solicitar entrada") and blocks a
+    // direct clock-in the backend would actually accept.
+    if (isDemoTenant) clockInWindow = { ...clockInWindow, state: 'open' };
 
     const response = {
       timezone: tz,
