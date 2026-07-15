@@ -195,6 +195,17 @@ export default async (req: any, res: any) => {
       // blocking — the controller still validates on the actual punch.
       clockInStationIds = stations.map((s: any) => s.id);
     }
+    // Demo tenant (sales demos + app-store review): the reviewer must always see
+    // the clock-in button regardless of schedule/rest-day. The punch controller
+    // applies the matching bypass. Hard-gated to DEMO_TENANT_ID.
+    try {
+      const { configuredDemoTenantId } = require('../../services/demo/demoConstants');
+      if (tenantId && tenantId === configuredDemoTenantId()) {
+        clockInStationIds = Array.from(
+          new Set([...clockInStationIds, ...stations.map((s: any) => s.id)]),
+        );
+      }
+    } catch { /* never block the dashboard */ }
     const canClockIn = clockInStationIds.length > 0;
 
     // Guard profile photo (worker-app Profile screen). Prefer the guard's

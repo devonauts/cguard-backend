@@ -50,6 +50,13 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // Demo tenant (sales demos + app-store review): reviewers clock in from any
+    // country at any hour, so location/geofence, the rest-day gate and the shift
+    // window are NOT enforced there. Hard-gated to the configured DEMO_TENANT_ID
+    // (see demoConstants) — every other tenant keeps full enforcement.
+    const { configuredDemoTenantId } = require('../../services/demo/demoConstants');
+    const demoBypass = !!tenantId && tenantId === configuredDemoTenantId();
+
     // Geofence enforcement is ON in production: location is required and the
     // distance is validated against the station radius. The only escape hatch is
     // the GUARD_GEOFENCE_BYPASS env var (off by default). To clock in from far
@@ -57,6 +64,7 @@ export default async (req: any, res: any) => {
     const TESTING_FORCE_BYPASS = false;
     const geofenceBypass =
       TESTING_FORCE_BYPASS ||
+      demoBypass ||
       ['1', 'true', 'yes', 'on'].includes(
         String(process.env.GUARD_GEOFENCE_BYPASS || '').trim().toLowerCase(),
       );
@@ -90,7 +98,7 @@ export default async (req: any, res: any) => {
       },
       attributes: ['id'],
     });
-    if (!shiftToday) {
+    if (!shiftToday && !demoBypass) {
       // Fallback: honor an active assignment ONLY when the guard has no generated
       // shifts at all for this station (generation lag) — never overrides a real
       // rest day, because a rest day still has other-day shifts at the station.
@@ -164,7 +172,7 @@ export default async (req: any, res: any) => {
     // Skipped entirely when the scheduled start is unknown (generation lag /
     // unschedulable) so we never wrongly block. Independent of geofence bypass.
     let approvedLateRequest: any = null;
-    if (match.scheduledStart) {
+    if (match.scheduledStart && !demoBypass) {
       const effectiveEarly = station.clockInEarlyBufferMin != null
         ? Number(station.clockInEarlyBufferMin)
         : Number(gate.settings.windows.earlyClockInMin);
