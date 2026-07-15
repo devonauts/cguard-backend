@@ -118,19 +118,43 @@ export default async (req: any, res: any) => {
     }
 
     // Resolve the matched shift so the request carries shift context.
+    const now = new Date();
     const match = await matchScheduledShift(db, {
       guardUserId: userId,
       stationId,
       tenantId,
-      at: new Date(),
+      at: now,
     });
+
+    // Fallback: the requested station may have no generated shift (the guard
+    // picked a post they aren't scheduled at, or generation lag). Use whatever
+    // shift is covering NOW for this guard at ANY station, so the request still
+    // carries the real scheduled start it's "late" against — otherwise the CRM
+    // approval row shows an empty "Inicio de turno".
+    let scheduledStart: Date | null = match.scheduledStart || null;
+    let shiftId: string | null = match.shiftId || null;
+    if (!scheduledStart) {
+      const active = await db.shift.findOne({
+        where: {
+          guardId: userId, tenantId,
+          startTime: { [Op.lte]: now },
+          endTime: { [Op.gte]: now },
+        },
+        attributes: ['id', 'startTime'],
+        order: [['startTime', 'DESC']],
+      });
+      if (active) {
+        scheduledStart = active.startTime;
+        shiftId = shiftId || active.id;
+      }
+    }
 
     const request = await db.clockInRequest.create({
       guardUserId: userId,
       guardId: securityGuard.id,
       stationId,
-      shiftId: match.shiftId || null,
-      scheduledStart: match.scheduledStart || null,
+      shiftId,
+      scheduledStart,
       reason: data.reason ? String(data.reason).slice(0, 500) : null,
       status: 'pending',
       tenantId,
