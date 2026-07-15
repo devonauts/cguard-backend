@@ -253,11 +253,75 @@ class ClientAccountRepository {
     };
 
     // clientAccount.name/lastName/email/phoneNumber are a DENORMALIZED CACHE
-    // synced from the linked user (single source of identity) — do not edit them
-    // independently. When a user is linked, derive these fields FROM that user
-    // and ignore any identity values sent in the request. When no user is linked
-    // yet, the request values act as staging and are reconciled when the user is
-    // provisioned (see CustomerIdentityService).
+    // synced from the linked user (single source of identity). Ignoring the
+    // request values silently REVERTED every admin rename (Seguridad BAS: the
+    // site changed manager, saved the new name 6 times, it always came back).
+    // Correct behaviour: when the admin edits identity fields, propagate them
+    // TO the linked user first (email only when globally free), then derive
+    // back as before — so every denormalized copy follows.
+    {
+      const linkedUserId = (updateData as any).userId || record.userId;
+      if (linkedUserId) {
+        const linkedUser = await options.database.user.findByPk(linkedUserId, { transaction });
+        if (linkedUser) {
+          const patch: any = {};
+          const reqName = (data?.name || data?.commercialName || '').toString().trim();
+          const reqLast =
+            typeof data?.lastName !== 'undefined' ? (data.lastName || '').toString().trim() : undefined;
+          const reqPhone =
+            typeof data?.phoneNumber !== 'undefined' ? (data.phoneNumber || '').toString().trim() : undefined;
+          const reqEmail =
+            typeof data?.email !== 'undefined' && data.email
+              ? data.email.toString().trim().toLowerCase()
+              : undefined;
+
+          if (reqName && reqName !== (linkedUser.firstName || '').toString().trim()) {
+            patch.firstName = reqName;
+          }
+          if (reqLast !== undefined && reqLast !== (linkedUser.lastName || '').toString().trim()) {
+            patch.lastName = reqLast || null;
+          }
+          if (reqPhone !== undefined && reqPhone !== (linkedUser.phoneNumber || '').toString().trim()) {
+            patch.phoneNumber = reqPhone || null;
+          }
+          if (reqEmail && reqEmail !== (linkedUser.email || '').toString().trim().toLowerCase()) {
+            // users.email is the login — only take it when no other account owns it.
+            const taken = await options.database.user.findOne({
+              where: { email: reqEmail, id: { [Op.ne]: linkedUser.id } },
+              transaction,
+            });
+            if (taken) {
+              throw new Error400(
+                options.language,
+                'errors.validation.message',
+                'Ese correo ya pertenece a otra cuenta. Usa un correo distinto para el cliente.',
+              );
+            }
+            patch.email = reqEmail;
+          }
+
+          if (Object.keys(patch).length) {
+            if (patch.firstName !== undefined || patch.lastName !== undefined) {
+              const f = (patch.firstName ?? linkedUser.firstName ?? '').toString().trim();
+              const l = ((patch.lastName === undefined ? linkedUser.lastName : patch.lastName) ?? '')
+                .toString()
+                .trim();
+              patch.fullName = `${f} ${l}`.trim() || null;
+            }
+            await linkedUser.update(patch, { transaction });
+            // Fan the new identity out to every denormalized copy (guard rows,
+            // other clientAccounts of this user, etc.). Best-effort.
+            try {
+              const { syncIdentityFromUser } = require('../../services/identitySync');
+              await syncIdentityFromUser(options.database, linkedUser.id, options);
+            } catch (e) {
+              console.warn('clientAccountRepository.update: identity fan-out failed', (e as any)?.message || e);
+            }
+          }
+        }
+      }
+    }
+
     try {
       const linkedUserId = (updateData as any).userId || record.userId;
       if (linkedUserId) {
