@@ -125,23 +125,29 @@ class CertificationRepository {
       throw new Error404();
     }
 
-    const imageUrl = await this._resolveFileUrl(data.image?.[0]);
-    const iconUrl = await this._resolveFileUrl(data.icon?.[0]);
+    // Presence-guarded: only recompute the legacy imageUrl/iconUrl columns
+    // when the payload actually carries image/icon — a partial update that
+    // omits them must not null the stored values.
+    const updatePatch: any = {
+      ...lodash.pick(data, [
+        'title',
+        'code',
+        'description',
+        'acquisitionDate',
+        'expirationDate',
+        'importHash',
+      ]),
+      updatedById: currentUser.id,
+    };
+    if (data.image !== undefined) {
+      updatePatch.imageUrl = await this._resolveFileUrl(data.image?.[0]);
+    }
+    if (data.icon !== undefined) {
+      updatePatch.iconUrl = await this._resolveFileUrl(data.icon?.[0]);
+    }
 
     record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'title',
-          'code',
-          'description',
-          'acquisitionDate',
-          'expirationDate',          
-          'importHash',
-        ]),
-        imageUrl,
-        iconUrl,
-        updatedById: currentUser.id,
-      },
+      updatePatch,
       {
         transaction,
       },

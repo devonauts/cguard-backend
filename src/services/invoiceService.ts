@@ -167,8 +167,16 @@ export default class InvoiceService {
         throw new Error400(this.options.language, 'invoice.errors.cannotModifySentPaid');
       }
 
-      data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
-      data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
+      // Only sanitize clientId/postSiteId when the caller actually sent them.
+      // Unconditionally assigning filterIdInTenant(undefined) → null made the
+      // keys present-with-null and defeated the repository's partial-update
+      // guard: a status-only update wiped the invoice's client & site links.
+      if (Object.prototype.hasOwnProperty.call(data, 'clientId')) {
+        data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'postSiteId')) {
+        data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
+      }
 
       const record = await InvoiceRepository.update(id, data, { ...this.options, transaction });
 

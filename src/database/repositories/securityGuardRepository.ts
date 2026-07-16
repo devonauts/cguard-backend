@@ -640,6 +640,9 @@ class SecurityGuardRepository {
       'importHash',
       'languages',
       'skills',
+      'guardType',
+      'workRules',
+      'availability',
     ];
 
     const updatePayload: any = {};

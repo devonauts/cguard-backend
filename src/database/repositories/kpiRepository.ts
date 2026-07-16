@@ -81,8 +81,16 @@ class KpiRepository {
           'verificationReports',
           'verificationReportsNumber',
         ]),
-        guardId: data.guardId || data.guard || null,
-        postSiteId: data.postSiteId || data.postSite || null,
+        // Presence-guarded: a partial update (e.g. toggling `active`) must not
+        // wipe the KPI's guard/post-site links (Sequelize ignores undefined).
+        guardId:
+          data.guardId !== undefined || data.guard !== undefined
+            ? (data.guardId || data.guard || null)
+            : undefined,
+        postSiteId:
+          data.postSiteId !== undefined || data.postSite !== undefined
+            ? (data.postSiteId || data.postSite || null)
+            : undefined,
         updatedById: currentUser.id,
       },
       { transaction },

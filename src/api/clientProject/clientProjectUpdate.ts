@@ -41,10 +41,35 @@ export default async (req, res) => {
     if (body.assignedGuards !== undefined) updates.assignedGuards = Array.isArray(body.assignedGuards) ? body.assignedGuards : [];
     if (body.notes !== undefined) updates.notes = body.notes || null;
     if (body.businessInfoId !== undefined || body.siteId !== undefined) {
-      updates.businessInfoId = body.businessInfoId || body.siteId || null;
+      const newBusinessInfoId = body.businessInfoId || body.siteId || null;
+      if (newBusinessInfoId) {
+        // Tenant isolation (same rule as clientAccountId below): never
+        // re-parent a project onto another tenant's post site.
+        const site = await db.businessInfo.findOne({
+          where: { id: newBusinessInfoId, tenantId, deletedAt: null },
+          attributes: ['id'],
+        });
+        if (!site) {
+          return res.status(404).json({ message: 'businessInfo not found in this tenant' });
+        }
+      }
+      updates.businessInfoId = newBusinessInfoId;
     }
     if (body.clientAccountId !== undefined || body.clientId !== undefined) {
-      updates.clientAccountId = body.clientAccountId || body.clientId;
+      const newClientAccountId = body.clientAccountId || body.clientId;
+      if (newClientAccountId) {
+        // Tenant isolation (mirrors clientProjectCreate): the new clientAccount
+        // MUST belong to this tenant — never re-parent a project onto another
+        // tenant's client.
+        const client = await db.clientAccount.findOne({
+          where: { id: newClientAccountId, tenantId, deletedAt: null },
+          attributes: ['id'],
+        });
+        if (!client) {
+          return res.status(404).json({ message: 'clientAccount not found in this tenant' });
+        }
+        updates.clientAccountId = newClientAccountId;
+      }
     }
 
     await project.update(updates);

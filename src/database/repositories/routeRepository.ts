@@ -78,6 +78,8 @@ class RouteRepository {
         address: p.address || null,
         lat: p.lat || null,
         lng: p.lng || null,
+        siteType: p.siteType || 'station',
+        tasks: p.tasks || null,
       }));
 
       await options.database.routePoint.bulkCreate(points, { transaction });
@@ -143,7 +145,7 @@ class RouteRepository {
     record = await record.update(
       {
         name: data.name,
-        description: data.description || null,
+        description: data.description !== undefined ? (data.description || null) : undefined,
         continuous: data.continuous !== undefined ? data.continuous : record.continuous,
         // Presence-guarded: a partial edit must not null the window/guard or
         // silently reset toggles to false (!! coerced ABSENT to false).
@@ -178,6 +180,8 @@ class RouteRepository {
         address: p.address || null,
         lat: p.lat || null,
         lng: p.lng || null,
+        siteType: p.siteType || 'station',
+        tasks: p.tasks || null,
       }));
       if (points.length) {
         await options.database.routePoint.bulkCreate(points, { transaction });

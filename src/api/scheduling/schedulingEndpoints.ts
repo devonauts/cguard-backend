@@ -32,12 +32,18 @@ export async function rotationStyleCreate(req, res) {
     new PermissionChecker(req).validateHas(Permissions.values.stationCreate);
     const tenantId = req.currentTenant.id;
     const { name, description, dayShifts, nightShifts, restDays } = req.body?.data || req.body || {};
+    // NaN-guarded (not `|| default`): an explicit 0 must persist as 0 — e.g. a
+    // night-only rotation (0 días) or a no-rest pattern.
+    const toCount = (value: any, dflt: number) => {
+      const n = parseInt(value);
+      return Number.isNaN(n) ? dflt : n;
+    };
     const record = await req.database.rotationStyle.create({
       name,
       description,
-      dayShifts: parseInt(dayShifts) || 5,
-      nightShifts: parseInt(nightShifts) || 0,
-      restDays: parseInt(restDays) || 2,
+      dayShifts: toCount(dayShifts, 5),
+      nightShifts: toCount(nightShifts, 0),
+      restDays: toCount(restDays, 2),
       isSystem: false,
       tenantId,
       createdById: req.currentUser.id,

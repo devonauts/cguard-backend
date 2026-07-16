@@ -95,20 +95,28 @@ class BillingRepository {
       throw new Error404();
     }
 
+    const toUpdate: any = {
+      ...lodash.pick(data, [
+        'invoiceNumber',
+        'status',
+        'montoPorPagar',
+        'lastPaymentDate',
+        'nextPaymentDate',
+        'description',
+        'importHash',
+      ]),
+      updatedById: currentUser.id,
+    };
+
+    // Only set clientsInvoicedId if provided in the payload. This prevents
+    // accidental unlinking of the invoiced client on partial updates
+    // (e.g. only changing the payment status).
+    if (Object.prototype.hasOwnProperty.call(data, 'clientsInvoiced')) {
+      toUpdate.clientsInvoicedId = data.clientsInvoiced || null;
+    }
+
     record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'invoiceNumber',
-          'status',
-          'montoPorPagar',
-          'lastPaymentDate',
-          'nextPaymentDate',
-          'description',          
-          'importHash',
-        ]),
-        clientsInvoicedId: data.clientsInvoiced || null,
-        updatedById: currentUser.id,
-      },
+      toUpdate,
       {
         transaction,
       },

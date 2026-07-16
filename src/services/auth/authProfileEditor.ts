@@ -28,6 +28,7 @@ export default class AuthProfileEditor {
         this.data,
         {
           ...this.options,
+          transaction: this.transaction,
           bypassPermissionValidation: true,
         },
       );

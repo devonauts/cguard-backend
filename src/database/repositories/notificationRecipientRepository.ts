@@ -90,10 +90,15 @@ class NotificationRecipientRepository {
           'recipientId',
           'readStatus',
           'deliveryStatus',
-          'dateDelivered',          
+          'dateDelivered',
           'importHash',
         ]),
-        notificationId: data.notification || null,
+        // Presence-guarded: a partial update (e.g. marking readStatus only) must
+        // not detach the row from its notification (Sequelize ignores undefined).
+        notificationId:
+          data.notification !== undefined
+            ? data.notification || null
+            : undefined,
         updatedById: currentUser.id,
       },
       {

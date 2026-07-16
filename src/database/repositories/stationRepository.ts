@@ -38,6 +38,7 @@ class StationRepository {
           'geofencePolygon',
           'clockInEarlyBufferMin',
           'clockInLateGraceMin',
+          'isMobile',
           'importHash',
           'postSiteId',
         ]),

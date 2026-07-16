@@ -11,6 +11,17 @@ export default class InventoryAssignmentRepository {
     const tenant = SequelizeRepository.getCurrentTenant(options);
     const transaction = SequelizeRepository.getTransaction(options);
 
+    // Tenant-ownership check: the assigned item must belong to the current
+    // tenant (prevents cross-tenant assignment + item-status mutation).
+    if (data.inventoryItemId) {
+      const item = await options.database.inventoryItem.findOne({
+        where: { id: data.inventoryItemId, tenantId: tenant.id },
+        attributes: ['id'],
+        transaction,
+      });
+      if (!item) throw new Error404();
+    }
+
     const record = await options.database.inventoryAssignment.create(
       {
         ...lodash.pick(data, [
@@ -29,7 +40,7 @@ export default class InventoryAssignmentRepository {
     if (!data.returnedAt) {
       await options.database.inventoryItem.update(
         { status: 'asignado', updatedById: currentUser.id },
-        { where: { id: data.inventoryItemId }, transaction },
+        { where: { id: data.inventoryItemId, tenantId: tenant.id }, transaction },
       );
     }
 
@@ -62,11 +73,13 @@ export default class InventoryAssignmentRepository {
       { transaction },
     );
 
-    // Update inventoryItem status based on returnedAt
-    const itemStatus = data.returnedAt ? 'disponible' : 'asignado';
+    // Update inventoryItem status based on the PERSISTED returnedAt (not the
+    // incoming patch — a partial edit of a returned assignment must not flip
+    // the item back to 'asignado').
+    const itemStatus = record.returnedAt ? 'disponible' : 'asignado';
     await options.database.inventoryItem.update(
       { status: itemStatus, updatedById: currentUser.id },
-      { where: { id: record.inventoryItemId }, transaction },
+      { where: { id: record.inventoryItemId, tenantId: currentTenant.id }, transaction },
     );
 
     await this._createAuditLog(AuditLogRepository.UPDATE, record, data, options);

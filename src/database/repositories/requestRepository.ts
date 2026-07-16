@@ -42,7 +42,10 @@ class RequestRepository {
         ]),
         // prefer explicit dateTime, fall back to incidentAt when provided
         dateTime: data.dateTime || data.incidentAt || null,
-        guardNameId: data.guardName || data.guardId || null,
+        // Prefer the sanitized guardId (RequestService runs filterIdInTenant on
+        // it, folding in the legacy guardName alias); only fall back to the raw
+        // guardName when guardId was never set (direct repository callers).
+        guardNameId: (data.guardId !== undefined ? data.guardId : data.guardName) || null,
         clientId: data.clientId || null,
         siteId: data.siteId || null,
         stationId: data.station || data.stationId || null,
@@ -125,11 +128,21 @@ class RequestRepository {
         ]),
         // keep dateTime consistent with incidentAt if dateTime is not provided
         dateTime: data.dateTime || data.incidentAt || null,
-        guardNameId: data.guardName || data.guardId || null,
-        clientId: data.clientId || null,
-        siteId: data.siteId || null,
-        stationId: data.station || data.stationId || null,
-        incidentTypeId: data.incidentTypeId || null,
+        // Presence-guarded FKs (Sequelize ignores undefined): a partial update
+        // (e.g. status-only) must not detach client/site/station/type links.
+        // Sanitized guardId wins over the raw legacy guardName alias (see create).
+        guardNameId:
+          data.guardId !== undefined || data.guardName !== undefined
+            ? (data.guardId !== undefined ? data.guardId : data.guardName) || null
+            : undefined,
+        clientId: data.clientId !== undefined ? data.clientId || null : undefined,
+        siteId: data.siteId !== undefined ? data.siteId || null : undefined,
+        stationId:
+          data.station !== undefined || data.stationId !== undefined
+            ? data.station || data.stationId || null
+            : undefined,
+        incidentTypeId:
+          data.incidentTypeId !== undefined ? data.incidentTypeId || null : undefined,
         updatedById: currentUser.id,
       },
       {
@@ -221,7 +234,8 @@ class RequestRepository {
 
     // relation ids: only set when provided
     if (Object.prototype.hasOwnProperty.call(data, 'guardId') || Object.prototype.hasOwnProperty.call(data, 'guardName')) {
-      toUpdate.guardNameId = data.guardName || data.guardId || null;
+      // Sanitized guardId wins over the raw legacy guardName alias (see create).
+      toUpdate.guardNameId = (data.guardId !== undefined ? data.guardId : data.guardName) || null;
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'clientId')) {

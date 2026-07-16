@@ -21,6 +21,7 @@ class ClientContactRepository {
       postSiteId: data.postSiteId || data.postSite || null,
       allowGuard: data.allowGuard || false,
       clientAccountId: data.clientAccountId || null,
+      importHash: data.importHash || null,
       tenantId: tenant.id,
       createdById: currentUser.id,
       updatedById: currentUser.id,
@@ -44,14 +45,21 @@ class ClientContactRepository {
       throw new Error404();
     }
 
+    // Presence-guarded: only keys present in the payload are written — a
+    // partial update (e.g. { name }) must not NULL email/mobile/description/
+    // postSiteId nor silently reset allowGuard to false (Sequelize ignores
+    // undefined values in the patch).
     record = await record.update(
       {
         name: data.name,
-        email: data.email || null,
-        mobile: data.mobile || null,
-        description: data.description || null,
-        postSiteId: data.postSiteId || data.postSite || null,
-        allowGuard: data.allowGuard || false,
+        email: data.email !== undefined ? (data.email || null) : undefined,
+        mobile: data.mobile !== undefined ? (data.mobile || null) : undefined,
+        description: data.description !== undefined ? (data.description || null) : undefined,
+        postSiteId:
+          data.postSiteId !== undefined || data.postSite !== undefined
+            ? (data.postSiteId || data.postSite || null)
+            : undefined,
+        allowGuard: data.allowGuard !== undefined ? !!data.allowGuard : undefined,
         updatedById: currentUser.id,
       },
       { transaction },

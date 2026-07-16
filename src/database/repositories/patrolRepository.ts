@@ -99,8 +99,12 @@ class PatrolRepository {
           'status',          
           'importHash',
         ]),
-        assignedGuardId: data.assignedGuard || null,
-        stationId: data.station || null,
+        // Presence-guarded: a partial update (e.g. completed only) must not
+        // null the guard/station. Sequelize ignores undefined in patches.
+        assignedGuardId:
+          data.assignedGuard !== undefined ? (data.assignedGuard || null) : undefined,
+        stationId:
+          data.station !== undefined ? (data.station || null) : undefined,
         updatedById: currentUser.id,
       },
       {
@@ -108,12 +112,18 @@ class PatrolRepository {
       },
     );
 
-    await record.setCheckpoints(data.checkpoints || [], {
-      transaction,
-    });
-    await record.setLogs(data.logs || [], {
-      transaction,
-    });
+    // Only re-set associations when the payload actually carries them —
+    // otherwise a partial update detaches every checkpoint/log.
+    if (data.checkpoints !== undefined) {
+      await record.setCheckpoints(data.checkpoints || [], {
+        transaction,
+      });
+    }
+    if (data.logs !== undefined) {
+      await record.setLogs(data.logs || [], {
+        transaction,
+      });
+    }
 
 
 

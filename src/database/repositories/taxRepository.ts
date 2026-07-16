@@ -15,23 +15,21 @@ class TaxRepository {
         const tenant = SequelizeRepository.getCurrentTenant(options);
         const transaction = SequelizeRepository.getTransaction(options);
 
-        // Validate uniqueness of name within the tenant
-        try {
-            if (data.name) {
-                const existing = await options.database.tax.findOne({
-                    where: {
-                        tenantId: tenant.id,
-                        name: data.name,
-                    },
-                    transaction,
-                });
+        // Validate uniqueness of name within the tenant. Any failure here
+        // (including infrastructure errors) must propagate — swallowing it
+        // would silently skip the uniqueness gate.
+        if (data.name) {
+            const existing = await options.database.tax.findOne({
+                where: {
+                    tenantId: tenant.id,
+                    name: data.name,
+                },
+                transaction,
+            });
 
-                if (existing) {
-                    throw new Error400(options.language, 'entities.tax.errors.exists');
-                }
+            if (existing) {
+                throw new Error400(options.language, 'entities.tax.errors.exists');
             }
-        } catch (err) {
-            if (err instanceof Error400) throw err;
         }
 
         const record = await options.database.tax.create(
@@ -79,25 +77,22 @@ class TaxRepository {
             throw new Error404();
         }
 
-        // Validate uniqueness of name within the tenant (exclude current record)
-        try {
-            if (data.name) {
-                const existing = await options.database.tax.findOne({
-                    where: {
-                        tenantId: currentTenant.id,
-                        name: data.name,
-                        id: { [Op.ne]: id },
-                    },
-                    transaction,
-                });
+        // Validate uniqueness of name within the tenant (exclude current record).
+        // Any failure here (including infrastructure errors) must propagate —
+        // swallowing it would silently skip the uniqueness gate.
+        if (data.name) {
+            const existing = await options.database.tax.findOne({
+                where: {
+                    tenantId: currentTenant.id,
+                    name: data.name,
+                    id: { [Op.ne]: id },
+                },
+                transaction,
+            });
 
-                if (existing) {
-                    console.warn('Tax update validation: duplicate name detected', { existingId: existing.id, name: existing.name });
-                    throw new Error400(options.language, 'entities.tax.errors.exists');
-                }
+            if (existing) {
+                throw new Error400(options.language, 'entities.tax.errors.exists');
             }
-        } catch (err) {
-            if (err instanceof Error400) throw err;
         }
 
         record = await record.update(

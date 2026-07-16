@@ -64,10 +64,21 @@ export default class PatrolService {
       if (data.supervisorId && !data.assignedGuard) {
         data.assignedGuard = data.supervisorId;
       }
-      data.assignedGuard = await UserRepository.filterIdInTenant(data.assignedGuard, { ...this.options, transaction });
-      data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
-      data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });
-      data.logs = await PatrolLogRepository.filterIdsInTenant(data.logs, { ...this.options, transaction });
+      // Only sanitize keys the payload actually carries: filterIdInTenant(undefined)
+      // resolves to null / [] and would clobber the stored guard/station/relations
+      // on a partial update (the repository presence-guards undefined).
+      if (data.assignedGuard !== undefined) {
+        data.assignedGuard = await UserRepository.filterIdInTenant(data.assignedGuard, { ...this.options, transaction });
+      }
+      if (data.station !== undefined) {
+        data.station = await StationRepository.filterIdInTenant(data.station, { ...this.options, transaction });
+      }
+      if (data.checkpoints !== undefined) {
+        data.checkpoints = await PatrolCheckpointRepository.filterIdsInTenant(data.checkpoints, { ...this.options, transaction });
+      }
+      if (data.logs !== undefined) {
+        data.logs = await PatrolLogRepository.filterIdsInTenant(data.logs, { ...this.options, transaction });
+      }
 
       const record = await PatrolRepository.update(
         id,

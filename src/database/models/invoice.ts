@@ -77,6 +77,12 @@ export default function (sequelize) {
           return this.getDataValue('sentAt') ? moment.utc(this.getDataValue('sentAt')).format() : null;
         },
       },
+      // Estimate this invoice was converted from — used as the idempotency /
+      // dedupe key by estimateService.convert (double-click/retry safe).
+      referenceEstimateId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       notes: {
         type: DataTypes.STRING(1000),
       },

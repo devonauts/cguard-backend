@@ -92,10 +92,16 @@ class AdditionalServiceRepository {
           'dvr',
           'dvrSerialCode',
           'juegoDeCamarasInteriores',
-          'juegoDeCamarasExteriores',          
+          'juegoDeCamarasExteriores',
           'importHash',
         ]),
-        stationsId: data.stations || null,
+        // FIX: only remap stations → stationsId when the patch actually sends
+        // `stations`. Sequelize ignores undefined, so partial updates (e.g.
+        // editing only dvrSerialCode) no longer wipe the station link to null.
+        stationsId:
+          data.stations !== undefined
+            ? data.stations || null
+            : undefined,
         updatedById: currentUser.id,
       },
       {

@@ -16,15 +16,19 @@ export default async (req, res) => {
     const name = String(data.name || '').trim().slice(0, 120);
     if (!name) throw new Error400(req.language, 'errors.validation.message');
 
-    // Duplicate-name guard (case-insensitive within the tenant).
+    // Duplicate-name guard (case-insensitive within the tenant). The probe is
+    // tenant-scoped in the query itself — an unscoped LOWER(name) lookup used to
+    // return a same-named row from ANOTHER tenant first and let the own-tenant
+    // duplicate slip through.
+    // Plain tenant-scoped equality: the column's utf8mb4_unicode_ci collation
+    // makes it case-insensitive on MySQL, and the query stays indexed (the old
+    // LOWER(name) probe was unscoped AND unindexable; a findAll rewrite loaded
+    // the whole tenant's departments).
     const dupe = await db.department.findOne({
-      where: db.Sequelize.where(
-        db.Sequelize.fn('LOWER', db.Sequelize.col('name')),
-        name.toLowerCase(),
-      ),
-    // eslint-disable-next-line
-    } as any);
-    if (dupe && dupe.tenantId === tenant.id) {
+      where: { tenantId: tenant.id, name },
+      attributes: ['id'],
+    });
+    if (dupe) {
       throw new Error400(req.language, 'errors.validation.message', 'Ya existe un departamento con ese nombre.');
     }
 

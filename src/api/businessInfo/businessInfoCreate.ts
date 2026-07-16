@@ -31,6 +31,10 @@ export default async (req, res, next) => {
       return fallback;
     };
 
+    // tarifas: same coercion the update handler applies ('' → null, else Number)
+    const chargeRateRaw = find(['chargeRate'], undefined);
+    const payRateRaw = find(['payRate'], undefined);
+
     const mapped = {
       companyName: find(['companyName', 'name', 'postSiteName'], null),
       description: find(['description', 'notes', 'postSiteNotes', 'name'], null),
@@ -50,6 +54,18 @@ export default async (req, res, next) => {
       postalCode: find(['postalCode', 'postal_code'], undefined),
       serviceType: find(['serviceType'], undefined),
       serviceConfig: find(['serviceConfig'], undefined),
+      chargeRate:
+        chargeRateRaw === undefined
+          ? undefined
+          : chargeRateRaw === '' || chargeRateRaw === null
+          ? null
+          : Number(chargeRateRaw),
+      payRate:
+        payRateRaw === undefined
+          ? undefined
+          : payRateRaw === '' || payRateRaw === null
+          ? null
+          : Number(payRateRaw),
     };
 
     // Validate required fields — return 400 instead of saving placeholders

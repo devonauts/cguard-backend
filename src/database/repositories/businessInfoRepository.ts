@@ -44,6 +44,8 @@ class BusinessInfoRepository {
           'importHash',
           'serviceType',
           'serviceConfig',
+          'chargeRate',
+          'payRate',
         ]),
 
         tenantId: tenant.id,
@@ -157,15 +159,21 @@ class BusinessInfoRepository {
       } catch (e) { /* best-effort geocode */ }
     }
 
-    await FileRepository.replaceRelationFiles(
-      {
-        belongsTo: options.database.businessInfo.getTableName(),
-        belongsToColumn: 'logo',
-        belongsToId: record.id,
-      },
-      data.logo,
-      options,
-    );
+    // Only touch the logo relation when the caller actually sent it — a
+    // partial update (e.g. the archive toggle sending only {active}) must NOT
+    // wipe the stored logo (replaceRelationFiles(undefined) treats every
+    // existing file row as legacy and destroys it).
+    if (data.logo !== undefined) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.businessInfo.getTableName(),
+          belongsToColumn: 'logo',
+          belongsToId: record.id,
+        },
+        data.logo,
+        options,
+      );
+    }
 
     await this._createAuditLog(
       AuditLogRepository.UPDATE,

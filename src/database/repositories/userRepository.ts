@@ -197,11 +197,14 @@ export default class UserRepository {
       transaction,
     });
 
+    // Presence-guarded partial update: only touch the keys the caller sent
+    // (Sequelize ignores undefined) — a partial profile PUT (e.g. avatar-only
+    // or phoneNumber-only from a mobile client) must not null the rest.
     await user.update(
       {
-        firstName: data.firstName || null,
-        lastName: data.lastName || null,
-        phoneNumber: data.phoneNumber || null,
+        firstName: data.firstName !== undefined ? (data.firstName || null) : undefined,
+        lastName: data.lastName !== undefined ? (data.lastName || null) : undefined,
+        phoneNumber: data.phoneNumber !== undefined ? (data.phoneNumber || null) : undefined,
         updatedById: currentUser.id,
       },
       { transaction },
@@ -493,11 +496,18 @@ export default class UserRepository {
       transaction,
     });
 
+    // Presence-guarded partial update: only touch the keys the caller sent
+    // (Sequelize ignores undefined). Callers like the phone-verification flow
+    // send ONLY { phoneNumber, phoneNumberVerified } — an unconditional
+    // `data.firstName || null` used to WIPE the user's name (and the identity
+    // sync then propagated the wipe into the denormalized caches).
     await user.update(
       {
-        firstName: data.firstName || null,
-        lastName: data.lastName || null,
-        phoneNumber: data.phoneNumber || null,
+        firstName: data.firstName !== undefined ? (data.firstName || null) : undefined,
+        lastName: data.lastName !== undefined ? (data.lastName || null) : undefined,
+        phoneNumber: data.phoneNumber !== undefined ? (data.phoneNumber || null) : undefined,
+        phoneNumberVerified:
+          data.phoneNumberVerified !== undefined ? !!data.phoneNumberVerified : undefined,
         updatedById: currentUser.id,
       },
       { transaction },

@@ -52,8 +52,17 @@ export default class NotificationService {
     );
 
     try {
-      data.deviceId = await DeviceIdInformationRepository.filterIdsInTenant(data.deviceId, { ...this.options, transaction });
-      data.whoCreatedTheNotification = await UserRepository.filterIdInTenant(data.whoCreatedTheNotification, { ...this.options, transaction });
+      // Same presence rule for the device M2M: filterIdsInTenant(undefined)
+      // returns [], and the repository's setDeviceId([]) would detach every
+      // device recipient on a partial update (e.g. a readStatus-only patch).
+      if (data.deviceId !== undefined) {
+        data.deviceId = await DeviceIdInformationRepository.filterIdsInTenant(data.deviceId, { ...this.options, transaction });
+      }
+      // Only sanitize when the key is present: filterIdInTenant(undefined)
+      // returns null, which would NULL the creator FK on a partial update.
+      if (data.whoCreatedTheNotification !== undefined) {
+        data.whoCreatedTheNotification = await UserRepository.filterIdInTenant(data.whoCreatedTheNotification, { ...this.options, transaction });
+      }
 
       const record = await NotificationRepository.update(
         id,

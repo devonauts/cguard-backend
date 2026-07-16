@@ -105,10 +105,15 @@ class NotificationRepository {
           'targetType',
           'targetId',
           'deliveryStatus',
-          'readStatus',          
+          'readStatus',
           'importHash',
         ]),
-        whoCreatedTheNotificationId: data.whoCreatedTheNotification || null,
+        // Presence-guarded: a partial update that omits whoCreatedTheNotification
+        // must not NULL the creator FK (Sequelize ignores undefined in patches).
+        whoCreatedTheNotificationId:
+          data.whoCreatedTheNotification !== undefined
+            ? data.whoCreatedTheNotification || null
+            : undefined,
         updatedById: currentUser.id,
       },
       {
@@ -116,9 +121,13 @@ class NotificationRepository {
       },
     );
 
-    await record.setDeviceId(data.deviceId || [], {
-      transaction,
-    });
+    // Presence-guarded like the FK above: re-setting with [] on a partial
+    // update (deviceId omitted) would detach every device recipient.
+    if (data.deviceId !== undefined) {
+      await record.setDeviceId(data.deviceId || [], {
+        transaction,
+      });
+    }
 
     await FileRepository.replaceRelationFiles(
       {

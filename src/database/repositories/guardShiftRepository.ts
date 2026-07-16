@@ -47,8 +47,6 @@ class GuardShiftRepository {
       updatedById: currentUser.id,
     };
 
-    console.log('[DEBUG][GuardShiftRepository.create] payload=', payload);
-
     const record = await options.database.guardShift.create(
       payload,
       {
@@ -118,14 +116,22 @@ class GuardShiftRepository {
         'importHash',
         'postSiteId',
       ]),
-      stationNameId: data.stationName || null,
-      guardNameId: data.guardName || null,
-      completeInventoryCheckId: data.completeInventoryCheck || null,
-      postSiteId: data.postSite || data.postSiteId || null,
+      // Presence-guarded (see routeRepository.update): a partial edit must not
+      // NULL the association links. Sequelize ignores undefined in the patch.
+      stationNameId:
+        data.stationName !== undefined ? (data.stationName || null) : undefined,
+      guardNameId:
+        data.guardName !== undefined ? (data.guardName || null) : undefined,
+      completeInventoryCheckId:
+        data.completeInventoryCheck !== undefined
+          ? (data.completeInventoryCheck || null)
+          : undefined,
+      postSiteId:
+        data.postSite !== undefined || data.postSiteId !== undefined
+          ? (data.postSite || data.postSiteId || null)
+          : undefined,
       updatedById: currentUser.id,
     };
-
-    console.log('[DEBUG][GuardShiftRepository.update] id=', id, 'updatePayload=', updatePayload);
 
     record = await record.update(
       updatePayload,
@@ -134,14 +140,18 @@ class GuardShiftRepository {
       },
     );
 
-    await record.setPatrolsDone(data.patrolsDone || [], {
-      transaction,
-    });
-    await record.setDailyIncidents(data.dailyIncidents || [], {
-      transaction,
-    });
-
-
+    // Presence-guarded: only re-set the many-to-many links when the payload
+    // actually carries them — a partial patch must not delete the associations.
+    if (data.patrolsDone !== undefined) {
+      await record.setPatrolsDone(data.patrolsDone || [], {
+        transaction,
+      });
+    }
+    if (data.dailyIncidents !== undefined) {
+      await record.setDailyIncidents(data.dailyIncidents || [], {
+        transaction,
+      });
+    }
 
     await this._createAuditLog(
       AuditLogRepository.UPDATE,

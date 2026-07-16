@@ -100,8 +100,16 @@ class InventoryHistoryRepository {
           'observation',          
           'importHash',
         ]),
-        shiftOriginId: data.shiftOrigin || null,
-        inventoryOriginId: data.inventoryOrigin || null,
+        // Presence-guarded (Sequelize ignores undefined): only rewrite the
+        // origin/patrol/checkpoint links when the payload actually sends them.
+        shiftOriginId:
+          data.shiftOrigin !== undefined ? data.shiftOrigin || null : undefined,
+        inventoryOriginId:
+          data.inventoryOrigin !== undefined ? data.inventoryOrigin || null : undefined,
+        patrolId:
+          data.patrol !== undefined ? data.patrol || null : undefined,
+        patrolCheckpointId:
+          data.patrolCheckpoint !== undefined ? data.patrolCheckpoint || null : undefined,
         updatedById: currentUser.id,
       },
       {

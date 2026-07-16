@@ -40,6 +40,19 @@ class VisitorLogRepository {
         'idExpiry',
         'tagNumber',
         'archived',
+        // Richer "Visitor Details" columns (migration z20260703d, rendered by
+        // src/api/supervisor/visitorDetail.ts) — must be whitelisted or they
+        // are silently dropped on every save.
+        'email',
+        'issuingState',
+        'visitType',
+        'department',
+        'accessLevel',
+        'expectedDuration',
+        'notes',
+        'vehicleColor',
+        'vehicleMakeModel',
+        'parkingLocation',
       ]),
     };
 
@@ -248,11 +261,25 @@ class VisitorLogRepository {
         'idExpiry',
         'tagNumber',
         'archived',
+        // Richer "Visitor Details" columns — keep in sync with create() above.
+        'email',
+        'issuingState',
+        'visitType',
+        'department',
+        'accessLevel',
+        'expectedDuration',
+        'notes',
+        'vehicleColor',
+        'vehicleMakeModel',
+        'parkingLocation',
       ]),
     };
 
-    // Normalize empty exitTime to null
-    if (toUpdate.exitTime === '' || toUpdate.exitTime === undefined) {
+    // Normalize empty exitTime to null ONLY when the caller explicitly sent it.
+    // When the key is absent (a partial patch, e.g. the archive toggle) it must
+    // stay undefined so Sequelize leaves the stored exit time untouched —
+    // coercing undefined to null used to WIPE the registered salida.
+    if (toUpdate.exitTime === '') {
       toUpdate.exitTime = null;
     }
 

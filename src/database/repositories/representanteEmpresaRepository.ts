@@ -30,8 +30,10 @@ class RepresentanteEmpresaRepository {
           'jobTitle',          
           'importHash',
         ]),
-        personInChargeId: data.personInCharge || null,
-        assignedCompanyId: data.assignedCompany || null,
+        // Accept both the form alias (personInCharge/assignedCompany) and the
+        // column key names (personInChargeId/assignedCompanyId).
+        personInChargeId: data.personInCharge || data.personInChargeId || null,
+        assignedCompanyId: data.assignedCompany || data.assignedCompanyId || null,
         tenantId: tenant.id,
         createdById: currentUser.id,
         updatedById: currentUser.id,
@@ -90,8 +92,17 @@ class RepresentanteEmpresaRepository {
           'jobTitle',          
           'importHash',
         ]),
-        personInChargeId: data.personInCharge || null,
-        assignedCompanyId: data.assignedCompany || null,
+        // Presence-guarded: an update that omits these keys must keep the
+        // existing links (assignedCompanyId is NOT NULL — writing null made the
+        // whole save fail on MySQL). Sequelize ignores undefined in the patch.
+        personInChargeId:
+          data.personInCharge !== undefined || data.personInChargeId !== undefined
+            ? (data.personInCharge || data.personInChargeId || null)
+            : undefined,
+        assignedCompanyId:
+          data.assignedCompany !== undefined || data.assignedCompanyId !== undefined
+            ? (data.assignedCompany || data.assignedCompanyId || null)
+            : undefined,
         updatedById: currentUser.id,
       },
       {

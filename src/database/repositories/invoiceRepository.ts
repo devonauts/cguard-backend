@@ -31,6 +31,7 @@ class InvoiceRepository {
           'notes',
           'subtotal',
           'total',
+          'referenceEstimateId',
           'importHash',
         ]),
         clientId: data.clientId || null,

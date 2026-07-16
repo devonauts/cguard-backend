@@ -192,8 +192,11 @@ class PatrolLogRepository {
           'status',          
           'importHash',
         ]),
-        patrolId: data.patrol || null,
-        scannedById: data.scannedBy || null,
+        // Presence-guarded: a status-only update must not orphan the log
+        // from its patrol or erase who scanned it. Sequelize ignores undefined.
+        patrolId: data.patrol !== undefined ? (data.patrol || null) : undefined,
+        scannedById:
+          data.scannedBy !== undefined ? (data.scannedBy || null) : undefined,
         updatedById: currentUser.id,
       },
       {

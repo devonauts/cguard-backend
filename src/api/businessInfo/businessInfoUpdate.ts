@@ -13,10 +13,19 @@ export default async (req, res, next) => {
 
     const raw = req.body.data || req.body || {};
 
-    // Normalize field aliases so either camelCase variant works
-    const find = (keys: string[], fallback: any = undefined) => {
+    // Normalize field aliases so either camelCase variant works. An explicit
+    // null is treated as ABSENT by default (clients commonly serialize
+    // untouched empty inputs as null — honoring it globally would wipe stored
+    // columns and even 500 on NOT-NULL ones like companyName). Fields that
+    // support a deliberate clear opt in with allowNullClear (clientAccountId).
+    const find = (keys: string[], fallback: any = undefined, allowNullClear = false) => {
       for (const k of keys) {
         if (raw[k] !== undefined && raw[k] !== null) return raw[k];
+      }
+      if (allowNullClear) {
+        for (const k of keys) {
+          if (raw[k] === null) return null;
+        }
       }
       return fallback;
     };
@@ -59,7 +68,7 @@ export default async (req, res, next) => {
     const categoryIds = find(['categoryIds']);
     if (categoryIds !== undefined) mapped.categoryIds = categoryIds;
 
-    const clientAccountId = find(['clientAccountId', 'clientId']);
+    const clientAccountId = find(['clientAccountId', 'clientId'], undefined, true);
     if (clientAccountId !== undefined) mapped.clientAccountId = clientAccountId;
 
     const serviceType = find(['serviceType']);
@@ -69,10 +78,10 @@ export default async (req, res, next) => {
     if (serviceConfig !== undefined) mapped.serviceConfig = serviceConfig;
 
     const chargeRate = find(['chargeRate']);
-    if (chargeRate !== undefined) mapped.chargeRate = chargeRate === '' ? null : Number(chargeRate);
+    if (chargeRate !== undefined) mapped.chargeRate = chargeRate === '' || chargeRate === null ? null : Number(chargeRate);
 
     const payRate = find(['payRate']);
-    if (payRate !== undefined) mapped.payRate = payRate === '' ? null : Number(payRate);
+    if (payRate !== undefined) mapped.payRate = payRate === '' || payRate === null ? null : Number(payRate);
 
     const fax = find(['fax']);
     if (fax !== undefined) mapped.fax = fax;

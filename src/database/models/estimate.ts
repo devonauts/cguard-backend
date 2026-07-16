@@ -57,6 +57,22 @@ export default function (sequelize) {
       items: {
         type: DataTypes.JSON,
       },
+      status: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        defaultValue: 'Borrador',
+        validate: {
+          len: [0, 50],
+        },
+      },
+      sentAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        get: function() {
+          // @ts-ignore
+          return this.getDataValue('sentAt') ? moment.utc(this.getDataValue('sentAt')).format() : null;
+        },
+      },
       notes: {
         type: DataTypes.STRING(1000),
       },

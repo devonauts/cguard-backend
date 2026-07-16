@@ -92,29 +92,26 @@ export default function (router) {
         updatedById: currentUser && currentUser.id,
       };
 
-      const record = await req.database.siteTour.create(payload);
-      // If caller provided a guard id, create an initial assignment
-      try {
+      // Tour + initial assignment are one atomic unit: if the assignment
+      // insert fails, the tour must not remain as an orphan (a retry would
+      // then create a duplicate tour). A failure surfaces as an error (outer
+      // catch → 500), never a silent success claiming the guard was assigned.
+      const record = await req.database.sequelize.transaction(async (t: any) => {
+        const tour = await req.database.siteTour.create(payload, { transaction: t });
         const guardId = req.body.securityGuardId || req.body.guardId || null;
-        if (guardId) {
-          const assignmentPayload: any = {
-            siteTourId: record.id,
+        if (guardId && req.database.tourAssignment) {
+          await req.database.tourAssignment.create({
+            siteTourId: tour.id,
             securityGuardId: guardId,
             postSiteId: payload.postSiteId || null,
             stationId: payload.stationId || null,
             tenantId: tenant && tenant.id,
             createdById: currentUser && currentUser.id,
             updatedById: currentUser && currentUser.id,
-          };
-          // create assignment if model exists
-          if (req.database.tourAssignment) {
-            await req.database.tourAssignment.create(assignmentPayload);
-          }
+          }, { transaction: t });
         }
-      } catch (e: any) {
-        // don't fail the creation if assignment fails; log for debugging
-        console.warn('Failed to create initial tour assignment', e);
-      }
+        return tour;
+      });
       await ApiResponseHandler.success(req, res, record);
     } catch (error: any) {
       await ApiResponseHandler.error(req, res, error);

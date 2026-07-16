@@ -204,17 +204,42 @@ export default class IncidentService {
 
     try {
       if (data) {
-        data.incidentType = data.incidentType || data.incidentTypeId || null;
-        data.guardNameId = data.guardNameId || data.guardId || null;
-        data.postSiteId = data.postSiteId || data.postSite || data.siteId || null;
+        // Presence-guarded alias normalization + tenant filtering: only touch
+        // FK keys the caller actually sent. filterIdInTenant(undefined) returns
+        // null (a *defined* value), which would defeat IncidentRepository.update's
+        // presence guard and NULL every FK link on a partial update (e.g. a
+        // status-only patch from the worker app).
+        if (data.incidentType !== undefined || data.incidentTypeId !== undefined) {
+          data.incidentType = data.incidentType || data.incidentTypeId || null;
+        }
+        if (data.guardNameId !== undefined || data.guardId !== undefined) {
+          data.guardNameId = data.guardNameId || data.guardId || null;
+        }
+        if (data.postSiteId !== undefined || data.postSite !== undefined || data.siteId !== undefined) {
+          data.postSiteId = data.postSiteId || data.postSite || data.siteId || null;
+        }
       }
-      data.stationIncidents = await StationRepository.filterIdInTenant(data.stationIncidents, { ...this.options, transaction });
-      data.incidentType = await IncidentTypeRepository.filterIdInTenant(data.incidentType, { ...this.options, transaction });
-      data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
-      data.siteId = await BusinessInfoRepository.filterIdInTenant(data.siteId, { ...this.options, transaction });
-      data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId || data.postSite, { ...this.options, transaction });
-      data.stationId = await StationRepository.filterIdInTenant(data.stationId, { ...this.options, transaction });
-      data.guardNameId = await SecurityGuardRepository.filterIdInTenant(data.guardNameId, { ...this.options, transaction });
+      if (data.stationIncidents !== undefined) {
+        data.stationIncidents = await StationRepository.filterIdInTenant(data.stationIncidents, { ...this.options, transaction });
+      }
+      if (data.incidentType !== undefined) {
+        data.incidentType = await IncidentTypeRepository.filterIdInTenant(data.incidentType, { ...this.options, transaction });
+      }
+      if (data.clientId !== undefined) {
+        data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
+      }
+      if (data.siteId !== undefined) {
+        data.siteId = await BusinessInfoRepository.filterIdInTenant(data.siteId, { ...this.options, transaction });
+      }
+      if (data.postSiteId !== undefined) {
+        data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
+      }
+      if (data.stationId !== undefined) {
+        data.stationId = await StationRepository.filterIdInTenant(data.stationId, { ...this.options, transaction });
+      }
+      if (data.guardNameId !== undefined) {
+        data.guardNameId = await SecurityGuardRepository.filterIdInTenant(data.guardNameId, { ...this.options, transaction });
+      }
 
       const record = await IncidentRepository.update(
         id,

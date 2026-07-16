@@ -50,7 +50,11 @@ export default class NotificationRecipientService {
     );
 
     try {
-      data.notification = await NotificationRepository.filterIdInTenant(data.notification, { ...this.options, transaction });
+      // Only sanitize when the key is present: filterIdInTenant(undefined)
+      // returns null, which would detach the row on a partial update.
+      if (data.notification !== undefined) {
+        data.notification = await NotificationRepository.filterIdInTenant(data.notification, { ...this.options, transaction });
+      }
 
       const record = await NotificationRecipientRepository.update(
         id,

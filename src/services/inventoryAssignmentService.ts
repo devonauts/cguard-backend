@@ -9,7 +9,7 @@ export default class InventoryAssignmentService {
   }
 
   async create(data) {
-    const transaction = await SequelizeRepository.createTransaction(this.options);
+    const transaction = await SequelizeRepository.createTransaction(this.options.database);
     try {
       const record = await InventoryAssignmentRepository.create(data, {
         ...this.options,
@@ -24,7 +24,7 @@ export default class InventoryAssignmentService {
   }
 
   async update(id, data) {
-    const transaction = await SequelizeRepository.createTransaction(this.options);
+    const transaction = await SequelizeRepository.createTransaction(this.options.database);
     try {
       const record = await InventoryAssignmentRepository.update(id, data, {
         ...this.options,
@@ -39,7 +39,7 @@ export default class InventoryAssignmentService {
   }
 
   async destroyAll(ids) {
-    const transaction = await SequelizeRepository.createTransaction(this.options);
+    const transaction = await SequelizeRepository.createTransaction(this.options.database);
     try {
       const idList = Array.isArray(ids) ? ids : [ids];
       for (const id of idList) {

@@ -28,6 +28,8 @@ class EstimateRepository {
           'notes',
           'subtotal',
           'total',
+          'status',
+          'sentAt',
           'importHash',
         ]),
         clientId: data.clientId || null,
@@ -58,27 +60,36 @@ class EstimateRepository {
       throw new Error404();
     }
 
-    record = await record.update(
-      {
-        ...lodash.pick(data, [
-          'estimateNumber',
-          'poSoNumber',
-          'title',
-          'summary',
-          'date',
-          'expiryDate',
-          'items',
-          'notes',
-          'subtotal',
-          'total',
-          'importHash',
-        ]),
-        clientId: data.clientId || null,
-        postSiteId: data.postSiteId || null,
-        updatedById: currentUser.id,
-      },
-      { transaction },
-    );
+    const toUpdate: any = {
+      ...lodash.pick(data, [
+        'estimateNumber',
+        'poSoNumber',
+        'title',
+        'summary',
+        'date',
+        'expiryDate',
+        'items',
+        'notes',
+        'subtotal',
+        'total',
+        'status',
+        'sentAt',
+        'importHash',
+      ]),
+      updatedById: currentUser.id,
+    };
+
+    // Only set clientId/postSiteId if provided in the payload. This prevents
+    // accidental nulling of these fields when performing partial updates
+    // (e.g. send() marking the estimate as 'Enviado').
+    if (Object.prototype.hasOwnProperty.call(data, 'clientId')) {
+      toUpdate.clientId = data.clientId || null; // '' from an empty select folds to null like every other FK
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'postSiteId')) {
+      toUpdate.postSiteId = data.postSiteId || null;
+    }
+
+    record = await record.update(toUpdate, { transaction });
 
     await this._createAuditLog(AuditLogRepository.UPDATE, record, data, options);
 

@@ -101,7 +101,14 @@ export default class MemosService {
     );
 
     try {
-      data.guardName = await SecurityGuardRepository.filterIdInTenant(data.guardName, { ...this.options, transaction });
+      // Only run the tenant filter when the caller actually sent guardName.
+      // filterIdInTenant(undefined) resolves to null, which the repository
+      // treats as an explicit unassign — a partial update (e.g. editing the
+      // subject) would silently NULL guardNameId and the memo would vanish
+      // from the addressed guard's app (memo reads are recipient-scoped).
+      if (data.guardName !== undefined) {
+        data.guardName = await SecurityGuardRepository.filterIdInTenant(data.guardName, { ...this.options, transaction });
+      }
 
       const record = await MemosRepository.update(
         id,

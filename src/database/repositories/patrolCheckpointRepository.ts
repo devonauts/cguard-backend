@@ -101,7 +101,10 @@ class PatrolCheckpointRepository {
           'longitud',          
           'importHash',
         ]),
-        stationId: data.station || null,
+        // Presence-guarded: a rename-only update must not detach the
+        // checkpoint from its station. Sequelize ignores undefined.
+        stationId:
+          data.station !== undefined ? (data.station || null) : undefined,
         updatedById: currentUser.id,
       },
       {
@@ -109,19 +112,25 @@ class PatrolCheckpointRepository {
       },
     );
 
-    await record.setPatrols(data.patrols || [], {
-      transaction,
-    });
+    // Only re-set relations the payload actually carries — otherwise a
+    // partial update detaches every patrol / wipes the QR image.
+    if (data.patrols !== undefined) {
+      await record.setPatrols(data.patrols || [], {
+        transaction,
+      });
+    }
 
-    await FileRepository.replaceRelationFiles(
-      {
-        belongsTo: options.database.patrolCheckpoint.getTableName(),
-        belongsToColumn: 'assignedQrImage',
-        belongsToId: record.id,
-      },
-      data.assignedQrImage,
-      options,
-    );
+    if (data.assignedQrImage !== undefined) {
+      await FileRepository.replaceRelationFiles(
+        {
+          belongsTo: options.database.patrolCheckpoint.getTableName(),
+          belongsToColumn: 'assignedQrImage',
+          belongsToId: record.id,
+        },
+        data.assignedQrImage,
+        options,
+      );
+    }
 
     await this._createAuditLog(
       AuditLogRepository.UPDATE,

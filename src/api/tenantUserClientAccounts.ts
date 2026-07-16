@@ -55,7 +55,8 @@ export async function createTenantUserClientAccount(req: any, res: any) {
       security_guard_id: security_guard_id || null,
       tenantId,
     });
-    res.status(201);
+    // Note: ApiResponseHandler.success always answers 200 — a res.status(201)
+    // here was dead code (re-stamped) and has been removed.
     await ApiResponseHandler.success(req, res, record);
   } catch (error) {
     await ApiResponseHandler.error(req, res, error);

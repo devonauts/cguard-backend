@@ -120,8 +120,16 @@ export default class EstimateService {
     const transaction = await SequelizeRepository.createTransaction(this.options.database);
 
     try {
-      data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
-      data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
+      // Only sanitize keys the caller actually sent: filterIdInTenant(undefined)
+      // returns null, which plants a present-with-null key and defeats the
+      // repository's partial-update guard (an items-only edit would unlink the
+      // estimate's client and site). Mirrors invoiceService.update.
+      if (Object.prototype.hasOwnProperty.call(data, 'clientId')) {
+        data.clientId = await ClientAccountRepository.filterIdInTenant(data.clientId, { ...this.options, transaction });
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'postSiteId')) {
+        data.postSiteId = await BusinessInfoRepository.filterIdInTenant(data.postSiteId, { ...this.options, transaction });
+      }
 
       const record = await EstimateRepository.update(id, data, { ...this.options, transaction });
 

@@ -108,6 +108,14 @@ export default function (sequelize, DataTypes) {
           len: [0, 24],
         },
       },
+      // Set by the phone-verification flow (authVerifyPhone →
+      // PhoneVerificationUseCases → UserRepository.update). See migration
+      // z20260716-user-phone-number-verified.
+      phoneNumberVerified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       email: {
         type: DataTypes.STRING(255),
         allowNull: false,
