@@ -8,7 +8,26 @@ import {
   discardProposal,
   getImplementationPlan,
 } from '../../services/scheduleProposalService';
-import { computeCoverage, requiredHalves } from '../../services/scheduleCoverageService';
+import { computeCoverage, stationReqFromPositions } from '../../services/scheduleCoverageService';
+
+// Shared: station coverage reqs with custom multi-block demand (positions).
+async function buildStationReqs(db: any, tenantId: string, stns: any[]) {
+  const customIds = stns.filter((s: any) => s.scheduleType === 'custom').map((s: any) => s.id);
+  const posByStation = new Map<string, any[]>();
+  if (customIds.length) {
+    const pos = await db.stationPosition.findAll({
+      where: { tenantId, stationId: customIds, type: 'fijo', deletedAt: null },
+      attributes: ['stationId', 'startTime'],
+    });
+    for (const p of pos) {
+      const list = posByStation.get(String(p.stationId)) || [];
+      list.push(p);
+      posByStation.set(String(p.stationId), list);
+    }
+  }
+  return stns.map((s: any) => stationReqFromPositions(s, posByStation.get(String(s.id))));
+}
+
 
 /** POST /scheduler/proposals — generate a DRAFT horario (no live writes). */
 export const proposalGenerate = async (req, res) => {
@@ -91,7 +110,7 @@ export const coverageGet = async (req, res) => {
         })
       : [];
 
-    const stationReqs = stns.map((s: any) => ({ stationId: s.id, stationName: s.stationName, halves: requiredHalves(s.scheduleType) }));
+    const stationReqs = await buildStationReqs(db, tenantId, stns);
     const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
     const tz = (tenant && tenant.timezone) || 'UTC';
     const cov = computeCoverage(shifts, stationReqs, today, days, tz);

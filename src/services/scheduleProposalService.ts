@@ -10,7 +10,7 @@
 import { computeShiftsForAssignment, ComputedShift } from './shiftGenerationService';
 import { getCostSettings, computeShiftsCost } from './scheduleCostService';
 import { detectRestWarnings, detectSfStyleInconsistencies } from './scheduleValidation';
-import { computeCoverage, requiredHalves } from './scheduleCoverageService';
+import { computeCoverage, stationReqFromPositions } from './scheduleCoverageService';
 import { findGuardShiftOverlap } from './shiftOverlap';
 
 type Scope = 'station' | 'postSite' | 'tenant';
@@ -190,11 +190,20 @@ export async function generateProposal(
     else if (input.scope === 'postSite' && input.postSiteId) stationWhere.postSiteId = input.postSiteId;
     const stns = await db.station.findAll({ where: stationWhere, attributes: ['id', 'stationName', 'scheduleType'] });
     if (stns.length) {
-      const stationReqs = stns.map((s: any) => ({
-        stationId: s.id,
-        stationName: s.stationName,
-        halves: requiredHalves(s.scheduleType),
-      }));
+      const customIds = stns.filter((s: any) => s.scheduleType === 'custom').map((s: any) => s.id);
+      const posByStation = new Map<string, any[]>();
+      if (customIds.length) {
+        const pos = await db.stationPosition.findAll({
+          where: { tenantId, stationId: customIds, type: 'fijo', deletedAt: null },
+          attributes: ['stationId', 'startTime'],
+        });
+        for (const p of pos) {
+          const list = posByStation.get(String(p.stationId)) || [];
+          list.push(p);
+          posByStation.set(String(p.stationId), list);
+        }
+      }
+      const stationReqs = stns.map((s: any) => stationReqFromPositions(s, posByStation.get(String(s.id))));
       const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
       const tz = (tenant && tenant.timezone) || 'UTC';
       const cov = computeCoverage(proposedForCost, stationReqs, today, 14, tz);

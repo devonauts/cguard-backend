@@ -21,6 +21,14 @@ export interface StationReq {
   stationId: string;
   stationName?: string | null;
   halves: TurnoHalf[];
+  /**
+   * Guards required per half (default 1). Custom stations with several
+   * consecutive blocks need N guards in the same half — e.g. a 06:00–22:00
+   * station with two 8h blocks requires TWO 'day' shifts per day; without this
+   * the analyzer flagged the second block as OVERSTAFF and a missing block as
+   * covered.
+   */
+  halfCounts?: Partial<Record<TurnoHalf, number>>;
 }
 
 export interface CoverageSlot {
@@ -82,6 +90,35 @@ export function classifyHalf(startTime: Date | string, tz: string): TurnoHalf {
   return h >= 18 || h < 6 ? 'night' : 'day';
 }
 
+/**
+ * Build a station's coverage requirement from its fijo POSITIONS (the true
+ * demand). For custom multi-block stations each block counts toward the half
+ * its startTime falls in, so a 06:00–22:00 / 2×8h station requires 2 'day'
+ * guards. Standard types keep their scheduleType-derived requirement.
+ */
+export function stationReqFromPositions(
+  station: { id: string; stationName?: string | null; scheduleType?: string | null },
+  fijoPositions: Array<{ startTime?: string | null }> | null | undefined,
+): StationReq {
+  const base: StationReq = {
+    stationId: station.id,
+    stationName: station.stationName,
+    halves: requiredHalves(station.scheduleType),
+  };
+  if (station.scheduleType !== 'custom' || !fijoPositions?.length) return base;
+  const counts: Partial<Record<TurnoHalf, number>> = {};
+  for (const p of fijoPositions) {
+    const h = parseInt(String(p.startTime || '07:00').split(':')[0], 10) || 0;
+    const half: TurnoHalf = h >= 18 || h < 6 ? 'night' : 'day';
+    counts[half] = (counts[half] || 0) + 1;
+  }
+  return {
+    ...base,
+    halves: Object.keys(counts) as TurnoHalf[],
+    halfCounts: counts,
+  };
+}
+
 export function computeCoverage(
   shifts: CoverageShift[],
   stations: StationReq[],
@@ -110,11 +147,12 @@ export function computeCoverage(
     const date = localDate(anchor, tz);
     for (const st of stations) {
       for (const half of st.halves) {
-        required++;
+        const need = Math.max(1, st.halfCounts?.[half] ?? 1);
+        required += need;
         const c = counts.get(`${st.stationId}|${date}|${half}`) || 0;
-        if (c >= 1) covered++;
-        if (c === 0) gaps.push({ stationId: st.stationId, stationName: st.stationName, date, half, count: 0 });
-        else if (c > 1) overstaff.push({ stationId: st.stationId, stationName: st.stationName, date, half, count: c });
+        covered += Math.min(c, need);
+        if (c < need) gaps.push({ stationId: st.stationId, stationName: st.stationName, date, half, count: c });
+        else if (c > need) overstaff.push({ stationId: st.stationId, stationName: st.stationName, date, half, count: c });
       }
     }
   }

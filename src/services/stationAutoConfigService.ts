@@ -150,11 +150,60 @@ export async function autoConfigureStationPositions(
       { name: 'Fijo 1', type: 'fijo', startTime: start, endTime: end, guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
     );
   } else {
-    // Custom
+    // Custom: the tenant picks the station's operating window (any hours, may
+    // wrap midnight) and optionally the per-guard shift length (`blockHours`).
+    // The window is split into K consecutive blocks → K fijo positions, each
+    // carrying ITS OWN startTime/endTime (the shift generator already emits
+    // hours from the position row, so multi-block works without touching it).
+    // Offsets are staggered exactly like the 24h pair (base − i·dayShifts) so
+    // the fijos' rest blocks never overlap and one sacafranco can chain them.
     const customStart = data.startTime || '07:00';
     const customEnd = data.endTime || '19:00';
-    positions.push(
-      { name: 'Fijo 1', type: 'fijo', startTime: customStart, endTime: customEnd, guardsNeeded: 1, sortOrder: 0, platoonOffset: recommendedStationOffset, stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now },
+    const toMin = (hhmm: string) => {
+      const [h, m] = String(hhmm).split(':').map((n) => parseInt(n, 10) || 0);
+      return ((h % 24) * 60 + (m % 60) + 1440) % 1440;
+    };
+    const toHHMM = (min: number) => {
+      const mm = ((min % 1440) + 1440) % 1440;
+      return `${String(Math.floor(mm / 60)).padStart(2, '0')}:${String(mm % 60).padStart(2, '0')}`;
+    };
+    const startMin = toMin(customStart);
+    let windowMin = (toMin(customEnd) - startMin + 1440) % 1440;
+    if (windowMin === 0) windowMin = 1440; // full-day custom window
+    const blockHours = Number(data.blockHours) || 0;
+    let blockCount = 1;
+    if (blockHours > 0) {
+      const blockMin = Math.round(blockHours * 60);
+      if (blockMin < 60 || windowMin % blockMin !== 0) {
+        throw new Error(
+          `La duración del turno (${blockHours}h) debe dividir exactamente la cobertura de la estación (${windowMin / 60}h).`,
+        );
+      }
+      blockCount = windowMin / blockMin;
+    }
+    const blockMin = windowMin / blockCount;
+    for (let i = 0; i < blockCount; i++) {
+      const offsetI = ((recommendedStationOffset - i * dayShifts) % cycleLength + cycleLength) % cycleLength;
+      positions.push({
+        name: blockCount > 1 ? `Fijo ${i + 1}` : 'Fijo 1',
+        type: 'fijo',
+        startTime: toHHMM(startMin + i * blockMin),
+        endTime: toHHMM(startMin + (i + 1) * blockMin),
+        guardsNeeded: 1,
+        sortOrder: i,
+        platoonOffset: offsetI,
+        stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now,
+      });
+    }
+    // Keep the station row's window + fijo count in sync so lists/reports and
+    // the post-site coverage endpoint see the real custom configuration.
+    await db.station.update(
+      {
+        startingTimeInDay: toHHMM(startMin),
+        finishTimeInDay: toHHMM(startMin + windowMin),
+        numberOfGuardsInStation: String(blockCount),
+      },
+      { where: { id: stationId, tenantId } },
     );
   }
 
