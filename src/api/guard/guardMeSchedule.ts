@@ -32,7 +32,9 @@ export default async (req: any, res: any) => {
       },
       attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId'],
       include: [
-        { model: db.station, as: 'station', attributes: ['id', 'stationName'] },
+        // nickname (call-sign) + coordinates so the app's shift detail can show
+        // the post and offer a "Cómo llegar" (navigate) action.
+        { model: db.station, as: 'station', attributes: ['id', 'stationName', 'nickname', 'latitud', 'longitud'] },
       ],
       order: [['startTime', 'ASC']],
       limit: 100,
