@@ -1021,30 +1021,38 @@ export default class TenantUserRepository {
             [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
             'PENDING NAME';
           const now = new Date();
-          await retryOnLock(() =>
-            options.database.securityGuard.create(
-              {
-                // Only fullName (NOT NULL identity cache) + safe defaults are set.
-                // The onboarding fields are nullable (migration z20260624) and are
-                // left NULL so the edit form shows blank, not placeholder data that
-                // looks like the vigilante's real info. Filled on edit/registration.
-                fullName: derivedName,
-                guardType: 'titular',
-                isOnDuty: false,
-                governmentId: null,
-                gender: null,
-                bloodType: null,
-                birthDate: null,
-                maritalStatus: null,
-                academicInstruction: null,
-                guardId: user.id,
-                tenantId: resolvedTenantId,
-                createdById: actorId,
-                updatedById: actorId,
-                createdAt: now,
-                updatedAt: now,
-              },
-              { transaction },
+          // Run inside a SAVEPOINT so a failure here (a not-null column added
+          // later, or reusing an email that is ALSO a guard) rolls back ONLY this
+          // best-effort provision and can NEVER poison the caller's transaction.
+          // Previously a shared-transaction failure here (e.g. governmentId NOT
+          // NULL) aborted the whole outer op and surfaced as a hard error when
+          // creating a client whose contact email is also a securityGuard.
+          await options.database.sequelize.transaction({ transaction }, (sp: any) =>
+            retryOnLock(() =>
+              options.database.securityGuard.create(
+                {
+                  // Only fullName (NOT NULL identity cache) + safe defaults are set.
+                  // The onboarding fields are nullable (migration z20260624) and are
+                  // left NULL so the edit form shows blank, not placeholder data that
+                  // looks like the vigilante's real info. Filled on edit/registration.
+                  fullName: derivedName,
+                  guardType: 'titular',
+                  isOnDuty: false,
+                  governmentId: null,
+                  gender: null,
+                  bloodType: null,
+                  birthDate: null,
+                  maritalStatus: null,
+                  academicInstruction: null,
+                  guardId: user.id,
+                  tenantId: resolvedTenantId,
+                  createdById: actorId,
+                  updatedById: actorId,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                { transaction: sp },
+              ),
             ),
           );
           console.log('[tenantUserRepository.updateRoles] auto-provisioned draft securityGuard for user', user.id, 'tenant', resolvedTenantId);
