@@ -27,6 +27,10 @@ class TaskRepository {
       {
         ...lodash.pick(data, [
           'taskToDo',
+          'description',
+          'assignedGuardId',
+          'repeatConfig',
+          'completionNotes',
           'wasItDone',
           'dateToDoTheTask',
           'dateCompletedTask',
@@ -113,6 +117,10 @@ class TaskRepository {
       {
         ...lodash.pick(data, [
           'taskToDo',
+          'description',
+          'assignedGuardId',
+          'repeatConfig',
+          'completionNotes',
           'wasItDone',
           'dateToDoTheTask',
           'dateCompletedTask',

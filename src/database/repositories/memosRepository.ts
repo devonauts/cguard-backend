@@ -101,7 +101,7 @@ class MemosRepository {
           'wasAccepted',          
           'importHash',
         ]),
-        guardNameId: data.guardName || null,
+        guardNameId: data.guardName !== undefined ? (data.guardName || null) : undefined,
         updatedById: currentUser.id,
       },
       {

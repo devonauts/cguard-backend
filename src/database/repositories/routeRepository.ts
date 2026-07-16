@@ -145,16 +145,22 @@ class RouteRepository {
         name: data.name,
         description: data.description || null,
         continuous: data.continuous !== undefined ? data.continuous : record.continuous,
-        windowStart: data.windowStart || null,
-        windowEnd: data.windowEnd || null,
-        days: data.days || null,
-        assignedGuard: data.assignedGuard || null,
-        vehicleId: data.vehicleId || null,
-        syncHitsBetweenGuards: !!data.syncHitsBetweenGuards,
-        forceVehicleRouteOrder: !!data.forceVehicleRouteOrder,
-        notifyBefore: data.notifyBefore || null,
-        autoCheckInByGeofence: !!data.autoCheckInByGeofence,
-        forceCheckInBeforeStart: !!data.forceCheckInBeforeStart,
+        // Presence-guarded: a partial edit must not null the window/guard or
+        // silently reset toggles to false (!! coerced ABSENT to false).
+        windowStart: data.windowStart !== undefined ? (data.windowStart || null) : undefined,
+        windowEnd: data.windowEnd !== undefined ? (data.windowEnd || null) : undefined,
+        days: data.days !== undefined ? (data.days || null) : undefined,
+        assignedGuard: data.assignedGuard !== undefined ? (data.assignedGuard || null) : undefined,
+        vehicleId: data.vehicleId !== undefined ? (data.vehicleId || null) : undefined,
+        syncHitsBetweenGuards:
+          data.syncHitsBetweenGuards !== undefined ? !!data.syncHitsBetweenGuards : undefined,
+        forceVehicleRouteOrder:
+          data.forceVehicleRouteOrder !== undefined ? !!data.forceVehicleRouteOrder : undefined,
+        notifyBefore: data.notifyBefore !== undefined ? (data.notifyBefore || null) : undefined,
+        autoCheckInByGeofence:
+          data.autoCheckInByGeofence !== undefined ? !!data.autoCheckInByGeofence : undefined,
+        forceCheckInBeforeStart:
+          data.forceCheckInBeforeStart !== undefined ? !!data.forceCheckInBeforeStart : undefined,
         updatedById: currentUser ? currentUser.id : null,
       },
       { transaction },

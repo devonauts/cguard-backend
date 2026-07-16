@@ -57,12 +57,21 @@ export default class SettingsRepository {
       options,
     );
 
-    data.backgroundImageUrl = _get(
-      data,
-      'backgroundImages[0].downloadUrl',
-      null,
-    );
-    data.logoUrl = _get(data, 'logos[0].downloadUrl', null);
+    // Only recompute the derived URLs when the caller actually SENT the file
+    // arrays. Unconditionally defaulting to null meant any partial settings
+    // PUT (legal docs upload, a page saving one JSON blob) silently ERASED
+    // the tenant logo/background — every settings page had to round-trip
+    // logos/backgroundImages to defend itself.
+    if (data.backgroundImages !== undefined) {
+      data.backgroundImageUrl = _get(
+        data,
+        'backgroundImages[0].downloadUrl',
+        null,
+      );
+    }
+    if (data.logos !== undefined) {
+      data.logoUrl = _get(data, 'logos[0].downloadUrl', null);
+    }
 
     // Strip virtual/association fields before passing to findOrCreate defaults
     const { logos, backgroundImages, ...columnData } = data;

@@ -126,6 +126,7 @@ class StationRepository {
         'geofencePolygon',
         'clockInEarlyBufferMin',
         'clockInLateGraceMin',
+        'isMobile',
         'importHash',
       ]),
       updatedById: currentUser.id,

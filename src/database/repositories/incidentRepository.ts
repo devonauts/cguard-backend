@@ -140,11 +140,22 @@ class IncidentRepository {
           'wasRead',          
           'importHash',
         ]),
-        stationId: data.stationId || data.stationIncidents || null,
-        incidentTypeId: data.incidentType || null,
-        postSiteId: data.postSiteId || data.siteId || null,
-        clientId: data.clientId || null,
-        guardNameId: data.guardNameId || null,
+        // Presence-guarded: editing status/notes without re-sending the FKs
+        // must not wipe the incident's station/site/client/type links.
+        stationId:
+          data.stationId !== undefined || data.stationIncidents !== undefined
+            ? (data.stationId || data.stationIncidents || null)
+            : undefined,
+        incidentTypeId:
+          data.incidentType !== undefined || data.incidentTypeId !== undefined
+            ? (data.incidentType || data.incidentTypeId || null)
+            : undefined,
+        postSiteId:
+          data.postSiteId !== undefined || data.siteId !== undefined
+            ? (data.postSiteId || data.siteId || null)
+            : undefined,
+        clientId: data.clientId !== undefined ? (data.clientId || null) : undefined,
+        guardNameId: data.guardNameId !== undefined ? (data.guardNameId || null) : undefined,
         updatedById: currentUser.id,
       },
       {

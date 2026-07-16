@@ -58,19 +58,22 @@ class ShiftTemplateRepository {
 
     await record.update(
       {
-        templateName: data.templateName ?? record.templateName,
-        startTime: data.startTime ?? record.startTime,
-        endTime: data.endTime ?? record.endTime,
-        repeatShift: data.repeatShift ?? record.repeatShift,
-        repeatBy: data.repeatBy ?? record.repeatBy,
-        postSiteId: data.postSiteId ?? record.postSiteId,
-        guardId: data.guardId ?? record.guardId,
-        skillSet: data.skillSet ?? record.skillSet,
-        department: data.department ?? record.department,
-        breakDuration: data.breakDuration ?? record.breakDuration,
-        note: data.note ?? record.note,
-        category: data.category ?? record.category,
-        status: data.status ?? record.status,
+        // `undefined` = not sent → keep stored value; explicit null/'' = the
+        // admin CLEARED the field → persist the clear (?? made clearing
+        // impossible: a removed guard/nota silently reverted).
+        templateName: data.templateName !== undefined ? data.templateName : record.templateName,
+        startTime: data.startTime !== undefined ? data.startTime : record.startTime,
+        endTime: data.endTime !== undefined ? data.endTime : record.endTime,
+        repeatShift: data.repeatShift !== undefined ? data.repeatShift : record.repeatShift,
+        repeatBy: data.repeatBy !== undefined ? data.repeatBy : record.repeatBy,
+        postSiteId: data.postSiteId !== undefined ? (data.postSiteId || null) : record.postSiteId,
+        guardId: data.guardId !== undefined ? (data.guardId || null) : record.guardId,
+        skillSet: data.skillSet !== undefined ? (data.skillSet || null) : record.skillSet,
+        department: data.department !== undefined ? (data.department || null) : record.department,
+        breakDuration: data.breakDuration !== undefined ? (data.breakDuration || null) : record.breakDuration,
+        note: data.note !== undefined ? (data.note || null) : record.note,
+        category: data.category !== undefined ? (data.category || null) : record.category,
+        status: data.status !== undefined ? data.status : record.status,
         updatedById: currentUser.id,
       },
       { transaction },

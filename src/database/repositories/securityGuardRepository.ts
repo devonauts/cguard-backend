@@ -3,6 +3,7 @@ import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
+import Error400 from '../../errors/Error400';
 import Sequelize from 'sequelize';import UserRepository from './userRepository';
 import FileRepository from './fileRepository';
 import { batchSignFiles } from '../utils/listQuery';
@@ -288,6 +289,66 @@ class SecurityGuardRepository {
       if (data.guard !== null && typeof data.guard !== 'undefined') {
         // data.guard may be a plain ID string or a full user object — extract just the ID
         payloadToUpdate.guardId = typeof data.guard === 'object' ? (data.guard?.id ?? null) : data.guard;
+      }
+    }
+
+    // Admin identity edits (name/email/phone) must reach the linked USER (the
+    // single source of identity) — ignoring them silently reverted every guard
+    // rename, exactly the clientAccount/BAS bug. Propagate first, then the
+    // derive block below reads the fresh values. Email only when globally free.
+    {
+      const effectiveGuardId = payloadToUpdate.guardId || record.guardId;
+      const wantsIdentityEdit =
+        data && (data.fullName || data.firstName || data.lastName || typeof data.email !== 'undefined' || typeof data.phoneNumber !== 'undefined');
+      if (effectiveGuardId && wantsIdentityEdit) {
+        const guardUser = await options.database.user.findByPk(effectiveGuardId, { transaction });
+        if (guardUser) {
+          const patch: any = {};
+          const reqFull = (data.fullName || [data.firstName, data.lastName].filter(Boolean).join(' ') || '').toString().trim();
+          if (reqFull && reqFull !== (guardUser.fullName || '').toString().trim()) {
+            patch.fullName = reqFull;
+            if (data.firstName || data.lastName) {
+              patch.firstName = (data.firstName || '').toString().trim() || null;
+              patch.lastName = (data.lastName || '').toString().trim() || null;
+            } else {
+              const parts = reqFull.split(/\s+/);
+              patch.firstName = parts[0] || null;
+              patch.lastName = parts.slice(1).join(' ') || null;
+            }
+          }
+          if (typeof data.email !== 'undefined' && data.email) {
+            const reqEmail = data.email.toString().trim().toLowerCase();
+            if (reqEmail && reqEmail !== (guardUser.email || '').toString().trim().toLowerCase()) {
+              const taken = await options.database.user.findOne({
+                where: { email: reqEmail, id: { [Op.ne]: guardUser.id } },
+                transaction,
+              });
+              if (taken) {
+                throw new Error400(
+                  options.language,
+                  'errors.validation.message',
+                  'Ese correo ya pertenece a otra cuenta.',
+                );
+              }
+              patch.email = reqEmail;
+            }
+          }
+          if (typeof data.phoneNumber !== 'undefined') {
+            const reqPhone = (data.phoneNumber || '').toString().trim();
+            if (reqPhone !== (guardUser.phoneNumber || '').toString().trim()) {
+              patch.phoneNumber = reqPhone || null;
+            }
+          }
+          if (Object.keys(patch).length) {
+            await guardUser.update(patch, { transaction });
+            try {
+              const { syncIdentityFromUser } = require('../../services/identitySync');
+              await syncIdentityFromUser(options.database, guardUser.id, options);
+            } catch (e) {
+              console.warn('securityGuardRepository: identity fan-out failed', (e as any)?.message || e);
+            }
+          }
+        }
       }
     }
 
@@ -597,6 +658,66 @@ class SecurityGuardRepository {
 
     // Always set updatedById
     updatePayload.updatedById = currentUser.id;
+
+    // Admin identity edits (name/email/phone) must reach the linked USER (the
+    // single source of identity) — ignoring them silently reverted every guard
+    // rename, exactly the clientAccount/BAS bug. Propagate first, then the
+    // derive block below reads the fresh values. Email only when globally free.
+    {
+      const effectiveGuardId = updatePayload.guardId || record.guardId;
+      const wantsIdentityEdit =
+        data && (data.fullName || data.firstName || data.lastName || typeof data.email !== 'undefined' || typeof data.phoneNumber !== 'undefined');
+      if (effectiveGuardId && wantsIdentityEdit) {
+        const guardUser = await options.database.user.findByPk(effectiveGuardId, { transaction });
+        if (guardUser) {
+          const patch: any = {};
+          const reqFull = (data.fullName || [data.firstName, data.lastName].filter(Boolean).join(' ') || '').toString().trim();
+          if (reqFull && reqFull !== (guardUser.fullName || '').toString().trim()) {
+            patch.fullName = reqFull;
+            if (data.firstName || data.lastName) {
+              patch.firstName = (data.firstName || '').toString().trim() || null;
+              patch.lastName = (data.lastName || '').toString().trim() || null;
+            } else {
+              const parts = reqFull.split(/\s+/);
+              patch.firstName = parts[0] || null;
+              patch.lastName = parts.slice(1).join(' ') || null;
+            }
+          }
+          if (typeof data.email !== 'undefined' && data.email) {
+            const reqEmail = data.email.toString().trim().toLowerCase();
+            if (reqEmail && reqEmail !== (guardUser.email || '').toString().trim().toLowerCase()) {
+              const taken = await options.database.user.findOne({
+                where: { email: reqEmail, id: { [Op.ne]: guardUser.id } },
+                transaction,
+              });
+              if (taken) {
+                throw new Error400(
+                  options.language,
+                  'errors.validation.message',
+                  'Ese correo ya pertenece a otra cuenta.',
+                );
+              }
+              patch.email = reqEmail;
+            }
+          }
+          if (typeof data.phoneNumber !== 'undefined') {
+            const reqPhone = (data.phoneNumber || '').toString().trim();
+            if (reqPhone !== (guardUser.phoneNumber || '').toString().trim()) {
+              patch.phoneNumber = reqPhone || null;
+            }
+          }
+          if (Object.keys(patch).length) {
+            await guardUser.update(patch, { transaction });
+            try {
+              const { syncIdentityFromUser } = require('../../services/identitySync');
+              await syncIdentityFromUser(options.database, guardUser.id, options);
+            } catch (e) {
+              console.warn('securityGuardRepository: identity fan-out failed', (e as any)?.message || e);
+            }
+          }
+        }
+      }
+    }
 
     // securityGuard.fullName is a DENORMALIZED CACHE synced from the linked user
     // (single source of identity) — do not edit it independently. Reconcile it

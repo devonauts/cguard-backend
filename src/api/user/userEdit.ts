@@ -7,6 +7,7 @@ import ClientAccountRepository from '../../database/repositories/clientAccountRe
 import BusinessInfoRepository from '../../database/repositories/businessInfoRepository';
 import TenantUserRepository from '../../database/repositories/tenantUserRepository';
 import Error400 from '../../errors/Error400';
+import { Op } from 'sequelize';
 
 export default async (req, res) => {
   try {
@@ -48,6 +49,61 @@ export default async (req, res) => {
     }
 
     await editor.update(incoming);
+
+    // UserEditor only persists roles/assignments (tenantUser row) — identity
+    // fields never landed on the USER row, so renaming an administrative user
+    // or changing their email silently reverted (same class as the client
+    // rename bug). Persist them here, email only when no other account owns it.
+    {
+      const targetUserId = req.params?.id || incoming.id;
+      const target = targetUserId
+        ? await req.database.user.findByPk(targetUserId)
+        : null;
+      if (target) {
+        const patch: any = {};
+        const reqFullName = (incoming.fullName || incoming.name || '').toString().trim();
+        if (reqFullName && reqFullName !== (target.fullName || '').toString().trim()) {
+          patch.fullName = reqFullName;
+          const parts = reqFullName.split(/\s+/);
+          patch.firstName = parts[0] || null;
+          patch.lastName = parts.slice(1).join(' ') || null;
+        }
+        const reqEmail = incoming.email
+          ? incoming.email.toString().trim().toLowerCase()
+          : '';
+        if (reqEmail && reqEmail !== (target.email || '').toString().trim().toLowerCase()) {
+          const taken = await req.database.user.findOne({
+            where: { email: reqEmail, id: { [Op.ne]: target.id } },
+          });
+          if (taken) {
+            throw new Error400(
+              req.language,
+              'errors.validation.message',
+              'Ese correo ya pertenece a otra cuenta.',
+            );
+          }
+          patch.email = reqEmail;
+        }
+        if (typeof incoming.phoneNumber !== 'undefined') {
+          const reqPhone = (incoming.phoneNumber || '').toString().trim();
+          if (reqPhone !== (target.phoneNumber || '').toString().trim()) {
+            patch.phoneNumber = reqPhone || null;
+          }
+        }
+        if (Object.keys(patch).length) {
+          patch.updatedById = req.currentUser?.id || null;
+          await target.update(patch);
+          // Fan out to every denormalized identity copy (guard rows, client
+          // accounts of this user, etc.). Best-effort.
+          try {
+            const { syncIdentityFromUser } = require('../../services/identitySync');
+            await syncIdentityFromUser(req.database, target.id, req);
+          } catch (e: any) {
+            console.warn('userEdit: identity fan-out failed', e?.message || e);
+          }
+        }
+      }
+    }
 
     // Per-user permission overrides are a privileged, admin-level action: they
     // grant/revoke individual permissions on top of roles. Require settingsEdit

@@ -124,6 +124,12 @@ export default function (sequelize) {
           len: [0, 255],
         }
       },
+      // Contract start date shown/edited in the CRM client form (the input
+      // existed but the column didn't — values were silently lost).
+      contractDate: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
       latitude: {
         type: DataTypes.DECIMAL(10, 8),
         allowNull: true,

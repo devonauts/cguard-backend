@@ -115,16 +115,35 @@ class ShiftRepository {
           'skillSet',
           'department',
         ]),
-        stationId: data.station || null,
-        guardId: data.guard || null,
-        postSiteId: data.postSite || data.postSiteId || null,
-        tenantUserId: data.tenantUserId || data.tenant_user_id || null,
-        siteTours: data.siteTours || data.site_tours || null,
-        tasks: data.tasks || null,
-        postOrders: data.postOrders || data.post_orders || null,
-        checklists: data.checklists || null,
-        skillSet: data.skillSet || data.skill_set || null,
-        department: data.department || null,
+        // Presence-guarded: a PARTIAL update (e.g. only startTime) must not
+        // null the shift's station/guard/assignment — same antipattern the
+        // station repo was fixed for. `field: undefined` is skipped by
+        // Sequelize, so absent keys leave the stored value untouched.
+        stationId: data.station !== undefined ? (data.station || null) : undefined,
+        guardId: data.guard !== undefined ? (data.guard || null) : undefined,
+        postSiteId:
+          data.postSite !== undefined || data.postSiteId !== undefined
+            ? (data.postSite || data.postSiteId || null)
+            : undefined,
+        tenantUserId:
+          data.tenantUserId !== undefined || data.tenant_user_id !== undefined
+            ? (data.tenantUserId || data.tenant_user_id || null)
+            : undefined,
+        siteTours:
+          data.siteTours !== undefined || data.site_tours !== undefined
+            ? (data.siteTours || data.site_tours || null)
+            : undefined,
+        tasks: data.tasks !== undefined ? (data.tasks || null) : undefined,
+        postOrders:
+          data.postOrders !== undefined || data.post_orders !== undefined
+            ? (data.postOrders || data.post_orders || null)
+            : undefined,
+        checklists: data.checklists !== undefined ? (data.checklists || null) : undefined,
+        skillSet:
+          data.skillSet !== undefined || data.skill_set !== undefined
+            ? (data.skillSet || data.skill_set || null)
+            : undefined,
+        department: data.department !== undefined ? (data.department || null) : undefined,
         updatedById: currentUser.id,
       },
       {

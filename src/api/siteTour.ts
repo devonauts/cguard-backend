@@ -133,6 +133,11 @@ export default function (router) {
         description: req.body.description,
         scheduledDays: req.body.scheduledDays,
         stationId: req.body.stationId,
+        // Reassignments must persist too (the PATCH whitelist already had
+        // these; the PUT silently dropped them).
+        securityGuardId:
+          typeof req.body.securityGuardId !== 'undefined' ? req.body.securityGuardId : undefined,
+        postSiteId: typeof req.body.postSiteId !== 'undefined' ? req.body.postSiteId : undefined,
         continuous: req.body.continuous,
         timeMode: req.body.timeMode,
         selectTime: req.body.selectTime,
