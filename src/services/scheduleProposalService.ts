@@ -195,7 +195,7 @@ export async function generateProposal(
       if (customIds.length) {
         const pos = await db.stationPosition.findAll({
           where: { tenantId, stationId: customIds, type: 'fijo', deletedAt: null },
-          attributes: ['stationId', 'startTime'],
+          attributes: ['stationId', 'startTime', 'endTime'],
         });
         for (const p of pos) {
           const list = posByStation.get(String(p.stationId)) || [];

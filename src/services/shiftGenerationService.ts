@@ -184,27 +184,68 @@ async function computeFijoGaps(
 
     const required = requiredHalves(st.scheduleType);
 
+    // Custom stations are BLOCK-based, not half-based: group fijos by their
+    // block (start|end). A block is covered when ANY of its fijos works that
+    // day — alternation (e.g. 24x24: two fijos sharing one block, phased so
+    // one always works) thus produces zero gaps, and this also fixes the
+    // multi-block hole where all blocks collapsed into one 'day' slot (the
+    // morning fijo's rest went undetected while the afternoon fijo worked).
+    const isCustom = st.scheduleType === 'custom';
+    const blocks = new Map<string, { start: string; end: string; fijos: any[] }>();
+    if (isCustom) {
+      for (const f of fijos) {
+        const bs = f.startTime || '07:00';
+        const be = f.endTime || '19:00';
+        const key = `${bs}|${be}`;
+        if (!blocks.has(key)) blocks.set(key, { start: bs, end: be, fijos: [] });
+        blocks.get(key)!.fijos.push(f);
+      }
+    }
+    const blockHalf = (start: string): TurnoHalf => {
+      const h = parseInt(String(start).split(':')[0], 10) || 0;
+      return h >= 18 || h < 6 ? 'night' : 'day';
+    };
+
     const cursor = new Date(genStart);
     while (cursor <= genEnd) {
       const dateStr = cursor.toISOString().slice(0, 10);
       const dse = Math.floor((cursor.getTime() - epoch.getTime()) / (24 * 60 * 60 * 1000));
-      const coveredHalves = new Set<string>();
-      for (const f of fijos) {
-        const s = getRotationStatus(dse, f.platoonOffset || 0, rot.dayShifts, rot.nightShifts, rot.restDays);
-        const h = coveredHalf(st.scheduleType, s);
-        if (h) coveredHalves.add(h);
-      }
-      for (const half of required) {
-        if (!coveredHalves.has(half)) {
-          const hrs = halfHours(st.scheduleType, half, fijos[0].startTime, fijos[0].endTime);
-          if (!gapsByDay.has(dateStr)) gapsByDay.set(dateStr, []);
-          gapsByDay.get(dateStr)!.push({
-            stationId: sid,
-            half,
-            startHHmm: hrs.start,
-            endHHmm: hrs.end,
-            postSiteId: st.postSiteId || null,
+      if (isCustom) {
+        for (const blk of blocks.values()) {
+          const covered = blk.fijos.some((f: any) => {
+            const s = getRotationStatus(dse, f.platoonOffset || 0, rot.dayShifts, rot.nightShifts, rot.restDays);
+            return s !== 'rest';
           });
+          if (!covered) {
+            if (!gapsByDay.has(dateStr)) gapsByDay.set(dateStr, []);
+            gapsByDay.get(dateStr)!.push({
+              stationId: sid,
+              half: blockHalf(blk.start),
+              startHHmm: blk.start,
+              endHHmm: blk.end,
+              postSiteId: st.postSiteId || null,
+            });
+          }
+        }
+      } else {
+        const coveredHalves = new Set<string>();
+        for (const f of fijos) {
+          const s = getRotationStatus(dse, f.platoonOffset || 0, rot.dayShifts, rot.nightShifts, rot.restDays);
+          const h = coveredHalf(st.scheduleType, s);
+          if (h) coveredHalves.add(h);
+        }
+        for (const half of required) {
+          if (!coveredHalves.has(half)) {
+            const hrs = halfHours(st.scheduleType, half, fijos[0].startTime, fijos[0].endTime);
+            if (!gapsByDay.has(dateStr)) gapsByDay.set(dateStr, []);
+            gapsByDay.get(dateStr)!.push({
+              stationId: sid,
+              half,
+              startHHmm: hrs.start,
+              endHHmm: hrs.end,
+              postSiteId: st.postSiteId || null,
+            });
+          }
         }
       }
       cursor.setDate(cursor.getDate() + 1);

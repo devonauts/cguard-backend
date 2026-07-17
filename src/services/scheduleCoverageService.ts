@@ -106,11 +106,19 @@ export function stationReqFromPositions(
     halves: requiredHalves(station.scheduleType),
   };
   if (station.scheduleType !== 'custom' || !fijoPositions?.length) return base;
-  const counts: Partial<Record<TurnoHalf, number>> = {};
+  // Demand = DISTINCT blocks, not raw fijo count: alternating fijos share one
+  // block (24x24 → 2 positions, 1 required guard/day), while multi-block
+  // stations have one position per block (2×8h → 2 required day guards).
+  const blocksPerHalf: Partial<Record<TurnoHalf, Set<string>>> = {};
   for (const p of fijoPositions) {
-    const h = parseInt(String(p.startTime || '07:00').split(':')[0], 10) || 0;
+    const start = String((p as any).startTime || '07:00');
+    const h = parseInt(start.split(':')[0], 10) || 0;
     const half: TurnoHalf = h >= 18 || h < 6 ? 'night' : 'day';
-    counts[half] = (counts[half] || 0) + 1;
+    (blocksPerHalf[half] ||= new Set()).add(`${start}|${(p as any).endTime || ''}`);
+  }
+  const counts: Partial<Record<TurnoHalf, number>> = {};
+  for (const half of Object.keys(blocksPerHalf) as TurnoHalf[]) {
+    counts[half] = blocksPerHalf[half]!.size;
   }
   return {
     ...base,

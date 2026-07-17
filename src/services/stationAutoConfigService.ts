@@ -61,10 +61,19 @@ export async function autoConfigureStationPositions(
   // station rotates 4-4-2 (its 2 fijos swap day/night); a 12h station uses 8-2
   // (8 work, 2 rest, single shift). Same cycle length ⇒ each guard rests 2 days
   // per cycle and ONE sacafranco can chain through all of their rest days.
+  // Custom rest-coverage mode: 'sacafranco' (default — one fijo per block,
+  // staggered rests, SF covers the gaps) or 'alternate' (N fijos share each
+  // block phased by workDays so exactly one works every day — e.g. the classic
+  // 24x24: trabaja 1 / descansa 1, 2 fijos, NO sacafranco).
+  const restCoverage = String(data.restCoverage || 'sacafranco');
+
   if (!rotationStyleId) {
     if (scheduleType === '24h') {
       const r = await db.rotationStyle.findOne({ where: { name: '4-4-2', isSystem: true } });
       rotationStyleId = r?.id || null;
+    } else if (scheduleType === 'custom' && restCoverage === 'alternate') {
+      // Natural default for alternation: work 1 / rest 1 (24x24).
+      rotationStyleId = await ensureRotationStyle(db, '1-1', 1, 0, 1);
     } else {
       rotationStyleId = await ensureRotationStyle(db, '8-2', 8, 0, 2);
     }
@@ -182,18 +191,41 @@ export async function autoConfigureStationPositions(
       blockCount = windowMin / blockMin;
     }
     const blockMin = windowMin / blockCount;
-    for (let i = 0; i < blockCount; i++) {
-      const offsetI = ((recommendedStationOffset - i * dayShifts) % cycleLength + cycleLength) % cycleLength;
-      positions.push({
-        name: blockCount > 1 ? `Fijo ${i + 1}` : 'Fijo 1',
-        type: 'fijo',
-        startTime: toHHMM(startMin + i * blockMin),
-        endTime: toHHMM(startMin + (i + 1) * blockMin),
-        guardsNeeded: 1,
-        sortOrder: i,
-        platoonOffset: offsetI,
-        stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now,
-      });
+
+    // Alternation: N fijos per block, phased by workDays so their work blocks
+    // tile the cycle (exactly one on duty per day, rest covered by the partner
+    // — no sacafranco). Requires the cycle to divide evenly by the work days.
+    let guardsPerBlock = 1;
+    if (restCoverage === 'alternate') {
+      const workDaysN = Math.max(1, dayShifts);
+      if (cycleLength % workDaysN !== 0) {
+        throw new Error(
+          `El patrón (${workDaysN} trabajo / ${cycleLength - workDaysN} descanso) no permite alternancia exacta: el ciclo debe ser múltiplo de los días de trabajo.`,
+        );
+      }
+      guardsPerBlock = cycleLength / workDaysN;
+    }
+
+    for (let b = 0; b < blockCount; b++) {
+      for (let a = 0; a < guardsPerBlock; a++) {
+        const idx = b * guardsPerBlock + a;
+        // One formula for both modes: blocks stagger by dayShifts (spreads rest
+        // days for the SF), and alternators within a block ALSO phase by
+        // dayShifts (= the rotation's work days, custom styles have no night
+        // shifts) so their work windows tile the cycle exactly.
+        const offsetI =
+          (((recommendedStationOffset - (b + a) * dayShifts) % cycleLength) + cycleLength) % cycleLength;
+        positions.push({
+          name: blockCount * guardsPerBlock > 1 ? `Fijo ${idx + 1}` : 'Fijo 1',
+          type: 'fijo',
+          startTime: toHHMM(startMin + b * blockMin),
+          endTime: toHHMM(startMin + (b + 1) * blockMin),
+          guardsNeeded: 1,
+          sortOrder: idx,
+          platoonOffset: offsetI,
+          stationId, tenantId, createdById: userId, updatedById: userId, createdAt: now, updatedAt: now,
+        });
+      }
     }
     // Keep the station row's window + fijo count in sync so lists/reports and
     // the post-site coverage endpoint see the real custom configuration.
@@ -201,7 +233,7 @@ export async function autoConfigureStationPositions(
       {
         startingTimeInDay: toHHMM(startMin),
         finishTimeInDay: toHHMM(startMin + windowMin),
-        numberOfGuardsInStation: String(blockCount),
+        numberOfGuardsInStation: String(blockCount * guardsPerBlock),
       },
       { where: { id: stationId, tenantId } },
     );
