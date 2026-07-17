@@ -768,14 +768,16 @@ class StationRepository {
 
     // Attach simplified postSite info if available
     if (output.postSite) {
+      // businessInfo's display-name column is companyName (there is no
+      // `businessName`/`name` column — this mapping always returned null).
       output.postSite = output.postSite
-        ? { id: output.postSite.id, businessName: output.postSite.businessName || output.postSite.name || null }
+        ? { id: output.postSite.id, businessName: output.postSite.companyName || null }
         : null;
     } else if (output.postSiteId) {
       // fallback: try to load postSite when only id present
       try {
         const post = await options.database.businessInfo.findOne({ where: { id: output.postSiteId, tenantId: tenant.id }, transaction });
-        output.postSite = post ? { id: post.id, businessName: post.businessName || post.name || null } : null;
+        output.postSite = post ? { id: post.id, businessName: post.companyName || null } : null;
       } catch (e) {
         output.postSite = null;
       }
