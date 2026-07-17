@@ -11,6 +11,7 @@
  */
 
 import { wallClockToUtc } from '../lib/tenantTime';
+import { ymd } from './consignaRecurrence';
 import { requiredHalves, TurnoHalf } from './scheduleCoverageService';
 
 export const GENERATION_DAYS = 365; // Generate 1 full year of shifts
@@ -278,12 +279,17 @@ export async function computeShiftsForAssignment(
   tenantId: string,
 ): Promise<ComputedShift[]> {
   // Window (shared by all kinds): from max(startDate, today) for 365 days unless
-  // an explicit endDate is given.
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const startDate = new Date(assignment.startDate);
-  const genStart = startDate > today ? startDate : today;
+  // an explicit endDate is given. "Today" is the TENANT's calendar day, not the
+  // server's UTC day — otherwise, on a UTC server past tenant-midnight, the
+  // floor rounds a guard assigned "hoy" up to tomorrow. Dates are anchored at
+  // UTC-midnight of the tenant calendar date so cursor.toISOString().slice(0,10)
+  // yields the correct tenant date fed to wallClockToUtc below.
   const tz = await tenantTz(database, tenantId);
+  const todayStr = ymd(new Date(), tz);
+  const startStr = String(assignment.startDate || todayStr).slice(0, 10);
+  const genStartStr = startStr > todayStr ? startStr : todayStr;
+  const today = new Date(`${todayStr}T00:00:00Z`);
+  const genStart = new Date(`${genStartStr}T00:00:00Z`);
 
   const station = await database.station.findByPk(assignment.stationId, { attributes: ['postSiteId', 'rotationStyleId'] });
   const postSiteId = station?.postSiteId || null;

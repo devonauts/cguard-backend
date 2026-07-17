@@ -1,5 +1,16 @@
 import { generateShiftsForAssignment, MAX_ASSIGNMENT_HORIZON_DAYS } from './shiftGenerationService';
 import { resolveGuardUserId } from './guardIdResolver';
+import { ymd } from './consignaRecurrence';
+
+/** Today's calendar date (YYYY-MM-DD) in the tenant's timezone (never UTC). */
+async function tenantToday(database: any, tenantId: string): Promise<string> {
+  try {
+    const t = await database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    return ymd(new Date(), (t && t.timezone) || 'UTC');
+  } catch {
+    return ymd(new Date(), 'UTC');
+  }
+}
 
 /**
  * THE single write path for guard ↔ station assignments.
@@ -49,7 +60,10 @@ export async function createAssignment(
   // The rotation PHASE comes from the station position, not from a start date, so a
   // start date is no longer required — a guard "dropped into" a station follows the
   // station's horario from today. startDate only bounds when shifts begin.
-  const startDate = input.startDate || new Date().toISOString().slice(0, 10);
+  // "Today" MUST be the tenant's calendar day, not the server's UTC day: on a
+  // UTC server past tenant-midnight, a UTC default (or a naive floor) pushed a
+  // guard assigned "hoy" onto tomorrow's shift.
+  const startDate = input.startDate || (await tenantToday(database, tenantId));
 
   // Bound the generation window at the API boundary: endDate must parse, must not
   // precede startDate, and must stay within the yearly generation horizon. A
