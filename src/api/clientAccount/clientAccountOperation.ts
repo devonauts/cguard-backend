@@ -42,6 +42,14 @@ export default async (req, res) => {
         'id', 'stationName', 'nickname', 'postSiteId', 'stationOriginId',
         'numberOfGuardsInStation', 'scheduleType', 'startingTimeInDay', 'finishTimeInDay', 'isMobile',
       ],
+      // Vigilantes asignados inline — the whole point of the one-shot view.
+      include: [{
+        model: db.user,
+        as: 'assignedGuards',
+        attributes: ['id', 'fullName', 'firstName', 'lastName'],
+        through: { attributes: [] },
+        required: false,
+      }],
       order: [['stationName', 'ASC']],
     });
 
@@ -49,6 +57,11 @@ export default async (req, res) => {
     const loose: any[] = [];
     for (const st of stations) {
       const plain = st.get ? st.get({ plain: true }) : st;
+      plain.guards = (plain.assignedGuards || []).map((u: any) => ({
+        id: u.id,
+        name: u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || '—',
+      }));
+      delete plain.assignedGuards;
       if (plain.postSiteId && siteIds.includes(plain.postSiteId)) {
         if (!bySite.has(String(plain.postSiteId))) bySite.set(String(plain.postSiteId), []);
         bySite.get(String(plain.postSiteId))!.push(plain);
