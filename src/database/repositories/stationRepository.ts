@@ -72,9 +72,60 @@ class StationRepository {
       transaction,
     });
     // (station↔shift M:N removed — Phase 1; shifts link via shift.stationId)
-  
 
-  
+    // ── Herencia de rondas huérfanas (patrón borrar-y-recrear puesto) ─────
+    // Si el sitio tiene rondas cuyo puesto fue ELIMINADO y este puesto nuevo
+    // es el único activo del sitio, adóptalas automáticamente: los QR ya
+    // impresos y el historial siguen vivos en el puesto de reemplazo.
+    // (Caso real: Seguridad BAS borró su estación y recreó otra — sus 3 QR
+    // "desaparecieron" hasta re-apuntarlos a mano.)
+    let adoptedTours = 0;
+    try {
+      const postSiteId = record.postSiteId;
+      if (postSiteId && options.database.siteTour) {
+        const Op = options.database.Sequelize.Op;
+        const siblingCount = await options.database.station.count({
+          where: { tenantId: tenant.id, postSiteId, id: { [Op.ne]: record.id } },
+          transaction,
+        });
+        if (siblingCount === 0) {
+          const activeStations = await options.database.station.findAll({
+            where: { tenantId: tenant.id },
+            attributes: ['id'],
+            transaction,
+          });
+          const activeIds = activeStations.map((s: any) => String(s.id));
+          const orphans = await options.database.siteTour.findAll({
+            where: { tenantId: tenant.id, postSiteId },
+            attributes: ['id', 'stationId'],
+            transaction,
+          });
+          const toAdopt = orphans.filter(
+            (tr: any) => tr.stationId && !activeIds.includes(String(tr.stationId)),
+          );
+          if (toAdopt.length) {
+            const tourIds = toAdopt.map((tr: any) => tr.id);
+            await options.database.siteTour.update(
+              { stationId: record.id },
+              { where: { id: { [Op.in]: tourIds } }, transaction },
+            );
+            if (options.database.tourAssignment) {
+              await options.database.tourAssignment.update(
+                { stationId: record.id },
+                { where: { tenantId: tenant.id, siteTourId: { [Op.in]: tourIds } }, transaction },
+              );
+            }
+            adoptedTours = toAdopt.length;
+            console.log(
+              `[station] ${adoptedTours} ronda(s) huérfana(s) adoptada(s) por el puesto ${record.id} (sitio ${postSiteId})`,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[station] orphan-tour adoption failed:', (e as any)?.message || e);
+    }
+
     await this._createAuditLog(
       AuditLogRepository.CREATE,
       record,
@@ -82,7 +133,13 @@ class StationRepository {
       options,
     );
 
-    return this.findById(record.id, options);
+    const created = await this.findById(record.id, options);
+    if (created && adoptedTours > 0) {
+      (created as any).dataValues
+        ? ((created as any).dataValues.adoptedTours = adoptedTours)
+        : ((created as any).adoptedTours = adoptedTours);
+    }
+    return created;
   }
 
   static async update(id, data, options: IRepositoryOptions) {
