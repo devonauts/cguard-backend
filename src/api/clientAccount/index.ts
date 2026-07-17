@@ -36,6 +36,15 @@ export default (app) => {
     `/tenant/:tenantId/client-account`,
     require('./clientAccountList').default,
   );
+  // Static path registered BEFORE :id so "card-meta" isn't captured as an id.
+  app.get(
+    `/tenant/:tenantId/client-account/card-meta`,
+    require('./clientAccountCardMeta').default,
+  );
+  app.get(
+    `/tenant/:tenantId/client-account/:id/operation`,
+    require('./clientAccountOperation').default,
+  );
   app.get(
     `/tenant/:tenantId/client-account/:id`,
     require('./clientAccountFind').default,
