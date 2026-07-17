@@ -394,8 +394,10 @@ class StationRepository {
     });
 
     if (filter) {
-      if (filter.postSite) {
-        whereAnd.push({ postSiteId: SequelizeFilterUtils.uuid(filter.postSite) });
+      // Accept either alias — some callers send postSiteId, others postSite.
+      const postSiteFilter = filter.postSite || filter.postSiteId;
+      if (postSiteFilter) {
+        whereAnd.push({ postSiteId: SequelizeFilterUtils.uuid(postSiteFilter) });
       }
 
       if (filter.id) {
