@@ -218,7 +218,15 @@ class StationRepository {
         model: options.database.businessInfo,
         as: 'postSite',
         required: false,
-      },      
+      },
+      // Assigned guards for the station hero (names only — cheap).
+      {
+        model: options.database.user,
+        as: 'assignedGuards',
+        attributes: ['id', 'fullName', 'firstName', 'lastName'],
+        through: { attributes: [] },
+        required: false,
+      },
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
