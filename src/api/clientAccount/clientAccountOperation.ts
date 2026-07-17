@@ -27,8 +27,9 @@ export default async (req, res) => {
 
     const sites = await db.businessInfo.findAll({
       where: { tenantId, clientAccountId: clientId },
-      attributes: ['id', 'name', 'address', 'city', 'active'],
-      order: [['name', 'ASC']],
+      // businessInfo's display name column is companyName (there is no `name`).
+      attributes: ['id', 'companyName', 'address', 'city', 'active'],
+      order: [['companyName', 'ASC']],
     });
     const siteIds = sites.map((s: any) => s.id);
 
@@ -59,7 +60,7 @@ export default async (req, res) => {
     await ApiResponseHandler.success(req, res, {
       sites: sites.map((s: any) => ({
         id: s.id,
-        name: s.name,
+        name: s.companyName,
         address: s.address,
         city: s.city,
         active: s.active,
