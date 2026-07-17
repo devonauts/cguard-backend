@@ -141,6 +141,26 @@ export async function autoConfigureStationPositions(
     recommendedStationOffset = (stationIndex * restDays - workDays + cycleLength * 10) % cycleLength;
   }
 
+  // ALTERNATION (custom, no sacafranco): anchor the phase to TODAY so the FIRST
+  // fijo works TODAY (and its alternating partner tomorrow). Without this the
+  // fijos inherit an epoch-anchored offset with arbitrary calendar parity, so a
+  // guard assigned "para empezar hoy" could land on tomorrow — the operator has
+  // no way to pick which position works which day. There's no sacafranco here,
+  // so the cross-station sequencing offset above is irrelevant; today-anchoring
+  // is strictly more intuitive. (Sacafranco mode keeps the sequencing offset so
+  // rest days still chain for the SF.)
+  if (scheduleType === 'custom' && restCoverage === 'alternate' && cycleLength > 0) {
+    const { ymd } = require('./consignaRecurrence');
+    const tenantRow = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+    const tz = (tenantRow && tenantRow.timezone) || 'UTC';
+    const todayStr = ymd(new Date(), tz);
+    // Same epoch + day-index math the shift generator uses (ROTATION_EPOCH
+    // 2024-01-01), so "work day 0 = today" holds at generation time.
+    const epochMs = Date.UTC(2024, 0, 1);
+    const dseToday = Math.floor((Date.parse(`${todayStr}T00:00:00Z`) - epochMs) / 86400000);
+    recommendedStationOffset = ((dseToday % cycleLength) + cycleLength) % cycleLength;
+  }
+
   if (scheduleType === '24h') {
     // 24h station needs continuous day+night coverage. Phase out the two fijos
     // by `dayShifts` so when Fijo 1 is on its DAY block, Fijo 2 is on its NIGHT
