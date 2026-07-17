@@ -109,6 +109,9 @@ function makeModel(name: string) {
     async findByPk(id: any) {
       return model.rows.find((r: any) => r.id === id) || null;
     },
+    async count(q: any = {}) {
+      return model.rows.filter((r: any) => matchWhere(r, q.where)).length;
+    },
     async findOrCreate({ where, defaults }: any) {
       model.calls.findOrCreate.push({ where: { ...where }, defaults: { ...defaults } });
       const existing = model.rows.find((r: any) => matchWhere(r, where));
@@ -457,6 +460,26 @@ describe('crud-g05 · assignmentService.createAssignment', () => {
     assert.strictEqual(p.platoonOffset, 4, 'phase comes from the station position, never the request');
     assert.strictEqual(p.isRelief, true, 'a sacafranco position marks the assignment as relief');
     assert.strictEqual(p.rotationStyleId, null, 'rotation lives on the STATION, not copied onto the assignment');
+  });
+
+  it('ALTERNATION: phase follows the guard\'s startDate so "empieza hoy" = trabaja hoy', async () => {
+    const db = buildAssignDb();
+    // Custom station, 1-1 rotation (cycle 2), TWO fijos sharing one 24h block.
+    db.station.rows.push(makeRow({ id: 'st-1', tenantId: TENANT, scheduleType: 'custom', rotationStyleId: 'rot-1' }));
+    db.rotationStyle.rows.push(makeRow({ id: 'rot-1', dayShifts: 1, nightShifts: 0, restDays: 1 }));
+    db.stationPosition.rows.push(makeRow({ id: 'pos-A', tenantId: TENANT, stationId: 'st-1', type: 'fijo', startTime: '00:00', endTime: '23:59', platoonOffset: 0 }));
+    db.stationPosition.rows.push(makeRow({ id: 'pos-B', tenantId: TENANT, stationId: 'st-1', type: 'fijo', startTime: '00:00', endTime: '23:59', platoonOffset: 1 }));
+
+    const startDate = '2026-07-20';
+    await createAssignment(db, TENANT, USER_ID, { guardId: 'user-g1', stationId: 'st-1', positionId: 'pos-A', startDate });
+
+    // work-day-0 = startDate ⇒ offset ≡ dse(startDate) (mod cycle), NOT the
+    // position's epoch-anchored offset (0). Mirror the service's formula.
+    const cycle = 2;
+    const dseStart = Math.floor((Date.parse(`${startDate}T00:00:00Z`) - Date.UTC(2024, 0, 1)) / 86400000);
+    const expected = ((dseStart % cycle) + cycle) % cycle;
+    const p = db.guardAssignment.calls.create[0];
+    assert.strictEqual(p.platoonOffset, expected, 'alternation phase must be derived from the startDate, not the position offset');
   });
 
   it('an unresolvable guard is a LOUD validation error, and nothing is written', async () => {

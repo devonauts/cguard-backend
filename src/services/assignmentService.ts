@@ -143,12 +143,45 @@ export async function createAssignment(
       );
     }
 
-    // The phase is ALWAYS the station position's staggered offset — never a
+    // The phase is normally the station position's staggered offset — never a
     // date-derived value from the request. This guarantees the two fijos of a 24h
     // station are opposite (Fijo 1 day ⇄ Fijo 2 night, swapping each cycle) and they
     // can never overlap on the same turno. (Old bug: the UI sent a start-date-derived
     // platoonOffset that clobbered Fijo 2's offset to 0, double-staffing the day.)
     platoonOffset = position?.platoonOffset || 0;
+
+    // EXCEPTION — ALTERNATION (custom station, ≥2 fijos SHARING one block, e.g.
+    // 24x24): the fijos cover the SAME block on OPPOSITE days (día por medio), so
+    // the phase must follow THIS guard's startDate — "empieza hoy" ⇒ trabaja hoy,
+    // regardless of which slot or the epoch parity. This is the class of bug where
+    // a guard assigned "para hoy" started tomorrow because the position's offset
+    // put today on a rest day. Two guards with consecutive start dates then
+    // alternate automatically. NOT applied to standard 24h (day/night at once) or
+    // sacafranco stations, where the engine must own the stagger.
+    if (position && position.type !== 'sacafranco') {
+      const stFull = await database.station.findByPk(stationId, { attributes: ['scheduleType', 'rotationStyleId'] });
+      if (stFull?.scheduleType === 'custom') {
+        const posFull = await database.stationPosition.findByPk(positionId, { attributes: ['startTime', 'endTime'] });
+        if (posFull) {
+          const siblingBlocks = await database.stationPosition.count({
+            where: { stationId, tenantId, deletedAt: null, type: 'fijo', startTime: posFull.startTime, endTime: posFull.endTime },
+          });
+          if (siblingBlocks >= 2) {
+            const rot = await database.rotationStyle.findByPk(stFull.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+            const cycle = (rot?.dayShifts || 0) + (rot?.nightShifts || 0) + (rot?.restDays || 0);
+            if (cycle > 0) {
+              // work-day-0 = startDate ⇒ offset ≡ dse(startDate) (mod cycle). The
+              // startDate string is already the tenant-local calendar date; dse is
+              // computed against the same 2024-01-01 epoch the generator uses.
+              const dseStart = Math.floor((Date.parse(`${String(startDate).slice(0, 10)}T00:00:00Z`) - Date.UTC(2024, 0, 1)) / 86400000);
+              if (Number.isFinite(dseStart)) {
+                platoonOffset = ((dseStart % cycle) + cycle) % cycle;
+              }
+            }
+          }
+        }
+      }
+    }
 
     // Idempotent: one active assignment per (guard, station, position). Re-assigning
     // the same slot reuses the existing row (and refreshes its shifts) instead of
@@ -158,6 +191,11 @@ export async function createAssignment(
     });
     if (existing) {
       try {
+        // Re-phase the reused row too (a re-assign with a new startDate must move
+        // the guard's first work day — alternation offset above is date-driven).
+        if (existing.platoonOffset !== platoonOffset || (input.startDate && existing.startDate !== startDate)) {
+          await existing.update({ platoonOffset, startDate });
+        }
         await generateShiftsForAssignment(database, existing.get({ plain: true }), tenantId, userId);
       } catch (genErr) {
         console.error('[createAssignment] reuse regen error:', genErr);
