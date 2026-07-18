@@ -59,6 +59,19 @@ export default async (req, res, next) => {
         projectsCount = 0;
       }
 
+      // Responsible account executive name + tenant timezone (header meta).
+      let accountExecutiveName: string | null = null;
+      let tenantTimezone: string | null = null;
+      try {
+        const ca = await req.database.clientAccount.findByPk(clientAccountId, { attributes: ['accountExecutiveId'] });
+        if (ca?.accountExecutiveId) {
+          const u = await req.database.user.findByPk(ca.accountExecutiveId, { attributes: ['fullName', 'firstName', 'lastName', 'email'] });
+          if (u) accountExecutiveName = u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null;
+        }
+        const tnt = await req.database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+        tenantTimezone = (tnt && tnt.timezone) || null;
+      } catch { /* non-fatal */ }
+
       // Assigned guards — derive from shifts for these postSites
       let assignedCount = 0;
       try {
@@ -185,6 +198,8 @@ export default async (req, res, next) => {
         tasksLast7Days: Number(tasksLast7Days || 0),
         incidentsLast7Days: Number(incidentsLast7Days || 0),
         hoursLoggedSeconds: Number(hoursLoggedSeconds || 0),
+        accountExecutiveName,
+        tenantTimezone,
       });
     } catch (error) {
       return ApiResponseHandler.error(req, res, error);

@@ -130,6 +130,24 @@ export default function (sequelize) {
         type: DataTypes.DATEONLY,
         allowNull: true,
       },
+      // Contract end date (contrato-fin), risk level, client code and the
+      // responsible account executive — surfaced on the client detail header.
+      contractEndDate: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
+      riskLevel: {
+        type: DataTypes.STRING(20), // 'bajo' | 'medio' | 'alto'
+        allowNull: true,
+      },
+      code: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      },
+      accountExecutiveId: {
+        type: DataTypes.UUID, // users.id of the responsible ejecutivo
+        allowNull: true,
+      },
       latitude: {
         type: DataTypes.DECIMAL(10, 8),
         allowNull: true,
