@@ -148,6 +148,15 @@ export default function (sequelize) {
         type: DataTypes.UUID, // users.id of the responsible ejecutivo
         allowNull: true,
       },
+      // Legal representative (a PERSON) — distinct from the company entity. For
+      // a persona jurídica the client fields hold the empresa (razón social /
+      // RUC) and these hold the rep (nombre, apellido, correo + teléfono
+      // PERSONAL, cédula). For a persona natural the rep is the client itself.
+      legalRepFirstName: { type: DataTypes.STRING(150), allowNull: true },
+      legalRepLastName: { type: DataTypes.STRING(150), allowNull: true },
+      legalRepEmail: { type: DataTypes.STRING(200), allowNull: true },
+      legalRepPhone: { type: DataTypes.STRING(30), allowNull: true },
+      legalRepDocument: { type: DataTypes.STRING(20), allowNull: true },
       latitude: {
         type: DataTypes.DECIMAL(10, 8),
         allowNull: true,
