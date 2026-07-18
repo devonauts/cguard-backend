@@ -78,6 +78,20 @@ export default (app) => {
     require('./clientAccountPersonnel').default,
   );
 
+  // Incidentes board + detail actions
+  app.get(
+    `/tenant/:tenantId/client-account/:id/incidents-board`,
+    require('./clientAccountIncidentsBoard').default,
+  );
+  app.get(
+    `/tenant/:tenantId/client-account/:id/incident/:incidentId/evidence`,
+    require('./clientAccountIncidentActions').evidence,
+  );
+  app.patch(
+    `/tenant/:tenantId/client-account/:id/incident/:incidentId/status`,
+    require('./clientAccountIncidentActions').updateStatus,
+  );
+
   // Contract & services subpage
   app.get(
     `/tenant/:tenantId/client-account/:id/contract`,
