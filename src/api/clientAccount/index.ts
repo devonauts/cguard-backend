@@ -191,6 +191,16 @@ export default (app) => {
     require('./clientAccountNoteDestroy').default,
   );
 
+  // App-access users (titular + additional via pivot)
+  app.get(
+    `/tenant/:tenantId/client-account/:id/access-users`,
+    require('./clientAccountAccessUsers').list,
+  );
+  app.delete(
+    `/tenant/:tenantId/client-account/:id/access-users/:pivotId`,
+    require('./clientAccountAccessUsers').revoke,
+  );
+
   app.post(
     `/tenant/:tenantId/client-account/:id/send-portal-invitation`,
     require('./clientAccountSendPortalInvitation').default,

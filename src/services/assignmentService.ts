@@ -109,12 +109,20 @@ export async function createAssignment(
   const rotationStyleId: string | null = null;
   let platoonOffset = 0;
   let isRelief = !!input.isRelief;
+  let manualSf = false; // sacafranco rotation assignments skip auto shift-generation
 
   if (!isAdhoc) {
     const position = await database.stationPosition.findByPk(positionId, {
       attributes: ['type', 'platoonOffset'],
     });
     isRelief = !!input.isRelief || position?.type === 'sacafranco';
+    // MANUAL SACAFRANCO (2026-07-18): assigning a guard to a sacafranco puesto
+    // NO LONGER auto-generates the SF rotation. The SF starts with an empty
+    // month (todo libre) and coverage is placed by hand from Programador ›
+    // Horario (drag a día of the SF onto a puesto's L → ad-hoc shift), or in
+    // bulk by the explicit "Optimizar Sacafrancos" action, which plans and
+    // regenerates via generateShiftsForAssignment directly (not this path).
+    manualSf = isRelief;
 
     // A guard may hold at most ONE active rotation assignment (fijo OR sacafranco).
     // Stacking (fijo+fijo, fijo+relief, relief+relief) double-books the guard and
@@ -196,7 +204,9 @@ export async function createAssignment(
         if (existing.platoonOffset !== platoonOffset || (input.startDate && existing.startDate !== startDate)) {
           await existing.update({ platoonOffset, startDate });
         }
-        await generateShiftsForAssignment(database, existing.get({ plain: true }), tenantId, userId);
+        if (!manualSf) {
+          await generateShiftsForAssignment(database, existing.get({ plain: true }), tenantId, userId);
+        }
       } catch (genErr) {
         console.error('[createAssignment] reuse regen error:', genErr);
       }
@@ -252,11 +262,14 @@ export async function createAssignment(
   });
 
   // Auto-generate the concrete shifts. Best-effort: the assignment row is the
-  // durable source of truth and can always be regenerated.
-  try {
-    await generateShiftsForAssignment(database, record.get({ plain: true }), tenantId, userId);
-  } catch (genErr) {
-    console.error('[createAssignment] shift generation error:', genErr);
+  // durable source of truth and can always be regenerated. Manual sacafrancos
+  // skip this — their coverage is placed day-by-day (or via the optimizer).
+  if (!manualSf) {
+    try {
+      await generateShiftsForAssignment(database, record.get({ plain: true }), tenantId, userId);
+    } catch (genErr) {
+      console.error('[createAssignment] shift generation error:', genErr);
+    }
   }
 
   return record;
