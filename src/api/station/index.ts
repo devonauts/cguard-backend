@@ -7,6 +7,15 @@ export default (app) => {
     `/tenant/:tenantId/station/:id`,
     require('./stationUpdate').default,
   );
+  // Set exact coordinates only (map pin placement)
+  app.patch(
+    `/tenant/:tenantId/station/:id/location`,
+    require('./stationLocation').default,
+  );
+  app.patch(
+    `/tenant/:tenantId/stations/:id/location`,
+    require('./stationLocation').default,
+  );
   app.post(
     `/tenant/:tenantId/station/import`,
     require('./stationImport').default,

@@ -66,6 +66,12 @@ export default (app) => {
     require('./clientAccountOverview').default,
   );
 
+  // Puestos y cobertura (live coverage per sede)
+  app.get(
+    `/tenant/:tenantId/client-account/:id/coverage`,
+    require('./clientAccountCoverage').default,
+  );
+
   // Contract & services subpage
   app.get(
     `/tenant/:tenantId/client-account/:id/contract`,
