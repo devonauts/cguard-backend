@@ -16,6 +16,8 @@ export default async (req, res, next) => {
     if (!tenantId || !clientAccountId) {
       return ApiResponseHandler.success(req, res, {
         postSitesCount: 0,
+        stationsCount: 0,
+        projectsCount: 0,
         assignedCount: 0,
         onsiteCount: 0,
         toursLast7Days: 0,
@@ -45,6 +47,17 @@ export default async (req, res, next) => {
       // find stations under these postSites
       const stations = postSiteIds.length ? await Station.findAll({ where: { postSiteId: postSiteIds, tenantId }, attributes: ['id'] }) : [];
       const stationIds = (stations || []).map((s: any) => s.id).filter(Boolean);
+      const stationsCount = stationIds.length;
+
+      // active projects for this client
+      let projectsCount = 0;
+      try {
+        projectsCount = await req.database.clientProject.count({
+          where: { clientAccountId, tenantId, deletedAt: null },
+        });
+      } catch {
+        projectsCount = 0;
+      }
 
       // Assigned guards — derive from shifts for these postSites
       let assignedCount = 0;
@@ -164,6 +177,8 @@ export default async (req, res, next) => {
 
       return ApiResponseHandler.success(req, res, {
         postSitesCount: Number(postSitesCount || 0),
+        stationsCount: Number(stationsCount || 0),
+        projectsCount: Number(projectsCount || 0),
         assignedCount: Number(assignedCount || 0),
         onsiteCount: Number(onsiteCount || 0),
         toursLast7Days: Number(toursLast7Days || 0),
