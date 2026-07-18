@@ -72,6 +72,12 @@ export default (app) => {
     require('./clientAccountCoverage').default,
   );
 
+  // Personal asignado (live roster across sedes)
+  app.get(
+    `/tenant/:tenantId/client-account/:id/personnel`,
+    require('./clientAccountPersonnel').default,
+  );
+
   // Contract & services subpage
   app.get(
     `/tenant/:tenantId/client-account/:id/contract`,
