@@ -10,6 +10,7 @@ import { isUserInTenant } from '../utils/userTenantUtils';
 import { getConfig } from '../../config';
 import { IRepositoryOptions } from './IRepositoryOptions';
 import SequelizeArrayUtils from '../utils/sequelizeArrayUtils';
+import { batchSignFiles } from '../utils/listQuery';
 import lodash from 'lodash';
 
 import fs from 'fs';
@@ -1146,6 +1147,12 @@ export default class UserRepository {
       rows,
       currentTenant,
     );
+
+    // Sign the avatar for ALL rows in ONE batched file query (used by the
+    // Usuarios administrativos card view). Cheap: a single file lookup by ids.
+    try {
+      await batchSignFiles(options.database, rows, options.database.user.getTableName(), 'avatars');
+    } catch { /* avatars are optional in the list */ }
 
     return { rows, count };
   }
