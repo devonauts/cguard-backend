@@ -41,6 +41,11 @@ export default function (sequelize) {
         type: DataTypes.UUID,
         allowNull: false,
       },
+      // Optional grouping for the client document library (Contratos, Manuales…).
+      category: {
+        type: DataTypes.STRING(60),
+        allowNull: true,
+      },
     },
     {
       timestamps: true,

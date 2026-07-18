@@ -20,6 +20,7 @@ class AttachmentRepository {
       publicUrl: data.publicUrl || null,
       notableType: data.notableType,
       notableId: data.notableId,
+      category: data.category || null,
       tenantId: tenant.id,
       createdById: currentUser.id,
       updatedById: currentUser.id,

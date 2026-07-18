@@ -78,6 +78,12 @@ export default (app) => {
     require('./clientAccountPersonnel').default,
   );
 
+  // Documentos (client document library)
+  app.get(
+    `/tenant/:tenantId/client-account/:id/documents`,
+    require('./clientAccountDocuments').default,
+  );
+
   // Incidentes board + detail actions
   app.get(
     `/tenant/:tenantId/client-account/:id/incidents-board`,
