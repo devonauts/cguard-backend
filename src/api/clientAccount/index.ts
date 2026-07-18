@@ -84,6 +84,24 @@ export default (app) => {
     require('./clientAccountDocuments').default,
   );
 
+  // Reportes (client analytics + exports + scheduled reports)
+  app.get(
+    `/tenant/:tenantId/client-account/:id/reports`,
+    require('./clientAccountReports').default,
+  );
+  app.get(
+    `/tenant/:tenantId/client-account/:id/reports-export`,
+    require('./clientAccountReportActions').exportCsv,
+  );
+  app.post(
+    `/tenant/:tenantId/client-account/:id/report-schedules`,
+    require('./clientAccountReportActions').createSchedule,
+  );
+  app.delete(
+    `/tenant/:tenantId/client-account/:id/report-schedules/:scheduleId`,
+    require('./clientAccountReportActions').deleteSchedule,
+  );
+
   // Incidentes board + detail actions
   app.get(
     `/tenant/:tenantId/client-account/:id/incidents-board`,
