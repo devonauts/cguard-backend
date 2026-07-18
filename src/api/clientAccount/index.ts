@@ -65,6 +65,46 @@ export default (app) => {
     `/tenant/:tenantId/client-account/:id/overview`,
     require('./clientAccountOverview').default,
   );
+
+  // Contract & services subpage
+  app.get(
+    `/tenant/:tenantId/client-account/:id/contract`,
+    require('./clientAccountContract').default,
+  );
+  app.patch(
+    `/tenant/:tenantId/client-account/:id/contract`,
+    require('./clientAccountContractUpdate').default,
+  );
+  app.put(
+    `/tenant/:tenantId/client-account/:id/contract`,
+    require('./clientAccountContractUpdate').default,
+  );
+  // Contracted services CRUD
+  app.post(
+    `/tenant/:tenantId/client-account/:id/contract-services`,
+    require('./contractServiceWrite').create,
+  );
+  app.put(
+    `/tenant/:tenantId/client-account/:id/contract-services/:serviceId`,
+    require('./contractServiceWrite').update,
+  );
+  app.delete(
+    `/tenant/:tenantId/client-account/:id/contract-services/:serviceId`,
+    require('./contractServiceWrite').destroy,
+  );
+  // Renewal history CRUD
+  app.post(
+    `/tenant/:tenantId/client-account/:id/contract-renewals`,
+    require('./contractRenewalWrite').create,
+  );
+  app.put(
+    `/tenant/:tenantId/client-account/:id/contract-renewals/:renewalId`,
+    require('./contractRenewalWrite').update,
+  );
+  app.delete(
+    `/tenant/:tenantId/client-account/:id/contract-renewals/:renewalId`,
+    require('./contractRenewalWrite').destroy,
+  );
   // Client contacts CRUD
   app.get(
     `/tenant/:tenantId/client-account/:id/contacts`,
