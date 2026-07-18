@@ -123,34 +123,26 @@ export default async (req, res) => {
       }
     } catch { /* optional */ }
 
-    // ── Cumplimiento de puestos (current coverage snapshot) ──────────────────
-    let cumplidos = 0, parciales = 0, incumplidos = 0;
+    // ── Cumplimiento de puestos OVER THE PERIOD (scheduled shifts vs attended) ──
+    // A reports page covers a whole period, so this is a period attendance ratio —
+    // NOT a single-instant snapshot (which read a scary 0%/100% when nobody happened
+    // to be clocked in at that exact moment). Neutral "sin datos" when no schedule.
+    let scheduledCount = 0;
     try {
-      const positions = await db.stationPosition.findAll({ where: { tenantId, stationId: stationIds, type: 'fijo' }, attributes: ['stationId', 'startTime', 'endTime', 'guardsNeeded'] }).catch(() => []);
-      const posByStation = new Map<string, any[]>();
-      for (const p of positions) { const k = String(p.stationId); if (!posByStation.has(k)) posByStation.set(k, []); posByStation.get(k)!.push(p); }
-      const open = stationIds.length ? await db.guardShift.findAll({ where: { tenantId, stationNameId: stationIds, punchOutTime: null }, attributes: ['stationNameId'] }).catch(() => []) : [];
-      const onByStation = new Map<string, number>();
-      for (const o of open) { const k = String(o.stationNameId); onByStation.set(k, (onByStation.get(k) || 0) + 1); }
-      const nowMin = (() => { try { const h = parseInt(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: tz }).format(now), 10); const m = parseInt(new Intl.DateTimeFormat('en-US', { minute: 'numeric', timeZone: tz }).format(now), 10); return (h % 24) * 60 + m; } catch { return now.getUTCHours() * 60; } })();
-      const mins = (s?: string) => { if (!s) return null; const [h, m] = String(s).split(':').map(Number); return h * 60 + (m || 0); };
-      const coversNow = (a?: string, b?: string) => { const s = mins(a), e = mins(b); if (s == null || e == null) return false; return s <= e ? (nowMin >= s && nowMin < e) : (nowMin >= s || nowMin < e); };
-      for (const id of stationIds) {
-        const fijosNow = (posByStation.get(id) || []).filter((p: any) => coversNow(p.startTime, p.endTime));
-        if (!fijosNow.length) continue; // sin turno → not counted
-        const need = Math.max(1, fijosNow.reduce((a: number, p: any) => a + (Number(p.guardsNeeded) || 1), 0));
-        const on = onByStation.get(id) || 0;
-        if (on >= need) cumplidos++; else if (on > 0) parciales++; else incumplidos++;
-      }
+      if (stationIds.length) scheduledCount = await db.shift.count({ where: { tenantId, stationId: stationIds, startTime: { [Op.between]: [from, to] } } });
     } catch { /* optional */ }
-    const cumpTotal = cumplidos + parciales + incumplidos;
-    const cumplimiento = {
-      pct: cumpTotal ? Math.round((cumplidos / cumpTotal) * 100) : 100,
-      cumplidos, parciales, incumplidos,
-      cumplidosPct: cumpTotal ? Math.round((cumplidos / cumpTotal) * 100) : 100,
-      parcialesPct: cumpTotal ? Math.round((parciales / cumpTotal) * 100) : 0,
-      incumplidosPct: cumpTotal ? Math.round((incumplidos / cumpTotal) * 100) : 0,
-    };
+    let cumplimiento: any;
+    if (scheduledCount > 0) {
+      const cumplidos = Math.min(attCur, scheduledCount);
+      const incumplidos = Math.max(0, scheduledCount - cumplidos);
+      const pct = Math.round((cumplidos / scheduledCount) * 100);
+      cumplimiento = { pct, cumplidos, parciales: 0, incumplidos, cumplidosPct: pct, parcialesPct: 0, incumplidosPct: 100 - pct, total: scheduledCount, hasData: true };
+    } else if (attCur > 0) {
+      // Attendance exists but no generated schedule to compare against → treat as covered.
+      cumplimiento = { pct: 100, cumplidos: attCur, parciales: 0, incumplidos: 0, cumplidosPct: 100, parcialesPct: 0, incumplidosPct: 0, total: attCur, hasData: true };
+    } else {
+      cumplimiento = { pct: null, cumplidos: 0, parciales: 0, incumplidos: 0, cumplidosPct: 0, parcialesPct: 0, incumplidosPct: 0, total: 0, hasData: false };
+    }
 
     // ── Actividades por día (incidents + scans + clock-ins) ──────────────────
     const actDaily = emptyDaily();
