@@ -15,6 +15,7 @@ import { broadcastPcm } from '../lib/radioVoice';
 import { getChannelAdapter } from './radio/channelAdapter';
 import { classifyText } from './radio/classify';
 import * as ai from './radioCheckAiService';
+import { stationIdsForGuard, guardUserIdsByStation } from './assignedStationsService';
 
 const DISPATCHER_TARGET_ROLES = 'admin,operationsManager,securitySupervisor,dispatcher';
 const DEFAULT_PROMPT = 'Reporte de novedades del puesto. ¿Alguna novedad o incidente?';
@@ -56,9 +57,10 @@ async function resolveStationsForCheck(db: any, tenantId: string, scope: Scope, 
   const stations = await db.station.findAll({
     where,
     attributes: ['id', 'stationName'],
-    include: [{ model: db.user, as: 'assignedGuards', attributes: ['id'], through: { attributes: [] }, required: false }],
     order: [['stationName', 'ASC']],
   });
+  // guardAssignment = single source of truth for the fallback path below.
+  const assignedByStation = await guardUserIdsByStation(db, tenantId, stations.map((s: any) => String(s.id)));
   const out: any[] = [];
   for (const st of stations) {
     // Dedupe on-duty guards by userId across both resolution paths.
@@ -86,7 +88,7 @@ async function resolveStationsForCheck(db: any, tenantId: string, scope: Scope, 
 
     // (2) FALLBACK — statically-assigned guards flagged on-duty (legacy path), for
     // tenants that assign without clock-in shifts.
-    const userIds = (st.assignedGuards || []).map((u: any) => u.id).filter(Boolean);
+    const userIds = assignedByStation.get(String(st.id)) || [];
     if (userIds.length) {
       const sgs = await db.securityGuard.findAll({
         where: { tenantId, deletedAt: null, isOnDuty: true, guardId: { [Op.in]: userIds } },
@@ -160,12 +162,7 @@ export async function ensureSupervisorEntry(db: any, tenantId: string, userId: s
 
 /** The station ids a guard (user.id) is assigned to — used to authorize replies. */
 async function guardStationIds(db: any, tenantId: string, userId: string): Promise<string[]> {
-  const stations = await db.station.findAll({
-    where: { tenantId, deletedAt: null },
-    attributes: ['id'],
-    include: [{ model: db.user, as: 'assignedGuards', attributes: [], where: { id: userId }, through: { attributes: [] }, required: true }],
-  });
-  return stations.map((s: any) => s.id);
+  return stationIdsForGuard(db, tenantId, userId);
 }
 
 // ---------------------------------------------------------------------------
@@ -557,22 +554,17 @@ export async function getConsole(db: any, tenantId: string): Promise<any> {
   // console. This computes the same shape in a fixed number of batched queries:
   //   1 stations (+assignedGuards) · 1 securityGuard · 1 radioCheckEntry · 1 session.
 
-  // 1) All stations with their assigned guard user ids (one query).
+  // 1) All stations + their assigned guard user ids (guardAssignment, batched).
   const stations = await db.station.findAll({
     where: { tenantId, deletedAt: null },
     attributes: ['id', 'stationName'],
-    include: [{ model: db.user, as: 'assignedGuards', attributes: ['id'], through: { attributes: [] }, required: false }],
     order: [['stationName', 'ASC']],
   });
 
   // station.id -> [userId,...]; collect every distinct assigned user id.
-  const userIdsByStation = new Map<string, string[]>();
+  const userIdsByStation = await guardUserIdsByStation(db, tenantId, stations.map((s: any) => String(s.id)));
   const allUserIds = new Set<string>();
-  for (const st of stations) {
-    const ids = (st.assignedGuards || []).map((u: any) => u.id).filter(Boolean);
-    userIdsByStation.set(String(st.id), ids);
-    for (const uid of ids) allUserIds.add(uid);
-  }
+  for (const ids of userIdsByStation.values()) for (const uid of ids) allUserIds.add(uid);
 
   // 2) On-duty securityGuards for ALL assigned users in ONE query; index by user.
   const onDutyByUserId = new Map<string, string>(); // userId -> guard display name

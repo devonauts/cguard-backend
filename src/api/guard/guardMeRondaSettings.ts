@@ -7,6 +7,7 @@
  */
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 const DEFAULTS = {
   frequencyMinutes: 60,
@@ -36,22 +37,15 @@ export default async (req: any, res: any) => {
     // Resolve the guard's station → postSiteId (query param override allowed).
     let postSiteId = req.query.postSiteId || null;
     if (!postSiteId) {
-      const station = await db.station
-        .findOne({
-          where: { tenantId, deletedAt: null },
-          include: [
-            {
-              model: db.user,
-              as: 'assignedGuards',
-              where: { id: userId },
-              attributes: [],
-              through: { attributes: [] },
-              required: true,
-            },
-          ],
-          attributes: ['id', 'postSiteId'],
-        })
-        .catch(() => null);
+      const assignedIds = await stationIdsForGuard(db, tenantId, userId);
+      const station = assignedIds.length
+        ? await db.station
+            .findOne({
+              where: { tenantId, deletedAt: null, id: assignedIds },
+              attributes: ['id', 'postSiteId'],
+            })
+            .catch(() => null)
+        : null;
       postSiteId = station ? station.postSiteId : null;
     }
 

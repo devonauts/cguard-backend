@@ -6,6 +6,7 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import { isDueOn, ymd, dueAt } from '../../services/consignaRecurrence';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 export default async (req: any, res: any) => {
   try {
@@ -20,12 +21,14 @@ export default async (req: any, res: any) => {
       attributes: ['id'],
     });
 
-    // stations the guard is assigned to
-    const stations = await db.station.findAll({
-      where: { tenantId, deletedAt: null },
-      attributes: ['id', 'stationName'],
-      include: [{ model: db.user, as: 'assignedGuards', where: { id: userId }, attributes: [], through: { attributes: [] }, required: true }],
-    });
+    // stations the guard is assigned to (guardAssignment — single source of truth)
+    const assignedStationIds = await stationIdsForGuard(db, tenantId, userId);
+    const stations = assignedStationIds.length
+      ? await db.station.findAll({
+          where: { tenantId, deletedAt: null, id: assignedStationIds },
+          attributes: ['id', 'stationName'],
+        })
+      : [];
     const stationIds = stations.map((s: any) => s.id);
     const stationName: Record<string, string> = {};
     stations.forEach((s: any) => { stationName[s.id] = s.stationName; });

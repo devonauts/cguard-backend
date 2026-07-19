@@ -53,9 +53,8 @@ class StationRepository {
       },
     );
 
-    await record.setAssignedGuards(data.assignedGuards || [], {
-      transaction,
-    });
+    // NOTE: no setAssignedGuards — the stationAssignedGuardsUser pivot is DEAD.
+    // Guard↔station assignment lives ONLY in guardAssignment (assignmentService).
     await record.setTasks(data.tasks || [], {
       transaction,
     });
@@ -205,7 +204,8 @@ class StationRepository {
     // and patrolCheckpoint.stationId is NOT NULL → "patrolCheckpoint.stationId
     // cannot be null" 400. Guarding on `!== undefined` avoids that and also stops
     // silently clearing assigned guards / tasks / reports / incidents on every edit.
-    if (data.assignedGuards !== undefined) await record.setAssignedGuards(data.assignedGuards || [], { transaction });
+    // NOTE: assignedGuards intentionally NOT written — the pivot is dead; the
+    // truth is guardAssignment. Payloads still carrying assignedGuards are ignored.
     if (data.tasks !== undefined) await record.setTasks(data.tasks || [], { transaction });
     if (data.reports !== undefined) await record.setReports(data.reports || [], { transaction });
     if (data.incidents !== undefined) await record.setIncidents(data.incidents || [], { transaction });
@@ -286,14 +286,8 @@ class StationRepository {
           },
         ],
       },
-      // Assigned guards for the station hero (names only — cheap).
-      {
-        model: options.database.user,
-        as: 'assignedGuards',
-        attributes: ['id', 'fullName', 'firstName', 'lastName'],
-        through: { attributes: [] },
-        required: false,
-      },
+      // NOTE: no assignedGuards include — the legacy pivot is DEAD;
+      // _fillWithRelationsAndFiles hydrates assignedGuards from guardAssignment.
     ];
 
     const currentTenant = SequelizeRepository.getCurrentTenant(
@@ -727,28 +721,40 @@ class StationRepository {
     const outputs = rows.map((r) => r.get({ plain: true }));
     const ids = outputs.map((o) => o.id).filter(Boolean);
 
-    // 1) Assigned guards (junction) for ALL stations in one query.
-    const withGuards = await options.database.station.findAll({
-      where: { id: ids },
-      attributes: ['id'],
-      include: [{
-        model: options.database.user,
-        as: 'assignedGuards',
-        attributes: { exclude: ['password', 'emailVerificationToken', 'passwordResetToken', 'importHash'] },
-        through: { attributes: [] },
-      }],
-      transaction,
-    });
+    // 1) Assigned guards (guardAssignment — single source of truth; the legacy
+    // stationAssignedGuardsUser junction is DEAD and showed ghost guards) for
+    // ALL stations in one query.
+    const assigns = ids.length
+      ? await options.database.guardAssignment.findAll({
+          where: { stationId: ids, tenantId: tenant.id, status: 'active' },
+          attributes: ['stationId', 'guardId'],
+          include: [{
+            model: options.database.user,
+            as: 'guard',
+            attributes: { exclude: ['password', 'emailVerificationToken', 'passwordResetToken', 'importHash'] },
+          }],
+          transaction,
+        }).catch(() => [])
+      : [];
     const guardsByStation = new Map<string, any[]>();
-    for (const s of withGuards) {
-      const plain = s.get({ plain: true });
-      guardsByStation.set(String(plain.id), plain.assignedGuards || []);
+    for (const a of assigns) {
+      const k = String(a.stationId);
+      if (!guardsByStation.has(k)) guardsByStation.set(k, []);
+      const list = guardsByStation.get(k)!;
+      const u = a.guard && a.guard.get ? a.guard.get({ plain: true }) : a.guard;
+      if (u && !list.some((g: any) => String(g.id) === String(u.id))) list.push(u);
     }
 
-    // 2) Distinct scheduled guards per station in one grouped query.
+    // 2) Distinct guards SCHEDULED FROM NOW ON per station (a guard who worked
+    // one shift months ago must not count as staffing forever).
     const scheduled = ids.length
       ? await options.database.shift.findAll({
-          where: { stationId: ids, tenantId: tenant.id, guardId: { [Op.ne]: null } },
+          where: {
+            stationId: ids,
+            tenantId: tenant.id,
+            guardId: { [Op.ne]: null },
+            endTime: { [Op.gte]: new Date() },
+          },
           attributes: ['stationId', 'guardId'],
           group: ['stationId', 'guardId'],
           transaction,
@@ -808,9 +814,28 @@ class StationRepository {
       options,
     );
 
-    output.assignedGuards = await record.getAssignedGuards({
-      transaction,
-    });
+    // Assigned guards from guardAssignment (single source of truth — the
+    // legacy getAssignedGuards junction is DEAD and returned ghost guards).
+    try {
+      const assigns = await options.database.guardAssignment.findAll({
+        where: { stationId: record.id, tenantId: tenant.id, status: 'active' },
+        attributes: ['guardId'],
+        include: [{
+          model: options.database.user,
+          as: 'guard',
+          attributes: { exclude: ['password', 'emailVerificationToken', 'passwordResetToken', 'importHash'] },
+        }],
+        transaction,
+      });
+      const seen = new Set<string>();
+      output.assignedGuards = [];
+      for (const a of assigns) {
+        const u = a.guard && a.guard.get ? a.guard.get({ plain: true }) : a.guard;
+        if (u && !seen.has(String(u.id))) { seen.add(String(u.id)); output.assignedGuards.push(u); }
+      }
+    } catch {
+      output.assignedGuards = [];
+    }
 
     output.assignedGuards = UserRepository.cleanupForRelationships(output.assignedGuards);
 
@@ -892,6 +917,9 @@ class StationRepository {
           stationId: record.id,
           ...(tenant && tenant.id ? { tenantId: tenant.id } : {}),
           guardId: { [Op.ne]: null },
+          // From NOW on — a guard who worked one shift months ago must not
+          // count as current staffing forever.
+          endTime: { [Op.gte]: new Date() },
         },
         attributes: ['guardId'],
         group: ['guardId'],

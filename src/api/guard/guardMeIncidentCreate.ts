@@ -13,6 +13,7 @@ import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
 import FileRepository from '../../database/repositories/fileRepository';
 import { dispatch } from '../../lib/notificationDispatcher';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 export default async (req: any, res: any) => {
   try {
@@ -37,22 +38,15 @@ export default async (req: any, res: any) => {
     let stationId = data.stationId || null;
     let postSiteId = data.postSiteId || null;
     if (!stationId) {
-      const station = await db.station
-        .findOne({
-          where: { tenantId, deletedAt: null },
-          include: [
-            {
-              model: db.user,
-              as: 'assignedGuards',
-              where: { id: userId },
-              attributes: ['id'],
-              through: { attributes: [] },
-              required: true,
-            },
-          ],
-          attributes: ['id', 'postSiteId'],
-        })
-        .catch(() => null);
+      const assignedIds = await stationIdsForGuard(db, tenantId, userId);
+      const station = assignedIds.length
+        ? await db.station
+            .findOne({
+              where: { tenantId, deletedAt: null, id: assignedIds },
+              attributes: ['id', 'postSiteId'],
+            })
+            .catch(() => null)
+        : null;
       if (station) {
         stationId = station.id;
         postSiteId = postSiteId || station.postSiteId;

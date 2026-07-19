@@ -770,21 +770,10 @@ export default class GuardPerformanceService {
     if (!userId || !sgId) return { score: null, due: 0, done: 0 };
     try {
       const db = this.db;
-      const stations = await db.station.findAll({
-        where: { tenantId: this.tenantId, deletedAt: null },
-        attributes: ['id'],
-        include: [
-          {
-            model: db.user,
-            as: 'assignedGuards',
-            where: { id: userId },
-            attributes: [],
-            through: { attributes: [] },
-            required: true,
-          },
-        ],
-      });
-      const stationIds = stations.map((st: any) => st.id);
+      // guardAssignment = single source of truth (the legacy pivot scored
+      // Horario-assigned guards an unearned null/100%).
+      const { stationIdsForGuard } = require('./assignedStationsService');
+      const stationIds: string[] = await stationIdsForGuard(db, this.tenantId, userId);
       if (!stationIds.length) return { score: null, due: 0, done: 0 };
 
       // Tenant timezone is invariant — fetch once per service instance.

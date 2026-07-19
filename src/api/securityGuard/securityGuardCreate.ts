@@ -4,6 +4,7 @@ import Permissions from '../../security/permissions';
 import SecurityGuardService from '../../services/securityGuardService';
 import { invitationTokenExpiry } from '../../services/auth/invitationToken';
 import StationService from '../../services/stationService';
+import { createAssignment } from '../../services/assignmentService';
 import Error400 from '../../errors/Error400';
 import moment from 'moment';
 import UserCreator from '../../services/user/userCreator';
@@ -23,6 +24,52 @@ function isStrongPassword(password) {
          /[^A-Za-z0-9]/.test(password);
 }
 const PASSWORD_POLICY_ERROR = 'mínimo 8 caracteres y contener al menos una letra mayúscula, una letra minúscula, un número y un carácter especial.';
+
+// Assign a newly-created guard to a station through guardAssignment — the
+// SINGLE source of truth. The old path wrote the dead stationAssignedGuardsUser
+// pivot (via StationService.update assignedGuards) and never created an
+// assignment, producing "ghost" guards visible in pivot-based counts but
+// invisible to the Horario, the station roster and the client Personal tab.
+// Tries a free fijo position (rotation assignment) first; falls back to an
+// ad-hoc assignment with the station's schedule window.
+async function assignNewGuardToStation(req: any, stationId: string, guardUserId: string) {
+  const db = req.database;
+  const tenantId = req.params.tenantId || req.currentTenant.id;
+  const positions = await db.stationPosition.findAll({
+    where: { stationId, tenantId, type: 'fijo' },
+    order: [['sortOrder', 'ASC']],
+  }).catch(() => []);
+  const occupied = new Set(
+    (await db.guardAssignment.findAll({
+      where: { stationId, tenantId, status: 'active' },
+      attributes: ['positionId'],
+    }).catch(() => [])).map((a: any) => String(a.positionId)),
+  );
+  const free = positions.find((p: any) => !occupied.has(String(p.id)));
+  const station = await db.station.findOne({
+    where: { id: stationId, tenantId },
+    attributes: ['startingTimeInDay', 'finishTimeInDay'],
+  }).catch(() => null);
+  const oneYear = new Date();
+  oneYear.setFullYear(oneYear.getFullYear() + 1);
+  const adhocInput = {
+    guardId: guardUserId,
+    stationId,
+    positionId: null,
+    endDate: oneYear.toISOString().slice(0, 10),
+    startTime: station?.startingTimeInDay || '07:00',
+    endTime: station?.finishTimeInDay || '19:00',
+  };
+  if (free) {
+    try {
+      await createAssignment(db, tenantId, req.currentUser.id, { ...adhocInput, positionId: free.id, endDate: null });
+      return;
+    } catch (e) {
+      // e.g. station without rotation configured — fall back to ad-hoc below.
+    }
+  }
+  await createAssignment(db, tenantId, req.currentUser.id, adhocInput);
+}
 
 export default async (req, res, next) => {
   // Preserve the original currentUser (actor) and tenant before any possible impersonation
@@ -634,18 +681,10 @@ export default async (req, res, next) => {
         const entryStationIds: string[] = Array.isArray(item?.stationIds) ? item.stationIds : [];
         for (const stationId of entryStationIds) {
           try {
-            const station = await new StationService(req).findById(stationId);
-            if (station) {
-              const existingGuards = (station.assignedGuards || []).map((g: any) => g.id ?? g).filter(Boolean);
-              const guardUserId = entry.guard;
-              if (guardUserId && !existingGuards.includes(guardUserId)) {
-                await new StationService(req).update(stationId, {
-                  ...station,
-                  assignedGuards: [...existingGuards, guardUserId],
-                });
-              }
-            }
+            if (entry.guard) await assignNewGuardToStation(req, stationId, entry.guard);
           } catch (e) {
+            // A guard holds ONE active assignment: extra stations (or engine
+            // validation) land here — surfaced in logs, never fatal.
             console.warn('[securityGuardCreate] failed to assign station (invite flow)', stationId, e && (e as any).message ? (e as any).message : e);
           }
         }
@@ -667,18 +706,10 @@ export default async (req, res, next) => {
       const stationIds: string[] = Array.isArray(incoming?.stationIds) ? incoming.stationIds : [];
       for (const stationId of stationIds) {
         try {
-          const station = await new StationService(req).findById(stationId);
-          if (station) {
-            const existingGuards = (station.assignedGuards || []).map((g: any) => g.id ?? g).filter(Boolean);
-            const guardUserId = entry.guard;
-            if (guardUserId && !existingGuards.includes(guardUserId)) {
-              await new StationService(req).update(stationId, {
-                ...station,
-                assignedGuards: [...existingGuards, guardUserId],
-              });
-            }
-          }
+          if (entry.guard) await assignNewGuardToStation(req, stationId, entry.guard);
         } catch (e) {
+          // A guard holds ONE active assignment: extra stations (or engine
+          // validation) land here — surfaced in logs, never fatal.
           console.warn('[securityGuardCreate] failed to assign station', stationId, e && (e as any).message ? (e as any).message : e);
         }
       }

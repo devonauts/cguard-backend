@@ -414,13 +414,14 @@ async function runConsignaScheduler() {
       );
       if (!claimed) continue;
 
-      // resolve the station's assigned guards → their device tokens
+      // resolve the station's assigned guards (guardAssignment — single source
+      // of truth; the legacy pivot routed these pushes to stale guards) → tokens
       const station = await database.station.findOne({
         where: { id: order.stationId },
         attributes: ['id', 'stationName'],
-        include: [{ model: database.user, as: 'assignedGuards', attributes: ['id'], through: { attributes: [] } }],
       });
-      const userIds = (station?.assignedGuards || []).map((u: any) => u.id);
+      const { guardUserIdsForStations } = require('./services/assignedStationsService');
+      const userIds: string[] = await guardUserIdsForStations(database, order.tenantId, [String(order.stationId)]);
       let tokens: string[] = [];
       if (userIds.length) {
         const devices = await database.deviceIdInformation.findAll({ where: { tenantId: order.tenantId, createdById: { [Op.in]: userIds } }, attributes: ['deviceId'] });

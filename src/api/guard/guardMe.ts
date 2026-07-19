@@ -9,6 +9,7 @@ import Error401 from '../../errors/Error401';
 import Roles from '../../security/roles';
 import { Op } from 'sequelize';
 import { timeLabelInTz } from '../../lib/tenantTime';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 export default async (req: any, res: any) => {
   try {
@@ -35,22 +36,19 @@ export default async (req: any, res: any) => {
         db.securityGuard.findOne({
           where: { guardId: userId, tenantId, deletedAt: null },
         }),
-        // Stations assigned to this guard (via junction table)
-        db.station.findAll({
-          where: { tenantId, deletedAt: null },
-          include: [{
-            model: db.user,
-            as: 'assignedGuards',
-            where: { id: userId },
-            attributes: [],
-            through: { attributes: [] },
-          }],
-          attributes: [
-            'id', 'stationName', 'latitud', 'longitud', 'stationSchedule',
-            'startingTimeInDay', 'finishTimeInDay', 'numberOfGuardsInStation',
-            'geofenceRadius', 'postSiteId',
-          ],
-        }),
+        // Stations assigned to this guard (guardAssignment — single source of truth)
+        stationIdsForGuard(db, tenantId, userId).then((ids: string[]) =>
+          ids.length
+            ? db.station.findAll({
+                where: { tenantId, deletedAt: null, id: ids },
+                attributes: [
+                  'id', 'stationName', 'latitud', 'longitud', 'stationSchedule',
+                  'startingTimeInDay', 'finishTimeInDay', 'numberOfGuardsInStation',
+                  'geofenceRadius', 'postSiteId',
+                ],
+              })
+            : [],
+        ),
         // Current shift for this guard
         db.shift.findOne({
           where: {

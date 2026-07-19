@@ -9,6 +9,7 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import Error400 from '../../errors/Error400';
 import { ymd } from '../../services/consignaRecurrence';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 export default async (req: any, res: any) => {
   try {
@@ -23,12 +24,12 @@ export default async (req: any, res: any) => {
     const order = await db.stationOrder.findOne({ where: { id: orderId, tenantId, deletedAt: null } });
     if (!order) throw new Error400(req.language, 'guard.orderNotFound');
 
-    // guard must be assigned to the order's station
-    const assigned = await db.station.findOne({
-      where: { id: order.stationId, tenantId, deletedAt: null },
-      include: [{ model: db.user, as: 'assignedGuards', where: { id: userId }, attributes: ['id'], through: { attributes: [] }, required: true }],
-    });
-    if (!assigned) throw new Error400(req.language, 'guard.notAssignedToStation');
+    // guard must be assigned to the order's station (guardAssignment — the
+    // old pivot gate locked out every Horario-assigned guard)
+    const assignedStationIds = await stationIdsForGuard(db, tenantId, userId);
+    if (!assignedStationIds.includes(String(order.stationId))) {
+      throw new Error400(req.language, 'guard.notAssignedToStation');
+    }
 
     const securityGuard = await db.securityGuard.findOne({ where: { guardId: userId, tenantId, deletedAt: null } });
     const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });

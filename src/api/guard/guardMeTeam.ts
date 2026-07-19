@@ -11,6 +11,7 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import { Op } from 'sequelize';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 export default async (req: any, res: any) => {
   try {
@@ -46,18 +47,14 @@ export default async (req: any, res: any) => {
       postSiteId = st?.postSiteId || null;
     }
     if (!postSiteId) {
-      const st = await db.station.findOne({
-        where: { tenantId, deletedAt: null },
-        include: [{
-          model: db.user,
-          as: 'assignedGuards',
-          where: { id: userId },
-          attributes: [],
-          through: { attributes: [] },
-        }],
-        attributes: ['id', 'postSiteId'],
-      });
-      postSiteId = st?.postSiteId || null;
+      const assignedIds = await stationIdsForGuard(db, tenantId, userId);
+      if (assignedIds.length) {
+        const st = await db.station.findOne({
+          where: { tenantId, deletedAt: null, id: assignedIds },
+          attributes: ['id', 'postSiteId'],
+        });
+        postSiteId = st?.postSiteId || null;
+      }
     }
 
     // No sitio resolvable → roster is just me, if I'm on duty.

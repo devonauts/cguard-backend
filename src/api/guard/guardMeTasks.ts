@@ -14,6 +14,7 @@ import Error403 from '../../errors/Error403';
 import Error404 from '../../errors/Error404';
 import FileRepository from '../../database/repositories/fileRepository';
 import { notifyTaskCompleted } from '../../services/taskNotify';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 /**
  * Every station the guard is effectively working — so tasks SHOW and can be
@@ -35,15 +36,11 @@ async function guardStationIds(db: any, tenantId: string, userId: string): Promi
     for (const r of rows || []) add(r.stationId);
   } catch (e) { console.warn('[guardTasks] assignment stations failed:', (e as any)?.message || e); }
 
-  // 2) Permanent station junction (station.assignedGuards).
+  // 2) Active guardAssignment stations (single source of truth; the old
+  //    stationAssignedGuardsUser junction is dead).
   try {
-    const sts = await db.station.findAll({
-      where: { tenantId, deletedAt: null },
-      attributes: ['id'],
-      include: [{ model: db.user, as: 'assignedGuards', where: { id: userId }, attributes: [], through: { attributes: [] }, required: true }],
-    });
-    for (const s of sts || []) add(s.id);
-  } catch (e) { console.warn('[guardTasks] junction stations failed:', (e as any)?.message || e); }
+    for (const id of await stationIdsForGuard(db, tenantId, userId)) add(id);
+  } catch (e) { console.warn('[guardTasks] assignment stations failed:', (e as any)?.message || e); }
 
   // 3) Current scheduled shift (now within the window).
   try {

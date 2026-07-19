@@ -6,6 +6,7 @@ import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';import Roles from '../../security/roles';import FileRepository from './fileRepository';
 import { IRepositoryOptions } from './IRepositoryOptions';
 import { batchSignFiles } from '../utils/listQuery';
+import { stationIdsForGuard } from '../../services/assignedStationsService';
 
 const Op = Sequelize.Op;
 
@@ -122,25 +123,20 @@ class VisitorLogRepository {
         }
       }
 
-      // 3) Permanent station junction (station ⇄ guard) — safety net for when the
-      // worker-app dashboard that normally supplies this didn't load.
+      // 3) Active guardAssignment (single source of truth) — safety net for
+      // when the worker-app dashboard that normally supplies this didn't load.
       if (!toCreate.stationId && !toCreate.postSiteId && userId) {
-        const st = await options.database.station
-          .findOne({
-            where: { tenantId: tenant.id, deletedAt: null },
-            attributes: ['id', 'postSiteId'],
-            include: [{
-              model: options.database.user,
-              as: 'assignedGuards',
-              where: { id: userId },
-              attributes: [],
-              through: { attributes: [] },
-              required: true,
-            }],
-            order: [['createdAt', 'DESC']],
-            transaction,
-          })
-          .catch(() => null);
+        const assignedIds = await stationIdsForGuard(options.database, tenant.id, userId).catch(() => []);
+        const st = assignedIds.length
+          ? await options.database.station
+              .findOne({
+                where: { tenantId: tenant.id, deletedAt: null, id: assignedIds },
+                attributes: ['id', 'postSiteId'],
+                order: [['createdAt', 'DESC']],
+                transaction,
+              })
+              .catch(() => null)
+          : null;
         if (st) {
           if (st.id) toCreate.stationId = st.id;
           if (st.postSiteId) toCreate.postSiteId = st.postSiteId;
@@ -483,23 +479,18 @@ class VisitorLogRepository {
       assignedStationIds = (stationRows || []).map((row) => row && row.station_id).filter(Boolean);
     }
 
-    // Security guards are assigned to stations via the station<->user junction
-    // (`station.assignedGuards`), not via tenant_user_post_sites. Recognize those
-    // direct station assignments so guards can manage their station's visitor logs.
+    // Security guards are assigned to stations via guardAssignment (single
+    // source of truth — the legacy station⇄user junction is dead). Recognize
+    // those assignments so guards can manage their station's visitor logs.
     try {
-      const guardStations = await options.database.station.findAll({
-        where: { tenantId: currentTenant.id, deletedAt: null },
-        attributes: ['id', 'postSiteId'],
-        include: [{
-          model: options.database.user,
-          as: 'assignedGuards',
-          where: { id: currentUser.id },
-          attributes: [],
-          through: { attributes: [] },
-          required: true,
-        }],
-        transaction,
-      });
+      const assignedIds = await stationIdsForGuard(options.database, currentTenant.id, currentUser.id);
+      const guardStations = assignedIds.length
+        ? await options.database.station.findAll({
+            where: { tenantId: currentTenant.id, deletedAt: null, id: assignedIds },
+            attributes: ['id', 'postSiteId'],
+            transaction,
+          })
+        : [];
       for (const st of (guardStations || [])) {
         if (st && st.id) assignedStationIds.push(st.id);
         if (st && st.postSiteId) assignedPostSiteIds.push(st.postSiteId);
