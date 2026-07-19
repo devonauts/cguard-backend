@@ -281,7 +281,7 @@ class StationRepository {
           {
             model: options.database.clientAccount,
             as: 'clientAccount',
-            attributes: ['id', 'name', 'commercialName', 'companyName'],
+            attributes: ['id', 'name', 'commercialName'],
             required: false,
           },
         ],
@@ -852,7 +852,7 @@ class StationRepository {
       try {
         const post = await options.database.businessInfo.findOne({
           where: { id: output.postSiteId, tenantId: tenant.id },
-          include: [{ model: options.database.clientAccount, as: 'clientAccount', attributes: ['id', 'name', 'commercialName', 'companyName'], required: false }],
+          include: [{ model: options.database.clientAccount, as: 'clientAccount', attributes: ['id', 'name', 'commercialName'], required: false }],
           transaction,
         });
         output.postSite = post
