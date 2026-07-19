@@ -41,7 +41,8 @@ export type ComponentKey =
   | 'consignas'
   | 'rondas'
   | 'quiz'
-  | 'training';
+  | 'training'
+  | 'clientRating';
 
 export type Tier = 'excellent' | 'good' | 'fair' | 'needs_improvement';
 export type SubjectType = 'guard' | 'supervisor';
@@ -54,6 +55,10 @@ const DEFAULT_WEIGHTS: Record<ComponentKey, number> = {
   rondas: 0.16,
   quiz: 0.12,
   training: 0.1,
+  // Client satisfaction (customer star reviews of this guard). ~13% once
+  // renormalized alongside the operational factors; drops with no reviews so a
+  // guard nobody has rated yet isn't punished. Overridable per tenant.
+  clientRating: 0.15,
 };
 
 const num = (v: any, d: number) => {
@@ -208,6 +213,7 @@ export default class GuardPerformanceService {
         rondas: row.weightRondas,
         quiz: row.weightQuiz,
         training: row.weightTraining,
+        clientRating: row.weightClientRating,
       };
       (Object.keys(map) as ComponentKey[]).forEach((k) => {
         if (map[k] != null && Number.isFinite(Number(map[k]))) {
@@ -413,6 +419,10 @@ export default class GuardPerformanceService {
     const tr = await this.trainingScore(sgId);
     if (tr != null) s.training = tr;
 
+    // clientRating — customer star reviews of this guard in the period.
+    const cr = await this.clientRatingScore(sgId, from, now);
+    if (cr.score != null) s.clientRating = cr.score;
+
     // ---------------------------------------------------------------
     // Weighted base (renormalize over factors that have data).
     // ---------------------------------------------------------------
@@ -605,6 +615,8 @@ export default class GuardPerformanceService {
         rondasRate: s.rondas != null ? Math.round(s.rondas * 100) : null,
         quizAvg: s.quiz != null ? Math.round(s.quiz * 100) : null,
         trainingRate: s.training != null ? Math.round(s.training * 100) : null,
+        clientRatingAvg: cr.avg,
+        clientRatingCount: cr.count,
       },
       tips,
       ...(detailPayload || {}),
@@ -954,6 +966,42 @@ export default class GuardPerformanceService {
       return clamp(completed / assigned, 0, 1);
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Customer satisfaction factor (0..1) from client star reviews of this guard
+   * in the period, plus the raw 1–5 average and count for the stats payload.
+   * Null when the guard has no reviews in the window (factor drops, no penalty).
+   */
+  private async clientRatingScore(
+    sgId: string | undefined,
+    from: Date,
+    now: Date,
+  ): Promise<{ score: number | null; avg: number | null; count: number }> {
+    if (!sgId || !this.db.guardRating) return { score: null, avg: null, count: 0 };
+    try {
+      const rows = await this.db.guardRating.findAll({
+        where: {
+          guardId: sgId,
+          tenantId: this.tenantId,
+          createdAt: { [Op.gte]: from, [Op.lte]: now },
+          deletedAt: null,
+        },
+        attributes: ['rating'],
+      });
+      const vals = rows
+        .map((r: any) => Number(r.rating) || 0)
+        .filter((n: number) => n > 0);
+      if (!vals.length) return { score: null, avg: null, count: 0 };
+      const avg = mean(vals); // 1..5
+      return {
+        score: clamp(avg / 5, 0, 1),
+        avg: Math.round(avg * 100) / 100,
+        count: vals.length,
+      };
+    } catch {
+      return { score: null, avg: null, count: 0 };
     }
   }
 

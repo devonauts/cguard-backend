@@ -22,6 +22,8 @@ export default function (sequelize) {
       weightRondas: { type: DataTypes.FLOAT, allowNull: true },
       weightQuiz: { type: DataTypes.FLOAT, allowNull: true },
       weightTraining: { type: DataTypes.FLOAT, allowNull: true },
+      // Customer star reviews of the guard (client satisfaction).
+      weightClientRating: { type: DataTypes.FLOAT, allowNull: true },
       // Logarithmic absence penalty: K * ln(1 + A*absences + B*tardies)
       penaltyK: { type: DataTypes.FLOAT, allowNull: true },
       penaltyA: { type: DataTypes.FLOAT, allowNull: true },

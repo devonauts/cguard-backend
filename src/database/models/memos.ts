@@ -29,6 +29,20 @@ export default function (sequelize) {
         allowNull: false,
         defaultValue: false,
       },
+      // 'memo' (formal notice) or 'observacion' (lighter internal note). Both
+      // are addressed to a single guard; used to talk about service quality.
+      type: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'memo',
+      },
+      // Origin: the guardRating (customer review) this memo/observación was
+      // generated from, when the staff acted on a specific review. Nullable —
+      // memos can also be created standalone. No hard FK (mirrors guardName).
+      guardRatingId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
       importHash: {
         type: DataTypes.STRING(255),
         allowNull: true,    
