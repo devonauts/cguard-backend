@@ -275,6 +275,16 @@ class StationRepository {
         model: options.database.businessInfo,
         as: 'postSite',
         required: false,
+        // Pull the sede's owning client so the station breadcrumb can render
+        // the full Clientes › Cliente › Sede › Estación chain.
+        include: [
+          {
+            model: options.database.clientAccount,
+            as: 'clientAccount',
+            attributes: ['id', 'name', 'commercialName', 'companyName'],
+            required: false,
+          },
+        ],
       },
       // Assigned guards for the station hero (names only — cheap).
       {
@@ -825,18 +835,29 @@ class StationRepository {
     });
     // (station.getShift removed — Phase 1; query shifts via shift.stationId)
 
-    // Attach simplified postSite info if available
+    // Attach simplified postSite info if available. Keep the owning client
+    // (clientAccount) so the station breadcrumb can show Cliente › Sede.
+    const slimClient = (ca: any) => (ca ? { id: ca.id, name: ca.name, commercialName: ca.commercialName, companyName: ca.companyName } : null);
     if (output.postSite) {
       // businessInfo's display-name column is companyName (there is no
       // `businessName`/`name` column — this mapping always returned null).
-      output.postSite = output.postSite
-        ? { id: output.postSite.id, businessName: output.postSite.companyName || null }
-        : null;
+      output.postSite = {
+        id: output.postSite.id,
+        businessName: output.postSite.companyName || null,
+        clientAccountId: output.postSite.clientAccountId || null,
+        clientAccount: slimClient(output.postSite.clientAccount),
+      };
     } else if (output.postSiteId) {
       // fallback: try to load postSite when only id present
       try {
-        const post = await options.database.businessInfo.findOne({ where: { id: output.postSiteId, tenantId: tenant.id }, transaction });
-        output.postSite = post ? { id: post.id, businessName: post.companyName || null } : null;
+        const post = await options.database.businessInfo.findOne({
+          where: { id: output.postSiteId, tenantId: tenant.id },
+          include: [{ model: options.database.clientAccount, as: 'clientAccount', attributes: ['id', 'name', 'commercialName', 'companyName'], required: false }],
+          transaction,
+        });
+        output.postSite = post
+          ? { id: post.id, businessName: post.companyName || null, clientAccountId: post.clientAccountId || null, clientAccount: slimClient((post as any).clientAccount) }
+          : null;
       } catch (e) {
         output.postSite = null;
       }
