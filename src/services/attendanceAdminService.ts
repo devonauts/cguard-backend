@@ -333,8 +333,11 @@ export default class AttendanceAdminService {
       }
     } catch { /* staff optional */ }
 
+    // Attendance rate compares punches against the schedule. Only guards have a
+    // schedule (db.shift), so the rate is guard-based (supervisors/staff have no
+    // scheduled denominator). Clamp to 100% for extra/unscheduled guard punches.
     const attendancePct =
-      scheduledToday > 0 ? Math.round(((clockedInToday + supClockedInToday + staffClockedInToday) / scheduledToday) * 100) : null;
+      scheduledToday > 0 ? Math.min(100, Math.round((clockedInToday / scheduledToday) * 100)) : null;
 
     return {
       scheduledToday,
@@ -410,9 +413,13 @@ export default class AttendanceAdminService {
     if (!record) throw new Error404();
     await this.assertNotLocked(record);
 
+    // Approval is orthogonal to the punch classification: record the decision on
+    // `approvalStatus` ONLY and leave `status` (on_time / late / overtime /
+    // pending_review) intact so the sheet and payroll keep the real punctuality
+    // signal. (Previously this overwrote `status` with a flat 'approved'/'rejected',
+    // destroying the classification the roster reads.)
     await record.update({
       approvalStatus: decision,
-      status: decision === 'approved' ? 'approved' : 'rejected',
       approvedById: currentUser.id,
       approvedAt: new Date(),
       approvalNotes: notes ?? record.approvalNotes,
@@ -1039,7 +1046,11 @@ export default class AttendanceAdminService {
         : (rate > 0 ? round(regularHours * rate + overtimeHours * rate * otMult) : null);
       return {
         ...a,
-        role: supervisorIds.has(a.guardId) ? 'supervisor' : 'guard',
+        role: a.guardId.startsWith('sup:')
+          ? 'supervisor'
+          : a.guardId.startsWith('stf:')
+            ? 'administrative'
+            : 'guard',
         regularHours,
         overtimeHours,
         totalHours,

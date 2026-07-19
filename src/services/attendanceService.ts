@@ -265,6 +265,10 @@ export async function applyClockIn(
       scheduledEnd: sched.scheduledEnd,
       status: evalRes.status,
       lateMinutes: evalRes.lateMinutes,
+      // A punch that needs human review (outside geofence, allowed through with
+      // approval) enters the approval queue explicitly. Normal punches stay at the
+      // model default ('none') so they never show a phantom "Aprobar" action.
+      approvalStatus: evalRes.pendingReview ? 'pending' : opts.record.approvalStatus,
       punchInDistanceM: geofence.distanceM,
       punchInOutsideGeofence: geofence.outside,
       deviceInfo: opts.deviceInfo ? JSON.stringify(opts.deviceInfo) : opts.record.deviceInfo,
