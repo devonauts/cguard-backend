@@ -28,10 +28,6 @@ export default (app) => {
     `/tenant/:tenantId/user/:id`,
     require('./userPatch').default,
   );
-  app.post(
-    `/tenant/:tenantId/user/import`,
-    require('./userImport').default,
-  );
   // Upload avatar for a user (multipart/form-data, field `file`)
   const multer = require('multer');
   const multipart = multer();
@@ -45,10 +41,6 @@ export default (app) => {
     require('./userDestroy').default,
   );
   // Allow a user to delete their own tenant membership (self-delete)
-  app.delete(
-    `/tenant/:tenantId/user/me`,
-    require('./userSelfDestroy').default,
-  );
   // Backwards-compat endpoints used by some frontends: /user/delete and /user/remove
   app.post(
     `/tenant/:tenantId/user/delete`,
@@ -61,10 +53,6 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/user`,
     require('./userList').default,
-  );
-  app.get(
-    `/tenant/:tenantId/user/autocomplete`,
-    require('./userAutocomplete').default,
   );
   app.get(
     `/tenant/:tenantId/user/:id`,
@@ -85,10 +73,6 @@ export default (app) => {
   app.post(
     `/tenant/:tenantId/user/:id/restore`,
     require('./userRestore').default,
-  );
-  app.put(
-    `/tenant/:tenantId/user/:id/change-password`,
-    require('./userChangePassword').default,
   );
 
   app.get(

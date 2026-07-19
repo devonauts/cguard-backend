@@ -7,17 +7,9 @@ export default (app) => {
     `/tenant/:tenantId/inventory/:id`,
     require('./inventoryUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/inventory/import`,
-    require('./inventoryImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/inventory`,
     require('./inventoryDestroy').default,
-  );
-  app.get(
-    `/tenant/:tenantId/inventory/autocomplete`,
-    require('./inventoryAutocomplete').default,
   );
   app.get(
     `/tenant/:tenantId/inventory`,

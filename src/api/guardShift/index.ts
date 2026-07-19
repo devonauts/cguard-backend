@@ -3,28 +3,12 @@ export default (app) => {
     `/tenant/:tenantId/guard-shift`,
     require('./guardShiftCreate').default,
   );
-  app.put(
-    `/tenant/:tenantId/guard-shift/:id`,
-    require('./guardShiftUpdate').default,
-  );
-  app.post(
-    `/tenant/:tenantId/guard-shift/import`,
-    require('./guardShiftImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/guard-shift`,
     require('./guardShiftDestroy').default,
   );
   app.get(
-    `/tenant/:tenantId/guard-shift/autocomplete`,
-    require('./guardShiftAutocomplete').default,
-  );
-  app.get(
     `/tenant/:tenantId/guard-shift`,
     require('./guardShiftList').default,
-  );
-  app.get(
-    `/tenant/:tenantId/guard-shift/:id`,
-    require('./guardShiftFind').default,
   );
 };

@@ -20,10 +20,6 @@ export default (app) => {
         require('./roleList').default
     );
   app.get(
-        `/tenant/:tenantId/role/autocomplete`, 
-        require('./roleAutocomplete').default
-    );
-  app.get(
         `/tenant/:tenantId/role/:id`, 
         require('./roleFind').default
     );

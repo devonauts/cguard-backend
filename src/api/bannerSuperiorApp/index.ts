@@ -7,24 +7,12 @@ export default (app) => {
     `/tenant/:tenantId/banner-superior-app/:id`,
     require('./bannerSuperiorAppUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/banner-superior-app/import`,
-    require('./bannerSuperiorAppImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/banner-superior-app`,
     require('./bannerSuperiorAppDestroy').default,
   );
   app.get(
-    `/tenant/:tenantId/banner-superior-app/autocomplete`,
-    require('./bannerSuperiorAppAutocomplete').default,
-  );
-  app.get(
     `/tenant/:tenantId/banner-superior-app`,
     require('./bannerSuperiorAppList').default,
-  );
-  app.get(
-    `/tenant/:tenantId/banner-superior-app/:id`,
-    require('./bannerSuperiorAppFind').default,
   );
 };

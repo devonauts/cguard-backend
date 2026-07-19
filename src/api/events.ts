@@ -18,7 +18,6 @@ import { Router } from 'express';
 import {
   fetchPendingEventsForUser,
   getRecentEventsForUser,
-  countUnreadEventsForUser,
   markEventRead,
   markAllEventsReadForUser,
   markEventsSent,
@@ -393,34 +392,6 @@ export default (routes: Router) => {
         );
 
         return res.json({ rows: events });
-      } catch (err) {
-        return next(err);
-      }
-    },
-  );
-
-  // ─── Unread count ─────────────────────────────────────────────────────────
-  routes.get(
-    '/:tenantId/events/unread',
-    async (req: any, res: any, next: any) => {
-      try {
-        const currentUser = req.currentUser;
-        const currentTenant = req.currentTenant;
-        const database = req.database;
-
-        if (!currentUser) return res.status(401).json({ count: 0 });
-        if (!currentTenant) return res.status(403).json({ count: 0 });
-
-        const { roles, seeAll } = getUserContext(currentUser, currentTenant.id);
-        const count = await countUnreadEventsForUser(
-          database,
-          currentTenant.id,
-          currentUser.id,
-          roles,
-          seeAll,
-        );
-
-        return res.json({ count });
       } catch (err) {
         return next(err);
       }

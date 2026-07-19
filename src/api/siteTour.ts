@@ -479,64 +479,6 @@ export default function (router) {
     }
   });
 
-  // GET single assignment: /tenant/:tenantId/site-tour/:tourId/assign/:assignmentId
-  router.get('/tenant/:tenantId/site-tour/:tourId/assign/:assignmentId', async (req, res, next) => {
-    try {
-      new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
-      const tourId = req.params.tourId;
-      const tour = await req.database.siteTour.findOne({ where: { id: tourId, tenantId: req.currentTenant.id } });
-      if (!tour) {
-        const err: any = new Error('Tour not found'); err.code = 404; throw err;
-      }
-      const service = new SiteTourService(req);
-      const assignment = await service.getAssignment(req.params.assignmentId);
-      if (!assignment || String(assignment.siteTourId) !== String(tourId)) {
-        const err: any = new Error('Not found'); err.code = 404; throw err;
-      }
-      await ApiResponseHandler.success(req, res, assignment);
-    } catch (error: any) {
-      await ApiResponseHandler.error(req, res, error);
-    }
-  });
-
-  // PATCH update assignment: /tenant/:tenantId/site-tour/:tourId/assign/:assignmentId
-  router.patch('/tenant/:tenantId/site-tour/:tourId/assign/:assignmentId', async (req, res, next) => {
-    try {
-      new PermissionChecker(req).validateHas(Permissions.values.postSiteEdit);
-      const tourId = req.params.tourId;
-      const tour = await req.database.siteTour.findOne({ where: { id: tourId, tenantId: req.currentTenant.id } });
-      if (!tour) {
-        const err: any = new Error('Tour not found'); err.code = 404; throw err;
-      }
-      const service = new SiteTourService(req);
-      const payload = await service.updateAssignment(req.params.assignmentId, req.body || {});
-      if (!payload || String(payload.siteTourId) !== String(tourId)) {
-        const err: any = new Error('Not found'); err.code = 404; throw err;
-      }
-      await ApiResponseHandler.success(req, res, payload);
-    } catch (error: any) {
-      await ApiResponseHandler.error(req, res, error);
-    }
-  });
-
-  // DELETE (soft) assignment: /tenant/:tenantId/site-tour/:tourId/assign/:assignmentId
-  router.delete('/tenant/:tenantId/site-tour/:tourId/assign/:assignmentId', async (req, res, next) => {
-    try {
-      new PermissionChecker(req).validateHas(Permissions.values.postSiteDestroy || Permissions.values.postSiteEdit);
-      const tourId = req.params.tourId;
-      const tour = await req.database.siteTour.findOne({ where: { id: tourId, tenantId: req.currentTenant.id } });
-      if (!tour) {
-        const err: any = new Error('Tour not found'); err.code = 404; throw err;
-      }
-      const service = new SiteTourService(req);
-      // ensure assignment belongs to tour inside service or enforce here
-      const resPayload = await service.deleteAssignment(req.params.assignmentId);
-      await ApiResponseHandler.success(req, res, resPayload || {});
-    } catch (error: any) {
-      await ApiResponseHandler.error(req, res, error);
-    }
-  });
-
   // POST /api/tenant/:tenantId/site-tour/tag-scan
   router.post('/tenant/:tenantId/site-tour/tag-scan', async (req, res, next) => {
     try {

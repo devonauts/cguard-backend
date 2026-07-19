@@ -11,10 +11,6 @@ export default (app) => {
     `/tenant/:tenantId/shift/:id`,
     require('./shiftUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/shift/import`,
-    require('./shiftImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/shift`,
     require('./shiftDestroy').default,
@@ -23,10 +19,6 @@ export default (app) => {
   app.delete(
     `/tenant/:tenantId/shift/:id`,
     require('./shiftDestroy').default,
-  );
-  app.get(
-    `/tenant/:tenantId/shift/autocomplete`,
-    require('./shiftAutocomplete').default,
   );
   app.get(
     `/tenant/:tenantId/shift`,

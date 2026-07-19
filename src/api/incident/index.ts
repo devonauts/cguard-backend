@@ -7,17 +7,9 @@ export default (app) => {
     `/tenant/:tenantId/incident/:id`,
     require('./incidentUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/incident/import`,
-    require('./incidentImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/incident`,
     require('./incidentDestroy').default,
-  );
-  app.get(
-    `/tenant/:tenantId/incident/autocomplete`,
-    require('./incidentAutocomplete').default,
   );
   app.get(
     `/tenant/:tenantId/incident`,
@@ -26,10 +18,6 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/incident/:id`,
     require('./incidentFind').default,
-  );
-  app.post(
-    `/tenant/:tenantId/incident/:id/dispatch`,
-    require('./incidentCreateDispatch').default,
   );
   app.post(
     `/tenant/:tenantId/incident/:id/assign-supervisor`,

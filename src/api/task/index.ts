@@ -7,17 +7,9 @@ export default (app) => {
     `/tenant/:tenantId/task/:id`,
     require('./taskUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/task/import`,
-    require('./taskImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/task`,
     require('./taskDestroy').default,
-  );
-  app.get(
-    `/tenant/:tenantId/task/autocomplete`,
-    require('./taskAutocomplete').default,
   );
   // CRM approval queue + decisions (registered BEFORE /task/:id so it isn't shadowed).
   app.get(

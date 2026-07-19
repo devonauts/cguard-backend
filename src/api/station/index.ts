@@ -12,14 +12,6 @@ export default (app) => {
     `/tenant/:tenantId/station/:id/location`,
     require('./stationLocation').default,
   );
-  app.patch(
-    `/tenant/:tenantId/stations/:id/location`,
-    require('./stationLocation').default,
-  );
-  app.post(
-    `/tenant/:tenantId/station/import`,
-    require('./stationImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/station`,
     require('./stationDestroy').default,
@@ -32,10 +24,6 @@ export default (app) => {
   app.get(
     `/tenant/:tenantId/station/autocomplete`,
     require('./stationAutocomplete').default,
-  );
-  app.get(
-    `/tenant/:tenantId/station/export`,
-    require('./stationExport').default,
   );
   app.get(
     `/tenant/:tenantId/station`,
@@ -57,25 +45,13 @@ export default (app) => {
     require('./stationUpdate').default,
   );
 
-  app.post(
-    `/tenant/:tenantId/stations/import`,
-    require('./stationImport').default,
-  );
 
   app.delete(
     `/tenant/:tenantId/stations`,
     require('./stationDestroy').default,
   );
 
-  app.get(
-    `/tenant/:tenantId/stations/autocomplete`,
-    require('./stationAutocomplete').default,
-  );
 
-  app.get(
-    `/tenant/:tenantId/stations/export`,
-    require('./stationExport').default,
-  );
 
   app.get(
     `/tenant/:tenantId/stations`,
@@ -93,10 +69,6 @@ export default (app) => {
     require('../postSite/postSiteAssignGuard').default,
   );
 
-  app.delete(
-    `/tenant/:tenantId/stations/:id/guards/:assignmentId`,
-    require('../postSite/postSiteRemoveAssignment').default,
-  );
 
   app.get(
     `/tenant/:tenantId/stations/:id/guards`,

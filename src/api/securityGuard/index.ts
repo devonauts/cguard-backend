@@ -49,10 +49,6 @@ export default (app) => {
     `/tenant/:tenantId/security-guard/:id/on-duty`,
     require('./securityGuardOnDutyPatch').default,
   );
-  app.put(
-    `/tenant/:tenantId/security-guard/self`,
-    require('./securityGuardSelfUpdate').default,
-  );
   app.post(
     `/tenant/:tenantId/security-guard/import`,
     require('./securityGuardImport').default,

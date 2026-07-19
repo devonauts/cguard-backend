@@ -7,17 +7,9 @@ export default (app) => {
     `/tenant/:tenantId/memos/:id`,
     require('./memosUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/memos/import`,
-    require('./memosImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/memos`,
     require('./memosDestroy').default,
-  );
-  app.get(
-    `/tenant/:tenantId/memos/autocomplete`,
-    require('./memosAutocomplete').default,
   );
   app.get(
     `/tenant/:tenantId/memos`,

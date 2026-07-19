@@ -11,12 +11,8 @@ export default (app) => {
   app.put(`/tenant/:id`, require('./tenantUpdate').default);
   app.delete(`/tenant`, require('./tenantDestroy').default);
   app.get(`/tenant`, require('./tenantList').default);
-  app.get(`/tenant/url/available`, require('./tenantUrlAvailable').default);
   app.get(`/tenant/url`, require('./tenantFind').default);
   app.get(`/tenant/:tenantId`, require('./tenantFind').default);
   app.post(`/tenant/:tenantId/tenant-user/invitation-token`, require('./tenantCreateInvitationToken').default);
   app.post(`/tenant/:tenantId/onboarding/complete`, require('./tenantOnboardingComplete').default);
-
-  // Endpoint para subir documentos legales
-  app.post(`/tenant/:tenantId/legal-documents/upload`, require('./tenantLegalDocumentUpload').default);
 };

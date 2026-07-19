@@ -11,17 +11,9 @@ export default (app) => {
     `/tenant/:tenantId/request/:id`,
     require('./requestPatch').default,
   );
-  app.post(
-    `/tenant/:tenantId/request/import`,
-    require('./requestImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/request`,
     require('./requestDestroy').default,
-  );
-  app.get(
-    `/tenant/:tenantId/request/autocomplete`,
-    require('./requestAutocomplete').default,
   );
   app.get(
     `/tenant/:tenantId/request`,

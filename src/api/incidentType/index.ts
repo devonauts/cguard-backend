@@ -11,10 +11,6 @@ export default (app) => {
     `/tenant/:tenantId/incidentType/:id/toggle`,
     require('./incidentTypeToggle').default,
   );
-  app.post(
-    `/tenant/:tenantId/incidentType/import`,
-    require('./incidentTypeImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/incidentType`,
     require('./incidentTypeDestroy').default,

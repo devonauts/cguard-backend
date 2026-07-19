@@ -40,15 +40,7 @@ export default (app) => {
     require('../businessInfo/businessInfoFind').default,
   );
 
-  app.post(
-    `/tenant/:tenantId/post-site/:id/assign-guard`,
-    require('./postSiteAssignGuard').default,
-  );
 
-  app.delete(
-    `/tenant/:tenantId/post-site/:id/guards/:assignmentId`,
-    require('./postSiteRemoveAssignment').default,
-  );
 
   app.get(
     `/tenant/:tenantId/post-site/:id/guards`,
@@ -101,10 +93,6 @@ export default (app) => {
   );
 
   // Merged inventory for postSite (stations + postSite-level inventory)
-  app.get(
-    `/tenant/:tenantId/post-site/:id/merged-inventory`,
-    require('./mergedInventoryGet').default,
-  );
 
   // Coverage gap analysis
   app.get(

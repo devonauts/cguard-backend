@@ -12,17 +12,9 @@ export default (app) => {
     `/tenant/:tenantId/patrol/:id`,
     require('./patrolUpdate').default,
   );
-  app.post(
-    `/tenant/:tenantId/patrol/import`,
-    require('./patrolImport').default,
-  );
   app.delete(
     `/tenant/:tenantId/patrol`,
     require('./patrolDestroy').default,
-  );
-  app.get(
-    `/tenant/:tenantId/patrol/autocomplete`,
-    require('./patrolAutocomplete').default,
   );
   app.get(
     `/tenant/:tenantId/patrol`,
