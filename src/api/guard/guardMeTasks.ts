@@ -105,8 +105,21 @@ export const guardMeTasksList = async (req, res) => {
     // client's optional reference image in the task detail screen.
     const plain = rows.map((r: any) => r.get({ plain: true }));
     for (const p of plain) {
-      p.taskCompletedImage = await FileRepository.fillDownloadUrl(p.taskCompletedImage || []);
-      p.imageOptional = await FileRepository.fillDownloadUrl(p.imageOptional || []);
+      // Defensive: one unsignable file must never 500 the guard's whole task
+      // list (the worker showed a permanent "No se pudo cargar" after a
+      // completion-with-photo). Degrade to no-image instead.
+      try {
+        p.taskCompletedImage = await FileRepository.fillDownloadUrl(p.taskCompletedImage || []);
+      } catch (e: any) {
+        console.warn('[guardTasks] sign completion photo failed:', e?.message || e);
+        p.taskCompletedImage = [];
+      }
+      try {
+        p.imageOptional = await FileRepository.fillDownloadUrl(p.imageOptional || []);
+      } catch (e: any) {
+        console.warn('[guardTasks] sign optional image failed:', e?.message || e);
+        p.imageOptional = [];
+      }
     }
     await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
   } catch (error) {
