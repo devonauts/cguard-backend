@@ -87,10 +87,8 @@ export default async (req, res) => {
       attributes: ['id', 'guardId', 'stationId', 'positionId', 'platoonOffset', 'isRelief', 'startDate'],
     }).catch(() => []);
     const assignByPos = new Map<string, any>();
-    const assignByStation: Record<string, any[]> = {};
     for (const a of assigns) {
       if (a.positionId) assignByPos.set(String(a.positionId), a);
-      const k = String(a.stationId); (assignByStation[k] ||= []).push(a);
     }
     const guardName = (u: any) => u ? (u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Vigilante') : null;
 
@@ -102,15 +100,15 @@ export default async (req, res) => {
       const rot = st?.rotationStyleId ? rotById.get(String(st.rotationStyleId)) : null;
       const a = assignByPos.get(String(p.id)) || null;
       const platoon = (a && a.platoonOffset != null) ? Number(a.platoonOffset) : (Number(p.platoonOffset) || 0);
-      const scheduleType = st?.scheduleType || null;
 
       const cells = days.map((d: any) => {
         const dse = dseOf(new Date(`${d.date}T00:00:00Z`));
+        // Faithful to Programador › Horario: without a station rotationStyle the
+        // engine generates no shifts, so the page paints 'rest' (Libre) — not a
+        // perpetual work day. Only compute D/N/L when a rotation exists.
         let status: 'day' | 'night' | 'rest' | 'none';
         if (rot) status = rotationStatus(dse, platoon, Number(rot.dayShifts) || 0, Number(rot.nightShifts) || 0, Number(rot.restDays) || 0);
-        else if (scheduleType === '12h-night') status = 'night';
-        else if (scheduleType) status = 'day';
-        else status = 'none';
+        else status = 'rest';
         return { date: d.date, status };
       });
 
