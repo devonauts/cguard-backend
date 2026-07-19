@@ -92,6 +92,11 @@ export default class Storage {
         folder: 'tenant/:tenantId/securityGuard/licenses',
         maxSizeInBytes: 100 * 1024 * 1024,
       },
+      securityGuardDocument: {
+        id: 'securityGuardDocument',
+        folder: 'tenant/:tenantId/securityGuard/documents',
+        maxSizeInBytes: 100 * 1024 * 1024,
+      },
       securityGuardRecordPolicial: {
         id: 'securityGuardRecordPolicial',
         folder: 'tenant/:tenantId/securityGuard/recordPolicial',
