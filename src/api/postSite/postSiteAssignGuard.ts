@@ -105,7 +105,8 @@ export default async (req, res) => {
     // 3) Single write path → guardAssignment (auto-generates shifts). With a
     //    positionId it becomes a 'rotation' assignment that the Horario renders;
     //    only falls back to ad-hoc when the station has no positions configured.
-    const today = new Date().toISOString().slice(0, 10);
+    const { tenantToday } = await import('../../services/assignmentService');
+    const today = await tenantToday(req.database, req.currentTenant.id);
 
     // Station ↔ turno are strictly linked: an assigned guard inherits the
     // station's schedule. Derive the window from the station's jornada so an

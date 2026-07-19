@@ -19,43 +19,23 @@ export default async (req, res, next) => {
       throw new Error('Database connection unavailable');
     }
 
-    // Try primary query first; fall back to safer queries if column(s) are missing in this DB
-    let stations: any[] = [];
-    try {
-      const [s] = await sequelize.query(
-        `SELECT id FROM stations
-         WHERE (stationOriginId = :clientId OR clientAccountId = :clientId OR client_account_id = :clientId)
-           AND deletedAt IS NULL
-           AND (tenantId = :tenantId OR tenantId IS NULL)`,
-        { replacements: { clientId, tenantId: tenant.id } },
-      );
-      stations = s || [];
-    } catch (err) {
-      try {
-        const [s2] = await sequelize.query(
-          `SELECT id FROM stations
-           WHERE (stationOriginId = :clientId OR client_account_id = :clientId)
-             AND deletedAt IS NULL
-             AND (tenantId = :tenantId OR tenantId IS NULL)`,
-          { replacements: { clientId, tenantId: tenant.id } },
-        );
-        stations = s2 || [];
-      } catch (err2) {
-        try {
-          const [s3] = await sequelize.query(
-            `SELECT id FROM stations
-             WHERE stationOriginId = :clientId
-               AND deletedAt IS NULL
-               AND (tenantId = :tenantId OR tenantId IS NULL)`,
-            { replacements: { clientId, tenantId: tenant.id } },
-          );
-          stations = s3 || [];
-        } catch (err3) {
-          await ApiResponseHandler.success(req, res, { rows: [], count: 0 });
-          return;
-        }
-      }
-    }
+    // Client stations = linked directly (stationOriginId) OR under any of the
+    // client's post-sites — the same scope operation/personnel/board use.
+    // (The old raw SQL referenced a nonexistent stations.clientAccountId column,
+    // ALWAYS errored, and fell back to stationOriginId-only: the Resumen tab
+    // missed every incident at site-linked stations — the normal case.)
+    const { Op } = req.database.Sequelize;
+    const sites = await req.database.businessInfo.findAll({
+      where: { clientAccountId: clientId, tenantId: tenant.id },
+      attributes: ['id'],
+    }).catch(() => []);
+    const siteIds = (sites || []).map((s: any) => s.id).filter(Boolean);
+    const stationWhere: any[] = [{ stationOriginId: clientId }];
+    if (siteIds.length) stationWhere.push({ postSiteId: siteIds });
+    const stations = await req.database.station.findAll({
+      where: { tenantId: tenant.id, [Op.or]: stationWhere },
+      attributes: ['id'],
+    }).catch(() => []);
 
     const stationIds = (stations || []).map((s: any) => s.id).filter(Boolean);
 

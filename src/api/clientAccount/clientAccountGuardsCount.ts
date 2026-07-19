@@ -3,7 +3,15 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
 
-export default async (req, res, next) => {
+/**
+ * GET /tenant/:tenantId/client-account/:id/guards/count
+ *
+ * Distinct guards ASSIGNED to the client's stations (active guardAssignment) —
+ * the same source of truth as personnel/operation/overview. The old
+ * implementation counted rows of `tenant_user_client_accounts`, which is the
+ * CLIENT-APP ACCESS pivot (rep legal/titular/extras), not a guard roster.
+ */
+export default async (req, res) => {
   try {
     new PermissionChecker(req).validateHas(
       Permissions.values.securityGuardRead,
@@ -11,54 +19,30 @@ export default async (req, res, next) => {
 
     const tenant = SequelizeRepository.getCurrentTenant(req);
     const clientId = req.params.id;
+    const db = req.database;
+    const { Op } = db.Sequelize;
 
-    const sequelize = req.database && req.database.sequelize ? req.database.sequelize : null;
-    if (!sequelize) {
-      throw new Error('Database connection unavailable');
-    }
+    const sites = await db.businessInfo.findAll({
+      where: { clientAccountId: clientId, tenantId: tenant.id },
+      attributes: ['id'],
+    }).catch(() => []);
+    const siteIds = (sites || []).map((s: any) => s.id).filter(Boolean);
 
-    // Try counting distinct COALESCE of securityGuardId and userId (works in both Postgres and MySQL)
+    const stationWhere: any[] = [{ stationOriginId: clientId }];
+    if (siteIds.length) stationWhere.push({ postSiteId: siteIds });
+    const stations = await db.station.findAll({
+      where: { tenantId: tenant.id, [Op.or]: stationWhere },
+      attributes: ['id'],
+    }).catch(() => []);
+    const stationIds = (stations || []).map((s: any) => s.id).filter(Boolean);
+
     let count = 0;
-
-    try {
-      const [rows] = await sequelize.query(
-        `SELECT COUNT(DISTINCT COALESCE(tuc.security_guard_id, tu.userId)) AS count
-         FROM tenant_user_client_accounts tuc
-         LEFT JOIN tenantUsers tu ON tu.id = tuc.tenantUserId
-         WHERE tuc.clientAccountId = :clientId
-           AND (tu.tenantId = :tenantId OR tuc.tenantId = :tenantId)
-           AND tuc.deletedAt IS NULL
-           AND (tu.deletedAt IS NULL OR tu.deletedAt IS NULL)`,
-        { replacements: { clientId, tenantId: tenant.id } },
-      );
-      count = Number((rows && rows[0] && rows[0].count) || 0);
-    } catch (err) {
-      // Fallbacks: older DBs might not have securityGuardId column or COALESCE may behave differently
-      console.warn('[clientAccountGuardsCount] primary query failed, falling back to tenantUserId or userId count', err instanceof Error ? err.message : String(err));
-      try {
-        // First try count distinct userId via joined tenantUsers
-        const [rows2] = await sequelize.query(
-          `SELECT COUNT(DISTINCT tu.userId) AS count
-           FROM tenant_user_client_accounts tuc
-           JOIN tenantUsers tu ON tu.id = tuc.tenantUserId
-           WHERE tuc.clientAccountId = :clientId
-             AND tu.tenantId = :tenantId
-             AND tuc.deletedAt IS NULL
-             AND tu.deletedAt IS NULL`,
-          { replacements: { clientId, tenantId: tenant.id } },
-        );
-        count = Number((rows2 && rows2[0] && rows2[0].count) || 0);
-      } catch (err2) {
-        // Final fallback: count distinct tenantUserId from pivot
-        const [rows3] = await sequelize.query(
-          `SELECT COUNT(DISTINCT tuc.tenantUserId) AS count
-           FROM tenant_user_client_accounts tuc
-           WHERE tuc.clientAccountId = :clientId
-             AND tuc.deletedAt IS NULL`,
-          { replacements: { clientId } },
-        );
-        count = Number((rows3 && rows3[0] && rows3[0].count) || 0);
-      }
+    if (stationIds.length) {
+      const assigns = await db.guardAssignment.findAll({
+        where: { tenantId: tenant.id, stationId: stationIds, status: 'active' },
+        attributes: ['guardId'],
+      }).catch(() => []);
+      count = new Set((assigns || []).map((a: any) => String(a.guardId))).size;
     }
 
     await ApiResponseHandler.success(req, res, { count });

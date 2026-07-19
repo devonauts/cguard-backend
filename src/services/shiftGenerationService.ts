@@ -76,7 +76,10 @@ interface AssignmentData {
  * with persisted shifts for the tail of the year. A fixed anchor removes that
  * year-boundary drift permanently. The `referenceDate` argument is ignored.
  */
-const ROTATION_EPOCH = new Date(2024, 0, 1);
+// UTC-anchored: `new Date(2024,0,1)` was SERVER-LOCAL midnight, which shifts
+// every rotation by one day on any non-UTC server (prod is UTC, so no change
+// there — this hardens dev/staging and matches the frontend's dseOf()).
+const ROTATION_EPOCH = new Date(Date.UTC(2024, 0, 1));
 export function getGlobalEpoch(_referenceDate?: Date): Date {
   return new Date(ROTATION_EPOCH.getTime());
 }

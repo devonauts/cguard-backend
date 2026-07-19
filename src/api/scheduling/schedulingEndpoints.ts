@@ -270,7 +270,8 @@ export async function guardAssignmentDelete(req, res) {
     // End the assignment
     const record = await req.database.guardAssignment.findOne({ where: { id, tenantId } });
     if (!record) { res.status(404).send({ message: 'Assignment not found' }); return; }
-    await record.update({ status: 'ended', endDate: new Date().toISOString().slice(0, 10) });
+    const { tenantToday } = await import('../../services/assignmentService');
+    await record.update({ status: 'ended', endDate: await tenantToday(req.database, tenantId) });
 
     // Remove ALL generated shifts for this assignment (past + future) so removing
     // a vigilante leaves no lingering turnos. Attendance (guardShift) is separate.
@@ -337,8 +338,10 @@ export async function guardAssignmentRephase(req, res) {
     // makes restStartDate the FIRST rest day (with 2+ libres, the block starts
     // there and runs consecutively).
     const [y, m, d] = restStartDate.split('-').map(Number);
-    const dse = Math.floor(
-      (new Date(y, m - 1, d).getTime() - new Date(2024, 0, 1).getTime()) / 86400000,
+    // UTC calendar math — local-midnight subtraction + floor loses a day on
+    // DST/non-UTC servers (the same bug class fixed client-side in dseOf).
+    const dse = Math.round(
+      (Date.UTC(y, m - 1, d) - Date.UTC(2024, 0, 1)) / 86400000,
     );
     const restStartIdx = dayShifts + nightShifts;
     const newOffset = (((dse - restStartIdx) % cycle) + cycle) % cycle;
@@ -456,8 +459,10 @@ export async function schedulerOverview(req, res) {
     });
 
     // Get shifts for the requested date range
-    const startDate = req.query.startDate || new Date().toISOString().slice(0, 10);
-    const endDate = req.query.endDate || (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })();
+    const { tenantToday } = await import('../../services/assignmentService');
+    const tToday = await tenantToday(req.database, tenantId);
+    const startDate = req.query.startDate || tToday;
+    const endDate = req.query.endDate || (() => { const d = new Date(`${tToday}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 7); return d.toISOString().slice(0, 10); })();
 
     const shifts = await req.database.shift.findAll({
       where: {
@@ -520,9 +525,14 @@ export async function schedulerStaffing(req, res) {
 
     // Build station configs
     const stationConfigs: any[] = [];
+    // stationId → rotation style (assignments carry rotationStyleId: null BY
+    // DESIGN — the patrón lives on the station; reading assignment.rotationStyle
+    // made every fijo look 'work' every day and killed the "L sin SF" alerts).
+    const rotByStation = new Map<string, any>();
     for (const station of stations) {
       const rot = await req.database.rotationStyle.findByPk(station.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
       if (!rot) continue;
+      rotByStation.set(String(station.id), rot);
       const sFijos = fijoPositions.filter((p: any) => p.stationId === station.id);
       stationConfigs.push({
         stationId: station.id,
@@ -573,7 +583,7 @@ export async function schedulerStaffing(req, res) {
 
     const activeAssignments = await req.database.guardAssignment.findAll({
       where: { tenantId, status: 'active', deletedAt: null },
-      attributes: ['id', 'stationId', 'positionId', 'isRelief', 'platoonOffset', 'rotationStyleId'],
+      attributes: ['id', 'guardId', 'stationId', 'positionId', 'isRelief', 'platoonOffset', 'rotationStyleId'],
       include: [
         { model: req.database.stationPosition, as: 'position', attributes: ['id', 'type'] },
         { model: req.database.rotationStyle, as: 'rotationStyle', attributes: ['id', 'dayShifts', 'nightShifts', 'restDays'] },
@@ -581,7 +591,8 @@ export async function schedulerStaffing(req, res) {
     });
 
     const assignmentStatusForDay = (assignment: any, day: Date): 'work' | 'rest' => {
-      const rot = assignment?.rotationStyle;
+      // Rotation lives on the STATION; the assignment relation is null by design.
+      const rot = assignment?.rotationStyle || rotByStation.get(String(assignment?.stationId));
       if (!rot) return 'work';
       const dayShifts = Number(rot.dayShifts || 0);
       const nightShifts = Number(rot.nightShifts || 0);
@@ -625,21 +636,36 @@ export async function schedulerStaffing(req, res) {
       stationsNeedingSfByDate.set(dateStr, stationsNeeding);
     }
 
+    // SF coverage = REAL shifts by relief guards in the month. The sacafranco
+    // is MANUAL now (no rotation shifts are generated on assign), so the old
+    // rotation-phase model would mark coverage that doesn't exist.
     const sfCoverageByStationDate = new Map<string, number>();
-    for (const day of monthDays) {
-      const dateStr = day.toISOString().slice(0, 10);
-      const stationsNeeding = stationsNeedingSfByDate.get(dateStr) || [];
-      if (stationsNeeding.length === 0) continue;
-
-      const workingSf = sfAssignments.filter((a: any) => assignmentStatusForDay(a, day) === 'work');
-      if (workingSf.length === 0) continue;
-
-      for (let i = 0; i < stationsNeeding.length; i++) {
-        const stId = stationsNeeding[i];
-        if (i >= workingSf.length) break;
-        const key = `${stId}-${dateStr}`;
-        sfCoverageByStationDate.set(key, (sfCoverageByStationDate.get(key) || 0) + 1);
+    try {
+      const { Op } = req.database.Sequelize;
+      const sfGuardIds = [...new Set(sfAssignments.map((a: any) => String(a.guardId)).filter(Boolean))];
+      if (sfGuardIds.length) {
+        const tnt = await req.database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+        const tz = (tnt && tnt.timezone) || 'UTC';
+        const localDate = (d: any) => {
+          try {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(d));
+          } catch { return new Date(d).toISOString().slice(0, 10); }
+        };
+        const sfShifts = await req.database.shift.findAll({
+          where: {
+            tenantId,
+            guardId: sfGuardIds,
+            startTime: { [Op.gte]: new Date(monthStart.getTime() - 24 * 3600000), [Op.lt]: new Date(monthEnd.getTime() + 48 * 3600000) },
+          },
+          attributes: ['stationId', 'startTime'],
+        });
+        for (const s of sfShifts) {
+          const key = `${s.stationId}-${localDate(s.startTime)}`;
+          sfCoverageByStationDate.set(key, (sfCoverageByStationDate.get(key) || 0) + 1);
+        }
       }
+    } catch (e: any) {
+      console.warn('[staffing] SF coverage lookup failed:', e?.message || e);
     }
 
     const stationAlerts = stationMeta
@@ -821,6 +847,10 @@ export async function schedulerAutoAssign(req, res) {
       return plain;
     });
     const newAssignments: any[] = [];
+    // Tenant-calendar today (assigning after 19:00 local on a UTC server must
+    // NOT start the guard "tomorrow").
+    const { tenantToday: _tenantToday } = await import('../../services/assignmentService');
+    const autoAssignToday = await _tenantToday(req.database, tenantId);
 
     // Build demand: unfilled fijo positions (carry the position's platoonOffset —
     // it's already staggered per fijo by autoConfig/optimizeSacafrancos, so the
@@ -852,7 +882,7 @@ export async function schedulerAutoAssign(req, res) {
       const best: any = guardsLeft.shift();
       newAssignments.push({
         guardId: best.guardId, stationId: slot.stationId, positionId: slot.positionId,
-        rotationStyleId: slot.station.rotationStyleId, startDate: new Date().toISOString().slice(0, 10),
+        rotationStyleId: slot.station.rotationStyleId, startDate: autoAssignToday,
         platoonOffset: slot.platoonOffset, isRelief: false, status: 'active', tenantId, createdById: userId, updatedById: userId,
       });
     }

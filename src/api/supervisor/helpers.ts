@@ -10,14 +10,28 @@
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
-/** Local YYYY-MM-DD for "today" (server timezone; DATEONLY comparison). */
-export function todayDateStr(): string {
-  return new Date().toISOString().slice(0, 10);
+/** YYYY-MM-DD for "today" in the given IANA timezone (tenant tz; UTC fallback). */
+export function todayDateStr(tz?: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
 }
 
-/** The three-letter day key ('mon', ...) for a given date (today by default). */
-export function dayKeyFor(d: Date = new Date()): string {
-  return DAY_KEYS[d.getDay()];
+/** The three-letter day key ('mon', ...) for a date, in the SAME timezone as
+ * todayDateStr — deriving the weekday in a different zone than the DATEONLY
+ * string made "route runs today" and the stored run rows describe different
+ * days after the tz-offset boundary. */
+export function dayKeyFor(d: Date = new Date(), tz?: string): string {
+  const dateStr = (() => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    } catch {
+      return d.toISOString().slice(0, 10);
+    }
+  })();
+  return DAY_KEYS[new Date(`${dateStr}T00:00:00Z`).getUTCDay()];
 }
 
 /**

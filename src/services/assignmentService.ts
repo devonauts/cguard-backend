@@ -3,7 +3,7 @@ import { resolveGuardUserId } from './guardIdResolver';
 import { ymd } from './consignaRecurrence';
 
 /** Today's calendar date (YYYY-MM-DD) in the tenant's timezone (never UTC). */
-async function tenantToday(database: any, tenantId: string): Promise<string> {
+export async function tenantToday(database: any, tenantId: string): Promise<string> {
   try {
     const t = await database.tenant.findByPk(tenantId, { attributes: ['timezone'] });
     return ymd(new Date(), (t && t.timezone) || 'UTC');

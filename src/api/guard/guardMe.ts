@@ -21,9 +21,20 @@ export default async (req: any, res: any) => {
     const tenantId = req.params.tenantId || (req.currentTenant && req.currentTenant.id);
 
     const now = new Date();
-    // Rest-day gate window (for the shiftsToday lookup below).
-    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+    // Rest-day gate window = the TENANT's calendar day (server-local midnight
+    // shifted the eligibility window by the server-vs-tenant offset).
+    let startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
+    let endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+    try {
+      const tzRow = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
+      const tz = (tzRow && tzRow.timezone) || null;
+      if (tz) {
+        const { wallClockToUtc } = require('../../lib/tenantTime');
+        const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+        startOfDay = wallClockToUtc(todayStr, '00:00', tz);
+        endOfDay = new Date(startOfDay.getTime() + 24 * 3600000 - 1);
+      }
+    } catch { /* keep server-local fallback */ }
 
     // Independent read-only lookups — run concurrently instead of sequentially
     // (this is the worker-app dashboard, hit on every mount/foreground).

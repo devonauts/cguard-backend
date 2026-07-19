@@ -140,6 +140,12 @@ export default function (sequelize) {
         type: DataTypes.STRING(20), // 'bajo' | 'medio' | 'alto'
         allowNull: true,
       },
+      // Orden de compra (opcional) — para clientes públicos/del estado que
+      // contratan mediante orden de compra en lugar de contrato directo.
+      purchaseOrder: {
+        type: DataTypes.STRING(120),
+        allowNull: true,
+      },
       code: {
         type: DataTypes.STRING(50),
         allowNull: true,
