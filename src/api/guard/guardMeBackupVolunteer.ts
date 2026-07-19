@@ -7,6 +7,7 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import BackupService from '../../services/backupService';
+import { dispatch } from '../../lib/notificationDispatcher';
 
 export default async (req: any, res: any) => {
   try {
@@ -20,7 +21,7 @@ export default async (req: any, res: any) => {
 
     const securityGuard = await db.securityGuard.findOne({
       where: { guardId: userId, tenantId, deletedAt: null },
-      attributes: ['id'],
+      attributes: ['id', 'fullName'],
     });
 
     let stationId = data.stationId || null;
@@ -51,6 +52,37 @@ export default async (req: any, res: any) => {
       notes: data.notes || null,
       createdById: userId,
     });
+
+    // CRM realtime feed (bell): supervisors/admins see the offer, like every
+    // other guard action. Best-effort, fire-and-forget — never blocks the action.
+    try {
+      let stationName: any = null;
+      let postSiteId: any;
+      if (stationId) {
+        const st = await db.station.findByPk(stationId, {
+          attributes: ['stationName', 'postSiteId'],
+        });
+        stationName = (st && st.stationName) || null;
+        postSiteId = (st && st.postSiteId) || undefined;
+      }
+      await dispatch(
+        'backup.volunteered',
+        {
+          guardName: (securityGuard && securityGuard.fullName) || currentUser.fullName || 'Un guardia',
+          stationName,
+          eventDate,
+        },
+        {
+          database: db,
+          tenantId,
+          sourceEntityType: 'backupEvent',
+          sourceEntityId: (ev as any) && (ev as any).id,
+          assignedPostSiteId: postSiteId,
+        },
+      );
+    } catch (e) {
+      console.error('[backupVolunteer] dispatch failed:', (e as any)?.message || e);
+    }
 
     return ApiResponseHandler.success(req, res, ev);
   } catch (error) {

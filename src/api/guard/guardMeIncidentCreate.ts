@@ -53,6 +53,41 @@ export default async (req: any, res: any) => {
       }
     }
 
+    // SAFETY fallback (critical for PANIC/SOS): if the guard has no resolved
+    // station/post (assignment gap — exactly when a panic may fire), resolve
+    // from their MOST RECENT shift so the alert still reaches the client app and
+    // the client-detail incidents board instead of silently dropping the client leg.
+    if (!stationId && !postSiteId && securityGuard?.id) {
+      try {
+        const lastShift = await db.guardShift.findOne({
+          where: { tenantId, guardNameId: securityGuard.id, deletedAt: null },
+          order: [['punchInTime', 'DESC']],
+          attributes: ['stationNameId', 'postSiteId'],
+        });
+        if (lastShift) {
+          stationId = stationId || (lastShift as any).stationNameId || null;
+          postSiteId = postSiteId || (lastShift as any).postSiteId || null;
+        }
+      } catch { /* best-effort */ }
+    }
+
+    // Resolve the owning client so the incident is directly linked (clientId) —
+    // it then shows on the client-detail incidents board and the client push has
+    // a guaranteed recipient — even when only thin station data is available.
+    let clientAccountId: string | null = data.clientId || null;
+    if (!clientAccountId && postSiteId) {
+      try {
+        const site = await db.businessInfo.findByPk(postSiteId, { attributes: ['clientAccountId'] });
+        clientAccountId = (site as any)?.clientAccountId || null;
+      } catch { /* best-effort */ }
+    }
+    if (!clientAccountId && stationId) {
+      try {
+        const st = await db.station.findByPk(stationId, { attributes: ['stationOriginId'] });
+        clientAccountId = (st as any)?.stationOriginId || null;
+      } catch { /* best-effort */ }
+    }
+
     // Resolve the incident type. The app sends incidentTypeId when the chosen
     // label matched the tenant catalog; when it didn't (label drift, new
     // tenant, custom taxonomy), it also sends incidentTypeName — find-or-create
@@ -86,6 +121,7 @@ export default async (req: any, res: any) => {
       incidentTypeId,
       stationId,
       postSiteId,
+      clientId: clientAccountId,
       guardNameId: securityGuard ? securityGuard.id : null,
       callerName: securityGuard ? securityGuard.fullName : null,
       callerType: 'guard',
@@ -211,7 +247,7 @@ export default async (req: any, res: any) => {
             photoUrl = (filled[0] && (filled[0].downloadUrl || filled[0].publicUrl)) || '';
           } catch { /* photo optional */ }
 
-          await notifyClient(db, tenantId, { postSiteId, stationId }, {
+          await notifyClient(db, tenantId, { clientAccountId, postSiteId, stationId }, {
             eventType: 'incident.created',
             title: isPanic ? '🚨 Alerta de pánico' : 'Nuevo incidente',
             body: `${title}${stationName ? ` — ${stationName}` : ''}.`,

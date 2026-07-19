@@ -7,6 +7,7 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error400 from '../../errors/Error400';
 import Error401 from '../../errors/Error401';
+import { dispatch } from '../../lib/notificationDispatcher';
 
 export default async (req: any, res: any) => {
   try {
@@ -67,6 +68,27 @@ export default async (req: any, res: any) => {
       createdById: userId,
       updatedById: userId,
     });
+
+    // CRM realtime feed (bell): HR/supervisors/admins see the request, like every
+    // other guard action. Best-effort, fire-and-forget — never blocks the create.
+    try {
+      await dispatch(
+        'timeoff.requested',
+        {
+          guardName: securityGuard.fullName || currentUser.fullName || 'Empleado',
+          dateRange: `${startDate} – ${endDate}`,
+          reason: reason || null,
+        },
+        {
+          database: db,
+          tenantId,
+          sourceEntityType: 'timeOffRequest',
+          sourceEntityId: record.id,
+        },
+      );
+    } catch (e) {
+      console.error('[timeOffCreate] dispatch failed:', (e as any)?.message || e);
+    }
 
     return ApiResponseHandler.success(req, res, record.get({ plain: true }));
   } catch (error) {

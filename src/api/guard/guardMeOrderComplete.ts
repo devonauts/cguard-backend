@@ -10,6 +10,7 @@ import Error401 from '../../errors/Error401';
 import Error400 from '../../errors/Error400';
 import { ymd } from '../../services/consignaRecurrence';
 import { stationIdsForGuard } from '../../services/assignedStationsService';
+import { dispatch } from '../../lib/notificationDispatcher';
 
 export default async (req: any, res: any) => {
   try {
@@ -70,6 +71,31 @@ export default async (req: any, res: any) => {
         data: { type: 'consigna.completed', orderId, stationId: order.stationId },
       });
     } catch { /* ignore */ }
+
+    // CRM realtime feed (bell): supervisors/admins see the completion, like every
+    // other guard action. Best-effort, fire-and-forget — never blocks the action.
+    try {
+      const station = await db.station.findByPk(order.stationId, {
+        attributes: ['stationName', 'postSiteId'],
+      });
+      await dispatch(
+        'consigna.completed',
+        {
+          guardName: payload.guardName,
+          stationName: station?.stationName || null,
+          orderTitle: order.title,
+        },
+        {
+          database: db,
+          tenantId,
+          sourceEntityType: 'stationOrderCompletion',
+          sourceEntityId: completion.id,
+          assignedPostSiteId: station?.postSiteId || undefined,
+        },
+      );
+    } catch (e) {
+      console.error('[orderComplete] dispatch failed:', (e as any)?.message || e);
+    }
 
     return ApiResponseHandler.success(req, res, completion.get({ plain: true }));
   } catch (error) {

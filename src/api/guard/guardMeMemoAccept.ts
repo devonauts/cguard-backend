@@ -6,6 +6,7 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import Error400 from '../../errors/Error400';
+import { dispatch } from '../../lib/notificationDispatcher';
 
 export default async (req: any, res: any) => {
   try {
@@ -39,6 +40,26 @@ export default async (req: any, res: any) => {
           data: { type: 'memo.accepted', memoId },
         });
       } catch { /* ignore */ }
+
+      // CRM realtime feed (bell): the office sees the acknowledgment, like every
+      // other guard action. Best-effort, fire-and-forget — never blocks.
+      try {
+        await dispatch(
+          'memo.accepted',
+          {
+            guardName: securityGuard.fullName || currentUser.fullName || 'Un guardia',
+            memoTitle: memo.subject || 'Memo',
+          },
+          {
+            database: db,
+            tenantId,
+            sourceEntityType: 'memos',
+            sourceEntityId: memoId,
+          },
+        );
+      } catch (e) {
+        console.error('[memoAccept] dispatch failed:', (e as any)?.message || e);
+      }
     }
 
     return ApiResponseHandler.success(req, res, memo.get({ plain: true }));

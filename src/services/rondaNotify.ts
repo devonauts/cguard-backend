@@ -12,7 +12,10 @@ export const RONDA_DEFAULT_SETTINGS = {
   notifyTenantOnStart: true,
   notifyTenantOnComplete: true,
   notifyTenantOnMissed: true,
-  notifyClient: false,
+  // A COMPLETED ronda is the exact "service proof" clients want, so by default we
+  // push the owning client on completion. Overridable per-post: a tenant that
+  // explicitly sets notifyClient:false stays false (merge keeps the stored value).
+  notifyClient: true,
   emailOnComplete: false,
 };
 
@@ -79,8 +82,10 @@ export async function notifyPatrol(
         : event === 'complete'
           ? settings.notifyTenantOnComplete
           : settings.notifyTenantOnMissed;
-    // Missed rondas are internal ops — never surfaced to the client app.
-    const wantClient = event !== 'missed' && settings.notifyClient;
+    // Client app is pushed ONLY on a COMPLETED ronda (the service proof). Missed
+    // rondas are internal ops — never surfaced to the client — and 'start' is not
+    // pushed to the client either.
+    const wantClient = event === 'complete' && settings.notifyClient;
     const wantEmail = event === 'complete' && !!settings.emailOnComplete;
     if (!wantTenant && !wantClient && !wantEmail) return;
 
@@ -174,15 +179,15 @@ export async function notifyPatrol(
     }
 
     if (wantClient && postSiteId) {
-      // Notify the native CLIENT app (mi seguridad) for BOTH start and complete.
+      // Notify the native CLIENT app (mi seguridad) on ronda completion.
       // clientNotifyService resolves the client's user(s) and delivers via the
       // native channels: FCM push (pushToUser) + a platform_event scoped to that
       // client user (so the client app's websocket/in-app feed gets it too).
       try {
         const { notifyClient } = require('./clientNotifyService');
         await notifyClient(db, tenantId, { postSiteId }, {
-          eventType:
-            event === 'start' ? 'patrol.started' : event === 'complete' ? 'patrol.completed' : 'patrol.missed',
+          // Only a COMPLETED ronda reaches this client push (see wantClient above).
+          eventType: 'patrol.completed',
           title,
           body: body.slice(0, 200),
           data: { type: `patrol_${event}`, routeName: routeName || '' },

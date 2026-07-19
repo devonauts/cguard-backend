@@ -62,6 +62,11 @@ export type EventType =
   | 'supervisor.incident.status'
   | 'supervisor.incident.assigned'
   | 'supervisor.incident.escalated'
+  | 'consigna.completed'
+  | 'inventory.checked'
+  | 'memo.accepted'
+  | 'backup.volunteered'
+  | 'attendance.clockout_cancelled'
   | 'profile.updated';
 
 // Role sets for targetRoles field (comma-separated, used with FIND_IN_SET)
@@ -743,6 +748,46 @@ export const TEMPLATES: Record<EventType, NotificationTemplate> = {
       Si cambió de teléfono, restablece su dispositivo en el panel. Si no, podría tratarse
       del uso de su cuenta en otro equipo.</p>
     `,
+  },
+  // Guard marked a consigna / orden de puesto complete from the app.
+  'consigna.completed': {
+    title: (d) => `📋 Consigna completada`,
+    body: (d) =>
+      `${d.guardName || 'Un guardia'} completó${d.orderTitle ? ` "${d.orderTitle}"` : ' una consigna'}${d.stationName ? ` — ${d.stationName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  // Guard submitted an inventory check during a patrol.
+  'inventory.checked': {
+    title: (d) => `📦 Inventario revisado${d.stationName ? `: ${d.stationName}` : ''}`,
+    body: (d) =>
+      `${d.guardName || 'Un guardia'} registró una revisión de inventario (${d.isComplete === false ? 'incompleto' : 'completo'})${d.stationName ? ` en ${d.stationName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  // Guard acknowledged (accepted) a memo addressed to them.
+  'memo.accepted': {
+    title: (d) => `✅ Memo confirmado`,
+    body: (d) =>
+      `${d.guardName || 'Un guardia'} confirmó${d.memoTitle ? `: ${d.memoTitle}` : ' un memo'}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  // Guard volunteered to cover an open / at-risk shift.
+  'backup.volunteered': {
+    title: (d) => `🙋 Voluntario para cubrir turno`,
+    body: (d) =>
+      `${d.guardName || 'Un guardia'} se ofreció a cubrir un turno${d.stationName ? ` en ${d.stationName}` : ''}${d.eventDate ? ` (${d.eventDate})` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
+  },
+  // Guard withdrew their pending early-clock-out request.
+  'attendance.clockout_cancelled': {
+    title: (d) => `↩️ Solicitud de salida cancelada: ${d.guardName || 'Guardia'}`,
+    body: (d) =>
+      `${d.guardName || 'Guardia'} retiró su solicitud de salida anticipada${d.stationName ? ` en ${d.stationName}` : ''}`,
+    targetRoles: TARGET_ROLES.SUPERVISORS,
+    sendEmail: false,
   },
   'profile.updated': {
     title: (d) => `📝 Perfil actualizado: ${d.guardName || 'Guardia'}`,

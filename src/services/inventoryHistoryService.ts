@@ -34,6 +34,51 @@ export default class InventoryHistoryService {
         transaction,
       );
 
+      // CRM realtime feed (bell): supervisors/admins see the inventory check,
+      // like every other guard action. Best-effort, fire-and-forget — after the
+      // commit, so a notification failure never breaks the create.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { dispatch } = require('../lib/notificationDispatcher');
+        const db = this.options.database;
+        const tenantId = this.options.currentTenant && this.options.currentTenant.id;
+        const cu = this.options.currentUser;
+        let guardName = (cu && (cu.fullName || cu.email)) || null;
+        try {
+          if (cu && cu.id) {
+            const sg = await db.securityGuard.findOne({
+              where: { guardId: cu.id, tenantId, deletedAt: null },
+              attributes: ['fullName'],
+            });
+            if (sg && sg.fullName) guardName = sg.fullName;
+          }
+        } catch { /* ignore */ }
+        let stationName: any = null;
+        let postSiteId: any;
+        try {
+          if (data.stationId) {
+            const st = await db.station.findByPk(data.stationId, {
+              attributes: ['stationName', 'postSiteId'],
+            });
+            stationName = (st && st.stationName) || null;
+            postSiteId = (st && st.postSiteId) || undefined;
+          }
+        } catch { /* ignore */ }
+        await dispatch(
+          'inventory.checked',
+          { guardName, stationName, isComplete: data.isComplete !== false },
+          {
+            database: db,
+            tenantId,
+            sourceEntityType: 'inventoryHistory',
+            sourceEntityId: (record as any) && (record as any).id,
+            assignedPostSiteId: postSiteId,
+          },
+        );
+      } catch (e) {
+        console.error('[inventoryHistory] dispatch failed:', (e as any)?.message || e);
+      }
+
       return record;
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(

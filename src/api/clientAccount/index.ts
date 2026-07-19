@@ -65,6 +65,11 @@ export default (app) => {
     `/tenant/:tenantId/client-account/:id/overview`,
     require('./clientAccountOverview').default,
   );
+  // Unified activity timeline (shifts, incidents, visitors, tasks, rondas, relevos).
+  app.get(
+    `/tenant/:tenantId/client-account/:id/activity`,
+    require('./clientAccountActivity').default,
+  );
 
   // Puestos y cobertura (live coverage per sede)
   app.get(

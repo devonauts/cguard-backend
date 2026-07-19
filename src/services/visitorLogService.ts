@@ -147,6 +147,45 @@ export default class VisitorLogService {
 
       await SequelizeRepository.commitTransaction(transaction);
 
+      // Notify the owning CLIENT (Mi Seguridad app) that a visitor CHECKED OUT of
+      // their site — but ONLY on the actual exit transition (this update is setting
+      // a truthy exitTime), not on every edit. Mirrors the entry push in create().
+      // Best-effort / fire-and-forget — never blocks or breaks the update.
+      if (Object.prototype.hasOwnProperty.call(data, 'exitTime') && data.exitTime) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { notifyClient } = require('./clientNotifyService');
+          const db = this.options.database;
+          const tenantId = this.options.currentTenant?.id;
+          if (tenantId) {
+            const visitorName =
+              [record.firstName, record.lastName].filter(Boolean).join(' ').trim() || 'Un visitante';
+            const stationName = record.stationName || record.station?.stationName || 'el sitio';
+            await notifyClient(
+              db,
+              tenantId,
+              { clientAccountId: record.clientId, postSiteId: record.postSiteId, stationId: record.stationId },
+              {
+                eventType: 'visitor.exited',
+                title: 'Visita finalizada',
+                body: `${visitorName} finalizó su visita en ${stationName}.`,
+                data: {
+                  visitorLogId: String(record.id || ''),
+                  visitorName,
+                  stationName: String(stationName),
+                  stationId: String(record.stationId || ''),
+                  postSiteId: String(record.postSiteId || ''),
+                },
+                sourceEntityType: 'visitorLog',
+                sourceEntityId: String(record.id),
+              },
+            );
+          }
+        } catch (e: any) {
+          console.warn('[visitor] client exit notify failed:', e?.message || e);
+        }
+      }
+
       return record;
     } catch (error) {
       await SequelizeRepository.rollbackTransaction(transaction);
