@@ -244,13 +244,18 @@ async function getConversationRecipients(
     }
     return out;
   }
-  // Direct thread.
-  const single = senderType === 'staff' ? conversation.recipientUserId : conversation.createdById;
-  if (!single) return [];
-  const type: Recipient['type'] = senderType === 'staff'
-    ? (conversation.recipientType === 'client' ? 'client' : 'guard')
-    : 'staff';
-  return [{ userId: String(single), type }];
+  // Direct thread: notify the OTHER side, never the sender. The old pick used
+  // createdById for guard senders — but a guard-created office thread has
+  // createdById = the guard, so guards were notified about their OWN messages.
+  const other = [conversation.recipientUserId, conversation.createdById]
+    .map((v: any) => (v ? String(v) : ''))
+    .find((id) => id && id !== String(senderUserId));
+  if (!other) return [];
+  const type: Recipient['type'] =
+    String(conversation.recipientUserId || '') === other
+      ? (conversation.recipientType === 'client' ? 'client' : 'guard')
+      : 'staff';
+  return [{ userId: other, type }];
 }
 
 /** Notify each recipient: a CRM platform event for staff (bell + toast + chime),
