@@ -426,7 +426,10 @@ require('./shiftExchangeRequest').default(routes);
 require('./shiftTemplate').default(routes);
 require('./radioDevice').default(routes);
   require('./radio').default(routes);
-require('./clientLog').default(app);
+// Mounted on `routes` (under /api + tenantId membership validation) — it was
+// previously mounted on `app`, so the CRM's POST /api/tenant/:id/client-log
+// 404'd and client-side error telemetry never arrived.
+require('./clientLog').default(routes);
 require('./debug').default(routes);
 require('./videoTutorialCategory').default(routes);
 require('./videoTutorial').default(routes);

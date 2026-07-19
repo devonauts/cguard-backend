@@ -1,5 +1,12 @@
+import PermissionChecker from '../../services/user/permissionChecker';
+import Permissions from '../../security/permissions';
+import ApiResponseHandler from '../apiResponseHandler';
+
 export default async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(
+      Permissions.values.clientAccountRead,
+    );
     const { tenantId, id } = req.params;
     const db = req.database;
 
@@ -22,6 +29,6 @@ export default async (req, res) => {
     return res.json(project);
   } catch (err: any) {
     console.error('clientProjectFind error:', err);
-    return res.status(500).json({ message: err.message || 'Error finding project' });
+    return ApiResponseHandler.error(req, res, err);
   }
 };

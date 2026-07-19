@@ -1051,8 +1051,11 @@ export async function stationGenerateYearly(req, res) {
     const tenantId = req.currentTenant.id;
     const userId = req.currentUser.id;
 
-    // Verify station has rotation configured
-    const station = await req.database.station.findByPk(stationId, { attributes: ['id', 'rotationStyleId'] });
+    // Verify station belongs to this tenant and has rotation configured
+    const station = await req.database.station.findOne({
+      where: { id: stationId, tenantId },
+      attributes: ['id', 'rotationStyleId'],
+    });
     if (!station?.rotationStyleId) {
       res.status(400).send({ message: 'La estación no tiene un estilo de rotación configurado.' });
       return;

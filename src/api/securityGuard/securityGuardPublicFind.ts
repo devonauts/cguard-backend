@@ -17,7 +17,7 @@ export default async (req, res, next) => {
     const db = req.database || (req.app && req.app.locals && req.app.locals.database);
 
     if (token) {
-      console.log('[securityGuardPublicFind] token received:', token);
+      console.log('[securityGuardPublicFind] token received:', !!token);
       try {
         tenantUser = await TenantUserRepository.findByInvitationToken(
           token,

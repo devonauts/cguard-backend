@@ -1,11 +1,14 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import KpiService from '../../services/kpiService';
 import Sequelize from 'sequelize';
+import { requireTenantId } from './index';
 
 const Op = Sequelize.Op;
 
 export default async (req, res, next) => {
   try {
+    const tenantId = requireTenantId(req, res);
+    if (!tenantId) return;
     const idParam = req.params.id;
     const dateStr = req.query.date;
 
@@ -43,8 +46,7 @@ export default async (req, res, next) => {
     const end = new Date(start.getTime());
     end.setUTCDate(end.getUTCDate() + 1);
 
-    const tenant = req.currentTenant;
-    const whereReport: any = { tenantId: tenant ? tenant.id : undefined, createdAt: { [Op.gte]: start, [Op.lt]: end } };
+    const whereReport: any = { tenantId, createdAt: { [Op.gte]: start, [Op.lt]: end } };
 
     // Count reports for this KPI/date (simple heuristic: count all reports for tenant on that day)
     let cnt = 0;

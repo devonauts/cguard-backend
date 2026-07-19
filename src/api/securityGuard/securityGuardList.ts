@@ -148,8 +148,11 @@ export default async (req, res, next) => {
               return;
             }
           } catch (err) {
+            // A real failure resolving the customer scope must surface as an
+            // error, not an empty 200 (“the page shows nothing but the data
+            // exists” bug class).
             console.error('[securityGuardList] Error filtering for customer:', err);
-            await ApiResponseHandler.success(req, res, { rows: [], count: 0 });
+            await ApiResponseHandler.error(req, res, err);
             return;
           }
         }

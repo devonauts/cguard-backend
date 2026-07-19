@@ -127,7 +127,7 @@ export default async (req, res, next) => {
             (tenantUser as any).invitationToken = crypto.randomBytes(20).toString('hex');
             (tenantUser as any).invitationTokenExpiresAt = invitationTokenExpiry();
             await TenantUserRepository.saveTenantUser(tenantUser, req);
-            console.debug('[securityGuardInvite.resend] generated invitationToken', { tenantUserId: (tenantUser as any).id, invitationToken: (tenantUser as any).invitationToken });
+            console.debug('[securityGuardInvite.resend] generated invitationToken', { tenantUserId: (tenantUser as any).id });
           }
 
         // Try to find associated securityGuard record to include securityGuardId in link
@@ -349,7 +349,7 @@ export default async (req, res, next) => {
           tenantUser.invitationToken = crypto.randomBytes(20).toString('hex');
           tenantUser.invitationTokenExpiresAt = invitationTokenExpiry();
           await TenantUserRepository.saveTenantUser(tenantUser, req);
-          console.debug('[securityGuardInvite.create] generated invitationToken', { tenantUserId: tenantUser.id, invitationToken: tenantUser.invitationToken });
+          console.debug('[securityGuardInvite.create] generated invitationToken', { tenantUserId: tenantUser.id });
         }
         invitationToken = tenantUser.invitationToken;
       }

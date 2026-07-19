@@ -1,7 +1,13 @@
 import { Request, Response } from 'express';
+import PermissionChecker from '../../services/user/permissionChecker';
+import Permissions from '../../security/permissions';
+import ApiResponseHandler from '../apiResponseHandler';
 
 const handler = async (req: Request, res: Response) => {
   try {
+    new PermissionChecker(req as any).validateHas(
+      Permissions.values.vehicleAutocomplete,
+    );
     const { query = '' } = req.query as any;
     const tenant = (req as any).tenant;
     // Use req so the service has access to req.database and req.currentUser
@@ -10,7 +16,7 @@ const handler = async (req: Request, res: Response) => {
     return res.json(result);
   } catch (err: any) {
     console.error('[vehicle.autocomplete] error', err);
-    return res.status(500).json({ message: err?.message || String(err) });
+    return ApiResponseHandler.error(req, res, err);
   }
 };
 

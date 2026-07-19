@@ -1,5 +1,24 @@
 import ApiResponseHandler from '../apiResponseHandler';
 import KpiService from '../../services/kpiService';
+import Error401 from '../../errors/Error401';
+import Error403 from '../../errors/Error403';
+
+// These routes have no :tenantId param, so tenantMiddleware never runs and
+// authMiddleware lets tokenless requests through. Fail CLOSED here: an
+// unauthenticated request (or a token without a tenant claim) must never fall
+// back to an unscoped cross-tenant query.
+export function requireTenantId(req, res): string | null {
+  if (!req.currentUser) {
+    ApiResponseHandler.error(req, res, new Error401());
+    return null;
+  }
+  const tenantId = req.currentTenant && req.currentTenant.id;
+  if (!tenantId) {
+    ApiResponseHandler.error(req, res, new Error403());
+    return null;
+  }
+  return tenantId;
+}
 
 export default (app) => {
     // Operations analytics dashboard (tenant-scoped, permission-gated).
@@ -8,10 +27,11 @@ export default (app) => {
     // List of upcoming services
     app.get('/operations/upcoming-services', async (req, res) => {
       try {
-        const tenantId = req.currentTenant ? req.currentTenant.id : null;
+        const tenantId = requireTenantId(req, res);
+        if (!tenantId) return;
         const { Op } = require('sequelize');
         const now = new Date();
-        const where = tenantId ? { tenantId, startDate: { [Op.gte]: now } } : { startDate: { [Op.gte]: now } };
+        const where = { tenantId, startDate: { [Op.gte]: now } };
         const services = await req.database.station.findAll({ where, order: [['startDate', 'ASC']], limit: 20 });
         // Map fields to include title, type, startTime/date
         const out = services.map((s: any) => ({
@@ -30,7 +50,8 @@ export default (app) => {
   app.get('/operations/kpis', async (req, res, next) => {
     try {
       // Compute daily KPIs from DB models for the current tenant
-      const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const tenantId = requireTenantId(req, res);
+      if (!tenantId) return;
       // date param optional (YYYY-MM-DD)
       const dateStr = String(req.query.date || '').trim();
       let start = new Date();
@@ -53,15 +74,14 @@ export default (app) => {
       // Stations count (Servicios activos)
       let stationsCount = 0;
       try {
-        stationsCount = await db.station.count({ where: tenantId ? { tenantId } : undefined });
+        stationsCount = await db.station.count({ where: { tenantId } });
       } catch (_) { stationsCount = 0; }
 
       // Upcoming services count
       let upcomingServicesCount = 0;
       try {
         const now = new Date();
-        const futureWhere = tenantId ? { tenantId, startDate: { [require('sequelize').Op.gte]: now } } : { startDate: { [require('sequelize').Op.gte]: now } };
-        upcomingServicesCount = await db.station.count({ where: futureWhere });
+        upcomingServicesCount = await db.station.count({ where: { tenantId, startDate: { [require('sequelize').Op.gte]: now } } });
       } catch (_) { upcomingServicesCount = 0; }
 
       // Guards on duty
@@ -73,7 +93,7 @@ export default (app) => {
           `SELECT COUNT(DISTINCT gs.guardNameId) AS n
              FROM guardShifts gs
             WHERE gs.deletedAt IS NULL AND gs.punchOutTime IS NULL
-              ${tenantId ? 'AND gs.tenantId = :tenantId' : ''}`,
+              AND gs.tenantId = :tenantId`,
           { replacements: { tenantId } },
         );
         guardsOnDuty = Number(rows?.[0]?.n || 0);
@@ -82,22 +102,15 @@ export default (app) => {
       // Incidents today
       let incidentsToday = 0;
       try {
-        const where: any = { createdAt: { $gte: start, $lt: end } };
-        if (tenantId) where.tenantId = tenantId;
-        // use Sequelize Op instead of $ operators
         const { Op } = require('sequelize');
-        const whereOp: any = { createdAt: { [Op.gte]: start, [Op.lt]: end } };
-        if (tenantId) whereOp.tenantId = tenantId;
-        incidentsToday = await db.incident.count({ where: whereOp });
+        incidentsToday = await db.incident.count({ where: { tenantId, createdAt: { [Op.gte]: start, [Op.lt]: end } } });
       } catch (_) { incidentsToday = 0; }
 
       // Tag scans (rondas) today
       let scansToday = 0;
       try {
         const { Op } = require('sequelize');
-        const whereOp: any = { scannedAt: { [Op.gte]: start, [Op.lt]: end } };
-        if (tenantId) whereOp.tenantId = tenantId;
-        scansToday = await db.tagScan.count({ where: whereOp });
+        scansToday = await db.tagScan.count({ where: { tenantId, scannedAt: { [Op.gte]: start, [Op.lt]: end } } });
       } catch (_) { scansToday = 0; }
 
 
@@ -120,15 +133,15 @@ export default (app) => {
   // IMPORTANT: This endpoint is used by the Flutter map to show ALL operational markers
   app.get('/operations/activities', async (req, res) => {
     try {
-      const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const tenantId = requireTenantId(req, res);
+      if (!tenantId) return;
       const dateStr = String(req.query.date || '').trim();
       const sinceStr = String(req.query.since || '').trim();
       const { Op } = require('sequelize');
 
       if (sinceStr) {
         const since = new Date(sinceStr);
-        const where: any = { createdAt: { [Op.gte]: since } };
-        if (tenantId) where.tenantId = tenantId;
+        const where: any = { tenantId, createdAt: { [Op.gte]: since } };
         const rows = await req.database.report.findAll({ where, order: [['createdAt', 'DESC']], limit: 200 });
         const out = rows.map((r: any) => ({ id: r.id, time: r.createdAt, text: r.title || r.summary || r.type, officerName: r.officerName || r.officer, type: r.type || 'report', severity: r.severity || 'medium' }));
         return ApiResponseHandler.success(req, res, out);
@@ -143,12 +156,11 @@ export default (app) => {
       }
       const end = new Date(start.getTime());
       end.setUTCDate(end.getUTCDate() + 1);
-      const whereDay: any = { createdAt: { [Op.gte]: start, [Op.lt]: end } };
-      if (tenantId) whereDay.tenantId = tenantId;
+      const whereDay: any = { tenantId, createdAt: { [Op.gte]: start, [Op.lt]: end } };
 
       // Get all stations with coordinates (for guard locations and patrol base)
       const stations = await req.database.station.findAll({
-        where: tenantId ? { tenantId } : undefined,
+        where: { tenantId },
         attributes: ['id', 'latitud', 'longitud', 'stationName']
       });
       const stationMap: any = {};
@@ -158,7 +170,7 @@ export default (app) => {
 
       // Get all security guards (on duty)
       const guards = await req.database.securityGuard.findAll({
-        where: tenantId ? { tenantId } : undefined,
+        where: { tenantId },
         attributes: ['id', 'fullName', 'stationId']
       });
 
@@ -167,7 +179,7 @@ export default (app) => {
         where: {
           punchOutTime: null, // Still clocked in
           createdAt: { [Op.gte]: start, [Op.lt]: end }, // ONLY for this date
-          ...(tenantId ? { tenantId } : {})
+          tenantId,
         },
         attributes: ['id', 'guardNameId', 'stationId']
       });
@@ -218,15 +230,11 @@ export default (app) => {
 
       // Add incidents with coordinates - get ALL incidents, not filtered by date
       // (the frontend will handle date filtering)
-      const incidentsWhere: any = { ...(tenantId ? { tenantId } : {}) };
       const allIncidents = await req.database.incident.findAll({
-        where: incidentsWhere,
+        where: { tenantId },
         order: [['createdAt', 'DESC']],
         limit: 500
       });
-
-      console.log(`[Backend] Fetching incidents for date: ${dateStr}`);
-      console.log(`[Backend] Total incidents in DB: ${allIncidents.length}`);
 
       allIncidents.forEach((r: any) => {
         const item: any = {
@@ -241,9 +249,6 @@ export default (app) => {
           updatedAt: r.updatedAt
         };
 
-        // Log all incident dates
-        console.log(`[Backend] Incident "${item.text}" created at: ${r.createdAt}, updated at: ${r.updatedAt}`);
-
         // Look up coordinates from station if stationId is available
         const stationId = r.stationId || r.stationIncidents;
         if (stationId && stationMap[stationId]) {
@@ -256,7 +261,7 @@ export default (app) => {
       });
 
       // Add patrols (rondas)
-      const patrols = await req.database.patrolLog.findAll({ where: { createdAt: { [Op.gte]: start, [Op.lt]: end }, ...(tenantId ? { tenantId } : {}) }, order: [['createdAt', 'DESC']], limit: 50 });
+      const patrols = await req.database.patrolLog.findAll({ where: { tenantId, createdAt: { [Op.gte]: start, [Op.lt]: end } }, order: [['createdAt', 'DESC']], limit: 50 });
       patrols.forEach((p: any) => items.push({ id: `p-${p.id}`, time: p.createdAt, text: p.note || p.summary || 'Patrol event', officerName: p.guardName || p.officer, type: 'patrol', severity: 'low' }));
 
       // sort by time desc and return
@@ -270,16 +275,17 @@ export default (app) => {
   // Markers for map: stations, guards (with last known pos), recent incidents
   app.get('/operations/markers', async (req, res) => {
     try {
-      const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const tenantId = requireTenantId(req, res);
+      if (!tenantId) return;
       const { Op } = require('sequelize');
-      const whereTenant = tenantId ? { tenantId } : {};
+      const whereTenant = { tenantId };
 
       // Use the actual model attribute names in this codebase
       const stations = await req.database.station.findAll({ where: whereTenant, attributes: ['id', 'stationName', 'latitud', 'longitud'], limit: 500 });
       // Security guard model doesn't store latitude/longitude fields directly here; fetch id/full name
       const guards = await req.database.securityGuard.findAll({ where: whereTenant, attributes: ['id', 'fullName'], limit: 500 });
       // Attempt to get latest known position per guard from tagScan.scannedData if available
-      const recentScans = await req.database.tagScan.findAll({ where: { ...(tenantId ? { tenantId } : {}), securityGuardId: { [Op.ne]: null }, scannedAt: { [Op.gte]: new Date(Date.now() - 7 * 24 * 3600 * 1000) } }, order: [['scannedAt', 'DESC']], limit: 1000 });
+      const recentScans = await req.database.tagScan.findAll({ where: { tenantId, securityGuardId: { [Op.ne]: null }, scannedAt: { [Op.gte]: new Date(Date.now() - 7 * 24 * 3600 * 1000) } }, order: [['scannedAt', 'DESC']], limit: 1000 });
       const guardPositions: any = {};
       recentScans.forEach((s: any) => {
         const gid = s.securityGuardId;
@@ -291,7 +297,7 @@ export default (app) => {
         if (lat != null && lng != null) guardPositions[gid] = { latitude: lat, longitude: lng, time: s.scannedAt };
       });
       // Incidents in this schema may not have latitude/longitude fields; fetch available attributes
-      const incidents = await req.database.incident.findAll({ where: { ...(tenantId ? { tenantId } : {}), createdAt: { [Op.gte]: new Date(Date.now() - 24 * 3600 * 1000) } }, attributes: ['id', 'title', 'createdAt'], limit: 200 });
+      const incidents = await req.database.incident.findAll({ where: { tenantId, createdAt: { [Op.gte]: new Date(Date.now() - 24 * 3600 * 1000) } }, attributes: ['id', 'title', 'createdAt'], limit: 200 });
 
       const out: any[] = [];
       stations.forEach((s: any) => {
@@ -317,13 +323,14 @@ export default (app) => {
   // SOS endpoint: create an incident of type SOS
   app.post('/operations/sos', async (req, res) => {
     try {
-      const tenantId = req.currentTenant ? req.currentTenant.id : null;
+      const tenantId = requireTenantId(req, res);
+      if (!tenantId) return;
       const body = req.body || {};
       const title = body.title || 'SOS';
       const details = body.details || body.note || null;
       const siteId = body.siteId || null;
 
-      const payload: any = { title, description: details, type: 'sos', status: 'open', ...(siteId ? { siteId } : {}), ...(tenantId ? { tenantId } : {}) };
+      const payload: any = { title, description: details, type: 'sos', status: 'open', ...(siteId ? { siteId } : {}), tenantId };
       const created = await req.database.incident.create(payload);
       return ApiResponseHandler.success(req, res, created);
     } catch (err) {

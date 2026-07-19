@@ -59,8 +59,9 @@ export default async (req, res, next) => {
               return;
             }
           } catch (err) {
+            // Surface the failure instead of masking it as an empty 200.
             console.error('[businessInfoList] Error finding clientAccount for customer:', err);
-            await ApiResponseHandler.success(req, res, { rows: [], count: 0 });
+            await ApiResponseHandler.error(req, res, err);
             return;
           }
         }

@@ -1,7 +1,13 @@
 import { Op } from 'sequelize';
+import PermissionChecker from '../../services/user/permissionChecker';
+import Permissions from '../../security/permissions';
+import ApiResponseHandler from '../apiResponseHandler';
 
 export default async (req, res) => {
   try {
+    new PermissionChecker(req).validateHas(
+      Permissions.values.clientAccountRead,
+    );
     const { tenantId, id } = req.params;
     const {
       limit = 25,
@@ -38,6 +44,6 @@ export default async (req, res) => {
     return res.json({ rows, count });
   } catch (err: any) {
     console.error('clientProjectList error:', err);
-    return res.status(500).json({ message: err.message || 'Error listing projects' });
+    return ApiResponseHandler.error(req, res, err);
   }
 };
