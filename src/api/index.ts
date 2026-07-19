@@ -389,6 +389,8 @@ require('./category').default(routes);
 require('./licenseType').default(routes);
 require('./incident').default(routes);
 require('./incidentType').default(routes);
+// report (singular) — only GET .../report is live (PostSiteKPIs + GuardKPIs).
+require('./report').default(routes);
 require('./inventory').default(routes);
 require('./inventoryItem').default(routes);
 require('./inventoryAssignment').default(routes);

@@ -959,6 +959,50 @@ class SecurityGuardRepository {
     }
 
     if (filter) {
+      // Client / post-site filters resolve to guardUserIds via guardAssignment
+      // (the single source of truth for guard↔station). Guards have no direct
+      // client/postSite column, so without this the Vigilantes "Filtros" sheet
+      // silently ignored these keys.
+      if (filter.clientId || filter.postSiteId || filter.stationId) {
+        try {
+          const { Op: SqOp } = options.database.Sequelize;
+          const stationWhere: any = { tenantId: tenant.id };
+          if (filter.stationId) {
+            stationWhere.id = filter.stationId;
+          } else if (filter.postSiteId) {
+            stationWhere.postSiteId = filter.postSiteId;
+          } else {
+            // stations linked to the client directly OR via any of its post-sites
+            const sites = await options.database.businessInfo.findAll({
+              where: { tenantId: tenant.id, clientAccountId: filter.clientId },
+              attributes: ['id'],
+              transaction: SequelizeRepository.getTransaction(options),
+            });
+            const siteIds = (sites || []).map((s: any) => s.id).filter(Boolean);
+            const or: any[] = [{ stationOriginId: filter.clientId }];
+            if (siteIds.length) or.push({ postSiteId: { [SqOp.in]: siteIds } });
+            stationWhere[SqOp.or] = or;
+          }
+          const stations = await options.database.station.findAll({
+            where: stationWhere,
+            attributes: ['id'],
+            transaction: SequelizeRepository.getTransaction(options),
+          });
+          const stationIds = (stations || []).map((s: any) => s.id).filter(Boolean);
+          const { guardUserIdsForStations } = require('../../services/assignedStationsService');
+          const guardUserIds = stationIds.length
+            ? await guardUserIdsForStations(options.database, tenant.id, stationIds)
+            : [];
+          if (!guardUserIds.length) {
+            return { rows: [], count: 0 };
+          }
+          whereAnd.push({ guardId: { [SqOp.in]: guardUserIds } });
+        } catch (e) {
+          // On resolution failure, do NOT silently return everything — no match.
+          return { rows: [], count: 0 };
+        }
+      }
+
       if (filter.id) {
         // Support single id or array of ids
         if (Array.isArray(filter.id)) {
