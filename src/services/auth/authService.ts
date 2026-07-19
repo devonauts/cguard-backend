@@ -30,6 +30,7 @@ import {
   hasSuperadminRole,
 } from './sessionService';
 import { emitSessionSuperseded } from '../../lib/realtime';
+import { isFieldOnlyUser } from '../../security/channelAccess';
 import dayjs from 'dayjs';
 import Roles from '../../security/roles';
 import RoleRepository from '../../database/repositories/roleRepository';
@@ -1113,6 +1114,23 @@ class AuthService {
                 }
               }
 
+              // CHANNEL ↔ ROLE (per request). A token minted for the CRM
+              // (ch='web') must belong to a back-office account. A field-only
+              // account (securityGuard / securitySupervisor / customer, no office
+              // role) holding a 'web' token — from a direct CRM login, or one
+              // minted before this hardening — is rejected on its NEXT request, so
+              // any already-logged-in guard/supervisor is ejected from the CRM.
+              // Worker/supervisor app tokens (ch='worker'/'supervisor') and
+              // superadmins are untouched, so the mobile apps keep working.
+              if (
+                user && tokenCh === 'web' &&
+                !hasSuperadminRole(user) &&
+                isFieldOnlyUser(user)
+              ) {
+                reject(new Error401(options?.language, 'auth.channelNotAllowed'));
+                return;
+              }
+
               // If the email sender id not configured,
               // removes the need for email verification.
               if (user && !EmailSender.isConfigured) {
@@ -1507,6 +1525,29 @@ class AuthService {
           lastName,
           options,
         );
+      }
+
+      // Social/OAuth is the CRM (web) channel only. A field/customer account
+      // (guard/supervisor/customer) with a linked Google/OAuth identity must NOT
+      // obtain a CRM session. Newly-created social users are roleless → allowed.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { assertChannelAllowed } = require('../../security/channelAccess');
+        const tus: any[] = await options.database.tenantUser.findAll({
+          where: { userId: user.id },
+          attributes: ['roles'],
+          transaction,
+        });
+        const socialRoles: string[] = [];
+        (tus || []).forEach((tu: any) => {
+          const r = tu.roles;
+          if (Array.isArray(r)) socialRoles.push(...r.map((x: any) => String(x)));
+          else if (typeof r === 'string') r.split(',').forEach((x: string) => socialRoles.push(x.trim()));
+        });
+        assertChannelAllowed(socialRoles, 'web', options.language);
+      } catch (e: any) {
+        if (e && Number(e.code) === 403) throw e;
+        // ignore lookup/infra errors (fail-open); /auth/me still gates field users
       }
 
       // Social/OAuth logins are always the CRM web channel.

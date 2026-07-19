@@ -2,7 +2,7 @@
 
 import ApiResponseHandler from '../apiResponseHandler'
 import AuthService from '../../services/auth/authService'
-import Error403 from '../../errors/Error403'
+import { assertChannelAllowed, normalizeAppChannel } from '../../security/channelAccess'
 
 export default async (req, res) => {
   try {
@@ -14,17 +14,16 @@ export default async (req, res) => {
       req,
     )
 
-    // Block customer-only accounts from accessing the CRM panel.
-    // They must use /auth/sign-in-customer (the mobile/portal app endpoint).
+    // Enforce channel ↔ role. The CRM sends app:'web', the guard app app:'worker',
+    // the supervisor app app:'supervisor'. A securityGuard/securitySupervisor/
+    // customer may NOT obtain a CRM ('web') session, and an office/admin may not
+    // sign in through a field app — throws 403 + a "use the X app" message code.
     const tenantEntry = (payload?.user as any)?.tenant;
-    if (tenantEntry) {
-      const roles: string[] = Array.isArray(tenantEntry.roles)
-        ? tenantEntry.roles.map((r: any) => String(r).toLowerCase())
-        : [];
-      if (roles.length > 0 && roles.every((r) => r === 'customer')) {
-        throw new Error403(req.language, 'auth.customerCrmNotAllowed');
-      }
-    }
+    const roles: string[] = [
+      ...(Array.isArray(tenantEntry?.roles) ? tenantEntry.roles : []),
+      ...(Array.isArray((payload?.user as any)?.roles) ? (payload as any).user.roles : []), // superadmin path
+    ].map((r: any) => String(r));
+    assertChannelAllowed(roles, normalizeAppChannel(req.body.app), req.language);
 
     // ✅ RETORNO OBLIGATORIO para evitar doble respuesta
     return ApiResponseHandler.success(req, res, payload)

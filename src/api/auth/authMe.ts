@@ -14,6 +14,10 @@ export default async (req, res, next) => {
 
     const user = req.currentUser;
 
+    // NOTE: the channel↔role gate lives in AuthService.findByToken (keyed on the
+    // token's `ch` claim) so it runs on EVERY request without breaking the worker/
+    // supervisor apps — which also call /auth/me but with ch='worker'/'supervisor'.
+
     // Compute fresh tenant-scoped permissions from the DB role map so the frontend
     // always reflects the latest permissions — not just those at sign-in time.
     // The DB role map takes priority for tenant-configured roles; built-in system
