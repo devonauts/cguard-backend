@@ -105,6 +105,26 @@ export default (app) => {
     require('./securityGuardAssignments').default,
   );
 
+  // Forward work schedule (rotation grid) for one guard.
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/schedule`,
+    require('./securityGuardSchedule').default,
+  );
+
+  // Security guard documents CRUD (generic files linked to the guard).
+  app.get(
+    `/tenant/:tenantId/security-guard/:id/documents`,
+    require('./securityGuardDocuments').list,
+  );
+  app.post(
+    `/tenant/:tenantId/security-guard/:id/documents`,
+    require('./securityGuardDocuments').create,
+  );
+  app.delete(
+    `/tenant/:tenantId/security-guard/:id/documents/:docId`,
+    require('./securityGuardDocuments').destroy,
+  );
+
   // Security guard notes CRUD
   app.get(
     `/tenant/:tenantId/security-guard/:id/notes`,

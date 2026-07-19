@@ -14,8 +14,13 @@ import {
 } from '../../services/supervisorProfileService';
 import { listSupervisorNotes, createSupervisorNote } from './supervisorNotes';
 import { listSupervisorLicenses, createSupervisorLicense, updateSupervisorLicense, destroySupervisorLicense } from './supervisorLicenses';
+import { coverage as supervisorCoverage, schedule as supervisorSchedule } from './supervisorCoverage';
 
 export default (app) => {
+  // Coverage (zone + covered stations) + generated schedule for one supervisor.
+  app.get('/tenant/:tenantId/supervisors/:userId/coverage', supervisorCoverage);
+  app.get('/tenant/:tenantId/supervisors/:userId/schedule', supervisorSchedule);
+
   // Notes (reuse the polymorphic note model — notableType='supervisorProfile').
   app.get('/tenant/:tenantId/supervisors/:userId/notes', listSupervisorNotes);
   app.post('/tenant/:tenantId/supervisors/:userId/notes', createSupervisorNote);
