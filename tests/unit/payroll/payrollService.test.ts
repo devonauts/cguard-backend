@@ -23,8 +23,8 @@ const TENANT = 'tenant-xyz';
 const GUARD = 'guard-1';
 
 // A guardShift row as Sequelize returns it (with .get({plain})).
-const shift = (hoursWorked: number, overtimeMinutes = 0, lateMinutes = 0) => ({
-  get: () => ({ id: Math.random().toString(36).slice(2), hoursWorked, overtimeMinutes, lateMinutes, guardName: { id: GUARD, fullName: 'Juan Pérez' } }),
+const shift = (hoursWorked: number, overtimeMinutes = 0, lateMinutes = 0, day = '2025-06-15') => ({
+  get: () => ({ id: Math.random().toString(36).slice(2), hoursWorked, overtimeMinutes, lateMinutes, punchInTime: new Date(`${day}T13:00:00Z`), guardName: { id: GUARD, fullName: 'Juan Pérez' } }),
 });
 
 function makeService(opts: {
@@ -67,6 +67,15 @@ describe('PayrollService', () => {
       const svc = makeService({ shifts: [shift(1, 120)] }); // 1h worked, 2h "OT"
       const agg = await svc.aggregateGuardMonth(GUARD, 2025, 6);
       assert.ok(agg.regularHours >= 0, `regular ${agg.regularHours}`);
+    });
+
+    it('counts distinct calendar days worked (two punches same day = 1 día)', async () => {
+      // 3 shifts across 2 distinct days (15th twice, 16th once).
+      const svc = makeService({ shifts: [shift(8, 0, 0, '2025-06-15'), shift(4, 0, 0, '2025-06-15'), shift(8, 0, 0, '2025-06-16')] });
+      const agg = await svc.aggregateGuardMonth(GUARD, 2025, 6);
+      assert.strictEqual(agg.shiftCount, 3);
+      assert.strictEqual(agg.daysWorked, 2);
+      assert.strictEqual(agg.role, 'guard');
     });
   });
 
@@ -160,6 +169,77 @@ describe('PayrollService', () => {
       // Each guard on $600 pays IESS 9.45% → total personal ≈ 3 × 56.7.
       assert.ok(Math.abs(roster.totals.iessPersonal - 3 * 600 * 0.0945) < 0.05, `iess ${roster.totals.iessPersonal}`);
       assert.strictEqual(roster.rows[0].guardName, 'Ana');
+    });
+  });
+
+  describe('previewRoster — folds supervisors + office staff', () => {
+    // A shift row for supervisorShift/staffShift (no overtime tracked).
+    const wShift = (hoursWorked: number, day: string) => ({
+      get: () => ({ id: Math.random().toString(36).slice(2), hoursWorked, lateMinutes: 0, punchInTime: new Date(`${day}T13:00:00Z`) }),
+    });
+
+    function mixedService(payrollSettings: any = {}) {
+      const supRows: any = {
+        s1: [wShift(8, '2025-06-10'), wShift(8, '2025-06-11')], // 2 shifts, 2 días
+      };
+      const staffRows: any = {
+        u1: [wShift(6, '2025-06-12')], // 1 shift, 1 día
+      };
+      const db: any = {
+        guardShift: { findAll: async () => [shift(8, 0, 0, '2025-06-09')] },
+        securityGuard: { findAll: async () => [{ get: () => ({ id: 'g1', fullName: 'Ana', hiringContractDate: null }) }] },
+        supervisorShift: {
+          findAll: async (q: any) =>
+            q?.group
+              ? [{ supervisorUserId: 's1' }]
+              : (supRows[q.where.supervisorUserId] || []),
+        },
+        staffShift: {
+          findAll: async (q: any) =>
+            q?.group
+              ? [{ userId: 'u1' }]
+              : (staffRows[q.where.userId] || []),
+        },
+        user: { findAll: async () => [{ id: 's1', fullName: 'Supervisor Uno' }, { id: 'u1', fullName: 'Admin Uno' }] },
+      };
+      sinon.stub(nominaSettingsModule, 'getNominaSettings').resolves({
+        payroll: { guardMonthlySalaries: {}, defaultMonthlySalary: 600, guardRates: {}, nightSurchargePct: 0.25, ...payrollSettings },
+      } as any);
+      return new PayrollService({ database: db, currentTenant: { id: TENANT } } as any);
+    }
+
+    it('includes guard, supervisor and administrative rows with correct role tags', async () => {
+      const roster: any = await mixedService().previewRoster({ year: 2025, month: 6 });
+      assert.strictEqual(roster.count, 3);
+      const byRole = Object.fromEntries(roster.rows.map((r: any) => [r.role, r]));
+      assert.ok(byRole.guard && byRole.supervisor && byRole.administrative, `roles: ${roster.rows.map((r: any) => r.role)}`);
+      // Supervisor: 2 shifts across 2 days, keyed sup:
+      assert.strictEqual(byRole.supervisor.guardId, 'sup:s1');
+      assert.strictEqual(byRole.supervisor.aggregate.shiftCount, 2);
+      assert.strictEqual(byRole.supervisor.aggregate.daysWorked, 2);
+      assert.strictEqual(byRole.supervisor.guardName, 'Supervisor Uno');
+      // Administrative: 1 shift/1 day, keyed stf:
+      assert.strictEqual(byRole.administrative.guardId, 'stf:u1');
+      assert.strictEqual(byRole.administrative.aggregate.shiftCount, 1);
+      assert.strictEqual(byRole.administrative.aggregate.daysWorked, 1);
+    });
+
+    it('orders guards first, then supervisors, then administrative', async () => {
+      const roster: any = await mixedService().previewRoster({ year: 2025, month: 6 });
+      assert.deepStrictEqual(roster.rows.map((r: any) => r.role), ['guard', 'supervisor', 'administrative']);
+    });
+
+    it('resolves a supervisor monthly salary via the sup: prefixed key', async () => {
+      const roster: any = await mixedService({ guardMonthlySalaries: { 'sup:s1': 850 } }).previewRoster({ year: 2025, month: 6 });
+      const sup = roster.rows.find((r: any) => r.role === 'supervisor');
+      assert.strictEqual(sup.monthlyRemuneration, 850);
+      assert.strictEqual(sup.salarySource, 'guard-override');
+    });
+
+    it('totals include every worker type (net sums all rows)', async () => {
+      const roster: any = await mixedService().previewRoster({ year: 2025, month: 6 });
+      const sumNet = roster.rows.reduce((s: number, r: any) => s + r.payroll.netPay, 0);
+      assert.ok(Math.abs(roster.totals.netPay - Math.round(sumNet * 100) / 100) < 0.02, `net ${roster.totals.netPay} vs ${sumNet}`);
     });
   });
 });

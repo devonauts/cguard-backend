@@ -159,7 +159,9 @@ describe('crud-g04 · attendance admin service', () => {
 
       const patch = db.guardShifts[0].updateCalls[0];
       assert.strictEqual(patch.approvalStatus, 'approved');
-      assert.strictEqual(patch.status, 'approved');
+      // Approval is orthogonal to punctuality: `status` (late/on_time/overtime)
+      // must be PRESERVED, never overwritten with a flat 'approved'.
+      assert.strictEqual(patch.status, undefined);
       assert.strictEqual(patch.approvedById, ADMIN_ID);
       assert.ok(patch.approvedAt instanceof Date);
       assert.strictEqual(patch.approvalNotes, 'Verificado con el supervisor');
@@ -179,7 +181,8 @@ describe('crud-g04 · attendance admin service', () => {
       await svc(db).reject('gs-1', {});
       const patch = db.guardShifts[0].updateCalls[0];
       assert.strictEqual(patch.approvalStatus, 'rejected');
-      assert.strictEqual(patch.status, 'rejected');
+      // `status` preserved (the seed's 'late' stays), not clobbered to 'rejected'.
+      assert.strictEqual(patch.status, undefined);
       assert.strictEqual(patch.approvalNotes, 'nota previa');
     });
 
