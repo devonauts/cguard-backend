@@ -78,6 +78,12 @@ export default (app) => {
     require('./clientAccountPersonnel').default,
   );
 
+  // Horario (schedule grid per sede)
+  app.get(
+    `/tenant/:tenantId/client-account/:id/schedule`,
+    require('./clientAccountSchedule').default,
+  );
+
   // Documentos (client document library)
   app.get(
     `/tenant/:tenantId/client-account/:id/documents`,
