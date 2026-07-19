@@ -249,6 +249,16 @@ export default async (req, res) => {
       const onPost = onPostByStation.get(id) || [];
       const onPostCount = onPost.length;
 
+      // The station's own configuration is authoritative for how many guards the
+      // post needs and whether it runs around the clock. A 24h post is never
+      // "off turno" and always needs its full complement — independent of whether
+      // shifts/positions were materialized in the schedule.
+      const configuredGuards = Math.max(1, Number(st.numberOfGuardsInStation) || 1);
+      const is24h =
+        String(st.scheduleType || '').toLowerCase().replace(/\s/g, '') === '24h' ||
+        (String(st.startingTimeInDay) === '00:00' &&
+          ['23:59', '24:00', '00:00'].includes(String(st.finishTimeInDay)));
+
       // Required NOW: prefer generated shifts; fall back to positions covering now.
       let requiredNow = active.length;
       let windowStart: Date | null = active.length ? new Date(Math.min(...active.map((a: any) => +new Date(a.startTime)))) : null;
@@ -263,10 +273,19 @@ export default async (req, res) => {
         } else if (!fijos.length && (requiredHalves(st.scheduleType).includes(currentHalf as any))) {
           // Configured schedule type but no positions/shifts materialized.
           hasTurnoNow = true;
-          requiredNow = Math.max(1, req.halfCounts?.[currentHalf as 'day' | 'night'] ?? 1);
+          requiredNow = Math.max(configuredGuards, req.halfCounts?.[currentHalf as 'day' | 'night'] ?? configuredGuards);
         }
       }
       if (onPostCount > 0) hasTurnoNow = true;
+
+      // 24h posts: always on turno, and always demand the full configured guard
+      // complement (never fewer than what materialized).
+      if (is24h) {
+        hasTurnoNow = true;
+        requiredNow = Math.max(requiredNow, configuredGuards);
+        windowStart = null;
+        windowEnd = null;
+      }
 
       // "sin_cobertura" (red, critical) means the post is genuinely unstaffed. If
       // there ARE guards assigned to this station who simply haven't punched in
@@ -287,10 +306,15 @@ export default async (req, res) => {
 
       if (hasTurnoNow) { sumCoveredNow += Math.min(onPostCount, Math.max(1, requiredNow)); sumRequiredNow += Math.max(1, requiredNow); }
 
-      // Window label
+      // Window label. A 24h post shows the full-day window + a "24 horas" turno,
+      // not whatever partial shift/position happens to cover the current instant.
       let windowLabel = '';
       let bandName: 'diurno' | 'vespertino' | 'nocturno' | null = null;
-      if (windowStart && windowEnd) {
+      let turnoText: string | null = null;
+      if (is24h) {
+        windowLabel = '00:00 - 23:59';
+        turnoText = '24 horas';
+      } else if (windowStart && windowEnd) {
         windowLabel = `${hhmm(windowStart, tz)} - ${hhmm(windowEnd, tz)}`;
         bandName = bandOfHour(localHour(windowStart, tz));
       } else {
@@ -302,6 +326,7 @@ export default async (req, res) => {
           windowLabel = `${st.startingTimeInDay} - ${st.finishTimeInDay}`;
         }
       }
+      if (!turnoText) turnoText = bandName ? bandLabel[bandName] : null;
 
       // Last activity
       const lastCheckin = lastCheckinByStation.get(id) || null;
@@ -321,7 +346,7 @@ export default async (req, res) => {
         lat: toNum(st.latitud),
         lng: toNum(st.longitud),
         window: windowLabel || null,
-        turno: bandName ? bandLabel[bandName] : null,
+        turno: turnoText,
         required: Math.max(0, requiredNow),
         onPost: onPostCount,
         guards: onPost.map((gs: any) => nameById.get(String(gs.guardNameId)) || 'Vigilante'),
