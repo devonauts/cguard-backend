@@ -145,10 +145,17 @@ export default async (req, res) => {
     // ── GUARDS roster ────────────────────────────────────────────────────────
     const gAssign = await db.guardAssignment.findAll({
       where: { tenantId, stationId: stationIds, status: 'active' },
-      attributes: ['guardId', 'stationId'],
+      attributes: ['id', 'guardId', 'stationId'],
     }).catch(() => []);
     const guardStationByUser = new Map<string, string>();
-    for (const a of gAssign) { const k = String(a.guardId); if (!guardStationByUser.has(k)) guardStationByUser.set(k, String(a.stationId)); }
+    // guardId → active assignment id, so the CRM can "remover de la estación"
+    // (DELETE /guard-assignment/:id) straight from the roster row.
+    const assignmentByUser = new Map<string, string>();
+    for (const a of gAssign) {
+      const k = String(a.guardId);
+      if (!guardStationByUser.has(k)) guardStationByUser.set(k, String(a.stationId));
+      if (!assignmentByUser.has(k)) assignmentByUser.set(k, String(a.id));
+    }
     const guardUserIds = [...guardStationByUser.keys()];
 
     let guardRows: any[] = [];
@@ -195,6 +202,8 @@ export default async (req, res) => {
       roster.push({
         id: sgId,
         guardId: userId,
+        assignmentId: (userId && assignmentByUser.get(userId)) || null,
+        stationId: (userId && guardStationByUser.get(userId)) || null,
         name: g.fullName || '—',
         code: g.governmentId ? String(g.governmentId) : null,
         role: 'guardia',

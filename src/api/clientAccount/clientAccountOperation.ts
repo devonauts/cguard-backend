@@ -42,26 +42,36 @@ export default async (req, res) => {
         'id', 'stationName', 'nickname', 'postSiteId', 'stationOriginId',
         'numberOfGuardsInStation', 'scheduleType', 'startingTimeInDay', 'finishTimeInDay', 'isMobile',
       ],
-      // Vigilantes asignados inline — the whole point of the one-shot view.
-      include: [{
-        model: db.user,
-        as: 'assignedGuards',
-        attributes: ['id', 'fullName', 'firstName', 'lastName'],
-        through: { attributes: [] },
-        required: false,
-      }],
       order: [['stationName', 'ASC']],
     });
+
+    // Vigilantes asignados from guardAssignment — the SINGLE source of truth.
+    // (The old `assignedGuards` include read the LEGACY stationAssignedGuardsUser
+    // pivot, which is dead data and showed phantom/stale guards here.)
+    const stationIdList = stations.map((s: any) => String(s.id));
+    const guardsByStation = new Map<string, { id: string; name: string }[]>();
+    if (stationIdList.length) {
+      const assigns = await db.guardAssignment.findAll({
+        where: { tenantId, stationId: stationIdList, status: 'active' },
+        attributes: ['stationId', 'guardId'],
+        include: [{ model: db.user, as: 'guard', attributes: ['id', 'fullName', 'firstName', 'lastName'] }],
+      });
+      for (const a of assigns) {
+        const k = String(a.stationId);
+        const u: any = a.guard || {};
+        if (!guardsByStation.has(k)) guardsByStation.set(k, []);
+        guardsByStation.get(k)!.push({
+          id: u.id || a.guardId,
+          name: u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || '—',
+        });
+      }
+    }
 
     const bySite = new Map<string, any[]>();
     const loose: any[] = [];
     for (const st of stations) {
       const plain = st.get ? st.get({ plain: true }) : st;
-      plain.guards = (plain.assignedGuards || []).map((u: any) => ({
-        id: u.id,
-        name: u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || '—',
-      }));
-      delete plain.assignedGuards;
+      plain.guards = guardsByStation.get(String(plain.id)) || [];
       if (plain.postSiteId && siteIds.includes(plain.postSiteId)) {
         if (!bySite.has(String(plain.postSiteId))) bySite.set(String(plain.postSiteId), []);
         bySite.get(String(plain.postSiteId))!.push(plain);

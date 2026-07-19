@@ -154,6 +154,25 @@ export default async (req, res) => {
       if (gs.guardNameId) guardNameIds.add(String(gs.guardNameId));
     }
 
+    // ── Guards ASSIGNED to each station (guardAssignment = source of truth) ──
+    // Coverage is LIVE (marcaciones), but the UI must be able to say "asignados
+    // que no han marcado" instead of the misleading "sin asignar".
+    const assignedByStation = new Map<string, string[]>();
+    try {
+      const assigns = await db.guardAssignment.findAll({
+        where: { tenantId, stationId: stationIds, status: 'active' },
+        attributes: ['stationId'],
+        include: [{ model: db.user, as: 'guard', attributes: ['fullName', 'firstName', 'lastName'] }],
+      });
+      for (const a of assigns) {
+        const k = String(a.stationId);
+        const u: any = a.guard || {};
+        const nm = u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Vigilante';
+        if (!assignedByStation.has(k)) assignedByStation.set(k, []);
+        assignedByStation.get(k)!.push(nm);
+      }
+    } catch { /* best-effort enrichment */ }
+
     // ── Last check-in today per station + attendance bands for turno summary ──
     const todayStr = localYmd(now, tz);
     const dayStart = new Date(now.getTime() - 26 * 3600 * 1000); // wide enough to capture today's punches
@@ -296,6 +315,7 @@ export default async (req, res) => {
         required: Math.max(0, requiredNow),
         onPost: onPostCount,
         guards: onPost.map((gs: any) => nameById.get(String(gs.guardNameId)) || 'Vigilante'),
+        assigned: assignedByStation.get(id) || [],
         coveragePct,
         status,
         lastActivity,
