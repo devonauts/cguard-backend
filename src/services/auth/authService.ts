@@ -842,6 +842,26 @@ class AuthService {
           throw new Error('auth.tenantSuspended');
         }
 
+        // ── Hard login block: deactivated membership ──────────────────────────
+        // A membership an admin deactivated (status 'archived' — the slug set by
+        // userSuspend / userBulkSuspend / guard-archive; see selectStatus which
+        // never resurrects it to 'active') must not mint ANY session, on ANY
+        // channel. The channel↔role gate does NOT catch this: archiving keeps the
+        // member's role(s), so an archived guard still passes the 'worker' channel
+        // check and would otherwise get a worker token. This is placed HERE — the
+        // single choke point where the SELECTED membership is known and BEFORE the
+        // token is signed — so one gate covers web / worker / supervisor and social
+        // login. Superadmins returned earlier and are exempt. 'invited' / 'pending'
+        // are intentionally allowed through: an invited user must be able to
+        // authenticate to accept the invitation and set their password. The extra
+        // slugs are defensive future-proofing (none is a legitimate active state).
+        const DEACTIVATED_MEMBERSHIP_STATUSES = new Set([
+          'archived', 'disabled', 'removed', 'inactive', 'suspended', 'deactivated',
+        ]);
+        if (DEACTIVATED_MEMBERSHIP_STATUSES.has(String(tenantEntry.status || '').toLowerCase())) {
+          throw new Error('auth.accountDisabled');
+        }
+
         // Replace tenants array with single `tenant` key containing the tenant info + roles/permissions
         (safeUser as any).tenant = {
           tenantId: tenantEntry.tenantId,

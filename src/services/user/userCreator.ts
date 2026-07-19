@@ -415,21 +415,31 @@ export default class UserCreator {
     for (const emailToInvite of this.emailsToInvite) {
       // Detect if el usuario es cliente (rol customer)
       const isCustomer = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.customer)) || this.data.role === Roles.values.customer;
-      // Detect if el usuario es supervisor o staff administrativo (no guardia)
+      // Detect if el usuario es guardia
       const isSecurityGuard = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.securityGuard)) || this.data.role === Roles.values.securityGuard;
-      const isStaffNonGuard = !isCustomer && !isSecurityGuard; // supervisor, admin, etc.
-      
+      // Detect if el usuario es supervisor de seguridad. Un supervisor NO trabaja
+      // en este CRM — su casa es la app de supervisor (patrullaje vehicular), así
+      // que va a su propia pantalla de registro, NO al panel ni al flujo de guardia.
+      const isSupervisor = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.securitySupervisor)) || this.data.role === Roles.values.securitySupervisor;
+      // Staff administrativo restante (admin, despachador, RR.HH., etc.) sí usa el CRM.
+      const isStaffNonGuard = !isCustomer && !isSecurityGuard && !isSupervisor;
+
       // Determinar el path y tipo de invitación
       let invitationPath = '/auth/invitation';
       let inviteType = 'guard';
-      
+
       if (isCustomer) {
         invitationPath = '/client/registration';
         inviteType = 'client';
+      } else if (isSupervisor) {
+        // Supervisor → app de supervisor. Pantalla propia que NO inicia sesión en
+        // el CRM (defensa en profundidad: securitySupervisor es un rol de campo).
+        invitationPath = '/supervisor/registration';
+        inviteType = 'supervisor';
       } else if (isStaffNonGuard) {
-        // Staff administrativo (admin, supervisor, despachador, etc.) trabaja en
-        // ESTE CRM, así que se onboardean en el panel y entran directo al CRM,
-        // NO en la vista de confirmación de clientes.
+        // Staff administrativo (admin, despachador, etc.) trabaja en ESTE CRM,
+        // así que se onboardean en el panel y entran directo al CRM, NO en la
+        // vista de confirmación de clientes.
         invitationPath = '/auth/accept-invitation';
         inviteType = 'staff';
       }
@@ -453,11 +463,12 @@ export default class UserCreator {
       }
 
       try {
-        // Detect if the user is cliente (rol customer), supervisor, or guard
+        // Detect if the user is cliente (rol customer), supervisor, staff, or guard
         const isCustomer = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.customer)) || this.data.role === Roles.values.customer;
         const isSecurityGuard = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.securityGuard)) || this.data.role === Roles.values.securityGuard;
-        const isStaffNonGuard = !isCustomer && !isSecurityGuard;
-        
+        const isSupervisor = (Array.isArray(this.data.roles) && this.data.roles.includes(Roles.values.securitySupervisor)) || this.data.role === Roles.values.securitySupervisor;
+        const isStaffNonGuard = !isCustomer && !isSecurityGuard && !isSupervisor;
+
         const templateVars = {
           tenant: this.options.currentTenant,
           link,
@@ -468,8 +479,9 @@ export default class UserCreator {
           firstName: this.data.firstName || this.data.nombre || undefined,
           lastName: this.data.lastName || this.data.apellido || undefined,
           email: emailToInvite.email,
-          // Use client template for customers and staff (supervisors, admins, etc.)
-          ...(isCustomer || isStaffNonGuard ? { type: 'client-invitation' } : {}),
+          // Use the client-style (waiting-screen) template for everyone whose
+          // home is NOT the guard app: customers, supervisors, and office staff.
+          ...(isCustomer || isSupervisor || isStaffNonGuard ? { type: 'client-invitation' } : {}),
         };
         const sender = new EmailSender(
           EmailSender.TEMPLATES.INVITATION,

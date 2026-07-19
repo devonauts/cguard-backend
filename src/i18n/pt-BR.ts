@@ -40,6 +40,7 @@ const ptBR = {
       invalidPassword: 'A senha antiga é inválida',
     },
     customerCrmNotAllowed: 'Sua conta possui apenas acesso de cliente. Por favor, use o app de clientes para fazer login.',
+    accountDisabled: 'Esta conta foi desativada. Por favor, entre em contato com o seu administrador.',
     mustUseCrm: 'Esta conta é do painel de administração. Faça login por lá.',
     mustUseWorkerApp: 'Esta é uma conta de vigilante. Seu acesso é pelo app do vigilante, não por este painel.',
     mustUseSupervisorApp: 'Esta é uma conta de supervisor. Seu acesso é pelo app do supervisor, não por este painel.',

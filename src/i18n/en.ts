@@ -41,6 +41,7 @@ const en = {
     },
     roleNotCustomer: 'User does not have the customer role for this endpoint.',
     customerCrmNotAllowed: 'Your account only has customer access. Please use the customer app to log in.',
+    accountDisabled: 'This account has been deactivated. Please contact your administrator.',
     mustUseCrm: 'This account is for the management console. Please sign in there.',
     mustUseWorkerApp: 'This is a guard account. Your access is through the worker app, not this console.',
     mustUseSupervisorApp: 'This is a supervisor account. Your access is through the supervisor app, not this console.',

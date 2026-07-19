@@ -33,6 +33,7 @@ const es = {
     },
     roleNotCustomer: 'Rol no permitido',
     customerCrmNotAllowed: 'Tu cuenta solo tiene acceso de cliente. Por favor usa la app de clientes para iniciar sesión.',
+    accountDisabled: 'Esta cuenta ha sido desactivada. Por favor contacta a tu administrador.',
     mustUseCrm: 'Esta cuenta es del panel de administración. Inicia sesión ahí.',
     mustUseWorkerApp: 'Esta cuenta es de vigilante. Tu acceso es desde la app de vigilante, no desde este panel.',
     mustUseSupervisorApp: 'Esta cuenta es de supervisor. Tu acceso es desde la app de supervisor, no desde este panel.',

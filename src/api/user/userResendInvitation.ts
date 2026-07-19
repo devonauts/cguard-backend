@@ -47,12 +47,15 @@ export default async (req, res) => {
     const roles = Array.isArray((tenantUser as any).roles) ? (tenantUser as any).roles : [];
     const isGuardInvite = roles.includes(Roles.values.securityGuard);
     const isCustomerInvite = roles.includes(Roles.values.customer);
+    const isSupervisorInvite = roles.includes(Roles.values.securitySupervisor);
     // Guards → guard app onboarding; customers → Mi Seguridad client view;
-    // everyone else (admin/supervisor/dispatcher/office staff) → CRM panel onboarding.
+    // supervisors → supervisor app onboarding (NOT the CRM); everyone else
+    // (admin/dispatcher/office staff) → CRM panel onboarding.
     let invitationPath = '/auth/accept-invitation';
     let inviteType = 'staff';
     if (isGuardInvite) { invitationPath = '/auth/invitation'; inviteType = 'guard'; }
     else if (isCustomerInvite) { invitationPath = '/client/registration'; inviteType = 'client'; }
+    else if (isSupervisorInvite) { invitationPath = '/supervisor/registration'; inviteType = 'supervisor'; }
     const link = `${tenantSubdomain.frontendUrl(req.currentTenant)}${invitationPath}?token=${encodeURIComponent(tenantUser.invitationToken)}&inviteType=${inviteType}`;
 
     try {
