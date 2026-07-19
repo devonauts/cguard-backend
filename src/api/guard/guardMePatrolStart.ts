@@ -33,11 +33,30 @@ export default async (req: any, res: any) => {
       attributes: ['id', 'fullName'],
     });
 
-    // Reuse the active assignment for this tour, else create one for this guard.
-    // Scope by tenant so a cross-tenant tourId/tag collision can't attach here.
-    let assignment = await db.tourAssignment.findOne({
+    // Reuse ONLY a FRESH assignment belonging to THIS guard (a restart within
+    // the same day). The old code reused ANY 'assigned' row for the tour and
+    // only stamped startAt when empty — a stale row from a previous day (or
+    // another guard) silently kept its old startAt and securityGuardId, so
+    // today's round was attributed to the wrong guard on the wrong date, the
+    // day-filtered patrol history stayed empty, and the shift's checkpoint
+    // PUNTOS never counted. Stale/foreign rows are expired here so the scan
+    // resolver (which attaches to the tour's 'assigned' row) can't hit them.
+    const freshSince = new Date(Date.now() - 24 * 3600 * 1000);
+    const openRows = await db.tourAssignment.findAll({
       where: { siteTourId: tourId, status: 'assigned', tenantId },
     });
+    let assignment: any = null;
+    for (const a of openRows) {
+      const mine =
+        securityGuard && String(a.securityGuardId || '') === String(securityGuard.id);
+      const startedRef = a.startAt || a.createdAt;
+      const fresh = startedRef && new Date(startedRef) >= freshSince;
+      if (mine && fresh && !assignment) {
+        assignment = a;
+      } else {
+        await a.update({ status: 'expired', updatedById: userId }).catch(() => {});
+      }
+    }
     if (!assignment) {
       assignment = await db.tourAssignment.create({
         siteTourId: tourId,
