@@ -21,7 +21,7 @@ export default async (req, res, next) => {
     // Debug: log caller and id to help diagnose unexpected 404s
     try {
       // eslint-disable-next-line no-console
-      console.debug('[businessInfoFind] incoming request id=', req.params.id, 'headers.x-tenant-id=', req.headers['x-tenant-id'] || req.headers['x-tenantid'] || null, 'userId=', (req as any).currentUser?.id ?? null, 'currentTenant=', (req as any).currentTenant?.id ?? null, 'bypassBefore=', (req as any).bypassPermissionValidation ?? false);
+      console.debug('[businessInfoFind] incoming request id=', req.params.id, 'headers.x-tenant-id=', req.headers['x-tenant-id'] || req.headers['x-tenantid'] || null, 'userId=', (req as any).currentUser?.id ?? null, 'currentTenant=', req.currentTenant?.id ?? null, 'bypassBefore=', (req as any).bypassPermissionValidation ?? false);
       // eslint-disable-next-line no-console
       console.debug('[businessInfoFind] currentUser (preview)=', JSON.stringify((req as any).currentUser ? { id: (req as any).currentUser.id, tenants: (req as any).currentUser.tenants ? (req as any).currentUser.tenants.map((t) => (t && (t.tenantId || (t.tenant && t.tenant.id))) ) : undefined } : null));
     } catch (e) {}
@@ -45,7 +45,7 @@ export default async (req, res, next) => {
       try {
         const errAny: any = err;
         // eslint-disable-next-line no-console
-        console.error('[businessInfoFind] findById failed for id=', req.params.id, 'tenant=', (req as any).currentTenant?.id ?? null, 'user=', (req as any).currentUser?.id ?? null, 'error=', errAny && errAny.message ? errAny.message : errAny);
+        console.error('[businessInfoFind] findById failed for id=', req.params.id, 'tenant=', req.currentTenant?.id ?? null, 'user=', (req as any).currentUser?.id ?? null, 'error=', errAny && errAny.message ? errAny.message : errAny);
         // eslint-disable-next-line no-console
         console.error('[businessInfoFind] full error stack:', errAny && errAny.stack ? errAny.stack : errAny);
       } catch (ee) {}

@@ -19,9 +19,9 @@ export default async function requestExportPdf(req: Request, res: Response): Pro
 
     // build service options from the request so types match IServiceOptions
     const serviceOptions: any = {
-      language: (req as any).language,
+      language: req.language,
       currentUser: (req as any).currentUser,
-      currentTenant: (req as any).currentTenant,
+      currentTenant: req.currentTenant,
       database: (req as any).database,
     };
 
@@ -174,7 +174,7 @@ export default async function requestExportPdf(req: Request, res: Response): Pro
 
       const logoAreaW = 80;
       const centerAreaW = pageWidth - logoAreaW - 100;
-      const tenant = (req as any).currentTenant || requestRecord?.tenant || requestRecord?.companyTenant || null;
+      const tenant = req.currentTenant || requestRecord?.tenant || requestRecord?.companyTenant || null;
       const tenantName = tenant ? (tenant.name || tenant.tenantName || tenant.companyName) : (safe(requestRecord?.businessName) || safe(requestRecord?.company) || 'Seguridad BAS');
       doc.fillColor('#000').fontSize(13).text(tenantName, startX + logoAreaW, cursorY + 12, { width: centerAreaW, align: 'center' });
 

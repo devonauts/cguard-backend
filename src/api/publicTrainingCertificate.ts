@@ -9,7 +9,7 @@ import { Request, Response } from 'express';
  */
 export default async function publicTrainingCertificate(req: Request, res: Response) {
   try {
-    const token = (req.params as any).downloadToken;
+    const token = (req.params as { downloadToken?: string }).downloadToken;
     if (!token) return res.status(400).json({ message: 'Missing token' });
 
     const db = (req as any).database;

@@ -514,7 +514,7 @@ export default function (router) {
         // eslint-disable-next-line no-console
         console.debug('[tag-scans] request params:', { params: req.params, query: req.query });
         // eslint-disable-next-line no-console
-        console.debug('[tag-scans] currentTenant:', (req as any).currentTenant && (req as any).currentTenant.id ? (req as any).currentTenant.id : null, 'currentUser=', (req as any).currentUser && (req as any).currentUser.id ? (req as any).currentUser.id : null);
+        console.debug('[tag-scans] currentTenant:', req.currentTenant && req.currentTenant.id ? req.currentTenant.id : null, 'currentUser=', (req as any).currentUser && (req as any).currentUser.id ? (req as any).currentUser.id : null);
       } catch (e: any) {}
       new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
       const service = new SiteTourService(req);

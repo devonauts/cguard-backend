@@ -12,9 +12,9 @@ export default async function requestShare(req: Request, res: Response) {
     if (!tenantId || !id) return res.status(400).json({ message: 'Missing params' });
 
     const options: any = {
-      language: (req as any).language,
+      language: req.language,
       currentUser: (req as any).currentUser,
-      currentTenant: (req as any).currentTenant,
+      currentTenant: req.currentTenant,
       database: (req as any).database,
     };
 

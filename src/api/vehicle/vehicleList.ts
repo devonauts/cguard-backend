@@ -8,7 +8,10 @@ const handler = async (req: Request, res: Response) => {
     new PermissionChecker(req as any).validateHas(
       Permissions.values.vehicleRead,
     );
-    const { limit = 50, offset = 0 } = req.query as any;
+    const { limit = 50, offset = 0 } = req.query as {
+      limit?: string;
+      offset?: string;
+    };
     const tenant = (req as any).tenant;
     // Construct service with the request so it has access to req.database
     const service = new (require('../../services/vehicleService').default)(req as any);

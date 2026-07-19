@@ -56,11 +56,11 @@ export default async (req: any, res: any) => {
     const guardUserId = targetRecord && ((targetRecord as any).guardId || ((targetRecord as any).guard && ((targetRecord as any).guard as any).id));
     const currentUserId = (req as any).currentUser && (req as any).currentUser.id;
     if (!currentUserId || !guardUserId || String(currentUserId) !== String(guardUserId)) {
-      throw new Error403((req as any).language);
+      throw new Error403(req.language);
     }
 
     try {
-      console.log('[DEBUG][onDutyPatch] before update resolvedId=', (targetRecord as any).id, 'tenant=', (req as any).currentTenant && (req as any).currentTenant.id);
+      console.log('[DEBUG][onDutyPatch] before update resolvedId=', (targetRecord as any).id, 'tenant=', req.currentTenant && req.currentTenant.id);
       const updated: any = await SecurityGuardRepository.update((targetRecord as any).id, { isOnDuty }, req);
       console.log('[DEBUG][onDutyPatch] update result=', updated && { id: updated.id, isOnDuty: updated.isOnDuty });
       var _updatedResult: any = updated;

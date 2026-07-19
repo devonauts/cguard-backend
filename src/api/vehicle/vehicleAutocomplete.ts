@@ -8,7 +8,7 @@ const handler = async (req: Request, res: Response) => {
     new PermissionChecker(req as any).validateHas(
       Permissions.values.vehicleAutocomplete,
     );
-    const { query = '' } = req.query as any;
+    const { query = '' } = req.query as { query?: string };
     const tenant = (req as any).tenant;
     // Use req so the service has access to req.database and req.currentUser
     const service = new (require('../../services/vehicleService').default)(req as any);

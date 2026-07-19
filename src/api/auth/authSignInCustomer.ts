@@ -129,7 +129,7 @@ export default async (req: any, res: any) => {
         const tenantIdCandidate = (payload.user.tenant && (payload.user.tenant.tenantId || (payload.user.tenant.tenant && payload.user.tenant.tenant.id))) || req.body?.tenantId || (req.currentTenant && req.currentTenant.id) || null;
 
         // Do not overwrite existing currentTenant if present; only set when we have a candidate and no currentTenant
-        if (tenantIdCandidate && !(req && (req as any).currentTenant)) {
+        if (tenantIdCandidate && !(req && req.currentTenant)) {
           req.currentTenant = { id: tenantIdCandidate };
         }
 
