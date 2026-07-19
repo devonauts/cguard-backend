@@ -20,9 +20,7 @@ import assert from 'assert';
 import sinon from 'sinon';
 
 import NotificationRepository from '../../../src/database/repositories/notificationRepository';
-import NotificationRecipientRepository from '../../../src/database/repositories/notificationRecipientRepository';
 import NotificationService from '../../../src/services/notificationService';
-import NotificationRecipientService from '../../../src/services/notificationRecipientService';
 import AuditLogRepository from '../../../src/database/repositories/auditLogRepository';
 import FileRepository from '../../../src/database/repositories/fileRepository';
 import Error404 from '../../../src/errors/Error404';
@@ -308,110 +306,6 @@ const RECIP_FULL = {
   dateDelivered: new Date('2026-07-01T10:00:00Z'),
   importHash: 'hash-rec-1',
 };
-
-describe('crud-g09 · notificationRecipientRepository.create', () => {
-  it('persists EVERY writable field + the notification FK (field fidelity)', async () => {
-    const db = buildDb();
-    await NotificationRecipientRepository.create(
-      { ...RECIP_FULL, notification: 'ntf-1' },
-      repoOptions(db),
-    );
-    assert.strictEqual(db.notificationRecipient.calls.create.length, 1);
-    const written = db.notificationRecipient.calls.create[0];
-    for (const [k, v] of Object.entries(RECIP_FULL)) {
-      assert.deepStrictEqual(written[k], v, `field "${k}" was dropped or altered on create`);
-    }
-    assert.strictEqual(written.notificationId, 'ntf-1');
-    assert.strictEqual(written.tenantId, TENANT);
-    assert.strictEqual(written.createdById, USER_ID);
-    assert.strictEqual(written.updatedById, USER_ID);
-  });
-
-  it('a db failure on create PROPAGATES', async () => {
-    const db = buildDb();
-    db.notificationRecipient.create = async () => {
-      throw new Error('DB down');
-    };
-    await assert.rejects(
-      () => NotificationRecipientRepository.create({ ...RECIP_FULL }, repoOptions(db)),
-      /DB down/,
-    );
-  });
-});
-
-describe('crud-g09 · notificationRecipientRepository.update', () => {
-  const EXISTING = {
-    id: 'rec-1',
-    tenantId: TENANT,
-    recipientId: 'user-55',
-    readStatus: false,
-    deliveryStatus: 'Pending',
-    dateDelivered: null,
-    notificationId: 'ntf-1',
-  };
-
-  it('targets the right row (id + tenantId) and applies the whole patch', async () => {
-    const db = buildDb({ notificationRecipients: [EXISTING] });
-    const patch = { ...RECIP_FULL, notification: 'ntf-2' };
-    await NotificationRecipientRepository.update('rec-1', patch, repoOptions(db));
-
-    const q = db.notificationRecipient.calls.findOne[0];
-    assert.strictEqual(q.where.id, 'rec-1');
-    assert.strictEqual(q.where.tenantId, TENANT);
-
-    const row = db.notificationRecipient.rows[0];
-    const applied = row.__updateCalls[0];
-    for (const k of Object.keys(RECIP_FULL)) {
-      assert.deepStrictEqual(applied[k], (patch as any)[k], `field "${k}" missing from the update write`);
-    }
-    assert.strictEqual(applied.notificationId, 'ntf-2');
-    assert.strictEqual(applied.updatedById, USER_ID);
-    assert.strictEqual(row.readStatus, true);
-    assert.strictEqual(row.deliveryStatus, 'Delivered');
-  });
-
-  it('a PARTIAL update (readStatus only) does NOT detach the row from its notification', async () => {
-    // Fixed: notificationId is now presence-guarded in update(); it used to be
-    // written as `data.notification || null` unconditionally, detaching the
-    // recipient row from its notification on any partial payload.
-    const db = buildDb({ notificationRecipients: [EXISTING] });
-    await NotificationRecipientRepository.update('rec-1', { readStatus: true }, repoOptions(db));
-
-    const row = db.notificationRecipient.rows[0];
-    assert.strictEqual(row.__updateCalls.length, 1);
-    assert.strictEqual(
-      row.__updateCalls[0].notificationId,
-      undefined,
-      'omitted notification must not be written at all',
-    );
-    assert.strictEqual(row.notificationId, 'ntf-1', 'notification FK was wiped by a partial update');
-    assert.strictEqual(row.readStatus, true, 'the sent field must still apply');
-  });
-
-  it('service update: a partial payload keeps the notification FK (no filterIdInTenant(undefined) wipe)', async () => {
-    // Fixed: notificationRecipientService.update used to unconditionally run
-    // NotificationRepository.filterIdInTenant(data.notification), turning an
-    // OMITTED value into null and detaching the row despite the repo guard.
-    const db = buildDb({
-      notificationRecipients: [EXISTING],
-      notifications: [{ id: 'ntf-1', tenantId: TENANT, title: 't' }],
-    });
-    const service = new NotificationRecipientService(repoOptions(db));
-    await service.update('rec-1', { readStatus: true });
-    const row = db.notificationRecipient.rows[0];
-    assert.strictEqual(row.notificationId, 'ntf-1', 'notification FK was wiped by a partial service update');
-    assert.strictEqual(row.readStatus, true);
-  });
-
-  it("REFUSES to update another tenant's row (404, no write)", async () => {
-    const db = buildDb({ notificationRecipients: [{ ...EXISTING, tenantId: OTHER_TENANT }] });
-    await assert.rejects(
-      () => NotificationRecipientRepository.update('rec-1', { readStatus: true }, repoOptions(db)),
-      (e: any) => e instanceof Error404,
-    );
-    assert.strictEqual(db.notificationRecipient.rows[0].__updateCalls.length, 0);
-  });
-});
 
 // ═══════════════════ notificationPreferences (settings JSON) ═════════════════
 

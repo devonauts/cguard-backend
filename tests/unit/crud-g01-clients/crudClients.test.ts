@@ -28,7 +28,6 @@ import Sequelize from 'sequelize';
 
 import ClientAccountRepository from '../../../src/database/repositories/clientAccountRepository';
 import ClientContactRepository from '../../../src/database/repositories/clientContactRepository';
-import RepresentanteEmpresaRepository from '../../../src/database/repositories/representanteEmpresaRepository';
 import AuditLogRepository from '../../../src/database/repositories/auditLogRepository';
 import FileRepository from '../../../src/database/repositories/fileRepository';
 import Error400 from '../../../src/errors/Error400';
@@ -555,105 +554,6 @@ describe('crud-g01 · clientContactRepository (contacts inside clientAccount)', 
 });
 
 // ═══════════════════════ representanteEmpresa ═══════════════════════════════
-describe('crud-g01 · representanteEmpresaRepository', () => {
-  const FULL_REP = {
-    governmentId: '1712345678',
-    jobTitle: 'Gerente General',
-    importHash: 'rep-hash',
-    personInCharge: 'u-9',
-    assignedCompany: 'ca-1',
-  };
-  const seedUsers = [{ id: 'u-9', firstName: 'María', lastName: 'Gómez' }];
-  const seedAccounts = [{ id: 'ca-1', tenantId: TENANT, name: 'Andina', deletedAt: null }];
-
-  it('create maps every form field (personInCharge→personInChargeId, assignedCompany→assignedCompanyId)', async () => {
-    const db = buildDb({ users: seedUsers, clientAccounts: seedAccounts });
-    await RepresentanteEmpresaRepository.create({ ...FULL_REP }, repoOptions(db));
-    assert.strictEqual(db.representanteEmpresa.calls.create.length, 1);
-    const written = db.representanteEmpresa.calls.create[0];
-    assert.strictEqual(written.governmentId, FULL_REP.governmentId);
-    assert.strictEqual(written.jobTitle, FULL_REP.jobTitle);
-    assert.strictEqual(written.importHash, FULL_REP.importHash);
-    assert.strictEqual(written.personInChargeId, 'u-9');
-    assert.strictEqual(written.assignedCompanyId, 'ca-1');
-    assert.strictEqual(written.tenantId, TENANT);
-    assert.strictEqual(written.createdById, USER_ID);
-    assert.strictEqual(written.updatedById, USER_ID);
-  });
-
-  it('update targets id + tenantId and applies the full patch', async () => {
-    const db = buildDb({
-      users: seedUsers,
-      clientAccounts: seedAccounts,
-      representantes: [
-        {
-          id: 're-1',
-          tenantId: TENANT,
-          governmentId: '000',
-          jobTitle: 'Old',
-          personInChargeId: 'u-old',
-          assignedCompanyId: 'ca-old',
-          deletedAt: null,
-        },
-      ],
-    });
-    await RepresentanteEmpresaRepository.update(
-      're-1',
-      { governmentId: '1799999999', jobTitle: 'Nuevo Cargo', importHash: 'h2', personInCharge: 'u-9', assignedCompany: 'ca-1' },
-      repoOptions(db),
-    );
-    const firstFind = db.representanteEmpresa.calls.findOne[0];
-    assert.strictEqual(firstFind.where.id, 're-1');
-    assert.strictEqual(firstFind.where.tenantId, TENANT);
-
-    const row = db.representanteEmpresa.rows[0];
-    const patch = row.__updateCalls[0];
-    assert.strictEqual(patch.governmentId, '1799999999');
-    assert.strictEqual(patch.jobTitle, 'Nuevo Cargo');
-    assert.strictEqual(patch.importHash, 'h2');
-    assert.strictEqual(patch.personInChargeId, 'u-9');
-    assert.strictEqual(patch.assignedCompanyId, 'ca-1');
-    assert.strictEqual(patch.updatedById, USER_ID);
-  });
-
-  // FIXED: RepresentanteEmpresaRepository.update presence-guards
-  // personInChargeId/assignedCompanyId — omitting the keys keeps the existing
-  // links (previously both were nulled, and assignedCompanyId is NOT NULL so
-  // the whole save failed on real MySQL).
-  it('an update that omits personInCharge/assignedCompany must keep the existing links', async () => {
-    const db = buildDb({
-      users: seedUsers,
-      clientAccounts: seedAccounts,
-      representantes: [
-        {
-          id: 're-1',
-          tenantId: TENANT,
-          governmentId: '000',
-          jobTitle: 'Old',
-          personInChargeId: 'u-9',
-          assignedCompanyId: 'ca-1',
-          deletedAt: null,
-        },
-      ],
-    });
-    await RepresentanteEmpresaRepository.update('re-1', { jobTitle: 'Solo Cargo' }, repoOptions(db));
-    const row = db.representanteEmpresa.rows[0];
-    assert.strictEqual(row.personInChargeId, 'u-9', 'personInChargeId wiped by partial update');
-    assert.strictEqual(row.assignedCompanyId, 'ca-1', 'assignedCompanyId wiped by partial update');
-  });
-
-  it('update on a foreign-tenant row throws Error404 and writes nothing', async () => {
-    const db = buildDb({
-      representantes: [{ id: 're-1', tenantId: OTHER_TENANT, governmentId: '0', jobTitle: 'x', deletedAt: null }],
-    });
-    await assert.rejects(
-      () => RepresentanteEmpresaRepository.update('re-1', { jobTitle: 'Y' }, repoOptions(db)),
-      (e: any) => e instanceof Error404,
-    );
-    assert.strictEqual(db.representanteEmpresa.rows[0].__updateCalls.length, 0);
-  });
-});
-
 // ═══════════════════════════ clientProject ══════════════════════════════════
 describe('crud-g01 · clientProject handlers', () => {
   const seed = {

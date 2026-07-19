@@ -7,7 +7,6 @@ import { IServiceOptions } from './IServiceOptions';
 import SecurityGuardRepository from '../database/repositories/securityGuardRepository';
 import MemosRepository from '../database/repositories/memosRepository';
 import RequestRepository from '../database/repositories/requestRepository';
-import CompletionOfTutorialRepository from '../database/repositories/completionOfTutorialRepository';
 import UserRepository from '../database/repositories/userRepository';
 import Sequelize from 'sequelize';
 import bcrypt from 'bcryptjs';
@@ -96,7 +95,6 @@ export default class SecurityGuardService {
         // keep as-is; model will persist JSON
       }
       data.requests = await RequestRepository.filterIdsInTenant(data.requests, { ...this.options, transaction });
-      data.tutoriales = await CompletionOfTutorialRepository.filterIdsInTenant(data.tutoriales, { ...this.options, transaction });
 
       // If importing or creating a guard and no guard id is provided, but email is present,
       // ensure a User exists and attach it as `data.guard`. Also ensure tenantUser exists.
@@ -497,7 +495,6 @@ export default class SecurityGuardService {
       data.memos = await MemosRepository.filterIdsInTenant(data.memos, { ...this.options, transaction });
       // Pass-through availability if provided
       data.requests = await RequestRepository.filterIdsInTenant(data.requests, { ...this.options, transaction });
-      data.tutoriales = await CompletionOfTutorialRepository.filterIdsInTenant(data.tutoriales, { ...this.options, transaction });
 
       const record = await SecurityGuardRepository.update(
         id,
@@ -584,9 +581,6 @@ export default class SecurityGuardService {
       }
       if (Object.prototype.hasOwnProperty.call(data, 'requests')) {
         data.requests = await RequestRepository.filterIdsInTenant(data.requests, { ...this.options, transaction });
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'tutoriales')) {
-        data.tutoriales = await CompletionOfTutorialRepository.filterIdsInTenant(data.tutoriales, { ...this.options, transaction });
       }
 
       const record = await SecurityGuardRepository.patchUpdate(id, data, { ...this.options, transaction });

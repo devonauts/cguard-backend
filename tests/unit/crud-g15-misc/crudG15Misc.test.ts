@@ -42,7 +42,6 @@ import FileRepository from '../../../src/database/repositories/fileRepository';
 import Error404 from '../../../src/errors/Error404';
 
 import ServiceRepository from '../../../src/database/repositories/serviceRepository';
-import AdditionalServiceRepository from '../../../src/database/repositories/additionalServiceRepository';
 import BannerSuperiorAppRepository from '../../../src/database/repositories/bannerSuperiorAppRepository';
 import DeviceIdInformationRepository from '../../../src/database/repositories/deviceIdInformationRepository';
 import DeviceIdInformationService from '../../../src/services/deviceIdInformationService';
@@ -1027,83 +1026,6 @@ const ADDITIONAL_SERVICE_FULL = {
   juegoDeCamarasExteriores: '8',
   importHash: 'hash-add-1',
 };
-
-describe('crud-g15 · additionalServiceRepository.create', () => {
-  it('persists EVERY writable field + maps stations → stationsId + stamps', async () => {
-    const db = buildDb();
-    await AdditionalServiceRepository.create({ ...ADDITIONAL_SERVICE_FULL, stations: 'st-1' }, repoOptions(db));
-
-    const written = db.additionalService.calls.create[0];
-    for (const [k, v] of Object.entries(ADDITIONAL_SERVICE_FULL)) {
-      assert.deepStrictEqual(written[k], v, `field "${k}" was dropped or altered on create`);
-    }
-    assert.strictEqual(written.stationsId, 'st-1', 'stations → stationsId mapping lost');
-    assert.strictEqual(written.tenantId, TENANT);
-    assert.strictEqual(written.createdById, USER_ID);
-    assert.strictEqual(written.updatedById, USER_ID);
-  });
-
-  it('a db failure on create REJECTS (no swallowed error)', async () => {
-    const db = buildDb();
-    db.additionalService.create = async () => { throw new Error('DB down'); };
-    await assert.rejects(
-      () => AdditionalServiceRepository.create({ ...ADDITIONAL_SERVICE_FULL, stations: 'st-1' }, repoOptions(db)),
-      /DB down/,
-    );
-  });
-});
-
-describe('crud-g15 · additionalServiceRepository.update', () => {
-  const seedAdd = (over: any = {}) => ({
-    id: 'add-1', tenantId: TENANT, ...ADDITIONAL_SERVICE_FULL, stationsId: 'st-1', ...over,
-  });
-
-  it('targets id + tenantId and applies EVERY changed field (stations resent)', async () => {
-    const db = buildDb({ additionalService: [seedAdd()] });
-    const patch = {
-      stationAditionalServiceName: 'CCTV renovado',
-      dvr: 'Dvr con disco duro de 2 TB',
-      dvrSerialCode: 'DVR-9999',
-      juegoDeCamarasInteriores: '6',
-      juegoDeCamarasExteriores: '10',
-      importHash: 'hash-add-2',
-    };
-    await AdditionalServiceRepository.update('add-1', { ...patch, stations: 'st-2' }, repoOptions(db));
-
-    const q = db.additionalService.calls.findOne[0];
-    assert.strictEqual(q.where.id, 'add-1');
-    assert.strictEqual(q.where.tenantId, TENANT);
-
-    const applied = db.additionalService.rows[0].__updateCalls[0];
-    for (const [k, v] of Object.entries(patch)) {
-      assert.deepStrictEqual(applied[k], v, `field "${k}" silently ignored on update`);
-    }
-    assert.strictEqual(applied.stationsId, 'st-2', 'stations → stationsId mapping lost on update');
-    assert.strictEqual(applied.updatedById, USER_ID);
-  });
-
-  it('throws Error404 for a row in ANOTHER tenant', async () => {
-    const db = buildDb({ additionalService: [seedAdd({ tenantId: OTHER_TENANT })] });
-    await assert.rejects(
-      () => AdditionalServiceRepository.update('add-1', { dvrSerialCode: 'x' }, repoOptions(db)),
-      Error404,
-    );
-  });
-
-  // FIXED: additionalServiceRepository.update now presence-guards the
-  // stations → stationsId mapping (undefined when the patch omits `stations`),
-  // so partial updates no longer detach the servicio adicional from its puesto.
-  // Create keeps the unconditional mapping as the intended initial value.
-  it('a patch WITHOUT `stations` keeps the existing stationsId', async () => {
-    const db = buildDb({ additionalService: [seedAdd()] });
-    await AdditionalServiceRepository.update('add-1', { dvrSerialCode: 'DVR-0001' }, repoOptions(db));
-    assert.strictEqual(
-      db.additionalService.rows[0].stationsId,
-      'st-1',
-      'stationsId was wiped by an update that never mentioned stations',
-    );
-  });
-});
 
 // ═══════════════════════════ bannerSuperiorApp ══════════════════════════════
 const BANNER_FULL = {

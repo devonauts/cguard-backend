@@ -162,10 +162,7 @@ class SecurityGuardRepository {
     await record.setRequests(data.requests || [], {
       transaction,
     });
-    await record.setTutoriales(data.tutoriales || [], {
-      transaction,
-    });    
-  
+
     await FileRepository.replaceRelationFiles(
       {
         belongsTo: options.database.securityGuard.getTableName(),
@@ -382,7 +379,6 @@ class SecurityGuardRepository {
     // Update relations/files if present in the payload
     await record.setMemos(data.memos || [], { transaction });
     await record.setRequests(data.requests || [], { transaction });
-    await record.setTutoriales(data.tutoriales || [], { transaction });
 
     await FileRepository.replaceRelationFiles(
       {
@@ -758,9 +754,6 @@ class SecurityGuardRepository {
     }
     if (Object.prototype.hasOwnProperty.call(data, 'requests')) {
       await record.setRequests(data.requests || [], { transaction });
-    }
-    if (Object.prototype.hasOwnProperty.call(data, 'tutoriales')) {
-      await record.setTutoriales(data.tutoriales || [], { transaction });
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'profileImage')) {
@@ -1416,7 +1409,6 @@ class SecurityGuardRepository {
         recordPolicial: data.recordPolicial,
         memosIds: data.memos,
         requestsIds: data.requests,
-        tutorialesIds: data.tutoriales,
       };
     }
 
@@ -1603,10 +1595,6 @@ class SecurityGuardRepository {
     });
 
     output.requests = await record.getRequests({
-      transaction,
-    });
-
-    output.tutoriales = await record.getTutoriales({
       transaction,
     });
 

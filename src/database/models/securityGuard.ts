@@ -205,12 +205,6 @@ export default function (sequelize) {
       foreignKey: 'guardNameId',
     });
 
-    models.securityGuard.hasMany(models.completionOfTutorial, {
-      as: 'tutoriales',
-      constraints: false,
-      foreignKey: 'guardNameId',
-    });
-
     models.securityGuard.hasMany(models.file, {
       as: 'profileImage',
       foreignKey: 'belongsToId',
