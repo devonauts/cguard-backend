@@ -268,11 +268,21 @@ export default async (req, res) => {
       }
       if (onPostCount > 0) hasTurnoNow = true;
 
-      let status: 'cubierto' | 'parcial' | 'sin_cobertura' | 'sin_turno';
+      // "sin_cobertura" (red, critical) means the post is genuinely unstaffed. If
+      // there ARE guards assigned to this station who simply haven't punched in
+      // yet, that's a milder "asignado_sin_marcar" (amber) — not an abandonment.
+      const hasAssigned = (assignedByStation.get(id)?.length || 0) > 0;
+      let status: 'cubierto' | 'parcial' | 'sin_cobertura' | 'asignado_sin_marcar' | 'sin_turno';
       if (!hasTurnoNow) status = 'sin_turno';
       else {
         const need = Math.max(1, requiredNow);
-        status = onPostCount >= need ? 'cubierto' : onPostCount > 0 ? 'parcial' : 'sin_cobertura';
+        status = onPostCount >= need
+          ? 'cubierto'
+          : onPostCount > 0
+            ? 'parcial'
+            : hasAssigned
+              ? 'asignado_sin_marcar'
+              : 'sin_cobertura';
       }
 
       if (hasTurnoNow) { sumCoveredNow += Math.min(onPostCount, Math.max(1, requiredNow)); sumRequiredNow += Math.max(1, requiredNow); }
