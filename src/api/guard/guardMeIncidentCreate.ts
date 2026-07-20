@@ -114,6 +114,10 @@ export default async (req: any, res: any) => {
       priority: data.priority || 'medium',
       status: data.status || 'abierto',
       location: data.location || null,
+      // Guard's GPS fix at creation (nullable). Was sent by the app and
+      // discarded — now persisted so CRM/client can see WHERE it happened.
+      latitude: data.latitude != null && !isNaN(Number(data.latitude)) ? Number(data.latitude) : null,
+      longitude: data.longitude != null && !isNaN(Number(data.longitude)) ? Number(data.longitude) : null,
       // `date` is NOT NULL on the incident model.
       date: data.incidentAt ? new Date(data.incidentAt) : new Date(),
       incidentAt: data.incidentAt || new Date(),
@@ -135,7 +139,11 @@ export default async (req: any, res: any) => {
       try {
         await FileRepository.replaceRelationFiles(
           {
-            belongsTo: 'incident',
+            // MUST match the association scope (models.incident.getTableName()
+            // = 'incidents'). The old literal 'incident' (singular) created the
+            // file rows under a key no reader queries — every evidence photo
+            // was stored but invisible to the CRM, the client and the app.
+            belongsTo: db.incident.getTableName(),
             belongsToColumn: 'imageUrl',
             belongsToId: incident.id,
           },
@@ -241,7 +249,7 @@ export default async (req: any, res: any) => {
           let photoUrl = '';
           try {
             const imgFiles = await db.file.findAll({
-              where: { belongsTo: 'incident', belongsToColumn: 'imageUrl', belongsToId: incident.id },
+              where: { belongsTo: db.incident.getTableName(), belongsToColumn: 'imageUrl', belongsToId: incident.id },
             });
             const filled = await FileRepository.fillDownloadUrl(imgFiles);
             photoUrl = (filled[0] && (filled[0].downloadUrl || filled[0].publicUrl)) || '';

@@ -36,6 +36,16 @@ export default function (sequelize) {
           len: [0, 255],
         },
       },
+      // Where the incident was reported from (guard's GPS fix at creation).
+      // The worker app always sent these; they were silently discarded before.
+      latitude: {
+        type: DataTypes.DECIMAL(10, 7),
+        allowNull: true,
+      },
+      longitude: {
+        type: DataTypes.DECIMAL(10, 7),
+        allowNull: true,
+      },
         callerType: {
           type: DataTypes.STRING(50),
           allowNull: true,

@@ -95,31 +95,31 @@ export const guardMeTasksList = async (req, res) => {
       },
       include: [
         { model: db.station, as: 'taskBelongsToStation', attributes: ['id', 'stationName'] },
-        { model: db.file, as: 'taskCompletedImage', required: false },
-        { model: db.file, as: 'imageOptional', required: false },
       ],
       order: [['wasItDone', 'ASC'], ['dateToDoTheTask', 'ASC']],
       limit: 200,
     });
     // Sign the file relations so the app can render the completion photo + the
-    // client's optional reference image in the task detail screen.
-    const plain = rows.map((r: any) => r.get({ plain: true }));
-    for (const p of plain) {
-      // Defensive: one unsignable file must never 500 the guard's whole task
-      // list (the worker showed a permanent "No se pudo cargar" after a
-      // completion-with-photo). Degrade to no-image instead.
+    // client's optional reference image in the task detail screen. Fetched via
+    // the association GETTERS (same proven path as taskRepository) — the
+    // scoped-hasMany include returned [] in production even when the file rows
+    // existed. Defensive per-task: one broken file must never 500 the list.
+    const plain: any[] = [];
+    for (const r of rows) {
+      const p = r.get({ plain: true });
       try {
-        p.taskCompletedImage = await FileRepository.fillDownloadUrl(p.taskCompletedImage || []);
+        p.taskCompletedImage = await FileRepository.fillDownloadUrl(await (r as any).getTaskCompletedImage());
       } catch (e: any) {
-        console.warn('[guardTasks] sign completion photo failed:', e?.message || e);
+        console.warn('[guardTasks] completion photo fetch/sign failed:', e?.message || e);
         p.taskCompletedImage = [];
       }
       try {
-        p.imageOptional = await FileRepository.fillDownloadUrl(p.imageOptional || []);
+        p.imageOptional = await FileRepository.fillDownloadUrl(await (r as any).getImageOptional());
       } catch (e: any) {
-        console.warn('[guardTasks] sign optional image failed:', e?.message || e);
+        console.warn('[guardTasks] optional image fetch/sign failed:', e?.message || e);
         p.imageOptional = [];
       }
+      plain.push(p);
     }
     await ApiResponseHandler.success(req, res, { rows: plain, count: plain.length });
   } catch (error) {

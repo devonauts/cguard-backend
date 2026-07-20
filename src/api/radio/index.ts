@@ -81,4 +81,45 @@ export default (app) => {
       await ApiResponseHandler.error(req, res, error);
     }
   });
+
+  /**
+   * POST /tenant/:tenantId/radio/transmission  body { channel?, durationMs }
+   *
+   * Audit trail for PTT: the app reports each finished transmission (LiveKit
+   * itself keeps no per-transmission record). Stored as a platform event so it
+   * lands in the CRM's event stream alongside checkins/incidents/rondas.
+   */
+  app.post('/tenant/:tenantId/radio/transmission', async (req: any, res: any) => {
+    try {
+      const user = req.currentUser;
+      const tenantId = (req.currentTenant && req.currentTenant.id) || req.params.tenantId;
+      if (!user || !tenantId) throw new Error401();
+      const body = req.body?.data || req.body || {};
+      const channel = String(body.channel || 'general').slice(0, 60);
+      const durationMs = Math.max(0, Math.min(10 * 60_000, Number(body.durationMs) || 0));
+      const secs = Math.max(1, Math.round(durationMs / 1000));
+      let name = 'Radio';
+      try {
+        const sg = await req.database.securityGuard.findOne({
+          where: { guardId: user.id, tenantId, deletedAt: null },
+          attributes: ['fullName'],
+        });
+        name = (sg && sg.fullName) || user.fullName || 'Radio';
+      } catch { /* keep fallback */ }
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { storePlatformEvent } = require('../../lib/platformEventStore');
+      await storePlatformEvent(req.database, {
+        tenantId,
+        eventType: 'radio.transmission',
+        title: 'Transmisión de radio',
+        body: `${name} transmitió ${secs}s en el canal ${channel}`,
+        payload: { userId: String(user.id), channel, durationMs },
+        sourceEntityType: 'radio',
+        sourceEntityId: channel,
+      });
+      await ApiResponseHandler.success(req, res, { ok: true });
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
 };
