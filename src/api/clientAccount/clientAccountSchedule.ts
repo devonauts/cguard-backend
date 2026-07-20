@@ -6,9 +6,18 @@ import assertClientAccess from '../../services/user/assertClientAccess';
 /**
  * Schedule ("Horario") grid for a client's stations, scoped to one sede. Mirrors
  * Programador › Horario: rows = station positions (fijo/sacafranco) with their
- * assigned guard, columns = days, each cell = day/night/rest computed from the
- * station's rotation. CRUD (change/assign guard) reuses the existing
+ * assigned guard, columns = days. CRUD (change/assign guard) reuses the existing
  * /guard-assignment endpoints from the frontend.
+ *
+ * Cells are painted from the REAL generated `shift` rows — the exact same table
+ * Programador › Horario reads (`/scheduler/overview`) — not from a re-derived
+ * rotation formula. The old formula recomputed D/N/L from the station's
+ * rotationStyle and, when a station had no rotationStyleId, fell back to
+ * 'rest' for EVERY day. That painted a full-of-turnos sede as an empty wall of
+ * L, contradicting Programador. Shifts are generated a year ahead
+ * (shiftGenerationService.GENERATION_DAYS), so they are the source of truth for
+ * any window this grid can show; rotation math survives only as the fallback
+ * that marks a scheduled-but-off day as 'rest'.
  */
 
 // Fixed rotation epoch — must match shiftGenerationService.ROTATION_EPOCH.
@@ -22,6 +31,19 @@ const rotationStatus = (dse: number, platoonOffset: number, dayShifts: number, n
   return 'rest';
 };
 const ymd = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+
+// A shift's calendar day + clock time must be read in the TENANT's timezone —
+// a 19:00-07:00 turno in Guayaquil is stored as 00:00 UTC the NEXT day, so UTC
+// bucketing would file every night shift under the wrong column.
+const tzParts = (d: Date, tz: string) => {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d).reduce((a: any, x) => (a[x.type] = x.value, a), {});
+  // hour can come back as '24' at midnight in some ICU versions.
+  const hour = Number(p.hour) % 24;
+  return { date: `${p.year}-${p.month}-${p.day}`, hour, hhmm: `${String(hour).padStart(2, '0')}:${p.minute}` };
+};
 const parseYmd = (s: any, fb: Date) => {
   if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); }
   return fb;
@@ -44,8 +66,14 @@ export default async (req, res) => {
     const requested = String(req.query.postSiteId || '');
     const selectedSedeId = sedes.find((s) => s.id === requested)?.id || sedes[0]?.id || null;
 
+    // Tenant timezone drives both "today" and how each turno is bucketed into a
+    // day column (see tzParts) — UTC would offset the whole grid for Ecuador.
+    const tenantRow = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] }).catch(() => null);
+    const tz = (tenantRow && tenantRow.timezone) || 'UTC';
+    const todayStr = tzParts(now, tz).date;
+
     // Date window (default: today .. +13 days).
-    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayUtc = parseYmd(todayStr, new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())));
     const start = parseYmd(req.query.startDate, todayUtc);
     let end = parseYmd(req.query.endDate, new Date(start.getTime() + 13 * 86400000));
     if (end < start) end = new Date(start.getTime() + 13 * 86400000);
@@ -75,7 +103,9 @@ export default async (req, res) => {
 
     // Positions.
     const positions = await db.stationPosition.findAll({
-      where: { tenantId, stationId: stationIds },
+      // deletedAt:null matches Programador › overview — without it a removed
+      // puesto keeps rendering a phantom row here but not there.
+      where: { tenantId, stationId: stationIds, deletedAt: null },
       attributes: ['id', 'stationId', 'name', 'type', 'startTime', 'endTime', 'guardsNeeded', 'sortOrder', 'platoonOffset'],
       order: [['stationId', 'ASC'], ['sortOrder', 'ASC']],
     }).catch(() => []);
@@ -94,6 +124,38 @@ export default async (req, res) => {
 
     const stationMeta = new Map<string, any>(stationRows.map((s: any) => [String(s.id), s]));
 
+    // ── Real generated turnos for this sede's stations, in the window ────────
+    // Padded ±1 day: an overnight turno that starts 19:00 local on the last
+    // column is stored in UTC on the following day, and vice-versa at the head.
+    const winStart = new Date(start.getTime() - 86400000);
+    const winEnd = new Date(end.getTime() + 2 * 86400000);
+    const shiftRows = await db.shift.findAll({
+      where: {
+        tenantId, stationId: stationIds, deletedAt: null,
+        startTime: { [Op.gte]: winStart, [Op.lt]: winEnd },
+      },
+      attributes: ['id', 'guardId', 'stationId', 'positionId', 'startTime', 'endTime'],
+      include: [{ model: db.user, as: 'guard', attributes: ['id', 'fullName', 'firstName', 'lastName'], required: false }],
+      order: [['startTime', 'ASC']],
+    }).catch(() => []);
+
+    // Bucket: positionId → date → shift. Shifts predating the positionId column
+    // carry null, so fall back to a guard+station key the row can also build.
+    const byPosDate = new Map<string, any>();
+    const byGuardStationDate = new Map<string, any>();
+    for (const sh of shiftRows) {
+      const { date, hhmm, hour } = tzParts(new Date(sh.startTime), tz);
+      const endLocal = tzParts(new Date(sh.endTime), tz);
+      const entry = {
+        status: (hour >= 18 || hour < 6) ? 'night' : 'day',
+        hours: `${hhmm} - ${endLocal.hhmm}`,
+        guardId: sh.guardId ? String(sh.guardId) : null,
+        guardName: guardName(sh.guard),
+      };
+      if (sh.positionId) byPosDate.set(`${sh.positionId}|${date}`, entry);
+      if (sh.guardId) byGuardStationDate.set(`${sh.guardId}|${sh.stationId}|${date}`, entry);
+    }
+
     const rows: any[] = [];
     for (const p of positions) {
       const st = stationMeta.get(String(p.stationId));
@@ -102,14 +164,30 @@ export default async (req, res) => {
       const platoon = (a && a.platoonOffset != null) ? Number(a.platoonOffset) : (Number(p.platoonOffset) || 0);
 
       const cells = days.map((d: any) => {
-        const dse = dseOf(new Date(`${d.date}T00:00:00Z`));
-        // Faithful to Programador › Horario: without a station rotationStyle the
-        // engine generates no shifts, so the page paints 'rest' (Libre) — not a
-        // perpetual work day. Only compute D/N/L when a rotation exists.
-        let status: 'day' | 'night' | 'rest' | 'none';
-        if (rot) status = rotationStatus(dse, platoon, Number(rot.dayShifts) || 0, Number(rot.nightShifts) || 0, Number(rot.restDays) || 0);
-        else status = 'rest';
-        return { date: d.date, status };
+        // 1. A real generated turno always wins — this is what Programador shows.
+        const real = byPosDate.get(`${p.id}|${d.date}`)
+          || (a?.guardId ? byGuardStationDate.get(`${a.guardId}|${p.stationId}|${d.date}`) : null);
+        if (real) {
+          return {
+            date: d.date,
+            status: real.status,
+            hours: real.hours,
+            // Surface who actually covers the day: on a sacafranco swap this is
+            // NOT the row's titular vigilante.
+            guardName: real.guardName,
+            covering: !!(a?.guardId && real.guardId && real.guardId !== String(a.guardId)),
+          };
+        }
+        // 2. No turno on a slot that HAS a rotation → it's a libre day, and we
+        //    can say which kind the cycle expected. Without a rotation there is
+        //    simply nothing scheduled ('none'), which is honest — the old code
+        //    lied by painting 'rest' here.
+        if (rot) {
+          const dse = dseOf(new Date(`${d.date}T00:00:00Z`));
+          const expected = rotationStatus(dse, platoon, Number(rot.dayShifts) || 0, Number(rot.nightShifts) || 0, Number(rot.restDays) || 0);
+          return { date: d.date, status: expected === 'rest' ? 'rest' : 'gap', hours: null, guardName: null, covering: false };
+        }
+        return { date: d.date, status: 'none', hours: null, guardName: null, covering: false };
       });
 
       rows.push({
