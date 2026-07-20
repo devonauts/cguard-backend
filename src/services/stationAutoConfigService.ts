@@ -16,6 +16,29 @@
 //   `optimizeSacafrancos` + the SF-guard assignment ONCE itself after all empty
 //   stations are configured.
 
+/**
+ * Derive the coverage type from a station's window when the caller didn't state
+ * one. Mirrors the frontend AddStationPage.jornadaType/turnoToScheduleType so
+ * the API and the two creation UIs agree. A full-day / empty window ⇒ '24h';
+ * a night window (ends at/before it starts, or starts ≥18h or <5h) ⇒ '12h-night';
+ * anything else ⇒ '12h-day'. Callers who mean 'custom' pass it explicitly.
+ */
+export function deriveScheduleType(start?: string | null, end?: string | null): string {
+  const hour = (s?: string | null) => {
+    if (!s) return null;
+    const m = String(s).match(/(\d{1,2}):(\d{2})/);
+    return m ? parseInt(m[1], 10) : null;
+  };
+  const sh = hour(start);
+  const eh = hour(end);
+  // No window, or a literal all-day span → a 24h post (two 12h jornadas).
+  if (sh == null) return '24h';
+  if ((sh === 0 && eh === 0) || (start === end)) return '24h';
+  if (eh != null && eh <= sh) return '12h-night';
+  if (sh >= 18 || sh < 5) return '12h-night';
+  return '12h-day';
+}
+
 /** Find a system rotation style by name, creating it if missing. Returns its id. */
 export async function ensureRotationStyle(db: any, name: string, dayShifts: number, nightShifts: number, restDays: number): Promise<string | null> {
   const existing = await db.rotationStyle.findOne({ where: { name, isSystem: true } });
@@ -52,7 +75,6 @@ export async function autoConfigureStationPositions(
   const { Op } = db.Sequelize;
   const { stationId, tenantId, userId } = params;
   const data = params.data || {};
-  const scheduleType = params.scheduleType || data.scheduleType || '24h';
   let rotationStyleId = params.rotationStyleId || data.rotationStyleId || null;
   const runSacafrancoOptimize = params.runSacafrancoOptimize !== false;
 
@@ -66,6 +88,21 @@ export async function autoConfigureStationPositions(
   // block phased by workDays so exactly one works every day — e.g. the classic
   // 24x24: trabaja 1 / descansa 1, 2 fijos, NO sacafranco).
   const restCoverage = String(data.restCoverage || 'sacafranco');
+
+  // scheduleType: honour an explicit value, else DERIVE it from the station's
+  // configured window instead of blindly stamping '24h'. Forcing '24h' left a
+  // 07:00–19:00 puesto mislabeled as "24 Horas / 00:00–23:59" in every list
+  // (Cliente › Cobertura, Programador) even though the four coverage types
+  // (12h-day | 12h-night | 24h | custom) are all valid. Mirrors the frontend
+  // AddStationPage.jornadaType/turnoToScheduleType mapping.
+  let scheduleType: string = params.scheduleType || data.scheduleType || '';
+  if (!scheduleType) {
+    const st = await db.station.findOne({
+      where: { id: stationId, tenantId },
+      attributes: ['startingTimeInDay', 'finishTimeInDay'],
+    });
+    scheduleType = deriveScheduleType(st?.startingTimeInDay, st?.finishTimeInDay);
+  }
 
   if (!rotationStyleId) {
     if (scheduleType === '24h') {
