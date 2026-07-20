@@ -198,6 +198,13 @@ export async function startSession(db: any, tenantId: string, opts: { mode: 'man
   for (const { station, guards } of stations) {
     const primary = guards[0] || null;
     const noGuard = guards.length === 0;
+    // For an EXPLICIT station-scoped manual check, a no-guard entry must stay
+    // 'pending' (null target): getPendingForGuard also matches by the caller's
+    // station ASSIGNMENT, so an assigned guard whose clock-in didn't resolve
+    // (stale identity, forced clock-out sweep) can still receive and answer.
+    // 'skipped' was a dead state — the AI opening played but nobody could ever
+    // respond, and the dispatcher believed a roll call was running.
+    const manualStationCheck = opts.scope === 'station';
     await db.radioCheckEntry.create({
       tenantId, sessionId: session.id, stationId: station.id,
       stationName: station.stationName,
@@ -205,7 +212,7 @@ export async function startSession(db: any, tenantId: string, opts: { mode: 'man
       guardSecurityGuardId: primary?.securityGuardId || null,
       guardName: primary?.name || null,
       seq: seq++,
-      status: noGuard ? 'skipped' : 'pending',
+      status: noGuard && !manualStationCheck ? 'skipped' : 'pending',
       promptText: prompt,
       transcriptStatus: 'skipped',
       classification: 'unknown',
@@ -273,12 +280,14 @@ async function notifyAllEntries(db: any, tenantId: string, sessionId: string, wi
   // NOT also attach an auto-play mp3 (promptAudioUrl) — doing both made the
   // dispatcher/guard hear the announcement twice (channel + mp3). The live
   // broadcast is the single source of the spoken announcement.
-  void ai.broadcastOpening(tenantId);
-
   const pending = await db.radioCheckEntry.findAll({
     where: { tenantId, sessionId, status: 'pending', deletedAt: null },
     order: [['seq', 'ASC']],
   });
+  // Only announce when someone can actually be notified — broadcasting with
+  // zero notifiable entries told the dispatcher a roll call was running while
+  // nobody could ever answer it.
+  if (pending.length) void ai.broadcastOpening(tenantId);
   const adapter = getChannelAdapter();
 
   for (const entry of pending) {

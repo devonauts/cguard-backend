@@ -600,7 +600,9 @@ export default class GuardPerformanceService {
         onTimeShifts,
         attendanceRate:
           shiftsScheduled > 0
-            ? Math.round((shiftsWorked / shiftsScheduled) * 100)
+            // Cap at 100: extra/backup shifts made shiftsWorked exceed
+            // shiftsScheduled and the app showed "200% Asistencia".
+            ? Math.min(100, Math.round((shiftsWorked / shiftsScheduled) * 100))
             : null,
         avgLatenessMin,
         absences,
