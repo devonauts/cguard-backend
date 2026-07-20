@@ -29,6 +29,9 @@ const localYmd = (d: Date, tz: string) => {
   try { return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); }
   catch { return new Date(d).toISOString().slice(0, 10); }
 };
+// Longest plausible open turno. Past this a punch is a leftover, not presence:
+// the longest real turno is 24h, +6h of grace for a late manual clock-out.
+const STALE_PUNCH_HOURS = 30;
 // Turno band from a start hour (matches the operational vocabulary).
 const bandOfHour = (h: number): 'diurno' | 'vespertino' | 'nocturno' =>
   h >= 5 && h < 13 ? 'diurno' : h >= 13 && h < 21 ? 'vespertino' : 'nocturno';
@@ -141,8 +144,17 @@ export default async (req, res) => {
     }
 
     // ── Who's punched in NOW (direct station FK) ─────────────────────────────
+    // A punch with no punchOutTime used to count as "presente ahora" forever, so
+    // a guard who never closed their turno haunted the client's coverage for
+    // days — even at a client they aren't assigned to. Nobody works a 5-day
+    // turno: bound the window so only a plausibly-live punch counts. The
+    // forced-clock-out sweeper closes the rest (see forcedClockOutService).
+    const openPunchFloor = new Date(now.getTime() - STALE_PUNCH_HOURS * 3600 * 1000);
     const openShifts = await db.guardShift.findAll({
-      where: { tenantId, stationNameId: stationIds, punchOutTime: null },
+      where: {
+        tenantId, stationNameId: stationIds, punchOutTime: null,
+        punchInTime: { [Op.gte]: openPunchFloor },
+      },
       attributes: ['id', 'stationNameId', 'guardNameId', 'punchInTime'],
     }).catch(() => []);
     const onPostByStation = new Map<string, any[]>();
