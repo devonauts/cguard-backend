@@ -19,6 +19,7 @@
  * fails the create.
  */
 import fs from 'fs';
+import businessNameOf, { CLIENT_LABEL_ATTRIBUTES } from '../../services/clientDisplayName';
 import os from 'os';
 import path from 'path';
 import { Op } from 'sequelize';
@@ -145,8 +146,10 @@ export const customerIncidentCreate = async (req: any, res: any) => {
     // Client display name (for callerName).
     let clientName = 'el cliente';
     try {
-      const ca = await db.clientAccount.findByPk(clientAccountId, { attributes: ['name', 'lastName'] });
-      if (ca) clientName = [ca.name, ca.lastName].filter(Boolean).join(' ').trim() || clientName;
+      const ca = await db.clientAccount.findByPk(clientAccountId, { attributes: CLIENT_LABEL_ATTRIBUTES });
+      // Un SOS/incidente llega rotulado "Cliente: X" al CRM y al vigilante — X debe
+      // ser la empresa, que es como el operador reconoce de dónde viene la alerta.
+      if (ca) clientName = businessNameOf(ca) || clientName;
     } catch { /* non-fatal */ }
 
     // incident model: status enum is abierto|cerrado → 'abierto'; priority is a free

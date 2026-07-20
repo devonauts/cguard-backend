@@ -1,4 +1,5 @@
 import PermissionChecker from '../../services/user/permissionChecker';
+import businessNameOf, { CLIENT_LABEL_ATTRIBUTES } from '../../services/clientDisplayName';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 
@@ -38,7 +39,7 @@ export default async (req: any, res: any) => {
       where,
       include: [
         { model: db.securityGuard, as: 'guard', attributes: ['id', 'fullName'], required: false },
-        { model: db.clientAccount, as: 'client', attributes: ['id', 'name', 'lastName'], required: false },
+        { model: db.clientAccount, as: 'client', attributes: CLIENT_LABEL_ATTRIBUTES, required: false },
         { model: db.station, as: 'station', attributes: ['id', 'stationName'], required: false },
       ],
       order: [['createdAt', 'DESC']],
@@ -47,9 +48,8 @@ export default async (req: any, res: any) => {
 
     const list = (rows || []).map((r: any) => {
       const plain = r.get({ plain: true });
-      const clientName = plain.client
-        ? [plain.client.name, plain.client.lastName].filter(Boolean).join(' ').trim() || null
-        : null;
+      // "Cliente" = la empresa, no el representante legal.
+      const clientName = plain.client ? (businessNameOf(plain.client) || null) : null;
       return {
         id: plain.id,
         guardId: plain.guardId || null,

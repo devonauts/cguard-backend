@@ -31,7 +31,8 @@ export default async (req, res) => {
         s.postSiteId as postSiteId,
         biStation.stationName as stationName,
         biPost.companyName as postSiteName,
-        ca.name as clientName,
+        -- "Cliente" = la empresa (commercialName), no el representante legal.
+        COALESCE(NULLIF(TRIM(ca.commercialName), ''), TRIM(CONCAT(COALESCE(ca.name,''),' ',COALESCE(ca.lastName,'')))) as clientName,
         s.guardId as guardId,
         s.guardId as guardUserId,
         u.id as userId,

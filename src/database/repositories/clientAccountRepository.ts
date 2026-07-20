@@ -742,6 +742,13 @@ class ClientAccountRepository {
               'lastName',
               filter.name,
             ),
+            // The list DISPLAYS commercialName, so search must cover it too —
+            // otherwise typing the company you can read on screen finds nothing.
+            SequelizeFilterUtils.ilikeIncludes(
+              'clientAccount',
+              'commercialName',
+              filter.name,
+            ),
           ],
         });
       }
@@ -1003,6 +1010,15 @@ class ClientAccountRepository {
               query,
             ),
           },
+          // Autocomplete LABELS by commercialName, so it must also SEARCH by it —
+          // otherwise typing the company you can see on screen returns nothing.
+          {
+            [Op.and]: SequelizeFilterUtils.ilikeIncludes(
+              'clientAccount',
+              'commercialName',
+              query,
+            ),
+          },
         ],
       });
     }
@@ -1011,16 +1027,30 @@ class ClientAccountRepository {
 
     const records = await options.database.clientAccount.findAll(
       {
-        attributes: ['id', 'name'],
+        attributes: ['id', 'name', 'commercialName'],
         where,
         limit: limit ? Number(limit) : undefined,
-        order: [['name', 'ASC']],
+        // Order by what the user actually reads. COALESCE so clients without a
+        // commercialName still sort sensibly among the rest instead of clumping.
+        order: [
+          [
+            options.database.Sequelize.fn(
+              'COALESCE',
+              options.database.Sequelize.col('commercialName'),
+              options.database.Sequelize.col('name'),
+            ),
+            'ASC',
+          ],
+        ],
       },
     );
 
+    // "Cliente" is the COMPANY everywhere in the UI. This used to label every
+    // dropdown with `name` — the legal representative cached from the linked
+    // user — so operators saw a person's name where they expected the business.
     return records.map((record) => ({
       id: record.id,
-      label: record.name,
+      label: (record.commercialName && String(record.commercialName).trim()) || record.name,
     }));
   }
 

@@ -1,4 +1,5 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
+import businessNameOf, { CLIENT_LABEL_ATTRIBUTES } from '../../services/clientDisplayName';
 import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
@@ -782,7 +783,7 @@ class BusinessInfoRepository {
     if (clientIds.length) {
       const clients = await options.database.clientAccount.findAll({
         where: { id: clientIds },
-        attributes: ['id', 'name', 'lastName', 'email'],
+        attributes: [...CLIENT_LABEL_ATTRIBUTES, 'email'],
         transaction,
       });
       for (const c of clients) {
@@ -796,9 +797,10 @@ class BusinessInfoRepository {
         ? clientById.get(String(output.clientAccountId)) || null
         : null;
       output.clientAccount = client;
-      output.clientAccountName = client
-        ? `${client.name || ''} ${client.lastName || ''}`.trim()
-        : null;
+      // "Cliente" is the COMPANY. This used to concatenate name+lastName — the
+      // legal representative — so every post-site list, PDF and Excel export
+      // labeled the client with a person nobody recognises.
+      output.clientAccountName = client ? businessNameOf(client) : null;
     }
 
     return outputs;
@@ -841,7 +843,7 @@ class BusinessInfoRepository {
       const client = await record.getClientAccount({ transaction });
       output.clientAccount = client ? client.get({ plain: true }) : null;
       output.clientAccountName = output.clientAccount
-        ? `${output.clientAccount.name || ''} ${output.clientAccount.lastName || ''}`.trim()
+        ? businessNameOf(output.clientAccount)
         : null;
       if (client) {
         output.clientAccount.logoUrl = await FileRepository.fillDownloadUrl(

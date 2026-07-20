@@ -1,4 +1,5 @@
 import SequelizeRepository from '../../database/repositories/sequelizeRepository';
+import businessNameOf from '../../services/clientDisplayName';
 import AuditLogRepository from '../../database/repositories/auditLogRepository';
 import lodash from 'lodash';
 import SequelizeFilterUtils from '../../database/utils/sequelizeFilterUtils';
@@ -749,9 +750,8 @@ class RequestRepository {
     );
 
     // Attach simple display values for related entities
-    output.client = record.client
-      ? (record.client.name || record.client.companyName || record.client.fullName || null)
-      : null;
+    // "Cliente" = la empresa (commercialName) antes que el nombre de la persona.
+    output.client = record.client ? (businessNameOf(record.client) || null) : null;
 
     output.site = record.site ? (record.site.companyName || record.site.name || null) : null;
 

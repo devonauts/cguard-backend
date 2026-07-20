@@ -1,4 +1,5 @@
 import PermissionChecker from '../../services/user/permissionChecker';
+import { CLIENT_LABEL_ATTRIBUTES } from '../../services/clientDisplayName';
 import Permissions from '../../security/permissions';
 import ApiResponseHandler from '../apiResponseHandler';
 
@@ -16,7 +17,7 @@ export default async (req, res) => {
         {
           model: db.clientAccount,
           as: 'clientAccount',
-          attributes: ['id', 'name', 'lastName'],
+          attributes: CLIENT_LABEL_ATTRIBUTES,
           required: false,
         },
       ],

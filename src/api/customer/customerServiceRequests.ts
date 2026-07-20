@@ -20,6 +20,7 @@
  * supervisors. Never fails the create.
  */
 import { Op } from 'sequelize';
+import businessNameOf, { CLIENT_LABEL_ATTRIBUTES } from '../../services/clientDisplayName';
 import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import Error400 from '../../errors/Error400';
@@ -93,8 +94,10 @@ export const customerServiceRequestCreate = async (req: any, res: any) => {
 
     let clientName = 'el cliente';
     try {
-      const ca = await db.clientAccount.findByPk(clientAccountId, { attributes: ['name', 'lastName'] });
-      if (ca) clientName = [ca.name, ca.lastName].filter(Boolean).join(' ').trim() || clientName;
+      const ca = await db.clientAccount.findByPk(clientAccountId, { attributes: CLIENT_LABEL_ATTRIBUTES });
+      // Un SOS/incidente llega rotulado "Cliente: X" al CRM y al vigilante — X debe
+      // ser la empresa, que es como el operador reconoce de dónde viene la alerta.
+      if (ca) clientName = businessNameOf(ca) || clientName;
     } catch { /* non-fatal */ }
 
     // request model REAL columns: subject, content, status (abierto|cerrado),

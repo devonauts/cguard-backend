@@ -48,7 +48,12 @@ export default async (req, res) => {
         COALESCE(st.postSiteId, s.stationId, st.id) as businessInfoId,
         COALESCE(bi.companyName, st.stationName) as postSiteName,
         st.stationName as stationName,
-        COALESCE(ca_bi.name, ca_st.name) as clientName,
+        -- "Cliente" = la empresa (commercialName), no el representante legal.
+        COALESCE(
+          NULLIF(TRIM(ca_bi.commercialName), ''), NULLIF(TRIM(ca_st.commercialName), ''),
+          NULLIF(TRIM(CONCAT(COALESCE(ca_bi.name,''),' ',COALESCE(ca_bi.lastName,''))), ''),
+          TRIM(CONCAT(COALESCE(ca_st.name,''),' ',COALESCE(ca_st.lastName,'')))
+        ) as clientName,
         s.guardId as guardUserId,
         u.firstName,
         u.lastName,
