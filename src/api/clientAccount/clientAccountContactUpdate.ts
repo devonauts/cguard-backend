@@ -4,6 +4,8 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import ClientContactService from '../../services/clientContactService';
+import assertClientAccess from '../../services/user/assertClientAccess';
+import assertClientOwnsSubResource from '../../services/user/assertClientOwnsSubResource';
 import { i18n } from '../../i18n';
 
 export default async (req, res, next) => {
@@ -11,6 +13,12 @@ export default async (req, res, next) => {
     new PermissionChecker(req).validateHas(
       Permissions.values.clientContactEdit,
     );
+    await assertClientAccess(req, req.params.id);
+    // The contact must belong to the client in the path, not just the tenant.
+    await assertClientOwnsSubResource(req, {
+      model: req.database.clientContact, subId: req.params.contactId,
+      clientAccountId: req.params.id, clientKey: 'clientAccountId',
+    });
 
     const id = req.params.contactId;
     const data = req.body || {};

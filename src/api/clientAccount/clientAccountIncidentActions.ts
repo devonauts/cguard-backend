@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import assertClientAccess from '../../services/user/assertClientAccess';
+import assertClientOwnsSubResource from '../../services/user/assertClientOwnsSubResource';
 import FileRepository from '../../database/repositories/fileRepository';
 
 const VIDEO_EXT = /\.(mp4|mov|webm|m4v|avi|mkv)$/i;
@@ -12,10 +13,13 @@ export const evidence = async (req, res) => {
     new PermissionChecker(req).validateHas(Permissions.values.incidentRead);
     await assertClientAccess(req, req.params.id);
     const db = req.database;
-    const tenantId = req.currentTenant && req.currentTenant.id;
 
-    const inc: any = await db.incident.findByPk(req.params.incidentId, { attributes: ['id', 'tenantId'] });
-    if (!inc || inc.tenantId !== tenantId) return ApiResponseHandler.error(req, res, { code: 404 });
+    // The incident must belong to the client in the path, not merely the tenant
+    // — otherwise client A could read client B's evidence via A's route.
+    await assertClientOwnsSubResource(req, {
+      model: db.incident, subId: req.params.incidentId,
+      clientAccountId: req.params.id, clientKey: 'clientId',
+    });
 
     const files = await db.file.findAll({
       where: { belongsTo: db.incident.getTableName(), belongsToColumn: 'imageUrl', belongsToId: req.params.incidentId, deletedAt: null },
@@ -44,14 +48,17 @@ export const updateStatus = async (req, res) => {
     new PermissionChecker(req).validateHas(Permissions.values.incidentEdit);
     await assertClientAccess(req, req.params.id);
     const db = req.database;
-    const tenantId = req.currentTenant && req.currentTenant.id;
     const raw = req.body?.data || req.body || {};
     const ws = String(raw.workStatus || '').trim();
     const ALLOWED = ['open', 'inProgress', 'resolved', 'closed'];
     if (!ALLOWED.includes(ws)) return ApiResponseHandler.error(req, res, { code: 400, message: 'invalid workStatus' });
 
-    const inc: any = await db.incident.findByPk(req.params.incidentId);
-    if (!inc || inc.tenantId !== tenantId) return ApiResponseHandler.error(req, res, { code: 404 });
+    // The incident must belong to the client in the path — not just the tenant —
+    // else client A could flip the status of client B's incident via A's route.
+    const inc: any = await assertClientOwnsSubResource(req, {
+      model: db.incident, subId: req.params.incidentId,
+      clientAccountId: req.params.id, clientKey: 'clientId',
+    });
 
     // Keep the legacy binary `status` in sync with the finer workStatus.
     const status = (ws === 'resolved' || ws === 'closed') ? 'cerrado' : 'abierto';

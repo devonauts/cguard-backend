@@ -4,6 +4,8 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import NoteService from '../../services/noteService';
+import assertClientAccess from '../../services/user/assertClientAccess';
+import assertClientOwnsSubResource from '../../services/user/assertClientOwnsSubResource';
 import { i18n } from '../../i18n';
 
 export default async (req, res, next) => {
@@ -11,6 +13,13 @@ export default async (req, res, next) => {
     new PermissionChecker(req).validateHas(
       Permissions.values.noteEdit,
     );
+    await assertClientAccess(req, req.params.id);
+    // Notes are polymorphic (notableType/notableId). The note must be a note of
+    // THIS client (notableId === path client), not merely same-tenant.
+    await assertClientOwnsSubResource(req, {
+      model: req.database.note, subId: req.params.noteId,
+      clientAccountId: req.params.id, clientKey: 'notableId',
+    });
 
     const noteId = req.params.noteId;
     const data = req.body || {};
