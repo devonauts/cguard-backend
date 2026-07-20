@@ -71,11 +71,20 @@ export default async (req: any, res: any) => {
       } catch {
         /* ignore */
       }
+      // Total checkpoints of the route — the worker home's PUNTOS stat needs
+      // the denominator (it showed "—" because this was never sent).
+      let checkpointCount = 0;
+      try {
+        checkpointCount = await db.siteTourTag.count({ where: { siteTourId: plain.siteTourId } });
+      } catch {
+        /* ignore */
+      }
       rows.push({
         id: plain.id,
         siteTourId: plain.siteTourId,
         routeName,
         status: plain.status,
+        checkpointCount,
         startAt: plain.startAt,
         endAt: plain.endAt,
         updatedAt: plain.updatedAt,
