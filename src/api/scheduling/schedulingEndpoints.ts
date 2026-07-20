@@ -517,14 +517,14 @@ export async function schedulerStaffing(req, res) {
     // Get all stations with rotation configured
     const stations = await req.database.station.findAll({
       where: { tenantId, deletedAt: null, rotationStyleId: { [Op.ne]: null } },
-      attributes: ['id', 'stationName', 'rotationStyleId'],
+      attributes: ['id', 'stationName', 'rotationStyleId', 'scheduleType'],
       order: [['stationName', 'ASC']],
     });
 
-    // Get all fijo positions
+    // Get all fijo positions (start/end hours needed to detect alternation stations)
     const fijoPositions = await req.database.stationPosition.findAll({
       where: { tenantId, deletedAt: null, type: 'fijo' },
-      attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder'],
+      attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder', 'startTime', 'endTime'],
     });
 
     // Build station configs
@@ -541,30 +541,30 @@ export async function schedulerStaffing(req, res) {
       stationConfigs.push({
         stationId: station.id,
         stationName: station.stationName,
+        scheduleType: station.scheduleType,
         fijoPositions: sFijos.map((f: any) => ({
           platoonOffset: f.platoonOffset || 0,
           dayShifts: rot.dayShifts,
           nightShifts: rot.nightShifts,
           restDays: rot.restDays,
+          startTime: f.startTime,
+          endTime: f.endTime,
         })),
       });
     }
 
-    // Get SF rotation (from existing or default 6-1)
-    let sfRot: any = null;
-    const existingSf = await req.database.guardAssignment.findOne({ where: { tenantId, isRelief: true, status: 'active', deletedAt: null } });
-    if (existingSf) {
-      sfRot = await req.database.rotationStyle.findByPk(existingSf.rotationStyleId, { attributes: ['id', 'name', 'dayShifts', 'nightShifts', 'restDays'] });
-    }
+    // SF rotation MUST match what optimizeSacafrancos uses (4-4-2) so the advisory
+    // count equals what the optimizer actually creates. Was 6-1 → disagreed.
+    let sfRot: any = await req.database.rotationStyle.findOne({ where: { name: '4-4-2', isSystem: true }, attributes: ['id', 'name', 'dayShifts', 'nightShifts', 'restDays'] });
     if (!sfRot) {
       sfRot = await req.database.rotationStyle.findOne({ where: { name: '6-1', isSystem: true }, attributes: ['id', 'name', 'dayShifts', 'nightShifts', 'restDays'] });
     }
     if (!sfRot) {
-      sfRot = { dayShifts: 6, nightShifts: 0, restDays: 1 };
+      sfRot = { dayShifts: 4, nightShifts: 4, restDays: 2 };
     }
 
     const { calculateStaffingNeeds } = await import('../../services/shiftGenerationService');
-    const staffing = calculateStaffingNeeds(stationConfigs, { dayShifts: sfRot.dayShifts, nightShifts: sfRot.nightShifts, restDays: sfRot.restDays });
+    const staffing = await calculateStaffingNeeds(stationConfigs, { dayShifts: sfRot.dayShifts, nightShifts: sfRot.nightShifts, restDays: sfRot.restDays });
 
     // Count currently assigned guards
     const currentAssignments = await req.database.guardAssignment.findAll({

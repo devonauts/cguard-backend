@@ -633,80 +633,68 @@ export async function regenerateStationShifts(
  * 
  * Algorithm:
  * 1. For each station, count fijo positions (these determine rest-day demand)
- * 2. Compute the LCM of all station rotation cycles to get a "super-cycle"
- * 3. For each day in the super-cycle, count how many stations have at least one fijo resting
- * 4. The max concurrent rest gaps = peak demand for sacafrancos on any given day
- * 5. Given the SF rotation (work days per cycle), calculate:
- *    sacafrancos_needed = ceil(peak_demand * sf_cycle / sf_work_days)
+ * The reported `sacafrancosNeeded` is the REAL number the optimizer would create
+ * — it comes from the SAME block-aware planner (`planStationsAndSf`) that
+ * `optimizeSacafrancos` runs, NOT a `ceil(peak·cycle/workDays)` estimate. The
+ * old estimate double-counted (a whole station "needs coverage" regardless of
+ * how many gap-halves) and ignored that one SF chains several fijos' rest days,
+ * so it reported e.g. 2 where the optimizer only ever places 1. Alternation
+ * (custom 24x24) stations are excluded — they cover themselves, 0 SF — exactly
+ * as the optimizer excludes them.
+ *
+ * `peakDemand` / `dailyDemand` describe the OPTIMAL plan's concurrent per-day
+ * gap load across the super-cycle (what the SFs actually absorb), so the advisory
+ * panel and the optimizer never disagree.
  */
-export function calculateStaffingNeeds(
-  stationConfigs: { stationId: string; stationName: string; fijoPositions: { platoonOffset: number; dayShifts: number; nightShifts: number; restDays: number }[] }[],
+export async function calculateStaffingNeeds(
+  stationConfigs: {
+    stationId: string; stationName: string; scheduleType?: string | null;
+    fijoPositions: { platoonOffset: number; dayShifts: number; nightShifts: number; restDays: number; startTime?: string | null; endTime?: string | null }[];
+  }[],
   sfRotation: { dayShifts: number; nightShifts: number; restDays: number },
-): { fijosNeeded: number; sacafrancosNeeded: number; peakDemand: number; dailyDemand: number[]; stationDetails: { stationId: string; stationName: string; fijos: number }[] } {
+): Promise<{ fijosNeeded: number; sacafrancosNeeded: number; peakDemand: number; dailyDemand: number[]; stationDetails: { stationId: string; stationName: string; fijos: number }[] }> {
+  const stationDetails = stationConfigs.map(s => ({
+    stationId: s.stationId, stationName: s.stationName, fijos: s.fijoPositions.length,
+  }));
+  const fijosNeeded = stationConfigs.reduce((sum, s) => sum + s.fijoPositions.length, 0);
+
   if (stationConfigs.length === 0) {
     return { fijosNeeded: 0, sacafrancosNeeded: 0, peakDemand: 0, dailyDemand: [], stationDetails: [] };
   }
 
-  // Calculate total fijos across all stations
-  const fijosNeeded = stationConfigs.reduce((sum, s) => sum + s.fijoPositions.length, 0);
-
-  // Get all unique cycle lengths and compute LCM for a "super-cycle"
-  const cycleLengths = new Set<number>();
-  stationConfigs.forEach(s => s.fijoPositions.forEach(f => cycleLengths.add(f.dayShifts + f.nightShifts + f.restDays)));
-  const sfCycle = sfRotation.dayShifts + sfRotation.nightShifts + sfRotation.restDays;
-  cycleLengths.add(sfCycle);
-
-  const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
-  const lcm = (a: number, b: number): number => (a * b) / gcd(a, b);
-  let superCycle = 1;
-  cycleLengths.forEach(c => { if (c > 0) superCycle = lcm(superCycle, c); });
-  // Cap to prevent huge cycles
-  if (superCycle > 365) superCycle = Math.max(...Array.from(cycleLengths)) * 2;
-
-  // For each day in the super-cycle, count stations needing coverage
-  const dailyDemand: number[] = [];
-  for (let day = 0; day < superCycle; day++) {
-    let stationsNeedingCoverage = 0;
-    for (const station of stationConfigs) {
-      // Check if ANY fijo at this station is resting on this day
-      let anyResting = false;
-      for (const fijo of station.fijoPositions) {
-        const cycle = fijo.dayShifts + fijo.nightShifts + fijo.restDays;
-        if (cycle === 0) continue;
-        const adj = ((day - fijo.platoonOffset) % cycle + cycle) % cycle;
-        if (adj >= fijo.dayShifts + fijo.nightShifts) {
-          anyResting = true;
-          break;
-        }
+  // Build the planner's view, EXCLUDING alternation stations (custom + ≥2 fijos
+  // sharing one block) — they staff themselves and add zero SF demand, exactly
+  // as optimizeSacafrancos excludes them.
+  const spreadInfo: StationSpreadInfo[] = [];
+  for (const s of stationConfigs) {
+    const fijos = s.fijoPositions;
+    if (!fijos.length) continue;
+    if (s.scheduleType === 'custom') {
+      const counts = new Map<string, number>();
+      for (const f of fijos) {
+        const k = `${f.startTime || ''}|${f.endTime || ''}`;
+        counts.set(k, (counts.get(k) || 0) + 1);
       }
-      if (anyResting) stationsNeedingCoverage++;
+      if (Array.from(counts.values()).some(n => n >= 2)) continue; // alternation → 0 SF
     }
-    dailyDemand.push(stationsNeedingCoverage);
+    // All fijos of a station share the same rotation in this input.
+    const rot = { dayShifts: fijos[0].dayShifts, nightShifts: fijos[0].nightShifts, restDays: fijos[0].restDays };
+    spreadInfo.push({
+      stationId: s.stationId, scheduleType: s.scheduleType ?? '24h', rot,
+      fijos: fijos.map((_, i) => ({ id: `${s.stationId}-${i}`, sortOrder: i })),
+    });
   }
 
+  if (spreadInfo.length === 0) {
+    return { fijosNeeded, sacafrancosNeeded: 0, peakDemand: 0, dailyDemand: [], stationDetails };
+  }
+
+  // THE REAL count + the optimal per-day gap load — same planner the optimizer runs.
+  const plan = await planStationsAndSf(spreadInfo, sfRotation);
+  const dailyDemand = plan.dayLoad.map((d, i) => d + (plan.nightLoad[i] || 0));
   const peakDemand = Math.max(...dailyDemand, 0);
 
-  // Calculate how many SFs needed: each SF works (sfWorkDays/sfCycle) fraction of time
-  const sfWorkDays = sfRotation.dayShifts + sfRotation.nightShifts;
-  let sacafrancosNeeded = 0;
-  if (sfWorkDays > 0 && sfCycle > 0) {
-    // Average demand across the cycle
-    const avgDemand = dailyDemand.reduce((s, d) => s + d, 0) / superCycle;
-    // Each SF can cover (sfWorkDays/sfCycle) stations per day on average
-    // But we need to handle peak: use ceiling of peak * cycle / workDays
-    sacafrancosNeeded = Math.ceil(peakDemand * sfCycle / sfWorkDays);
-    // Also check average-based calculation and take the larger
-    const avgBased = Math.ceil(avgDemand * sfCycle / sfWorkDays);
-    sacafrancosNeeded = Math.max(sacafrancosNeeded, avgBased);
-  }
-
-  const stationDetails = stationConfigs.map(s => ({
-    stationId: s.stationId,
-    stationName: s.stationName,
-    fijos: s.fijoPositions.length,
-  }));
-
-  return { fijosNeeded, sacafrancosNeeded, peakDemand, dailyDemand, stationDetails };
+  return { fijosNeeded, sacafrancosNeeded: plan.sfCount, peakDemand, dailyDemand, stationDetails };
 }
 
 // ─── Dynamic offset spreading + SF sizing (gap-driven coverage) ─────────────

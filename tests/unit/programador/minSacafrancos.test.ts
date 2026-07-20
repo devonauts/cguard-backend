@@ -56,94 +56,72 @@ function stationCfg(id: string, offsets: number[]) {
 
 // ═════════════════════════════════════════════════════════════════════════════
 describe('programador · minimización de sacafrancos (I2)', () => {
-  // ── 1) calculateStaffingNeeds — pico y conteo ─────────────────────────────
-  describe('calculateStaffingNeeds — pico de demanda y conteo de SF', () => {
-    it('sin estaciones ⇒ todo en cero (nada que cubrir)', () => {
-      const r = calculateStaffingNeeds([], SF_442);
+  // ── 1) calculateStaffingNeeds — AHORA devuelve el conteo REAL (planStationsAndSf) ──
+  // Reescrito 2026-07-20: el estimador dejó de usar la fórmula ceil(pico·ciclo/
+  // díasTrabajo) (que sobreestimaba: 2 donde el optimizador crea 1) y ahora corre
+  // el MISMO planificador block-aware que optimizeSacafrancos. Por eso devuelve el
+  // óptimo ACHIEVABLE sin importar los offsets actuales — es "lo real".
+  describe('calculateStaffingNeeds — conteo REAL vía el planificador del optimizador', () => {
+    it('sin estaciones ⇒ todo en cero (nada que cubrir)', async () => {
+      const r = await calculateStaffingNeeds([], SF_442);
       assert.strictEqual(r.fijosNeeded, 0);
       assert.strictEqual(r.sacafrancosNeeded, 0);
       assert.strictEqual(r.peakDemand, 0);
       assert.deepStrictEqual(r.dailyDemand, []);
     });
 
-    it('estación 24h con 2 fijos escalonados ⇒ pico 1; los gaps caen en días distintos', () => {
-      // 2 fijos 4-4-2 con offsets 0 y 6 (escalonados por dayShifts=4). Sus
-      // descansos NO coinciden: la estación necesita relevo en d4,d5 (fijo2
-      // descansa) y d8,d9 (fijo1 descansa). Nunca 2 fijos descansan el mismo día
-      // ⇒ pico 1.
-      const r = calculateStaffingNeeds([stationCfg('s1', [0, 6])], SF_442);
+    it('FIX: estación 24h con 2 fijos 4-4-2 ⇒ EXACTAMENTE 1 SF (antes sobreestimaba 2)', async () => {
+      const r = await calculateStaffingNeeds([stationCfg('s1', [0, 6])], SF_442);
       assert.strictEqual(r.fijosNeeded, 2);
-      assert.strictEqual(r.peakDemand, 1, 'un solo fijo descansa a la vez ⇒ pico 1');
-      // dailyDemand del ciclo de 10 días: sólo los días con algún fijo en libre.
-      assert.deepStrictEqual(r.dailyDemand, [0, 0, 0, 0, 1, 1, 0, 0, 1, 1]);
-
-      // FINDING (I2): el motor de relevo REAL cubre estos 4 medios-gaps con UN
-      // solo SF 4-4-2 (ver bloque "SF real relief" abajo: 1 SF trabaja d4,d5 de
-      // día y d8,d9 de noche). Pero calculateStaffingNeeds informa 2. El
-      // estimador usa ceil(pico·ciclo/díasTrabajo)=ceil(1·10/8)=2 e ignora que
-      // los días de descanso del propio SF se alinean con los días SIN gap. Es
-      // una SOBREestimación frente al mínimo real ⇒ no cumple "el motor usa el
-      // MÍNIMO". Se fija el valor real observado para dejar el hallazgo visible.
-      assert.strictEqual(
-        r.sacafrancosNeeded,
-        2,
-        'FINDING: estimador sobreestima (2) vs mínimo real 1 SF',
-      );
+      // El número real que el optimizador produce para este caso es 1 (un SF 4-4-2
+      // encadena los 4 medios-gaps: día d4/d5, noche d8/d9). El estimador ahora
+      // coincide con esa realidad.
+      assert.strictEqual(r.sacafrancosNeeded, 1, 'el estimador ahora reporta el mínimo real: 1 SF');
+      assert.ok(r.peakDemand <= 1, 'pico de carga por bloque ≤ 1 (un solo SF absorbe todo)');
     });
 
-    it('SPREADING reduce el conteo: offsets colapsados (todos 0) ⇒ pico alto, escalonados ⇒ pico 1', () => {
-      // 5 estaciones, 1 fijo c/u, mismo ciclo 4-4-2.
-      // Colapsado: todos offset 0 ⇒ los 5 fijos descansan los MISMOS días (d8,d9)
-      //   ⇒ 5 estaciones necesitan relevo a la vez ⇒ pico 5.
-      const collapsed = calculateStaffingNeeds(
+    it('LO REAL: el conteo NO depende de los offsets actuales — devuelve el óptimo achievable', async () => {
+      // Aunque los 5 fijos entren COLAPSADOS (todos offset 0, peor caso actual),
+      // el estimador reporta lo que el optimizador LOGRARÁ tras re-escalonar, no el
+      // desastre momentáneo. Ese es el sentido de "lo real": el número accionable.
+      const collapsed = await calculateStaffingNeeds(
         [0, 0, 0, 0, 0].map((o, i) => stationCfg('c' + i, [o])),
         SF_442,
       );
-      // Escalonado: offsets 0,2,4,6,8 ⇒ cada estación descansa en su propio par
-      //   de días ⇒ como máximo 1 estación en libre por día ⇒ pico 1.
-      const spread = calculateStaffingNeeds(
+      const spread = await calculateStaffingNeeds(
         [0, 2, 4, 6, 8].map((o, i) => stationCfg('s' + i, [o])),
         SF_442,
       );
-
-      assert.strictEqual(collapsed.peakDemand, 5, 'colapsado: los 5 descansan juntos');
-      assert.strictEqual(spread.peakDemand, 1, 'escalonado: descansos repartidos ⇒ pico 1');
-
-      // El spreading BAJA el pico y, con él, el conteo de sacafrancos.
-      assert.ok(
-        spread.peakDemand < collapsed.peakDemand,
-        `spreading debe bajar el pico (${spread.peakDemand} < ${collapsed.peakDemand})`,
-      );
-      assert.ok(
-        spread.sacafrancosNeeded < collapsed.sacafrancosNeeded,
-        `spreading debe bajar los SF (${spread.sacafrancosNeeded} < ${collapsed.sacafrancosNeeded})`,
-      );
-      // Valores exactos fijados (regresión): colapsado 5→7 SF, escalonado 1→2 SF.
-      assert.strictEqual(collapsed.sacafrancosNeeded, 7);
-      assert.strictEqual(spread.sacafrancosNeeded, 2);
+      // El planificador ignora el offset de entrada y optimiza ⇒ mismo resultado.
+      assert.strictEqual(collapsed.sacafrancosNeeded, spread.sacafrancosNeeded,
+        'el óptimo no depende de los offsets sembrados');
+      // 5 estaciones 24h de 1 fijo cada una: el optimizador las encadena con pocos SF.
+      assert.ok(collapsed.sacafrancosNeeded >= 1, 'hay demanda de al menos 1 SF');
+      assert.ok(collapsed.sacafrancosNeeded <= 5, 'nunca más SF que estaciones');
     });
 
-    it('MONOTONÍA: más estaciones con libres solapados ⇒ más SF, nunca menos', () => {
-      // n estaciones, todas offset 0 (descansan el mismo día): cada estación
-      // añadida sube el pico en 1 y el conteo de SF no puede bajar.
-      let prevPeak = -1;
+    it('MONOTONÍA: más estaciones ⇒ el conteo real nunca decrece', async () => {
       let prevSf = -1;
-      const peaks: number[] = [];
-      const sfs: number[] = [];
       for (let n = 1; n <= 5; n++) {
         const cfg = Array.from({ length: n }, (_, i) => stationCfg('m' + i, [0]));
-        const r = calculateStaffingNeeds(cfg, SF_442);
-        peaks.push(r.peakDemand);
-        sfs.push(r.sacafrancosNeeded);
-        assert.strictEqual(r.peakDemand, n, `n=${n}: pico crece 1 a 1`);
-        assert.ok(r.peakDemand >= prevPeak, 'pico nunca decrece');
-        assert.ok(r.sacafrancosNeeded >= prevSf, 'conteo de SF nunca decrece');
-        prevPeak = r.peakDemand;
+        const r = await calculateStaffingNeeds(cfg, SF_442);
+        assert.ok(r.sacafrancosNeeded >= prevSf, `n=${n}: conteo de SF nunca decrece`);
+        assert.ok(r.sacafrancosNeeded >= 1, 'con demanda siempre ≥ 1 SF');
         prevSf = r.sacafrancosNeeded;
       }
-      // Estrictamente creciente en el conteo entre extremos (no se queda plano).
-      assert.ok(sfs[4] > sfs[0], `SF sube de ${sfs[0]} a ${sfs[4]} al ir de 1 a 5 estaciones`);
-      assert.deepStrictEqual(peaks, [1, 2, 3, 4, 5]);
+    });
+
+    it('alternancia (custom, 2 fijos compartiendo bloque) ⇒ 0 SF, pero cuenta sus fijos', async () => {
+      const alt = {
+        stationId: 'alt', stationName: 'ALT', scheduleType: 'custom',
+        fijoPositions: [
+          { platoonOffset: 0, dayShifts: 1, nightShifts: 0, restDays: 1, startTime: '07:00', endTime: '07:00' },
+          { platoonOffset: 1, dayShifts: 1, nightShifts: 0, restDays: 1, startTime: '07:00', endTime: '07:00' },
+        ],
+      };
+      const r = await calculateStaffingNeeds([alt], SF_442);
+      assert.strictEqual(r.sacafrancosNeeded, 0, 'una estación de alternancia se cubre sola: 0 SF');
+      assert.strictEqual(r.fijosNeeded, 2, 'pero sus 2 fijos sí se cuentan');
     });
   });
 
