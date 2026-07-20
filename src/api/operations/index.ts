@@ -264,9 +264,35 @@ export default (app) => {
         items.push(item);
       });
 
-      // Add patrols (rondas)
-      const patrols = await req.database.patrolLog.findAll({ where: { tenantId, createdAt: { [Op.gte]: start, [Op.lt]: end } }, order: [['createdAt', 'DESC']], limit: 50 });
-      patrols.forEach((p: any) => items.push({ id: `p-${p.id}`, time: p.createdAt, text: p.note || p.summary || 'Patrol event', officerName: p.guardName || p.officer, type: 'patrol', severity: 'low' }));
+      // Add rondas — checkpoint scans from the real siteTour/tagScan system
+      // (the old patrolLog table is unused; rondas live in tagScan).
+      const scans = await req.database.tagScan.findAll({
+        where: { tenantId, scannedAt: { [Op.gte]: start, [Op.lt]: end } },
+        order: [['scannedAt', 'DESC']], limit: 50,
+        include: [
+          { model: req.database.siteTourTag, as: 'tag', attributes: ['name', 'tagIdentifier'], required: false,
+            include: [{ model: req.database.siteTour, as: 'siteTour', attributes: ['name'], required: false }] },
+          { model: req.database.securityGuard, as: 'guard', attributes: ['fullName'], required: false },
+        ],
+      });
+      scans.forEach((s: any) => {
+        const cp = (s.tag && (s.tag.name || s.tag.tagIdentifier)) || 'Checkpoint';
+        const tour = s.tag && s.tag.siteTour ? s.tag.siteTour.name : '';
+        const item: any = {
+          id: `p-${s.id}`,
+          time: s.scannedAt,
+          text: tour ? `Ronda: ${cp} (${tour})` : `Ronda: ${cp}`,
+          officerName: s.guard ? s.guard.fullName : '',
+          type: 'patrol',
+          severity: s.validLocation === false ? 'medium' : 'low',
+        };
+        if (s.stationId && stationMap[s.stationId]) {
+          item.latitude = stationMap[s.stationId].latitude;
+          item.longitude = stationMap[s.stationId].longitude;
+          item.locationName = stationMap[s.stationId].name;
+        }
+        items.push(item);
+      });
 
       // sort by time desc and return
       items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());

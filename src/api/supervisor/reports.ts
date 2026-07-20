@@ -77,21 +77,11 @@ export const getReports = async (req: any, res: any) => {
     for (const r of incRows) { const k = dayKey(new Date(r.date)); incByDay.set(k, (incByDay.get(k) || 0) + 1); }
     const incidents = incRows.length;
 
-    // ---- checkpoints: patrolLog.status → tagScan.validLocation fallback ----
+    // ---- checkpoints: ronda scans from tagScan (validLocation = on-site) ----
     let completed = 0, missed = 0, incomplete = 0;
     try {
-      const logs = await db.patrolLog.findAll({ where: { tenantId, scanTime: { [Op.between]: [from, to] } }, attributes: ['status', 'validLocation'] });
-      if (logs.length) {
-        for (const l of logs) {
-          const st = String(l.status || '').toLowerCase();
-          if (st.includes('miss')) missed++;
-          else if (st.includes('incomplete') || st.includes('skip') || l.validLocation === false) incomplete++;
-          else completed++;
-        }
-      } else {
-        const scans = await db.tagScan.findAll({ where: { tenantId, scannedAt: { [Op.between]: [from, to] } }, attributes: ['validLocation'] });
-        for (const s of scans) { if (s.validLocation === false) incomplete++; else completed++; }
-      }
+      const scans = await db.tagScan.findAll({ where: { tenantId, scannedAt: { [Op.between]: [from, to] } }, attributes: ['validLocation'] });
+      for (const s of scans) { if (s.validLocation === false) incomplete++; else completed++; }
     } catch { /* checkpoints best-effort */ }
     const cpTotal = completed + missed + incomplete;
     const cpCompletion = cpTotal ? Math.round((completed / cpTotal) * 1000) / 10 : 0;
@@ -99,9 +89,9 @@ export const getReports = async (req: any, res: any) => {
     // Previous-period completion for the delta.
     let prevCompletion = 0;
     try {
-      const pl = await db.patrolLog.findAll({ where: { tenantId, scanTime: { [Op.between]: [prevFrom, prevTo] } }, attributes: ['status', 'validLocation'] });
+      const scans = await db.tagScan.findAll({ where: { tenantId, scannedAt: { [Op.between]: [prevFrom, prevTo] } }, attributes: ['validLocation'] });
       let pc = 0, pt = 0;
-      for (const l of pl) { pt++; const st = String(l.status || '').toLowerCase(); if (!st.includes('miss') && !st.includes('incomplete') && !st.includes('skip') && l.validLocation !== false) pc++; }
+      for (const s of scans) { pt++; if (s.validLocation !== false) pc++; }
       prevCompletion = pt ? Math.round((pc / pt) * 1000) / 10 : 0;
     } catch { /* ignore */ }
 
