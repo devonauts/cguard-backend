@@ -4,8 +4,7 @@ import Permissions from '../../security/permissions';
 import assertClientAccess from '../../services/user/assertClientAccess';
 import { generateClientReport } from '../../services/clientReportGenerator';
 import { computeScheduleNextRun } from '../../services/scheduledReportService';
-
-const parseDate = (s: any, fb: Date) => { const d = s ? new Date(String(s)) : null; return d && !Number.isNaN(d.getTime()) ? d : fb; };
+import { getTenantTz, tenantDayRange } from '../../lib/tenantTz';
 
 /** GET a real CSV export for the client + period (Reportes rápidos). */
 export const exportCsv = async (req, res) => {
@@ -15,9 +14,10 @@ export const exportCsv = async (req, res) => {
     const db = req.database;
     const tenantId = req.currentTenant && req.currentTenant.id;
     const clientAccountId = req.params.id;
-    const now = new Date();
-    const to = parseDate(req.query.to, now); to.setHours(23, 59, 59, 999);
-    const from = parseDate(req.query.from, new Date(to.getTime() - 30 * 24 * 3600 * 1000)); from.setHours(0, 0, 0, 0);
+    // Day boundaries in the tenant's timezone (server runs UTC) so the last day's
+    // evening activity isn't dropped and early next-day rows don't leak in.
+    const tz = await getTenantTz(db, tenantId);
+    const { from, to } = tenantDayRange(req.query.from, req.query.to, tz, { defaultSpanDays: 30 });
     const type = String(req.query.type || 'incidents');
 
     const result = await generateClientReport(db, { tenantId, clientAccountId, type, from, to });

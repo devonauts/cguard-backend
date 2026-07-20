@@ -79,6 +79,20 @@ export async function generateClientReport(db: any, input: ClientReportInput): P
     for (const r of gs) { const k = String(r.guardNameId); const cur = agg.get(k) || { name: r.guardName?.fullName || '—', shifts: 0, hours: 0 }; cur.shifts++; cur.hours += Number(r.hoursWorked) || 0; agg.set(k, cur); }
     out = [['Guardia', 'Turnos', 'Horas']];
     for (const v of agg.values()) out.push([v.name, v.shifts, Math.round(v.hours * 10) / 10]);
+  } else if (type === 'visitors') {
+    const linkOr: any[] = [{ clientId: clientAccountId }];
+    if (stationIds.length) linkOr.push({ stationId: stationIds });
+    if (siteIds.length) linkOr.push({ postSiteId: siteIds });
+    const rows = await db.visitorLog.findAll({
+      where: { [Op.and]: [{ tenantId }, { [Op.or]: linkOr }, { visitDate: { [Op.between]: [from, to] } }] },
+      order: [['visitDate', 'DESC']], limit: 20000,
+    }).catch(() => []);
+    out = [['Fecha entrada', 'Nombre', 'Apellidos', 'Identificación', 'Motivo', 'Salida', 'Personas', 'Puesto']];
+    for (const r of rows) out.push([
+      r.visitDate ? new Date(r.visitDate).toISOString() : '', r.firstName || '', r.lastName || '',
+      r.idNumber || '', r.reason || '', r.exitTime ? new Date(r.exitTime).toISOString() : '',
+      r.numPeople != null ? String(r.numPeople) : '', r.stationId ? (stationName.get(String(r.stationId)) || '') : '',
+    ]);
   } else if (type === 'coverage') {
     const positions = stationIds.length ? await db.stationPosition.findAll({ where: { tenantId, stationId: stationIds, type: 'fijo' }, attributes: ['stationId', 'guardsNeeded'] }).catch(() => []) : [];
     const need = new Map<string, number>();

@@ -2,6 +2,7 @@ import PermissionChecker from '../../services/user/permissionChecker';
 import ApiResponseHandler from '../apiResponseHandler';
 import Permissions from '../../security/permissions';
 import assertClientAccess from '../../services/user/assertClientAccess';
+import { getTenantTz, tenantDayRange } from '../../lib/tenantTz';
 
 /**
  * Client "Reportes" analytics — all real, client-scoped over a period:
@@ -34,11 +35,10 @@ export default async (req, res) => {
     const clientAccountId = req.params.id;
     const now = new Date();
 
-    let tz = 'America/Guayaquil';
-    try { const tnt = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] }); if (tnt?.timezone) tz = tnt.timezone; } catch { /* default */ }
-
-    const to = parseDate(req.query.to, now); to.setHours(23, 59, 59, 999);
-    const from = parseDate(req.query.from, new Date(to.getTime() - 30 * 24 * 3600 * 1000)); from.setHours(0, 0, 0, 0);
+    const tz = await getTenantTz(db, tenantId);
+    // Day boundaries in the tenant's timezone (server runs UTC) so the daily buckets
+    // and the range endpoints agree and the last day's evening rows aren't dropped.
+    const { from, to } = tenantDayRange(req.query.from, req.query.to, tz, { defaultSpanDays: 30 });
     const spanMs = to.getTime() - from.getTime();
     const prevFrom = new Date(from.getTime() - spanMs);
 
@@ -203,6 +203,7 @@ export default async (req, res) => {
     const quickReports = [
       { key: 'incidents', label: 'Reporte de incidentes' },
       { key: 'rounds', label: 'Reporte de rondas' },
+      { key: 'visitors', label: 'Reporte de visitas' },
       { key: 'attendance', label: 'Reporte de asistencia' },
       { key: 'coverage', label: 'Cumplimiento de puestos' },
       { key: 'guard-activity', label: 'Actividad por guardia' },
