@@ -714,7 +714,7 @@ export function calculateStaffingNeeds(
 const gcd2 = (a: number, b: number): number => (b === 0 ? a : gcd2(b, a % b));
 const lcm2 = (a: number, b: number): number => (a && b ? Math.abs(a * b) / gcd2(a, b) : Math.max(a, b));
 
-interface StationSpreadInfo {
+export interface StationSpreadInfo {
   stationId: string;
   scheduleType: string | null;
   rot: { dayShifts: number; nightShifts: number; restDays: number };
@@ -734,7 +734,7 @@ interface StationSpreadInfo {
  * peak per-block load. We keep the SF offset with no out-of-block gaps and the
  * fewest SFs.
  */
-async function planStationsAndSf(
+export async function planStationsAndSf(
   stations: StationSpreadInfo[],
   sfRot: { dayShifts: number; nightShifts: number; restDays: number },
 ): Promise<{ fijoOffsets: Map<string, number>; sfOffset: number; sfCount: number; L: number; dayLoad: number[]; nightLoad: number[]; outOfBlock: number }> {
@@ -897,7 +897,7 @@ async function doOptimizeSacafrancos(
   // 2. Get all fijo positions
   const fijoPositions = await database.stationPosition.findAll({
     where: { tenantId, deletedAt: null, type: 'fijo' },
-    attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder'],
+    attributes: ['id', 'stationId', 'platoonOffset', 'sortOrder', 'startTime', 'endTime'],
   });
 
   // 3. Get rotation details for each station
@@ -919,19 +919,34 @@ async function doOptimizeSacafrancos(
   }
 
   const spreadInfo: StationSpreadInfo[] = [];
+  const alternateStationIds = new Set<string>();
   for (const station of stations) {
     const rot = rotationCache.get(station.rotationStyleId);
     if (!rot) continue;
-    const fijos = (fijosByStation.get(station.id) || [])
-      .slice()
-      .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0))
-      .map((f: any) => ({ id: f.id, sortOrder: f.sortOrder || 0 }));
-    if (!fijos.length) continue;
+    const stationFijos = (fijosByStation.get(station.id) || []).slice()
+      .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    if (!stationFijos.length) continue;
+
+    // ALTERNATION (custom 24x24): ≥2 fijos SHARE one block (identical hours), one
+    // works each day → ZERO sacafranco demand, and each fijo's phase is
+    // date-driven (offset = dse(startDate) % cycle, "empieza hoy = trabaja hoy").
+    // The optimizer must NOT re-plan these: overwriting their offsets with the
+    // sacafranco stagger destroys the "Carlos hoy, Leonardo mañana" phasing.
+    if (station.scheduleType === 'custom') {
+      const blockKey = (f: any) => `${f.startTime || ''}|${f.endTime || ''}`;
+      const counts = new Map<string, number>();
+      for (const f of stationFijos) counts.set(blockKey(f), (counts.get(blockKey(f)) || 0) + 1);
+      if (Array.from(counts.values()).some((n) => n >= 2)) {
+        alternateStationIds.add(String(station.id));
+        continue; // excluded from spreading AND from SF demand
+      }
+    }
+
     spreadInfo.push({
       stationId: station.id,
       scheduleType: station.scheduleType,
       rot: { dayShifts: rot.dayShifts, nightShifts: rot.nightShifts, restDays: rot.restDays },
-      fijos,
+      fijos: stationFijos.map((f: any) => ({ id: f.id, sortOrder: f.sortOrder || 0 })),
     });
   }
 
@@ -997,6 +1012,25 @@ async function doOptimizeSacafrancos(
   const targetSfCount = Math.max(numSfNeeded, existingSfAssignments.length);
 
   if (stationsWithFijos.length === 0 || targetSfCount === 0) {
+    // No SFs needed — but if we changed fijo offsets above, the calendar still
+    // reflects the OLD phase. Regenerate the affected fijo shifts before
+    // returning, or the config (offsets) and the calendar (shifts) desync.
+    if (offsetUpdates.length > 0) {
+      const changedPosIds = offsetUpdates.map((u) => u.id);
+      const changedFijoAssignments = await database.guardAssignment.findAll({
+        where: { tenantId, status: 'active', deletedAt: null, positionId: changedPosIds },
+        attributes: [
+          'id', 'guardId', 'stationId', 'positionId', 'rotationStyleId', 'startDate', 'endDate',
+          'platoonOffset', 'isRelief', 'coveredStationIds', 'kind', 'startTime', 'endTime',
+        ],
+      });
+      for (let i = 0; i < changedFijoAssignments.length; i += 10) {
+        await Promise.all(
+          changedFijoAssignments.slice(i, i + 10).map((a: any) =>
+            generateShiftsForAssignment(database, a.get({ plain: true }), tenantId, userId)),
+        );
+      }
+    }
     return {
       message: `No se necesitan sacafrancos (${stationsWithFijos.length} estaciones sin gaps)`,
       details: {
@@ -1004,6 +1038,7 @@ async function doOptimizeSacafrancos(
         sacafrancosNeeded: 0,
         fijosNeeded: totalFijos,
         offsetsOptimized: offsetUpdates.length,
+        alternateStationsSkipped: alternateStationIds.size,
         sfAssignmentsPreserved: existingSfAssignments.length,
       },
     };
