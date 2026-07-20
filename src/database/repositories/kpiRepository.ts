@@ -5,6 +5,7 @@ import SequelizeFilterUtils from '../utils/sequelizeFilterUtils';
 import Error404 from '../../errors/Error404';
 import Sequelize from 'sequelize';
 import { IRepositoryOptions } from './IRepositoryOptions';
+import { computeKpiActuals } from './kpiActuals';
 
 const Op = Sequelize.Op;
 
@@ -176,39 +177,9 @@ class KpiRepository {
 
     let { rows, count } = await options.database.kpi.findAndCountAll({ where, limit: limit ? Number(limit) : undefined, offset: offset ? Number(offset) : undefined, order: orderBy ? [orderBy.split('_')] : [['createdAt', 'DESC']], transaction: SequelizeRepository.getTransaction(options), include });
 
+    // Per-row real activity actuals (incidents/tasks/routes for the KPI month) are
+    // attached inside _fillWithRelationsAndFiles → output.actuals.
     rows = await this._fillWithRelationsAndFilesForRows(rows, options);
-
-    // If a month filter was provided, compute 'actual' values for each KPI based on report counts
-    try {
-      if (filter && filter.month) {
-        const month = String(filter.month); // expected YYYY-MM
-        const parts = month.split('-');
-        if (parts.length === 2) {
-          const year = Number(parts[0]);
-          const monthIndex = Number(parts[1]) - 1; // JS Date month index
-          const start = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0));
-          const end = new Date(Date.UTC(year, monthIndex + 1, 1, 0, 0, 0));
-
-          // For each KPI row, compute a simple 'actual' metric as count of reports in that month.
-          // Note: This is a generic implementation — refine later to scope counts by postSite/guard.
-          for (const r of rows) {
-            const whereReport: any = {
-              tenantId: tenant.id,
-              createdAt: { [Op.gte]: start, [Op.lt]: end },
-            };
-            const cnt = await options.database.report.count({ where: whereReport, transaction: SequelizeRepository.getTransaction(options) });
-            // attach actual count to the output object
-            if (r && typeof r === 'object') {
-              r.actual = cnt;
-            }
-          }
-        }
-      }
-    } catch (err) {
-      // Do not fail the entire request if counting reports fails; just log
-      // eslint-disable-next-line no-console
-      console.error('Error computing KPI actual values', err);
-    }
 
     return { rows, count };
   }
@@ -283,6 +254,15 @@ class KpiRepository {
     // Clean relations to minimal shape
     output.guard = output.guard ? { id: output.guard.id, fullName: output.guard.fullName || null } : null;
     output.postSite = output.postSite ? { id: output.postSite.id, businessName: output.postSite.businessName || output.postSite.name || null } : null;
+
+    // Real per-metric activity counts for the KPI's month (incidents/tasks/routes),
+    // scoped to its guard/post-site. Replaces the old always-0 placeholder.
+    try {
+      const tenant = SequelizeRepository.getCurrentTenant(options);
+      output.actuals = await computeKpiActuals(options.database, output, tenant && tenant.id);
+    } catch {
+      output.actuals = { incident: null, task: null, route: null };
+    }
 
     return output;
   }

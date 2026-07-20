@@ -102,24 +102,31 @@ export default async (req, res, next) => {
     }
     const description = kpi.description || '';
 
-    // Collect all metrics that have an explicit positive target
+    // Metrics are rendered only when (a) they have a positive target AND (b) their
+    // "actual" can be computed from real activity. Standard/Checklist reports have
+    // no populated data source (actualKey null) so they are omitted rather than
+    // shown as a misleading 0.
+    const actuals = kpi.actuals || { incident: null, task: null, route: null };
     const metricsDef = [
-      { key: 'standardReportsNumber', label: 'Standard Reports' },
-      { key: 'taskReportsNumber', label: 'Task Reports' },
-      { key: 'incidentReportsNumber', label: 'Incident Reports' },
-      { key: 'routeReportsNumber', label: 'Route Reports' },
-      { key: 'verificationReportsNumber', label: 'Checklist Reports' },
+      { key: 'standardReportsNumber', label: 'Standard Reports', actualKey: null },
+      { key: 'taskReportsNumber', label: 'Task Reports', actualKey: 'task' },
+      { key: 'incidentReportsNumber', label: 'Incident Reports', actualKey: 'incident' },
+      { key: 'routeReportsNumber', label: 'Route Reports', actualKey: 'route' },
+      { key: 'verificationReportsNumber', label: 'Checklist Reports', actualKey: null },
     ];
 
     const metrics = metricsDef.map((m) => {
       const val = kpi[m.key];
+      const raw = m.actualKey ? actuals[m.actualKey] : null;
+      const computable = m.actualKey !== null && raw !== null && raw !== undefined;
       return {
         key: m.key,
         label: m.label,
         target: val !== undefined && val !== null ? Number(val) : null,
-        actual: Number(kpi.actual || 0),
+        actual: Number(raw ?? 0),
+        computable,
       };
-    }).filter(m => m.target !== null && m.target > 0);
+    }).filter(m => m.target !== null && m.target > 0 && m.computable);
 
     const chartHeight = 200; // base px
     const chartMax = Math.max(1, ...metrics.flatMap(m => [m.target || 0, m.actual || 0]));

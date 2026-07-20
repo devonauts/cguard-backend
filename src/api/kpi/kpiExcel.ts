@@ -73,24 +73,19 @@ export default async (req, res, next) => {
       sheet.addRow([label, target, actual, status]);
     };
 
-    // Only include rows for report types that have an explicit target number in the DB
-    // Only include rows when the numeric target is present and greater than zero
+    // Only include a metric row when it has a positive target AND its "actual" can
+    // be computed from real activity (incidents/tasks/routes). Standard & Checklist
+    // reports have no populated source (actual null) → omitted, not shown as 0.
+    const actuals = (kpi as any).actuals || { incident: null, task: null, route: null };
     const hasPositive = (v: any) => v !== undefined && v !== null && Number(v) > 0;
-    if (hasPositive(kpi.standardReportsNumber)) {
-      addReport('Standard Reports', kpi.standardReportsNumber, kpi.actual);
-    }
-    if (hasPositive(kpi.taskReportsNumber)) {
-      addReport('Task Reports', kpi.taskReportsNumber, kpi.actual);
-    }
-    if (hasPositive(kpi.incidentReportsNumber)) {
-      addReport('Incident Reports', kpi.incidentReportsNumber, kpi.actual);
-    }
-    if (hasPositive(kpi.routeReportsNumber)) {
-      addReport('Route Reports', kpi.routeReportsNumber, kpi.actual);
-    }
-    if (hasPositive(kpi.verificationReportsNumber)) {
-      addReport('Checklist Reports', kpi.verificationReportsNumber, kpi.actual);
-    }
+    const addIf = (targetVal: any, label: string, actualVal: number | null) => {
+      if (hasPositive(targetVal) && actualVal !== null && actualVal !== undefined) {
+        addReport(label, targetVal, actualVal);
+      }
+    };
+    addIf(kpi.incidentReportsNumber, 'Incident Reports', actuals.incident);
+    addIf(kpi.taskReportsNumber, 'Task Reports', actuals.task);
+    addIf(kpi.routeReportsNumber, 'Route Reports', actuals.route);
 
     // Auto-width columns
     sheet.columns.forEach((col) => {

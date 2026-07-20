@@ -588,6 +588,24 @@ nodeSetInterval(() => { runJob("ShiftReminders", runShiftReminderScheduler); }, 
 leaderTimeout(() => runJob("ShiftReminders", runShiftReminderScheduler), 60000);
 
 /**
+ * Scheduled client reports — every minute, run any `reportSchedule` whose nextRunAt
+ * is due: generate the client report CSV and email it to the creator + client.
+ * Cluster-safe via an atomic per-schedule claim inside the service.
+ */
+async function runScheduledReportsScheduler() {
+  try {
+    const database = await databaseInit();
+    const { runDueReportSchedules } = require('./services/scheduledReportService');
+    await runDueReportSchedules(database);
+  } catch (err) {
+    console.error('[ScheduledReports] scheduler error:', (err as any)?.message || err);
+  }
+}
+
+nodeSetInterval(() => { runJob("ScheduledReports", runScheduledReportsScheduler); }, 60 * 1000);
+leaderTimeout(() => runJob("ScheduledReports", runScheduledReportsScheduler), 75000);
+
+/**
  * Trial scheduler — sends reminder emails as a tenant's 14-day trial winds down
  * (stages at 7 / 3 / 1 days left and on expiry) and flips expired trials to
  * `trial_expired`. `trialReminderStage` dedupes; the conditional UPDATE makes it
