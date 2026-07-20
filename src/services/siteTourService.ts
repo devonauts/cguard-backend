@@ -235,12 +235,14 @@ export default class SiteTourService {
         (!compliance.requireNote || noteProvided) &&
         (!compliance.requireGeofence || validLocation === true);
 
-      // Create tagScan row
+      // Create tagScan row. Stamp tenantId — rows created without it were
+      // invisible to every tenant-filtered reader (ronda detail showed 0/2).
       scan = await this.options.database.tagScan.create({
         siteTourTagId: tag.id,
         tourAssignmentId: assignment ? assignment.id : null,
         securityGuardId,
         stationId: stationId || null,
+        tenantId: scanTenantId || tenantId,
         scannedAt: new Date(),
         validLocation,
         distanceMeters,

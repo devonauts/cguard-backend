@@ -45,7 +45,16 @@ export default function (router) {
   });
 
   // GET /api/tenant/:tenantId/site-tour/:id
-  router.get('/tenant/:tenantId/site-tour/:id', async (req, res, next) => {
+  router.get(
+    '/tenant/:tenantId/site-tour/:id',
+    // ROUTE-SHADOWING GUARD: this :id route is registered before the literal
+    // /site-tour/tag-scans route further down, so "tag-scans" matched here as
+    // an id → siteTour lookup → 404. That silently broke the worker app's scan
+    // reconciliation (it .catch(()=>[])s), so PUNTOS showed "—" and the home
+    // round progress never reflected server truth. Fall through to the literal
+    // route instead.
+    (req: any, _res: any, next: any) => (req.params.id === 'tag-scans' ? next('route') : next()),
+    async (req, res, next) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.postSiteRead);
       const payload = await new SiteTourService(req).findById(req.params.id);

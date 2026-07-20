@@ -28,7 +28,14 @@ export async function buildRondaDetail(
   const tags = a.siteTourId
     ? await db.siteTourTag.findAll({ where: { siteTourId: a.siteTourId, tenantId }, order: [['createdAt', 'ASC']] })
     : [];
-  const scans = await db.tagScan.findAll({ where: { tourAssignmentId: a.id, tenantId }, order: [['scannedAt', 'ASC']] });
+  // The assignment `a` is already tenant-scoped, so accept legacy scan rows
+  // whose tenantId was never stamped (recordTagScan omitted it until 2026-07):
+  // filtering strictly by tenantId made every ronda detail count 0 scans.
+  const { Op } = require('sequelize');
+  const scans = await db.tagScan.findAll({
+    where: { tourAssignmentId: a.id, [Op.or]: [{ tenantId }, { tenantId: null }] },
+    order: [['scannedAt', 'ASC']],
+  });
 
   // The guard's per-checkpoint NOTE + PHOTO live in scannedData.extra ({notes,
   // photoFileToken}). Parse them into ready-to-render `note` + signed `photoUrl` so
