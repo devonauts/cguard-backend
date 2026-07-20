@@ -397,8 +397,17 @@ export default class SiteTourService {
       this.options.database && this.options.database.sequelize,
     );
 
-    if (siteTourHasTenantColumn && this.options.currentTenant && this.options.currentTenant.id) {
-      where['$tag.siteTour.tenantId$'] = this.options.currentTenant.id;
+    const Op = this.options.database.Sequelize.Op;
+
+    if (this.options.currentTenant && this.options.currentTenant.id) {
+      if (siteTourHasTenantColumn) {
+        where['$tag.siteTour.tenantId$'] = this.options.currentTenant.id;
+      } else {
+        // Fallback: the root tagScan row carries tenantId, so scope on it rather
+        // than dropping the tenant filter entirely (which would leak other tenants'
+        // scans when the join-column probe returns false).
+        where.tenantId = this.options.currentTenant.id;
+      }
     }
 
     if (filter.tourId) where['$tag.siteTourId$'] = filter.tourId;
@@ -406,6 +415,15 @@ export default class SiteTourService {
     if (filter.stationId) where.stationId = filter.stationId;
     if (filter.assignmentId) where.tourAssignmentId = filter.assignmentId;
     if (filter.ids && Array.isArray(filter.ids) && filter.ids.length) where.id = filter.ids;
+
+    // Optional date-range scoping (scannedAt) so callers can request "rondas de
+    // esta semana" instead of the entire history — critical for the export path.
+    if (filter.from || filter.to) {
+      const range: any = {};
+      if (filter.from) range[Op.gte] = new Date(filter.from);
+      if (filter.to) range[Op.lte] = new Date(filter.to);
+      where.scannedAt = range;
+    }
 
     const limit = filter.limit ? parseInt(filter.limit, 10) : 0;
     const offset = filter.offset ? parseInt(filter.offset, 10) : 0;
@@ -487,7 +505,9 @@ export default class SiteTourService {
   }
 
   async exportScansToFile(format: string, filter: any = {}) {
-    const rows = await this.listTagScans(filter);
+    // Cap the export so an unbounded tour/site history can't produce a giant
+    // PDF/Excel or an unbounded query. Callers can narrow with from/to.
+    const rows = await this.listTagScans({ ...filter, limit: filter.limit || 20000 });
 
     // transform rows to export-friendly shape
     const transformed = (rows || []).map((r: any) => {
@@ -500,7 +520,9 @@ export default class SiteTourService {
         stationId: r.stationId || (r.station && r.station.id) || null,
         stationName: r.station ? (r.station.stationName || r.station.name) : null,
         guardId: r.securityGuardId || (r.guard && r.guard.id) || null,
-        guardName: r.guard ? (r.guard.firstName || r.guard.name || r.guard.username || null) : null,
+        // fullName is the only name column selected for (and existing on) the guard
+        // association; firstName/name/username were always undefined → blank column.
+        guardName: r.guard ? (r.guard.fullName || null) : null,
         scannedData: r.scannedData || null,
       };
     });

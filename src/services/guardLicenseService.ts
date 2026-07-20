@@ -73,11 +73,22 @@ class GuardLicenseService {
     const fetchBuffer = (url) => new Promise((resolve) => {
       try {
         const client = url.startsWith('https') ? https : http;
-        client.get(url, (res) => {
+        const req = client.get(url, (res) => {
+          // A non-200 (expired signed URL, 404, redirect) would otherwise be
+          // buffered as bytes and fed to doc.image() → throw. Bail to null so the
+          // PDF renders without the image instead of erroring.
+          if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+            res.resume();
+            return resolve(null);
+          }
           const chunks: any[] = [];
           res.on('data', (c) => chunks.push(c));
           res.on('end', () => resolve(Buffer.concat(chunks)));
-        }).on('error', () => resolve(null));
+        });
+        req.on('error', () => resolve(null));
+        // Without a timeout a stalled image host would hang forever: doc.end()
+        // never fires and the awaiting export route never responds.
+        req.setTimeout(8000, () => { req.destroy(); resolve(null); });
       } catch (e) {
         resolve(null);
       }

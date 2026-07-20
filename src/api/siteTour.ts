@@ -597,6 +597,8 @@ export default function (router) {
       if (req.query.postSiteId) filter.postSiteId = req.query.postSiteId;
       if (req.query.stationId) filter.stationId = req.query.stationId;
       if (req.query.assignmentId) filter.assignmentId = req.query.assignmentId;
+      if (req.query.from) filter.from = req.query.from;
+      if (req.query.to) filter.to = req.query.to;
       if (req.query.ids) {
         filter.ids = String(req.query.ids)
           .split(',')

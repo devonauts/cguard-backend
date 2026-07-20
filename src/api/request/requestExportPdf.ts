@@ -45,8 +45,6 @@ export default async function requestExportPdf(req: Request, res: Response): Pro
       return;
     }
 
-    // Debug: log requested ids
-    console.log('requestExportPdf — requested ids:', ids);
     const safe = (v: any) => {
       try {
         if (v === null || typeof v === 'undefined') return '-';
@@ -54,18 +52,26 @@ export default async function requestExportPdf(req: Request, res: Response): Pro
         if (v instanceof Date) return v.toLocaleString();
         if (Array.isArray(v)) return v.map((x) => safe(x)).join(', ');
         if (typeof v === 'object') {
-          if (v.id) return String(v.id);
+          // Prefer a human-readable label over the UUID — association objects
+          // (client, site, incidentType) always carry an `id`, so checking it
+          // first rendered raw UUIDs in the PDF instead of names.
           if (v.name) return String(v.name);
           if (v.fullName) return String(v.fullName);
+          if (v.companyName) return String(v.companyName);
+          if (v.title) return String(v.title);
           if (v.get && typeof v.get === 'function') {
             try {
               const plain = v.get({ plain: true });
-              if (plain && plain.name) return String(plain.name);
+              if (plain && (plain.name || plain.fullName || plain.companyName || plain.title)) {
+                return String(plain.name || plain.fullName || plain.companyName || plain.title);
+              }
+              if (plain && plain.id) return String(plain.id);
               return JSON.stringify(plain);
             } catch (e) {
               // fallthrough
             }
           }
+          if (v.id) return String(v.id);
           try {
             return JSON.stringify(v);
           } catch (e) {
@@ -117,12 +123,8 @@ export default async function requestExportPdf(req: Request, res: Response): Pro
     let possibleLogoPath: string | null = null;
     try {
       const p = path.resolve(__dirname, '../../../../cguard-frontend-new/public/assets/logo/logo.png');
-      console.log('requestExportPdf — checking logo at', p);
       if (fs.existsSync(p)) {
         possibleLogoPath = p;
-        console.log('requestExportPdf — found logo at', p);
-      } else {
-        console.log('requestExportPdf — logo not found at', p);
       }
     } catch (e) {
       console.warn('requestExportPdf — error checking logo file', e);
@@ -141,18 +143,6 @@ export default async function requestExportPdf(req: Request, res: Response): Pro
         if (idx > 0) doc.addPage();
         doc.fontSize(12).fillColor('#000').text(`Could not load request ${rid}`, startX, doc.page.margins.top);
         continue;
-      }
-
-      // lightweight debug snapshot
-      try {
-        console.log('requestExportPdf — snapshot:', {
-          id: requestRecord?.id,
-          ticketId: safePrint(requestRecord?.ticketId),
-          client: safePrint(requestRecord?.client),
-          site: safePrint(requestRecord?.site),
-        });
-      } catch (e) {
-        // ignore
       }
 
       // new page for subsequent ids
