@@ -382,7 +382,11 @@ export async function stationAutoPositions(req, res) {
     const { stationId } = req.params;
     const tenantId = req.currentTenant.id;
     const data = req.body?.data || req.body || {};
-    const scheduleType = data.scheduleType || '24h';
+    // Pass scheduleType through ONLY when the caller stated one. Defaulting to
+    // '24h' here overrode the service's window-based derivation, so a station
+    // with a 12h turno still got saved as 24h. Undefined ⇒ the service derives
+    // it from the station's hours (see deriveScheduleType).
+    const scheduleType = data.scheduleType || undefined;
     const rotationStyleId = data.rotationStyleId || null;
     const userId = req.currentUser.id;
 
@@ -772,7 +776,8 @@ export async function schedulerAutoAssign(req, res) {
     for (const station of stations) {
       const s: any = station.get({ plain: true });
       if (!s.rotationStyleId) {
-        const sType = s.scheduleType || '24h';
+        const { deriveScheduleType } = await import('../../services/stationAutoConfigService');
+        const sType = s.scheduleType || deriveScheduleType(s.startingTimeInDay, s.finishTimeInDay);
         // 10-day cycle for everyone so stations sync with the sacafranco:
         // 24h → 4-4-2 (fijos swap day/night); 12h → 8-2 (single shift).
         const { ensureRotationStyle } = await import('../../services/stationAutoConfigService');
@@ -804,7 +809,7 @@ export async function schedulerAutoAssign(req, res) {
             stationId: s.id,
             tenantId,
             userId,
-            scheduleType: s.scheduleType || '24h',
+            scheduleType: s.scheduleType || undefined, // undefined ⇒ derive from hours
             rotationStyleId: s.rotationStyleId || stationRotationUpdates.get(s.id) || null,
             runSacafrancoOptimize: false,
           });
