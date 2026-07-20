@@ -15,7 +15,7 @@ export default async (req, res) => {
     const raw = req.body?.data || req.body || {};
 
     const station: any = await req.database.station.findByPk(req.params.id);
-    if (!station || (tenantId && station.tenantId && station.tenantId !== tenantId)) {
+    if (!station || station.tenantId !== tenantId) {
       return ApiResponseHandler.error(req, res, { code: 404 });
     }
 

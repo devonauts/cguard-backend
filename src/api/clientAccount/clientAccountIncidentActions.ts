@@ -15,7 +15,7 @@ export const evidence = async (req, res) => {
     const tenantId = req.currentTenant && req.currentTenant.id;
 
     const inc: any = await db.incident.findByPk(req.params.incidentId, { attributes: ['id', 'tenantId'] });
-    if (!inc || (tenantId && inc.tenantId && inc.tenantId !== tenantId)) return ApiResponseHandler.error(req, res, { code: 404 });
+    if (!inc || inc.tenantId !== tenantId) return ApiResponseHandler.error(req, res, { code: 404 });
 
     const files = await db.file.findAll({
       where: { belongsTo: db.incident.getTableName(), belongsToColumn: 'imageUrl', belongsToId: req.params.incidentId, deletedAt: null },
@@ -51,7 +51,7 @@ export const updateStatus = async (req, res) => {
     if (!ALLOWED.includes(ws)) return ApiResponseHandler.error(req, res, { code: 400, message: 'invalid workStatus' });
 
     const inc: any = await db.incident.findByPk(req.params.incidentId);
-    if (!inc || (tenantId && inc.tenantId && inc.tenantId !== tenantId)) return ApiResponseHandler.error(req, res, { code: 404 });
+    if (!inc || inc.tenantId !== tenantId) return ApiResponseHandler.error(req, res, { code: 404 });
 
     // Keep the legacy binary `status` in sync with the finer workStatus.
     const status = (ws === 'resolved' || ws === 'closed') ? 'cerrado' : 'abierto';

@@ -108,10 +108,19 @@ export const getReports = async (req: any, res: any) => {
     // ---- guard performance: avg rating → punctuality fallback ----
     let performance: any[] = [];
     try {
-      const ratings = await db.guardRating.findAll({ where: { tenantId }, attributes: ['guardId', 'rating'] });
-      const byGuard = new Map<string, { sum: number; n: number }>();
-      for (const r of ratings) { const k = String(r.guardId); const g = byGuard.get(k) || { sum: 0, n: 0 }; g.sum += num(r.rating); g.n++; byGuard.set(k, g); }
-      let scored: { guardId: string; score: number }[] = [...byGuard.entries()].map(([guardId, g]) => ({ guardId, score: Math.round((g.sum / g.n) * 20) }));
+      // Average in SQL (AVG ... GROUP BY) instead of loading the tenant's ENTIRE
+      // rating history into JS to reduce it — that scaled with total ratings.
+      const fn = db.Sequelize.fn;
+      const col = db.Sequelize.col;
+      const ratingAgg = await db.guardRating.findAll({
+        where: { tenantId },
+        attributes: ['guardId', [fn('AVG', col('rating')), 'avgRating']],
+        group: ['guardId'],
+        raw: true,
+      });
+      let scored: { guardId: string; score: number }[] = (ratingAgg || [])
+        .filter((r: any) => r.guardId != null)
+        .map((r: any) => ({ guardId: String(r.guardId), score: Math.round(num(r.avgRating) * 20) }));
       // Fallback: punctuality per guard from this period's shifts.
       if (!scored.length) {
         const perGuard = new Map<string, { late: number; n: number }>();

@@ -23,6 +23,17 @@ export default async (req, res, next) => {
       return ApiResponseHandler.error(req, res, new Error403());
     }
 
+    // Close the unauthenticated-IDOR hole without breaking email logos:
+    // - fileToken is opaque/unforgeable (AES-256-GCM) → self-authenticating,
+    //   stays PUBLIC so email <img> and share links keep working.
+    // - a RAW privateUrl is guessable (tenant-uuid/filename), so only accept it
+    //   from an authenticated session (in-app <img> sends the __session cookie
+    //   same-origin, so this stays transparent). An anonymous caller guessing a
+    //   path now gets 403.
+    if (!fileToken && privateUrl && !req.currentUser) {
+      return ApiResponseHandler.error(req, res, new Error403());
+    }
+
     if (!privateUrl && fileToken) {
       try {
         const { decryptPrivateUrl } = require('../../../utils/privateUrlEncryption');

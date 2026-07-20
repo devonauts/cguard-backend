@@ -314,14 +314,16 @@ export default async (req, res) => {
     const descanso = cnt('descanso');
     const ausentes = cnt('ausente');
 
-    // Hours this month (guards + supervisors).
+    // Hours this month (guards + supervisors) — SUM in SQL instead of loading
+    // every punch row of the month to add in JS.
     let horasMes = 0;
     try {
-      const rows = await db.guardShift.findAll({
+      const total = await db.guardShift.findOne({
         where: { tenantId, punchInTime: { [Op.gte]: monthStart }, [Op.or]: [{ stationNameId: stationIds }, ...(siteIds.length ? [{ postSiteId: siteIds }] : [])] },
-        attributes: ['hoursWorked'],
+        attributes: [[db.Sequelize.fn('SUM', db.Sequelize.col('hoursWorked')), 'total']],
+        raw: true,
       });
-      for (const r of rows) horasMes += Number(r.hoursWorked) || 0;
+      horasMes = Number((total as any)?.total) || 0;
     } catch { /* optional */ }
 
     // Coverage-by-turno (today) + general.

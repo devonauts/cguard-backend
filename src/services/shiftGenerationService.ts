@@ -490,9 +490,14 @@ export async function generateShiftsForAssignment(
   // clause, re-assigning a slot left the previous occupant's shifts behind —
   // especially legacy shifts with a NULL guardAssignmentId (kept sticky by
   // ignoreDuplicates), so the station showed stale/duplicate coverage.
+  // ATOMICITY: the destroy(s) + bulkCreate below MUST run in one transaction.
+  // Previously they were unwrapped, so a crash between "delete future shifts"
+  // and "recreate them" left the guard's/position's shifts permanently deleted
+  // with nothing recreated — a silent coverage gap on THE core assignment path.
+  await database.sequelize.transaction(async (t: any) => {
   const destroyWhere: any = { tenantId, startTime: { [Op.gte]: genStart }, [Op.or]: [{ guardAssignmentId: assignment.id }] };
   if ((assignment as any).positionId) destroyWhere[Op.or].push({ positionId: (assignment as any).positionId });
-  await database.shift.destroy({ where: destroyWhere, force: true });
+  await database.shift.destroy({ where: destroyWhere, force: true, transaction: t });
 
   // Enterprise guarantee — no double-booking: a guard holds at most ONE active
   // assignment, so any of their FUTURE shifts tied to a DIFFERENT, non-active
@@ -508,6 +513,7 @@ export async function generateShiftsForAssignment(
         status: { [Op.ne]: 'active' },
       },
       attributes: ['id'],
+      transaction: t,
     });
     const staleIds = (staleAssignments || []).map((a: any) => a.id).filter(Boolean);
     if (staleIds.length) {
@@ -519,6 +525,7 @@ export async function generateShiftsForAssignment(
           guardAssignmentId: { [Op.in]: staleIds },
         },
         force: true,
+        transaction: t,
       });
     }
   }
@@ -555,6 +562,7 @@ export async function generateShiftsForAssignment(
         endTime: { [Op.gt]: winStart },
       },
       attributes: ['startTime', 'endTime', 'guardAssignmentId'],
+      transaction: t,
     });
     const ex = (existing || [])
       .filter((e: any) => String(e.guardAssignmentId) !== String(assignment.id))
@@ -573,8 +581,9 @@ export async function generateShiftsForAssignment(
   }
 
   if (!rows.length) return;
-  await database.shift.bulkCreate(rows, { ignoreDuplicates: true });
+  await database.shift.bulkCreate(rows, { ignoreDuplicates: true, transaction: t });
   console.log(`[shiftGen] Created ${rows.length} shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
+  });
 }
 
 /**

@@ -158,20 +158,24 @@ export default (app) => {
       end.setUTCDate(end.getUTCDate() + 1);
       const whereDay: any = { tenantId, createdAt: { [Op.gte]: start, [Op.lt]: end } };
 
-      // Get all stations with coordinates (for guard locations and patrol base)
+      // Get stations with coordinates (for guard locations and patrol base).
+      // Capped: this feeds a live map, not an export — the sibling markers
+      // endpoint caps at 500 too. Prevents dumping a 10k-row roster per refresh.
       const stations = await req.database.station.findAll({
         where: { tenantId },
-        attributes: ['id', 'latitud', 'longitud', 'stationName']
+        attributes: ['id', 'latitud', 'longitud', 'stationName'],
+        limit: 1000,
       });
       const stationMap: any = {};
       stations.forEach((s: any) => {
         stationMap[s.id] = { latitude: s.latitud, longitude: s.longitud, name: s.stationName };
       });
 
-      // Get all security guards (on duty)
+      // Get security guards (on duty)
       const guards = await req.database.securityGuard.findAll({
         where: { tenantId },
-        attributes: ['id', 'fullName', 'stationId']
+        attributes: ['id', 'fullName', 'stationId'],
+        limit: 2000,
       });
 
       // Get active guard shifts (on duty) FILTERED BY DATE
