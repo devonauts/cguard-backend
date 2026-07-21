@@ -645,64 +645,58 @@ async function stepPatrol(db: any, ctx: DemoContext): Promise<DemoStepResult> {
   const station = ctx.stations[0];
   const guard = ctx.guards.day!;
 
-  // Find the patrol/ronda for this station (seeded with checkpoints).
-  const patrol = await db.patrol.findOne({
+  // Find the ronda (siteTour) for this station with its checkpoints (tags).
+  const tour = await db.siteTour.findOne({
     where: { tenantId: ctx.tenantId, deletedAt: null },
-    include: [{ model: db.patrolCheckpoint, as: 'checkpoints', required: false }],
+    include: [{ model: db.siteTourTag, as: 'tags', required: false }],
     order: [['createdAt', 'DESC']],
   });
-  if (!patrol) {
+  const checkpoints: any[] = tour && Array.isArray(tour.tags) ? tour.tags : [];
+  if (!tour || !checkpoints.length) {
     const e: any = new Error400(undefined, 'demo.noPatrol');
-    e.message = 'No hay ronda/patrulla configurada en el tenant demo. Verifica el seed.';
+    e.message = 'No hay ronda configurada en el tenant demo. Verifica el seed.';
     throw e;
   }
 
-  const checkpoints: any[] = Array.isArray(patrol.checkpoints) ? patrol.checkpoints : [];
-
-  const num = (v: any) => {
-    if (v == null) return null;
-    const n = Number(String(v).replace(/,/g, '.'));
-    return Number.isFinite(n) ? n : null;
-  };
-  const stLat = num(station.latitud ?? station.latitude) ?? 0;
-  const stLng = num(station.longitud ?? station.longitude) ?? 0;
   const now = new Date();
 
-  // The PatrolLogService spine assumes an (unused) quoted-string status enum and
-  // a proximity model that doesn't fit a scripted demo, so we write patrol logs
-  // directly (validation bypassed — the status column is free TEXT) and emit the
-  // ronda event ourselves. All but the last checkpoint scan OK; the last is the
-  // "missed" one that drives the live alert.
+  // Reuse (or create) an assignment for this tour, then write one checkpoint scan
+  // (tagScan) per tag. All but the last scan on-location; the last is out-of-location
+  // (validLocation:false) — the "novedad" that drives the live alert.
+  let assignment = await db.tourAssignment.findOne({ where: { tenantId: ctx.tenantId, siteTourId: tour.id }, order: [['createdAt', 'DESC']] });
+  if (!assignment) {
+    assignment = await db.tourAssignment.create({ siteTourId: tour.id, securityGuardId: guard.securityGuard.id, stationId: station.id, status: 'in_progress', startAt: now, tenantId: ctx.tenantId }, { validate: false }).catch(() => null);
+  }
+
   const created: Array<{ checkpoint: string; status: string }> = [];
   for (let i = 0; i < checkpoints.length; i++) {
     const cp = checkpoints[i];
     const isLast = i === checkpoints.length - 1 && checkpoints.length > 1;
-    const status = isLast ? 'Missed' : 'Scanned';
-    await db.patrolLog.create(
+    const ok = !isLast;
+    await db.tagScan.create(
       {
-        patrolId: patrol.id,
-        scannedById: guard.user.id,
-        scanTime: now,
-        latitude: num(cp.latitud ?? cp.latitude) ?? stLat,
-        longitude: num(cp.longitud ?? cp.longitude) ?? stLng,
-        validLocation: !isLast,
-        status,
+        scannedAt: now,
+        siteTourTagId: cp.id,
+        tourAssignmentId: assignment ? assignment.id : null,
+        securityGuardId: guard.securityGuard.id,
+        stationId: station.id,
+        validLocation: ok,
         tenantId: ctx.tenantId,
         createdById: guard.user.id,
         updatedById: guard.user.id,
       },
       { validate: false },
     );
-    created.push({ checkpoint: cp.name || cp.id, status });
+    created.push({ checkpoint: cp.name || cp.id, status: ok ? 'Scanned' : 'Missed' });
   }
 
   const missed = created.filter((c) => c.status === 'Missed').length;
   const scanned = created.length - missed;
 
-  // Update the patrol's completion state for the dashboard.
-  await patrol
-    .update({ completed: missed === 0, status: missed === 0 ? 'Completed' : 'Incomplete', completionTime: now })
-    .catch(() => {});
+  // Update the assignment's completion state for the dashboard.
+  if (assignment) {
+    await assignment.update({ status: missed === 0 ? 'completed' : 'incomplete', endAt: now }).catch(() => {});
+  }
 
   // Live event → CRM feed (ronda progress + missed-checkpoint alert).
   await storePlatformEvent(db, {
@@ -711,19 +705,19 @@ async function stepPatrol(db: any, ctx: DemoContext): Promise<DemoStepResult> {
     title: missed > 0 ? 'Ronda con novedad' : 'Ronda completada',
     body:
       `${guard.securityGuard.fullName || DEMO_NAMES.guardDay}: ${scanned} de ${created.length} puntos escaneados` +
-      `${missed > 0 ? `, ${missed} omitido(s)` : ''} en ${station.stationName || 'el puesto'}.`,
+      `${missed > 0 ? `, ${missed} con novedad` : ''} en ${station.stationName || 'el puesto'}.`,
     targetRoles: 'admin,operationsManager,securitySupervisor',
-    sourceEntityType: 'patrol',
-    sourceEntityId: patrol.id,
-    payload: { patrolId: patrol.id, scans: created, missed },
+    sourceEntityType: 'siteTour',
+    sourceEntityId: tour.id,
+    payload: { tourId: tour.id, scans: created, missed },
   }).catch(() => {});
 
   return result(
     def,
     true,
-    `Ronda registrada: ${scanned} de ${created.length} puntos escaneados, ${missed} omitido(s) — ` +
-      `progreso de ronda + alerta de punto omitido en vivo.`,
-    { patrolId: patrol.id, scans: created },
+    `Ronda registrada: ${scanned} de ${created.length} puntos escaneados, ${missed} con novedad — ` +
+      `progreso de ronda + alerta de punto con novedad en vivo.`,
+    { tourId: tour.id, scans: created },
   );
 }
 
@@ -1127,15 +1121,15 @@ export async function resetDemo(db: any): Promise<{ ok: boolean; message: string
   await del('guardShifts', db.guardShift, {});
   await del('attendanceExceptions', db.attendanceException, {});
 
-  // Patrol logs (step 4) — keep patrols/checkpoints (seeded), reset completion.
-  await del('patrolLogs', db.patrolLog, {});
+  // Ronda scans (step 4) — keep the siteTour/tags (seeded), reset assignment state.
+  await del('tagScans', db.tagScan, {});
   try {
-    await db.patrol.update(
-      { completed: false, completionTime: null },
+    await db.tourAssignment.update(
+      { status: 'scheduled', endAt: null, missedNotifiedAt: null },
       { where: { tenantId }, paranoid: false },
     );
   } catch (e: any) {
-    console.warn('[demo reset] patrol completion reset failed:', e?.message || e);
+    console.warn('[demo reset] tour assignment reset failed:', e?.message || e);
   }
 
   // Today's visitor (step 3) + incident (step 5).
@@ -1236,7 +1230,7 @@ export async function getState(db: any): Promise<any> {
     safeCount(db.shift, { startTime: { [Op.gte]: startOfDay } }),
     safeCount(db.guardShift, { punchOutTime: null }),
     safeCount(db.visitorLog, { visitDate: { [Op.gte]: startOfDay } }),
-    safeCount(db.patrolLog, {}),
+    safeCount(db.tagScan, {}), // step 4 = ronda: a checkpoint scan means a ronda ran
     safeCount(db.incident, { date: { [Op.gte]: startOfDay } }),
     safeCount(db.radioCheckSession, { status: 'running' }),
   ]);

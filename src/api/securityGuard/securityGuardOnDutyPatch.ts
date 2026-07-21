@@ -2,7 +2,6 @@ import Error403 from '../../errors/Error403';
 import ApiResponseHandler from '../apiResponseHandler';
 import SecurityGuardRepository from '../../database/repositories/securityGuardRepository';
 import GuardShiftRepository from '../../database/repositories/guardShiftRepository';
-import PatrolLogRepository from '../../database/repositories/patrolLogRepository';
 import IncidentRepository from '../../database/repositories/incidentRepository';
 // Use any for `req`/`res` because repository helpers expect a request-like
 // object with additional properties (currentUser, currentTenant, language,

@@ -308,16 +308,15 @@ export async function provisionSandbox(db: Db, opts: ProvisionOpts): Promise<San
       }, { validate: false });
     } catch { /* non-fatal */ }
 
-    // PATROL + checkpoints + completed scans.
+    // RONDA — real siteTour + checkpoints (siteTourTag) + completed scans (tagScan).
+    // (The old patrol/patrolLog system is retired; rondas live in siteTour/tagScan.)
     try {
-      const checkpoints: any[] = [];
+      const tour = await db.siteTour.create({ name: 'Ronda perimetral', description: 'Recorrido de seguridad del puesto', stationId: mainStation.id, postSiteId: site.id, securityGuardId: dia.guard.id, tenantId, createdById: admin.id }, { validate: false });
+      const assignment = await db.tourAssignment.create({ siteTourId: tour.id, securityGuardId: dia.guard.id, stationId: mainStation.id, status: 'completed', startAt: new Date(nowMs - 3 * 3600_000), endAt: new Date(nowMs - rint(2) * 3600_000), tenantId, createdById: admin.id }, { validate: false });
       for (let k = 0; k < 3; k++) {
-        checkpoints.push(await db.patrolCheckpoint.create({ tenantId, stationId: mainStation.id, name: `CP-${k + 1} ${pick(['Acceso', 'Parqueadero', 'Azotea', 'Perímetro'], k)}`, latitud: clat + jit() / 3, longitud: clng + jit() / 3, createdById: admin.id }));
-      }
-      const patrol = await db.patrol.create({ tenantId, stationId: mainStation.id, assignedGuardId: dia.user.id, scheduledTime: new Date(), completed: true, status: 'Completed', completionTime: new Date() });
-      try { await patrol.setCheckpoints(checkpoints.map((c) => c.id)); } catch { /* non-fatal */ }
-      for (const cp of checkpoints) {
-        await db.patrolLog.create({ patrolId: patrol.id, scannedById: dia.user.id, scanTime: new Date(nowMs - rint(3) * 3600_000), latitude: cp.latitud, longitude: cp.longitud, validLocation: true, status: 'Scanned', tenantId, createdById: dia.user.id, updatedById: dia.user.id }, { validate: false });
+        const cpName = `CP-${k + 1} ${pick(['Acceso', 'Parqueadero', 'Azotea', 'Perímetro'], k)}`;
+        const tag = await db.siteTourTag.create({ name: cpName, tagIdentifier: `DEMO-CP-${k + 1}-${String(mainStation.id).slice(0, 8)}`, siteTourId: tour.id, latitude: clat + jit() / 3, longitude: clng + jit() / 3, tenantId, createdById: admin.id }, { validate: false });
+        await db.tagScan.create({ scannedAt: new Date(nowMs - rint(3) * 3600_000), siteTourTagId: tag.id, tourAssignmentId: assignment.id, securityGuardId: dia.guard.id, stationId: mainStation.id, validLocation: true, tenantId, createdById: dia.user.id, updatedById: dia.user.id }, { validate: false });
       }
     } catch { /* non-fatal */ }
 
