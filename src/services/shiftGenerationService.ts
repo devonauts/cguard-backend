@@ -20,6 +20,30 @@ export const GENERATION_DAYS = 365; // Generate 1 full year of shifts
 export const MAX_ASSIGNMENT_HORIZON_DAYS = GENERATION_DAYS + 1;
 
 /**
+ * Retry a transactional fn on MySQL deadlock/lock-timeout. Shift regeneration
+ * runs many destroy+bulkCreate transactions on `shifts` concurrently (the
+ * optimizer regenerates ~10 assignments in parallel), which legitimately
+ * deadlocks — InnoDB picks a victim and asks it to retry. Without this the whole
+ * optimize/auto-config failed with ER_LOCK_DEADLOCK (74 hits in one seeding
+ * burst). Deadlocks roll back cleanly, so a bounded retry with backoff is safe.
+ */
+async function withDeadlockRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      const code = e?.parent?.code || e?.original?.code || e?.code;
+      const retryable = code === 'ER_LOCK_DEADLOCK' || code === 'ER_LOCK_WAIT_TIMEOUT';
+      if (!retryable || attempt >= tries) throw e;
+      // Exponential backoff with jitter (50/100/200ms + up to 50ms) to break the
+      // lock cycle instead of colliding again immediately.
+      const base = 50 * 2 ** (attempt - 1);
+      await new Promise((r) => setTimeout(r, base + Math.floor((attempt * 37) % 50)));
+    }
+  }
+}
+
+/**
  * Clamp a user-supplied generation end to the MAX_ASSIGNMENT_HORIZON_DAYS
  * horizon from genStart. A typo'd far-future endDate (e.g. 9999-12-31) would
  * otherwise walk millions of days and bulkCreate millions of rows, OOM-killing
@@ -494,7 +518,7 @@ export async function generateShiftsForAssignment(
   // Previously they were unwrapped, so a crash between "delete future shifts"
   // and "recreate them" left the guard's/position's shifts permanently deleted
   // with nothing recreated — a silent coverage gap on THE core assignment path.
-  await database.sequelize.transaction(async (t: any) => {
+  await withDeadlockRetry(() => database.sequelize.transaction(async (t: any) => {
   const destroyWhere: any = { tenantId, startTime: { [Op.gte]: genStart }, [Op.or]: [{ guardAssignmentId: assignment.id }] };
   if ((assignment as any).positionId) destroyWhere[Op.or].push({ positionId: (assignment as any).positionId });
   await database.shift.destroy({ where: destroyWhere, force: true, transaction: t });
@@ -583,7 +607,7 @@ export async function generateShiftsForAssignment(
   if (!rows.length) return;
   await database.shift.bulkCreate(rows, { ignoreDuplicates: true, transaction: t });
   console.log(`[shiftGen] Created ${rows.length} shifts for assignment ${assignment.id} (guard: ${assignment.guardId})`);
-  });
+  }));
 }
 
 /**

@@ -173,9 +173,15 @@ export default class PermissionChecker {
     // Shortcut: if the user has assigned clients or post sites for the
     // current tenant, allow some read permissions regardless of role.
     try {
-      const tenantForUser = this.currentUser?.tenants
-        ?.filter((t) => t.status === 'active')
-        ?.find((t) => t.tenant.id === this.currentTenant.id);
+      // Guard t.tenant / currentTenant nulls: a membership row can carry a null
+      // tenant relation, and currentTenant may be unset on some paths — either
+      // threw "Cannot read properties of null (reading 'id')" here.
+      const currentTenantId = this.currentTenant?.id;
+      const tenantForUser = currentTenantId
+        ? this.currentUser?.tenants
+            ?.filter((t) => t && t.status === 'active' && t.tenant)
+            ?.find((t) => t.tenant.id === currentTenantId)
+        : null;
 
       if (tenantForUser) {
         const assignedClients = tenantForUser.assignedClients || [];

@@ -65,6 +65,14 @@ export async function createAssignment(
   // guard assigned "hoy" onto tomorrow's shift.
   const startDate = input.startDate || (await tenantToday(database, tenantId));
 
+  // Validate startDate like endDate below: a malformed value ('Invalid date',
+  // a bad string) otherwise reached the DATE column and MySQL 500'd with
+  // "Incorrect DATE value" instead of a clean 400. (Only when caller-supplied;
+  // the tenantToday default is always valid.)
+  if (input.startDate && isNaN(new Date(startDate).getTime())) {
+    throw new AssignmentValidationError('La fecha de inicio no es válida (usa el formato YYYY-MM-DD).');
+  }
+
   // Bound the generation window at the API boundary: endDate must parse, must not
   // precede startDate, and must stay within the yearly generation horizon. A
   // typo'd year (e.g. 9999-12-31) would otherwise drive a multi-million-day

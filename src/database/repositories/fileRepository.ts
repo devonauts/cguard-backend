@@ -67,8 +67,15 @@ export default class FileRepository {
           );
         }
 
+        // `file` may be a Sequelize instance OR an already-plain object (some
+        // callers pass plained rows). Guard so `.get` on a plain object doesn't
+        // throw "file.get is not a function" (broke the guard task list's
+        // attachments — guardMeTasks → fillDownloadUrl).
+        const plain = typeof (file as any).get === 'function'
+          ? (file as any).get({ plain: true })
+          : file;
         return {
-          ...file.get({ plain: true }),
+          ...plain,
           downloadUrl,
         };
       }),
