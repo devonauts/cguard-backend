@@ -64,6 +64,7 @@ function buildDb(seed: {
   return db;
 }
 
+describe('crudG09Notifications (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -435,4 +436,5 @@ describe('crud-g09 · PUT /email-preferences', () => {
     await put(req, res);
     assert.notStrictEqual(res.statusCode, 200, 'db failure must not return success');
   });
+});
 });

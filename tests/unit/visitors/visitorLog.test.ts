@@ -163,6 +163,18 @@ function buildDb(seed: {
       },
     },
 
+    // guard↔station single source of truth. The ACL/create paths resolve a
+    // guard's stations via stationIdsForGuard() → guardAssignment.findAll, not
+    // the dead station⇄user junction. Derive it from each station's _guardIds.
+    guardAssignment: {
+      async findAll({ where }: any) {
+        const guardId = where && where.guardId;
+        return state.stations
+          .filter((r) => (r._guardIds || []).includes(guardId))
+          .map((r) => ({ stationId: r.id }));
+      },
+    },
+
     tenantUser: {
       async findOne({ where }: any) {
         return state.tenantUsers.find((r) => matchesWhere(r, where)) || null;

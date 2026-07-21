@@ -120,6 +120,21 @@ function buildRadioDb(opts: {
         return out;
       },
     },
+    // The service now authorizes replies via stationIdsForGuard() →
+    // guardAssignment.findAll (the single guard↔station store), not the old
+    // station↔assignedGuards pivot. Derive it from the same guardStations map.
+    guardAssignment: {
+      async findAll({ where }: any) {
+        const wantUserId = where?.guardId;
+        const out: any[] = [];
+        for (const [stationId, users] of Object.entries(guardStations)) {
+          if (wantUserId && (users as string[]).includes(wantUserId)) {
+            out.push(makeRow({ stationId }));
+          }
+        }
+        return out;
+      },
+    },
   };
   return { db, entries, sessions };
 }

@@ -279,6 +279,7 @@ function captureRoutes(registrar: (app: any) => void) {
 
 // Stub the cross-cutting side channels (audit log + file relations) — they are
 // not the persistence under test.
+describe('crudG15Misc (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -1186,4 +1187,5 @@ describe('crud-g15 · supervisor POST /me/location', () => {
     assert.strictEqual(db.supervisorProfile.calls.update.length, 0);
     assert.strictEqual(db.locationPing.calls.create.length, 0);
   });
+});
 });

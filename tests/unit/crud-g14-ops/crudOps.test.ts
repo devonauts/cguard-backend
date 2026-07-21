@@ -263,6 +263,7 @@ function fakeRes() {
   return res;
 }
 
+describe('crudOps (full-suite scope)', () => {
 afterEach(() => sinon.restore());
 
 // ═══════════════════════════════ TASK ════════════════════════════════════════
@@ -1042,4 +1043,5 @@ describe('g14-ops · BackupService confirm/reject', () => {
     assert.strictEqual(out, null);
     assert.strictEqual(db2.backupEvent.rows[0].__updateCalls.length, 0);
   });
+});
 });

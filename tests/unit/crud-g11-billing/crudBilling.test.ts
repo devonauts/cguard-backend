@@ -219,6 +219,7 @@ function repoOptions(db: any, tenantId = TENANT) {
 
 // Stub the cross-cutting side channels (audit log + file relations) — they are
 // not the persistence under test and would otherwise need their own models.
+describe('crudBilling (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -988,4 +989,5 @@ describe('crud-g11 · paymentService.create (append to invoice.payments)', () =>
     assert.strictEqual(db.__tx.rollbacks, 1);
     assert.strictEqual(db.__tx.commits, 0);
   });
+});
 });

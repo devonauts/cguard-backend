@@ -275,6 +275,7 @@ const assertSubset = (actual: any, expected: Record<string, any>, label = '') =>
 };
 
 // Cross-cutting side channels are not the persistence under test.
+describe('crudPatrols (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -1139,4 +1140,5 @@ describe('crud-g07 · rondaSettings upsert', () => {
     await PUT(fakeReq(db, { body: { ...FULL_SETTINGS } }), res);
     assert.strictEqual(res.statusCode, 500, 'db failure must not be swallowed into success');
   });
+});
 });

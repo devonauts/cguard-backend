@@ -224,6 +224,7 @@ function fakeRes() {
 
 // Stub the cross-cutting side channels (audit log + file relations) — they are
 // not the persistence under test and would otherwise need their own models.
+describe('crudClients (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -821,4 +822,5 @@ describe('crud-g01 · tenantUserClientAccounts handlers', () => {
     assert.strictEqual(res.statusCode, 400);
     assert.strictEqual(db.tenant_user_client_accounts.calls.findAll.length, 0);
   });
+});
 });

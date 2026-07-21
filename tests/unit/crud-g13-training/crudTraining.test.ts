@@ -321,6 +321,7 @@ function fakeRes() {
 }
 
 // Stub the cross-cutting side channels — not the persistence under test.
+describe('crudTraining (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -1071,4 +1072,5 @@ describe('crud-g13 · guardMeTaskComplete handler', () => {
     await guardMeTaskComplete(req, res);
     assert.ok(res.statusCode >= 500, `db failure must not produce a success (got ${res.statusCode})`);
   });
+});
 });

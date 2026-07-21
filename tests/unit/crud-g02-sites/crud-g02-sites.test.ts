@@ -666,7 +666,9 @@ describe('crud-g02 · station repository', () => {
     assert.strictEqual(written.createdById, USER.id);
 
     const row = db.station.rows[0];
-    assert.deepStrictEqual(row._sets.assignedGuards, ['g-1', 'g-2']);
+    // The stationAssignedGuardsUser pivot is DEAD — guard↔station lives only in
+    // guardAssignment. create() must NOT set assignedGuards (would resurrect it).
+    assert.strictEqual(row._sets.assignedGuards, undefined, 'dead pivot: assignedGuards is never set');
     assert.deepStrictEqual(row._sets.checkpoints, ['cp-1']);
   });
 
@@ -757,7 +759,8 @@ describe('crud-g02 · station repository', () => {
     const applied = row._updates[0];
     assert.strictEqual(applied.postSiteId, 'ps-2');
     assert.strictEqual(applied.stationOriginId, 'client-9');
-    assert.deepStrictEqual(row._sets.assignedGuards, ['g-7']);
+    // Dead pivot: update() ignores assignedGuards (guard↔station = guardAssignment).
+    assert.strictEqual(row._sets.assignedGuards, undefined, 'dead pivot: assignedGuards is never set on update');
   });
 
   it('update() from another tenant → 404, row untouched', async () => {

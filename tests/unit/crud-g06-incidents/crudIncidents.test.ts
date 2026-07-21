@@ -275,6 +275,7 @@ function fakeRes() {
 
 // Stub cross-cutting side channels (audit log + file relations) — not the
 // persistence under test.
+describe('crudIncidents (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -1180,4 +1181,5 @@ describe('crud-g06 · logSecurityEvent (the securityAuditLog writer)', () => {
     // Must resolve — the auth path cannot die because auditing failed.
     await logSecurityEvent(db, { event: 'signin', outcome: 'failure' });
   });
+});
 });

@@ -211,6 +211,7 @@ function fakeRes() {
 }
 
 // Side channels that are not the isolation under test.
+describe('clientIsolation (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -489,4 +490,5 @@ describe('per-client isolation', () => {
       );
     });
   });
+});
 });

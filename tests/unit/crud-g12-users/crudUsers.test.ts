@@ -287,6 +287,7 @@ function fakeRes() {
 
 // Stub the cross-cutting side channels (audit log + file relations) — they are
 // not the persistence under test.
+describe('crudUsers (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -1248,4 +1249,5 @@ describe('crud-g12 · settings save (SettingsService → settingsRepository)', (
     );
     assert.strictEqual(db.__tx.rollbacks, 1, 'transaction not rolled back');
   });
+});
 });

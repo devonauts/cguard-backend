@@ -249,6 +249,7 @@ function fakeRes() {
 
 // Cross-cutting side channels (audit log + file relations) are not the
 // persistence under test — stub them so they don't need their own harness.
+describe('crudG08Visitors (full-suite scope)', () => {
 beforeEach(() => {
   if ((AuditLogRepository as any).log?.restore) (AuditLogRepository as any).log.restore();
   sinon.stub(AuditLogRepository, 'log').resolves();
@@ -859,4 +860,5 @@ describe('crud-g08 · visitorPreAuthScan handler', () => {
     assert.strictEqual(res.body.reason, 'not_found');
     assert.strictEqual(db.visitorLog.calls.create.length, 0);
   });
+});
 });
