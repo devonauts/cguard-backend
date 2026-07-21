@@ -55,14 +55,23 @@ export default async (req, res, next) => {
       // show punchInTime as "last seen"), only the values get fresher — so the
       // timestamp follows the coordinate source to keep "last seen" truthful.
       const hasLive = plain.liveLatitude != null && plain.liveLongitude != null;
+      // Coerce to a consistent numeric type. liveLatitude/liveLongitude are
+      // DECIMAL (Sequelize returns them as strings) while punchInLatitude/
+      // punchInLongitude are DOUBLE (numbers) — without this the map client
+      // received a MIX of string and number coords across guards.
+      const toNum = (v: any) => {
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
       return {
         guardShiftId: plain.id,
         guardId: guard ? guard.id : null,
         userId: guard ? guard.guardId : null,
         fullName: guard ? guard.fullName : null,
         isOnDuty: guard ? guard.isOnDuty : null,
-        latitude: hasLive ? plain.liveLatitude : plain.punchInLatitude || null,
-        longitude: hasLive ? plain.liveLongitude : plain.punchInLongitude || null,
+        latitude: toNum(hasLive ? plain.liveLatitude : plain.punchInLatitude),
+        longitude: toNum(hasLive ? plain.liveLongitude : plain.punchInLongitude),
         punchInTime:
           (hasLive && plain.liveLocationAt) || plain.punchInTime || null,
       };

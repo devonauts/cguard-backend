@@ -172,9 +172,13 @@ export default (app) => {
       });
 
       // Get security guards (on duty)
+      // NOTE: securityGuard has no `stationId` column — selecting it raised an
+      // "Unknown column" SQL error that 500'd this whole endpoint. Guard markers
+      // are emitted without station coords (the stationMap lookup below is
+      // null-guarded), so the feed still returns a valid list.
       const guards = await req.database.securityGuard.findAll({
         where: { tenantId },
-        attributes: ['id', 'fullName', 'stationId'],
+        attributes: ['id', 'fullName'],
         limit: 2000,
       });
 
@@ -185,7 +189,9 @@ export default (app) => {
           createdAt: { [Op.gte]: start, [Op.lt]: end }, // ONLY for this date
           tenantId,
         },
-        attributes: ['id', 'guardNameId', 'stationId']
+        // guardShift has no `stationId` column either — same "Unknown column"
+        // 500 source. Only the fields actually consumed below are selected.
+        attributes: ['id', 'guardNameId']
       });
 
       // Aggregate all markers: guards on duty, reports, incidents, patrols, stations

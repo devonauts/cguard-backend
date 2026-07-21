@@ -284,7 +284,13 @@ class IncidentRepository {
           else if (typeof tenantUserRec.roles === 'string') {
             try { roles = JSON.parse(tenantUserRec.roles); } catch (e) { roles = []; }
           }
-          isAdmin = roles.includes((await import('../../security/roles')).default.values.admin);
+          // Every OFFICE / management role sees ALL incidents — not just the
+          // literal admin. This MUST stay in lockstep with findAndCountAll's
+          // SEES_ALL_INCIDENTS gate below, otherwise a supervisor/ops-manager/
+          // dispatcher sees an incident in the LIST but 404s opening the DETAIL.
+          const R = (await import('../../security/roles')).default.values;
+          const SEES_ALL_INCIDENTS = [R.superadmin, R.admin, R.operationsManager, R.administrativeSupervisor, R.administrativeAssistant, R.dispatcher].filter(Boolean);
+          isAdmin = roles.some((r: any) => SEES_ALL_INCIDENTS.includes(r));
         }
       }
 
@@ -331,8 +337,12 @@ class IncidentRepository {
 
         const matchesPost = incidentPlain.postSiteId && allowedPostSiteIds.includes(incidentPlain.postSiteId);
         const matchesClient = incidentPlain.clientId && allowedClientIds.includes(incidentPlain.clientId);
+        // Always let a user open an incident THEY created — mirrors the list's
+        // `createdById` clause. Without this a user who filed an incident but
+        // isn't assigned to its post-site sees the row but 404s on the detail.
+        const isCreator = incidentPlain.createdById && String(incidentPlain.createdById) === String(currentUser.id);
 
-        if (!matchesPost && !matchesClient) {
+        if (!matchesPost && !matchesClient && !isCreator) {
           throw new Error404();
         }
       }

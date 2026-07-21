@@ -18,6 +18,7 @@ import { Router } from 'express';
 import {
   fetchPendingEventsForUser,
   getRecentEventsForUser,
+  countUnreadEventsForUser,
   markEventRead,
   markAllEventsReadForUser,
   markEventsSent,
@@ -392,6 +393,34 @@ export default (routes: Router) => {
         );
 
         return res.json({ rows: events });
+      } catch (err) {
+        return next(err);
+      }
+    },
+  );
+
+  // ─── Unread count (notification badge) ────────────────────────────────────
+  routes.get(
+    '/:tenantId/events/unread',
+    async (req: any, res: any, next: any) => {
+      try {
+        const currentUser = req.currentUser;
+        const currentTenant = req.currentTenant;
+        const database = req.database;
+
+        if (!currentUser) return res.status(401).json({ message: 'Unauthorized' });
+        if (!currentTenant) return res.status(403).json({ message: 'Tenant not found' });
+
+        const { roles, seeAll } = getUserContext(currentUser, currentTenant.id);
+        const count = await countUnreadEventsForUser(
+          database,
+          currentTenant.id,
+          currentUser.id,
+          roles,
+          seeAll,
+        );
+
+        return res.json({ count });
       } catch (err) {
         return next(err);
       }
