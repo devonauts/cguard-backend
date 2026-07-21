@@ -126,8 +126,11 @@ export async function evaluateTrends(): Promise<void> {
       if (!shouldFire('rss_trend')) return;
       const mb = (b: number) => `${Math.round(b / 1048576)}MB`;
       const pct = Math.round((current / baseline - 1) * 100);
+      // The restart ceiling comes from the PM2 config (max_memory_restart, 900M).
+      // env-overridable so the alert text stays truthful if the ceiling changes.
+      const ceilingMb = num(process.env.ALERT_RESTART_CEILING_MB, 900);
       const title = 'Posible fuga de memoria';
-      const body = `El RSS del proceso creció de ${mb(baseline)} a ${mb(current)} (+${pct}%) en ~8h. PM2 reinicia a 450MB (sin caída), pero conviene revisar si sigue subiendo.`;
+      const body = `El RSS del proceso creció de ${mb(baseline)} a ${mb(current)} (+${pct}%) en ~8h. PM2 reinicia el worker a ${ceilingMb}MB (sin caída de servicio), pero conviene revisar si sigue subiendo. Nota: una operación masiva puntual (auto-asignar/optimizar muchas estaciones a la vez) puede inflar el RSS de forma transitoria sin ser una fuga.`;
       const models2 = require('../database/models').default;
       const { createNotification } = require('../services/superadmin/superadminNotificationService');
       await createNotification(models2(), {
