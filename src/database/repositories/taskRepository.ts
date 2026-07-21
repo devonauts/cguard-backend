@@ -134,7 +134,12 @@ class TaskRepository {
           'completedByGuardId',
           'importHash',
         ]),
-        taskBelongsToStationId: data.taskBelongsToStation || null,
+        // Presence-guarded (Sequelize ignores undefined): a partial update
+        // (e.g. marcar la tarea como hecha) must NOT detach it from its puesto.
+        // The sibling FKs go through lodash.pick and survive; this one was
+        // outside it and got null-clobbered on every partial update.
+        taskBelongsToStationId:
+          data.taskBelongsToStation !== undefined ? (data.taskBelongsToStation || null) : undefined,
         updatedById: currentUser.id,
       },
       {

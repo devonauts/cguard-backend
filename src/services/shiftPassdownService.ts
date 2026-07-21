@@ -72,9 +72,11 @@ export async function createPassdown(
     shiftKind,
     notes,
     instructionCount: instructions.length,
-    // Supervisors aren't station-bound, so their instructions can't become
-    // post-tasks — persist them inline instead (hydrated back the same shape).
-    instructionsJson: isSupervisor && instructions.length
+    // Instructions become post-tasks ONLY for a station-bound guard passdown
+    // (below). When there's no post to hang tasks on (a supervisor, OR a guard
+    // passdown with no station), persist them inline so the text isn't lost —
+    // otherwise instructionCount>0 with the actual instructions gone.
+    instructionsJson: (isSupervisor || !stationId) && instructions.length
       ? JSON.stringify(instructions.map((i) => ({
           taskToDo: i.text.trim().slice(0, 300),
           priority: ['alta', 'media', 'baja'].includes(String(i.priority)) ? i.priority : 'media',

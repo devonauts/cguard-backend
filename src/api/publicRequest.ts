@@ -18,7 +18,15 @@ export default async function publicRequest(req: Request, res: Response) {
 
     // reuse options and add currentTenant to satisfy repository call
     options.currentTenant = { id: tenantId };
-    const result = await RequestRepository.findById(requestId, options);
+    let result;
+    try {
+      result = await RequestRepository.findById(requestId, options);
+    } catch (notFound) {
+      // A valid share token whose request no longer exists (or is another
+      // tenant's) is a 404, not a server error. Swallowing it as 500 told the
+      // public caller "our fault" for a plain not-found.
+      return res.status(404).json({ message: 'Request not found' });
+    }
 
     // Return the request payload
     return res.json(result);

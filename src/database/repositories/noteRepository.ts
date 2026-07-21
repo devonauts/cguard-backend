@@ -43,12 +43,15 @@ class NoteRepository {
       throw new Error404();
     }
 
+    // Presence-guarded (Sequelize ignores undefined): editing just the title of
+    // a note must NOT wipe its body/date/attachment. The sibling
+    // ClientContactRepository.update already guards this way; note did not.
     record = await record.update(
       {
-        title: data.title,
-        description: data.description || null,
-        noteDate: data.noteDate || null,
-        attachment: data.attachment || null,
+        ...(data.title !== undefined ? { title: data.title } : {}),
+        ...(data.description !== undefined ? { description: data.description || null } : {}),
+        ...(data.noteDate !== undefined ? { noteDate: data.noteDate || null } : {}),
+        ...(data.attachment !== undefined ? { attachment: data.attachment || null } : {}),
         updatedById: currentUser.id,
       },
       { transaction },

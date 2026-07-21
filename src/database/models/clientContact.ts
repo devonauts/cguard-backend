@@ -29,6 +29,13 @@ export default function (sequelize) {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      // Contact role/title ("cargo") — the form + OpenAPI advertise `position`
+      // but there was no column, so it was silently dropped on every save.
+      position: {
+        type: DataTypes.STRING(150),
+        allowNull: true,
+        validate: { len: [0, 150] },
+      },
       postSiteId: {
         type: DataTypes.UUID,
         allowNull: true,

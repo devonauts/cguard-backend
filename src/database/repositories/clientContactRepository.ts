@@ -16,7 +16,10 @@ class ClientContactRepository {
     const createData = {
       name: data.name,
       email: data.email || null,
-      mobile: data.mobile || null,
+      // The form/OpenAPI send `phoneNumber`; the column is `mobile`. Accept both
+      // so the contact's phone isn't silently dropped on create.
+      mobile: data.mobile || data.phoneNumber || null,
+      position: data.position || null,
       description: data.description || null,
       postSiteId: data.postSiteId || data.postSite || null,
       allowGuard: data.allowGuard || false,
@@ -53,7 +56,11 @@ class ClientContactRepository {
       {
         name: data.name,
         email: data.email !== undefined ? (data.email || null) : undefined,
-        mobile: data.mobile !== undefined ? (data.mobile || null) : undefined,
+        mobile:
+          (data.mobile !== undefined || data.phoneNumber !== undefined)
+            ? (data.mobile || data.phoneNumber || null)
+            : undefined,
+        position: data.position !== undefined ? (data.position || null) : undefined,
         description: data.description !== undefined ? (data.description || null) : undefined,
         postSiteId:
           data.postSiteId !== undefined || data.postSite !== undefined

@@ -127,8 +127,12 @@ class RequestRepository {
           'status',
           'importHash',
         ]),
-        // keep dateTime consistent with incidentAt if dateTime is not provided
-        dateTime: data.dateTime || data.incidentAt || null,
+        // Presence-guarded like the FKs below (patch() already does this via
+        // hasOwnProperty): a status-only update must NOT null the stored dateTime.
+        dateTime:
+          (data.dateTime !== undefined || data.incidentAt !== undefined)
+            ? (data.dateTime || data.incidentAt || null)
+            : undefined,
         // Presence-guarded FKs (Sequelize ignores undefined): a partial update
         // (e.g. status-only) must not detach client/site/station/type links.
         // Sanitized guardId wins over the raw legacy guardName alias (see create).

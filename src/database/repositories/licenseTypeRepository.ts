@@ -60,6 +60,20 @@ class LicenseTypeRepository {
     let record = await options.database.licenseType.findOne({ where: { id, tenantId: currentTenant.id }, transaction });
     if (!record) throw new Error404();
 
+    // In-use guard: deleting a license type that guards' licenses reference would
+    // leave those guardLicense rows pointing at an orphan type. Block it, the way
+    // SecurityGuardService blocks deleting an occupied guard.
+    const inUse = await options.database.guardLicense.count({
+      where: { licenseTypeId: id, tenantId: currentTenant.id },
+      transaction,
+    });
+    if (inUse > 0) {
+      throw new Error400(
+        options.language,
+        'El tipo de licencia está en uso por licencias de vigilantes y no se puede eliminar.',
+      );
+    }
+
     await record.destroy({ transaction });
 
     await this._createAuditLog(AuditLogRepository.DELETE, record, record, options);

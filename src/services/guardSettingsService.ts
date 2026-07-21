@@ -31,6 +31,11 @@ export const DEFAULT_GUARD_SETTINGS: GuardSettings = {
 };
 
 const clamp = (v: any, min: number, max: number, fallback: number) => {
+  // A CLEARED field arrives as null / '' — that means "use the default", NOT the
+  // range minimum. Number(null)===0 and Number('')===0 are finite, so without
+  // this guard a blanked "días antes de vencimiento" saved as 7 (min) instead of
+  // the intended default 30.
+  if (v === null || v === undefined || v === '') return fallback;
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));

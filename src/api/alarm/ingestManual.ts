@@ -35,7 +35,10 @@ export default async (req, res) => {
       // Pass the operator-supplied classification through so the normalizer can
       // honor an explicit manual category/priority/description instead of a code map.
       category: body.category,
-      priority: body.priority,
+      // Coerce: a <select> sends priority as a string ('1'). The normalizer only
+      // honours a NUMBER, else defaults to 3 (media) — so a manual atraco sent as
+      // '1' silently degraded from crítica to media. Number() keeps its urgency.
+      priority: body.priority != null && body.priority !== '' ? Number(body.priority) : body.priority,
       description: body.description,
     };
 
