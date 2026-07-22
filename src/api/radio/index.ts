@@ -57,11 +57,69 @@ export default (app) => {
       const channel = String(raw).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'general';
       const room = `radio:${tenantId}:${channel}`;
 
-      const name =
+      // Radio roster label = FIRST NAME + nominativo, e.g. "David (Administración)"
+      // or "Juan (Garita 1)". Full names crowd the channel and read like a
+      // directory; on the air you want who + where. The nominativo is the
+      // station call-sign (station.nickname, falling back to its name) for guards
+      // on post, and "Administración" for office/admin/dispatch.
+      const fullName =
         (user.fullName && String(user.fullName).trim()) ||
         [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
-        user.email ||
+        '';
+      const first =
+        (user.firstName && String(user.firstName).trim()) ||
+        (fullName ? fullName.split(/\s+/)[0] : '') ||
+        (user.email ? String(user.email).split('@')[0] : '') ||
         'Radio';
+
+      let nominativo = 'Administración';
+      try {
+        const tenantRec = (Array.isArray(user.tenants) ? user.tenants : []).find(
+          (t: any) => t && t.tenant && String(t.tenant.id) === String(tenantId) && t.status === 'active',
+        );
+        const roles: string[] = Array.isArray(tenantRec?.roles)
+          ? tenantRec.roles
+          : (tenantRec?.roles ? [tenantRec.roles] : []);
+        // A vigilante on post is labelled by their station; everyone else
+        // (admin, dispatcher, office, supervisor) is "Administración".
+        if (roles.includes('securityGuard')) {
+          const sg = await req.database.securityGuard.findOne({
+            where: { guardId: user.id, tenantId, deletedAt: null },
+            attributes: ['id'],
+          });
+          let stationId: string | null = null;
+          if (sg) {
+            // Prefer the station they're CLOCKED IN at (radio joins at clock-in);
+            // fall back to their active assignment's station.
+            const gs = await req.database.guardShift.findOne({
+              where: { guardNameId: sg.id, tenantId, punchOutTime: null, deletedAt: null },
+              attributes: ['stationNameId'],
+              order: [['punchInTime', 'DESC']],
+            });
+            stationId = (gs && gs.stationNameId) || null;
+          }
+          if (!stationId) {
+            const ga = await req.database.guardAssignment.findOne({
+              where: { guardId: user.id, tenantId, status: 'active', deletedAt: null },
+              attributes: ['stationId'],
+            });
+            stationId = (ga && ga.stationId) || null;
+          }
+          if (stationId) {
+            const st = await req.database.station.findByPk(stationId, {
+              attributes: ['nickname', 'stationName'],
+            });
+            nominativo =
+              (st && st.nickname && String(st.nickname).trim()) ||
+              (st && st.stationName && String(st.stationName).trim()) ||
+              'Puesto';
+          } else {
+            nominativo = 'Puesto';
+          }
+        }
+      } catch { /* keep 'Administración' fallback */ }
+
+      const name = `${first} (${nominativo})`;
 
       // TTL must outlive a full guard shift (up to 12h + relevo margin): the app
       // joins once at clock-in, and livekit-client's own reconnects reuse this
