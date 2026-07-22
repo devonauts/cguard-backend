@@ -341,10 +341,103 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
 
   io.on('connection', (socket) => {
     joinSocketRooms(socket);
+    registerCoBrowse(io, socket);
   });
 
   console.log(`[realtime] socket.io listening on ${SOCKET_PATH}`);
   return io;
+}
+
+// ─── Co-browse: superadmin live session viewing (rrweb relay) ────────────────
+// A superadmin WATCHES a tenant user's live CRM session: the tenant's browser
+// streams rrweb events (DOM + cursor/clicks/scroll) which the server relays to
+// the watching superadmin(s). Rooms: `cobrowse:<tenantId>:<userId>` hold the
+// watchers; the target CRM sits in its normal `tenant:<id>:user:<uid>` room.
+// Security: only sockets whose handshake resolved `superadmin` may watch or
+// receive a stream, and a tenant socket can only stream ITS OWN session (the
+// room is derived from its own socket.data, never from client input).
+function registerCoBrowse(io: any, socket: any): void {
+  const sd = () => (socket.data as any) || {};
+  const roomOf = (tenantId: string, userId: string) => `cobrowse:${tenantId}:${userId}`;
+  const watchersIn = (room: string) => io.sockets.adapter.rooms.get(room)?.size || 0;
+  const stopTarget = (tenantId: string, userId: string) =>
+    io.to(`tenant:${tenantId}:user:${userId}`).emit('cobrowse:stop', {});
+
+  // Superadmin: who is online (CRM) for a tenant, so they can pick a session.
+  socket.on('cobrowse:online', (payload: any, cb: any) => {
+    try {
+      if (!sd().superadmin) return typeof cb === 'function' && cb({ ok: false, error: 'forbidden' });
+      const tenantId = String(payload?.tenantId || '');
+      if (!tenantId) return typeof cb === 'function' && cb({ ok: false, error: 'bad_request' });
+      const seen = new Map<string, any>();
+      const tRoom = io.sockets.adapter.rooms.get(`tenant:${tenantId}`);
+      if (tRoom) {
+        for (const sid of tRoom) {
+          const d = (io.sockets.sockets.get(sid)?.data as any) || {};
+          if (d.userId && !d.superadmin) {
+            seen.set(String(d.userId), { userId: String(d.userId), name: d.name || null, roles: d.roles || [] });
+          }
+        }
+      }
+      typeof cb === 'function' && cb({ ok: true, users: Array.from(seen.values()) });
+    } catch {
+      typeof cb === 'function' && cb({ ok: false, error: 'error' });
+    }
+  });
+
+  // Superadmin: start watching a specific user's session.
+  socket.on('cobrowse:watch', (payload: any, cb: any) => {
+    try {
+      if (!sd().superadmin) return typeof cb === 'function' && cb({ ok: false, error: 'forbidden' });
+      const tenantId = String(payload?.tenantId || '');
+      const userId = String(payload?.userId || '');
+      if (!tenantId || !userId) return typeof cb === 'function' && cb({ ok: false, error: 'bad_request' });
+      const room = roomOf(tenantId, userId);
+      socket.join(room);
+      // Tell the target CRM to (re)start recording + show the consent banner.
+      // `fresh:true` asks it to send a full snapshot so a late watcher isn't blank.
+      io.to(`tenant:${tenantId}:user:${userId}`).emit('cobrowse:start', {
+        by: sd().name || sd().userId || 'Soporte',
+        fresh: true,
+      });
+      typeof cb === 'function' && cb({ ok: true });
+    } catch {
+      typeof cb === 'function' && cb({ ok: false, error: 'error' });
+    }
+  });
+
+  // Superadmin: stop watching (or the tab closes → 'disconnecting' below).
+  socket.on('cobrowse:stop', (payload: any) => {
+    if (!sd().superadmin) return;
+    const tenantId = String(payload?.tenantId || '');
+    const userId = String(payload?.userId || '');
+    if (!tenantId || !userId) return;
+    const room = roomOf(tenantId, userId);
+    socket.leave(room);
+    if (watchersIn(room) === 0) stopTarget(tenantId, userId);
+  });
+
+  // Tenant CRM: relay a batch of rrweb events for ITS OWN session only.
+  socket.on('cobrowse:event', (payload: any) => {
+    const tenantId = sd().tenantId;
+    const userId = sd().userId;
+    if (!tenantId || !userId || sd().superadmin) return;
+    const room = roomOf(String(tenantId), String(userId));
+    if (watchersIn(room) === 0) return; // nobody watching → drop
+    socket.to(room).emit('cobrowse:stream', payload);
+  });
+
+  // If a watcher's socket drops, and it was the last one, stop the target.
+  socket.on('disconnecting', () => {
+    for (const room of socket.rooms) {
+      if (typeof room === 'string' && room.startsWith('cobrowse:') && sd().superadmin) {
+        if (watchersIn(room) <= 1) {
+          const parts = room.split(':'); // cobrowse:<tenantId>:<userId>
+          if (parts.length === 3) stopTarget(parts[1], parts[2]);
+        }
+      }
+    }
+  });
 }
 
 function safeParse(value: any): any {
