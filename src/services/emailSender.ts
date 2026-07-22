@@ -358,6 +358,10 @@ export default class EmailSender {
               'https://apps.apple.com/us/app/cguardpro/id6776068129';
             rendered = rendered.replace(/{{androidAppUrl}}/g, androidAppUrl);
             rendered = rendered.replace(/{{iosAppUrl}}/g, iosAppUrl);
+            // Official store badge images (self-hosted on the frontend, publicly reachable).
+            const badgeBase = `${(getConfig().FRONTEND_URL || 'https://app.cguardpro.com').replace(/\/+$/, '')}/assets/badges`;
+            rendered = rendered.replace(/{{appStoreBadgeUrl}}/g, `${badgeBase}/app-store.png`);
+            rendered = rendered.replace(/{{googlePlayBadgeUrl}}/g, `${badgeBase}/google-play.png`);
             rendered = rendered.replace(/<!--\/?GUARD_APP-->/g, '');
           } else {
             rendered = rendered.replace(/<!--GUARD_APP-->[\s\S]*?<!--\/GUARD_APP-->/g, '');
