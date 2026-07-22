@@ -36,7 +36,29 @@ export function decryptPrivateUrl(token: string) {
   return out.toString('utf8');
 }
 
+/**
+ * Converts a RAW `?privateUrl=...` file-download link into a self-authenticating
+ * `?fileToken=...` link. A raw privateUrl now requires a session (IDOR hardening),
+ * so email <img> tags loading it unauthenticated get 403 → broken image. The
+ * fileToken form is unforgeable (AES-256-GCM) yet public, and never expires, so it
+ * renders in Gmail/Outlook. Returns the URL unchanged when it's already signed,
+ * isn't a file-download link, or signing isn't possible.
+ */
+export function toPublicFileUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return url || '';
+  if (url.includes('fileToken=')) return url;
+  const m = url.match(/[?&]privateUrl=([^&]+)/);
+  if (!m) return url;
+  try {
+    const token = encryptPrivateUrl(decodeURIComponent(m[1]));
+    return `${url.split('?')[0]}?fileToken=${encodeURIComponent(token)}`;
+  } catch {
+    return url;
+  }
+}
+
 export default {
   encryptPrivateUrl,
   decryptPrivateUrl,
+  toPublicFileUrl,
 };

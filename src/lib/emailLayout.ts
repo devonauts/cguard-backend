@@ -118,7 +118,11 @@ export function renderNotificationEmail(input: NotificationEmailInput): string {
     }
 
     // Logo — strip the <img> entirely when no tenant logo is available (mirrors emailSender).
-    const logoUrl = input.logoUrl ? String(input.logoUrl).trim() : '';
+    // Re-sign a raw privateUrl logo as a public fileToken URL so it loads in email
+    // clients (a raw privateUrl now 403s unauthenticated after the IDOR fix).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { toPublicFileUrl } = require('../utils/privateUrlEncryption');
+    const logoUrl = input.logoUrl ? toPublicFileUrl(String(input.logoUrl).trim()) : '';
     if (logoUrl) {
       rendered = rendered.replace(/{{logoUrl}}/g, escapeHtml(logoUrl));
     } else {

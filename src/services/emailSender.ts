@@ -267,6 +267,17 @@ export default class EmailSender {
               console.warn('[EmailSender] tenant logo lookup failed', (e as any)?.message || e);
             }
           }
+          // A RAW privateUrl download link now requires a session (IDOR hardening),
+          // so an email <img> loads it UNauthenticated and gets 403 → broken logo.
+          // Re-sign it as an unforgeable, public fileToken URL that renders in email.
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { toPublicFileUrl } = require('../utils/privateUrlEncryption');
+            tenantLogoUrl = toPublicFileUrl(tenantLogoUrl);
+          } catch (e) {
+            console.warn('[EmailSender] logo fileToken re-sign failed', (e as any)?.message || e);
+          }
+
           const tenantName = (tenantObj && (tenantObj.name || tenantObj.displayName)) || '';
           let rendered = htmlTemplate;
 
