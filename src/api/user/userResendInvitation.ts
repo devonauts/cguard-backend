@@ -66,6 +66,8 @@ export default async (req, res) => {
         inviteLink: link,
         registrationLink: link,
         invitation: true,
+        // Guards get the worker-app (Android) download block; other roles don't.
+        guardApp: isGuardInvite,
       });
 
       // Always send to the invited user's OWN email. Never honor a client-supplied

@@ -328,6 +328,20 @@ export default class EmailSender {
           const supportEmail = (getConfig() as any).SUPPORT_EMAIL || (getConfig() as any).SENDGRID_EMAIL_FROM || '';
           rendered = rendered.replace(/{{supportEmail}}/g, supportEmail);
 
+          // Vigilante (guard) app-download block — only guard invitations carry a
+          // `guard` object. For guards, inject the Play Store link and keep the block;
+          // for staff/admin invitations, strip the whole block so they don't see it.
+          const isGuardInvite = !!(this.variables && (this.variables.guard || this.variables.guardApp));
+          if (isGuardInvite) {
+            const androidAppUrl =
+              (getConfig() as any).GUARD_APP_ANDROID_URL ||
+              'https://play.google.com/store/apps/details?id=com.cguardpro.operaciones';
+            rendered = rendered.replace(/{{androidAppUrl}}/g, androidAppUrl);
+            rendered = rendered.replace(/<!--\/?GUARD_APP-->/g, '');
+          } else {
+            rendered = rendered.replace(/<!--GUARD_APP-->[\s\S]*?<!--\/GUARD_APP-->/g, '');
+          }
+
           // Deduplicate quick repeated sends: skip if same recipient+subject sent within the last few seconds
           try {
             const key = `${recipient}::${subject}`;
