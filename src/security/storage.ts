@@ -22,7 +22,12 @@ export default class Storage {
       settingsLogos: {
         id: 'settingsLogos',
         folder: 'tenant/:tenantId/settings/logos',
-        maxSizeInBytes: 10 * 1024 * 1024,
+        // 50 MB: high-res company logos exported as PNG routinely exceed the old
+        // 10 MB cap, which failed the upload with a 413 while a smaller re-export
+        // "worked" — a confusing, size-dependent failure for admins uploading a
+        // brand logo. Logos are served inline (not bandwidth-critical); 50 MB
+        // comfortably covers even a large print-res export.
+        maxSizeInBytes: 50 * 1024 * 1024,
         publicRead: true,
       },
       // Legal documents for tenants (contracts, estimates, invoices uploads)
@@ -40,7 +45,9 @@ export default class Storage {
         id: 'settingsBackgroundImages',
         folder:
           'tenant/:tenantId/settings/backgroundImages',
-        maxSizeInBytes: 10 * 1024 * 1024,
+        // Match settingsLogos: full-bleed background images are even larger than
+        // logos, so the old 10 MB cap hit the same size-dependent upload failure.
+        maxSizeInBytes: 50 * 1024 * 1024,
         publicRead: true,
       },
       bannerSuperiorAppImageUrl: {
