@@ -342,7 +342,11 @@ export default class EmailSender {
             const androidAppUrl =
               (getConfig() as any).GUARD_APP_ANDROID_URL ||
               'https://play.google.com/store/apps/details?id=com.cguardpro.operaciones';
+            const iosAppUrl =
+              (getConfig() as any).GUARD_APP_IOS_URL ||
+              'https://apps.apple.com/us/app/cguardpro/id6776068129';
             rendered = rendered.replace(/{{androidAppUrl}}/g, androidAppUrl);
+            rendered = rendered.replace(/{{iosAppUrl}}/g, iosAppUrl);
             rendered = rendered.replace(/<!--\/?GUARD_APP-->/g, '');
           } else {
             rendered = rendered.replace(/<!--GUARD_APP-->[\s\S]*?<!--\/GUARD_APP-->/g, '');
