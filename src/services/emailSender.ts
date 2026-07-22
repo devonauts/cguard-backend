@@ -185,8 +185,11 @@ export default class EmailSender {
       };
 
       let templateFile = chooseTemplate();
-      // Force app-invitation template when flag is set
-      if (this.variables && this.variables.appInvite) {
+      // Force "download the app" template (guards who already have an account).
+      if (this.variables && this.variables.appDownload) {
+        templateFile = 'app-download.html';
+      } else if (this.variables && this.variables.appInvite) {
+        // Force app-invitation template when flag is set
         templateFile = 'invitation-app.html';
       } else if (this.variables && this.variables.clientInvitation) {
         // Force client welcome template when flag is set
@@ -213,7 +216,10 @@ export default class EmailSender {
         }
 
         // Determine subject default per template
-        if (templateFile === 'invitation-app.html') {
+        if (templateFile === 'app-download.html') {
+          const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
+          subject = tName ? `${tName} — Descarga tu app de vigilante` : 'Descarga tu app de vigilante';
+        } else if (templateFile === 'invitation-app.html') {
           const tName = (this.variables && this.variables.tenant && (this.variables.tenant.name || this.variables.tenant.displayName)) || '';
           subject = tName ? `Descarga Mi Seguridad — ${tName}` : 'Descarga la app Mi Seguridad';
         } else if (templateFile === 'invitation-client.html') {
@@ -331,7 +337,7 @@ export default class EmailSender {
           // Vigilante (guard) app-download block — only guard invitations carry a
           // `guard` object. For guards, inject the Play Store link and keep the block;
           // for staff/admin invitations, strip the whole block so they don't see it.
-          const isGuardInvite = !!(this.variables && (this.variables.guard || this.variables.guardApp));
+          const isGuardInvite = !!(this.variables && (this.variables.guard || this.variables.guardApp || this.variables.appDownload));
           if (isGuardInvite) {
             const androidAppUrl =
               (getConfig() as any).GUARD_APP_ANDROID_URL ||
