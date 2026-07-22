@@ -52,22 +52,39 @@ export async function broadcastPcmToLiveKit(
   const { Room, AudioSource, LocalAudioTrack, TrackPublishOptions, TrackSource, AudioFrame } = lib;
   const room = roomFor(tenantId, channel);
   const rtc = new Room();
+  // Hard ceiling on how long the bot may stay in the room. Without it, a hung
+  // captureFrame / waitForPlayout (seen when no client is subscribed to drain the
+  // track) keeps the headless publisher connected until its token TTL — the SFU
+  // holds it as an active speaker the whole time, so every guard's channel stays
+  // stuck on "Central de monitoreo está hablando" and reads as busy. Cap = clip
+  // length + 5s slack (min 5s, hard max 2 min) so the bot ALWAYS leaves promptly,
+  // freeing the channel the moment its report ends.
+  const clipMs = Math.ceil((pcm.length / Math.max(1, inRate)) * 1000);
+  const maxMs = Math.min(120000, Math.max(5000, clipMs + 5000));
+  let guard: ReturnType<typeof setTimeout> | null = null;
   try {
     const token = await botToken(room, `radiocheck-${tenantId}`, speakerName);
     await rtc.connect(wsUrl(), token, { autoSubscribe: false, dynacast: false });
     const source = new AudioSource(inRate, 1);
     const track = LocalAudioTrack.createAudioTrack('radiocheck', source);
     await rtc.localParticipant!.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
-    const per = Math.max(1, Math.floor(inRate / 100)); // 10ms frames
-    for (let off = 0; off < pcm.length; off += per) {
-      const slice = pcm.subarray(off, Math.min(off + per, pcm.length));
-      await source.captureFrame(new AudioFrame(Int16Array.from(slice), inRate, 1, slice.length));
-    }
-    await source.waitForPlayout();
+    const stream = (async () => {
+      const per = Math.max(1, Math.floor(inRate / 100)); // 10ms frames
+      for (let off = 0; off < pcm.length; off += per) {
+        const slice = pcm.subarray(off, Math.min(off + per, pcm.length));
+        await source.captureFrame(new AudioFrame(Int16Array.from(slice), inRate, 1, slice.length));
+      }
+      await source.waitForPlayout();
+    })();
+    await Promise.race([
+      stream,
+      new Promise<void>((_, reject) => { guard = setTimeout(() => reject(new Error('broadcast timeout')), maxMs); }),
+    ]);
   } catch (e: any) {
     console.error('[livekitBroadcast] failed:', e?.message || e);
   } finally {
-    try { await rtc.disconnect(); } catch { /* ignore */ }
+    if (guard) { try { clearTimeout(guard); } catch { /* ignore */ } }
+    try { await rtc.disconnect(); } catch { /* ignore */ } // bot leaves → channel frees
   }
 }
 
