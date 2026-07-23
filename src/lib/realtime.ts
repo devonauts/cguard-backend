@@ -358,6 +358,19 @@ export async function initRealtime(httpServer: any): Promise<IOServer> {
 // room is derived from its own socket.data, never from client input).
 function registerCoBrowse(io: any, socket: any): void {
   const sd = () => (socket.data as any) || {};
+
+  // DIAGNOSTIC (timing-independent): log the moment a superadmin socket connects
+  // and every cobrowse:* event any socket sends. Lets us trace the flow from the
+  // server logs without the browser console.
+  if (sd().superadmin) {
+    console.log(`[cobrowse] superadmin socket CONNECTED user=${sd().userId} tenant=${sd().tenantId}`);
+  }
+  socket.onAny((event: string, ...args: any[]) => {
+    if (typeof event === 'string' && event.startsWith('cobrowse')) {
+      const p = args && args[0];
+      console.log(`[cobrowse] onAny event=${event} superadmin=${!!sd().superadmin} sockTenant=${sd().tenantId} sockUser=${sd().userId} payloadKeys=${p && typeof p === 'object' ? Object.keys(p).join(',') : typeof p}`);
+    }
+  });
   const roomOf = (tenantId: string, userId: string) => `cobrowse:${tenantId}:${userId}`;
   const stopTarget = (tenantId: string, userId: string) =>
     io.to(`tenant:${tenantId}:user:${userId}`).emit('cobrowse:stop', {});
