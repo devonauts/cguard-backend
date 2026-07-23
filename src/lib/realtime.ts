@@ -464,6 +464,38 @@ function registerCoBrowse(io: any, socket: any): void {
     socket.to(roomOf(String(tenantId), String(userId))).emit('cobrowse:stream', payload);
   });
 
+  // Superadmin → tenant: shared-control channel. The superadmin's cursor moves,
+  // clicks and scrolls are relayed to the tenant's CRM, which shows the remote
+  // cursor and — when the superadmin holds the turn — replays the action on the
+  // real DOM. Only a superadmin may drive; the target is picked by payload ids.
+  socket.on('cobrowse:control', (payload: any) => {
+    if (!sd().superadmin) return;
+    const tenantId = String(payload?.tenantId || '');
+    const userId = String(payload?.userId || '');
+    if (!tenantId || !userId) return;
+    io.to(`tenant:${tenantId}:user:${userId}`).emit('cobrowse:control', {
+      by: sd().name || sd().userId || 'Soporte',
+      event: payload?.event,
+    });
+  });
+
+  // Turn handoff, both directions. Superadmin announces take/release to the tenant;
+  // the tenant can reclaim control, which is relayed back to the watching superadmin.
+  socket.on('cobrowse:turn', (payload: any) => {
+    const holder = payload?.holder === 'support' ? 'support' : 'tenant';
+    if (sd().superadmin) {
+      const tenantId = String(payload?.tenantId || '');
+      const userId = String(payload?.userId || '');
+      if (!tenantId || !userId) return;
+      io.to(`tenant:${tenantId}:user:${userId}`).emit('cobrowse:turn', { holder, by: sd().name || 'Soporte' });
+    } else {
+      const tenantId = sd().tenantId;
+      const userId = sd().userId;
+      if (!tenantId || !userId) return;
+      socket.to(roomOf(String(tenantId), String(userId))).emit('cobrowse:turn', { holder });
+    }
+  });
+
   // If a watcher's socket drops and it was the last one anywhere, stop the target.
   socket.on('disconnecting', async () => {
     if (!sd().superadmin) return;
