@@ -5,9 +5,11 @@
  * `req.database`, reusing the shared superadmin helpers and the billing engine.
  */
 import { Request } from 'express';
+import jwt from 'jsonwebtoken';
 import { db, listParams } from './superadminHelpers';
 import { quote } from '../../lib/billingModel';
 import { getSummary } from '../subscriptionService';
+import { getConfig } from '../../config';
 import Error404 from '../../errors/Error404';
 import Error400 from '../../errors/Error400';
 
@@ -526,5 +528,55 @@ export async function exportTenant(req: Request, id: string): Promise<any> {
     tenant: tenant.get ? tenant.get({ plain: true }) : tenant,
     tables,
     exportedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * POST /superadmin/tenants/:id/access — mint a short-lived CRM token so the
+ * superadmin can enter the tenant's CRM directly, even when no tenant user is
+ * online. Picks an admin member (or any usable member) of the tenant and signs a
+ * 30-min JWT for them. The panel opens the CRM with this token (same-origin
+ * localStorage), so the token never travels in a URL. superadmin-gated + audited.
+ */
+export async function accessTenant(req: Request): Promise<any> {
+  const database = db(req);
+  const tenantId = String((req.params as any)?.id || '');
+  if (!tenantId) throw new Error400((req as any).language, 'tenantId requerido');
+
+  const tenant = await database.tenant.findByPk(tenantId, { attributes: ['id', 'name'] });
+  if (!tenant) throw new Error404();
+
+  const memberships = await database.tenantUser.findAll({
+    where: { tenantId },
+    include: [{ model: database.user, as: 'user', attributes: ['id', 'email', 'firstName', 'lastName', 'fullName'] }],
+    order: [['createdAt', 'ASC']],
+  });
+  const rolesOf = (m: any): string[] =>
+    (Array.isArray(m.roles) ? m.roles : m.roles ? [m.roles] : []).map((r: string) => String(r).toLowerCase());
+  // Usable = has a real user + email and isn't a still-pending invitation.
+  const usable = memberships.filter(
+    (m: any) => m.user && m.user.email && String(m.status || '').toLowerCase() !== 'invited',
+  );
+  const chosen = usable.find((m: any) => rolesOf(m).includes('admin')) || usable[0];
+  if (!chosen || !chosen.user) {
+    const e: any = new Error('El tenant no tiene un usuario con acceso al CRM.');
+    e.code = 404;
+    throw e;
+  }
+
+  const asUser = chosen.user;
+  const token = jwt.sign(
+    { id: asUser.id, tenantId, impersonatedBy: (req as any).currentUser?.id || null },
+    getConfig().AUTH_JWT_SECRET,
+    { expiresIn: '30m' },
+  );
+  const frontendUrl = String(getConfig().FRONTEND_URL || 'https://app.cguardpro.com').replace(/\/+$/, '');
+  return {
+    token,
+    tenantId,
+    tenantName: tenant.name,
+    userId: asUser.id,
+    userName: asUser.fullName || [asUser.firstName, asUser.lastName].filter(Boolean).join(' ') || asUser.email,
+    frontendUrl,
   };
 }

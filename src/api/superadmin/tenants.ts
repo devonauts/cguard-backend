@@ -22,6 +22,7 @@ import {
   setBillingStatus,
   markImplementationPaid,
   changePlan,
+  accessTenant,
 } from '../../services/superadmin/tenantsService';
 
 export default (router) => {
@@ -129,6 +130,25 @@ export default (router) => {
         tenantId: req.params.id,
         statusCode: 200,
         details: {},
+      });
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // POST /tenants/:id/access — mint a CRM token to enter the tenant directly
+  // (works even when no tenant user is online). superadmin-gated + audited.
+  router.post('/tenants/:id/access', async (req, res) => {
+    try {
+      const payload = await accessTenant(req);
+      await writeAudit(req, {
+        action: 'tenant.access',
+        targetType: 'tenant',
+        targetId: req.params.id,
+        tenantId: req.params.id,
+        statusCode: 200,
+        details: { asUserId: payload.userId, asUserName: payload.userName },
       });
       await ApiResponseHandler.success(req, res, payload);
     } catch (error) {
