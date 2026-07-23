@@ -11,6 +11,8 @@ import {
   getSupervisor,
   createSupervisor,
   updateSupervisor,
+  resendSupervisorInvite,
+  sendSupervisorPasswordReset,
 } from '../../services/supervisorProfileService';
 import { listSupervisorNotes, createSupervisorNote } from './supervisorNotes';
 import { listSupervisorLicenses, createSupervisorLicense, updateSupervisorLicense, destroySupervisorLicense } from './supervisorLicenses';
@@ -58,6 +60,28 @@ export default (app) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.securityGuardCreate);
       const payload = await createSupervisor(req);
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // POST /supervisors/:userId/resend-invite — (re)send the app-access invitation.
+  app.post('/tenant/:tenantId/supervisors/:userId/resend-invite', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.securityGuardCreate);
+      const payload = await resendSupervisorInvite(req, req.params.userId);
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // POST /supervisors/:userId/send-password-reset — admin-triggered reset.
+  app.post('/tenant/:tenantId/supervisors/:userId/send-password-reset', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.securityGuardEdit);
+      const payload = await sendSupervisorPasswordReset(req, req.params.userId);
       await ApiResponseHandler.success(req, res, payload);
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);

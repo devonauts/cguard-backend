@@ -273,3 +273,126 @@ function pickProfile(body: any): any {
   }
   return out;
 }
+
+/** Resolve the supervisor tenantUser (+ user) for an action, or 404. */
+async function supervisorTenantUser(req: Request, userId: string): Promise<any> {
+  const database = db(req);
+  const tid = tenantId(req);
+  const tu = await database.tenantUser.findOne({
+    where: { tenantId: tid, userId },
+    include: [{ model: database.user, as: 'user' }],
+  });
+  if (!tu || !tu.user || !rolesOf(tu).includes(SUPERVISOR_ROLE)) throw new Error404((req as any).language);
+  return tu;
+}
+
+/**
+ * POST /tenant/:id/supervisors/:userId/resend-invite — (re)send the "acceso a la
+ * app" invitation so the supervisor can create their account. Mirrors the guard
+ * resend flow but points at the supervisor app registration screen
+ * (`/supervisor/registration?...&inviteType=supervisor`, same as UserCreator).
+ */
+export async function resendSupervisorInvite(req: Request, userId: string): Promise<any> {
+  const tu = await supervisorTenantUser(req, userId);
+  const user = tu.user;
+  const email = user.email && !String(user.email).endsWith('@phone.local') ? String(user.email).trim() : null;
+  if (!email) {
+    throw new Error400((req as any).language, undefined, 'El supervisor no tiene un correo registrado. Edita su perfil y agrega un correo para poder enviarle el acceso a la app.');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const crypto = require('crypto');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { invitationTokenExpiry } = require('./auth/invitationToken');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const TenantRepository = require('../database/repositories/tenantRepository').default;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { tenantSubdomain } = require('./tenantSubdomain');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const EmailSender = require('./emailSender').default;
+
+  // Refresh the invitation token + expiry so the emailed link is always valid.
+  tu.invitationToken = tu.invitationToken || crypto.randomBytes(20).toString('hex');
+  tu.invitationTokenExpiresAt = invitationTokenExpiry();
+  await tu.save();
+
+  const tenant = await TenantRepository.findById(tenantId(req), req);
+  const link = `${tenantSubdomain.frontendUrl(tenant)}/supervisor/registration?token=${encodeURIComponent(tu.invitationToken)}&inviteType=supervisor`;
+
+  let emailed = false;
+  try {
+    await new EmailSender(EmailSender.TEMPLATES.INVITATION, {
+      tenant: tenant || null,
+      link,
+      invitationLink: link,
+      inviteLink: link,
+      registrationLink: link,
+      invitation: true,
+      // Supervisors get the waiting-screen (client-style) invitation, matching
+      // UserCreator — their home is the supervisor app, not this CRM.
+      type: 'client-invitation',
+      firstName: user.firstName || undefined,
+      lastName: user.lastName || undefined,
+      email,
+    }).sendTo(email);
+    emailed = true;
+  } catch (e: any) {
+    console.warn('[resendSupervisorInvite] email failed:', e?.message || e);
+  }
+
+  return { resent: true, emailed, email, link };
+}
+
+/**
+ * POST /tenant/:id/supervisors/:userId/send-password-reset — admin-triggered
+ * password reset for a supervisor. Emails the reset link (web page works on any
+ * device) and best-effort pushes to their registered devices.
+ */
+export async function sendSupervisorPasswordReset(req: Request, userId: string): Promise<any> {
+  const tu = await supervisorTenantUser(req, userId);
+  const user = tu.user;
+  const email = user.email && !String(user.email).endsWith('@phone.local') ? String(user.email).trim() : null;
+  if (!email) {
+    throw new Error400((req as any).language, undefined, 'El supervisor no tiene un correo registrado. Edita su perfil y agrega un correo para poder restablecer su contraseña.');
+  }
+  const lower = email.toLowerCase();
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const UserRepository = require('../database/repositories/userRepository').default;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const TenantRepository = require('../database/repositories/tenantRepository').default;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { tenantSubdomain } = require('./tenantSubdomain');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const EmailSender = require('./emailSender').default;
+
+  const token = await UserRepository.generatePasswordResetToken(lower, req);
+  const tenant = await TenantRepository.findById(tenantId(req), req);
+  const link = `${tenantSubdomain.frontendUrl(tenant)}/reset-password?token=${token}`;
+
+  let emailed = false;
+  try {
+    if (EmailSender.isConfigured) {
+      await new EmailSender(EmailSender.TEMPLATES.PASSWORD_RESET, { link, passwordReset: true }).sendTo(lower);
+      emailed = true;
+    }
+  } catch (e: any) {
+    console.warn('[supervisor password reset] email failed:', e?.message || e);
+  }
+
+  let pushed = 0;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { pushToUser } = require('./pushService');
+    const r = await pushToUser(db(req), tenantId(req), userId, {
+      title: 'Restablece tu contraseña',
+      body: 'Un administrador solicitó restablecer tu contraseña. Revisa tu correo o toca para continuar.',
+      data: { type: 'password_reset', link },
+    });
+    pushed = (r && r.sent) || 0;
+  } catch (e: any) {
+    console.warn('[supervisor password reset] push failed:', e?.message || e);
+  }
+
+  return { success: true, email: lower, emailed, pushed, link };
+}
