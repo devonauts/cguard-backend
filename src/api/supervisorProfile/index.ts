@@ -11,6 +11,7 @@ import {
   getSupervisor,
   createSupervisor,
   updateSupervisor,
+  destroySupervisor,
   resendSupervisorInvite,
   sendSupervisorPasswordReset,
 } from '../../services/supervisorProfileService';
@@ -93,6 +94,17 @@ export default (app) => {
     try {
       new PermissionChecker(req).validateHas(Permissions.values.securityGuardEdit);
       const payload = await updateSupervisor(req, req.params.userId);
+      await ApiResponseHandler.success(req, res, payload);
+    } catch (error) {
+      await ApiResponseHandler.error(req, res, error);
+    }
+  });
+
+  // DELETE /supervisors/:userId — remove the supervisor from this tenant.
+  app.delete('/tenant/:tenantId/supervisors/:userId', async (req, res) => {
+    try {
+      new PermissionChecker(req).validateHas(Permissions.values.securityGuardDestroy);
+      const payload = await destroySupervisor(req, req.params.userId);
       await ApiResponseHandler.success(req, res, payload);
     } catch (error) {
       await ApiResponseHandler.error(req, res, error);

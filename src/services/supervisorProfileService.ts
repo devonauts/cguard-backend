@@ -287,6 +287,25 @@ async function supervisorTenantUser(req: Request, userId: string): Promise<any> 
 }
 
 /**
+ * DELETE /tenant/:id/supervisors/:userId — remove the supervisor from THIS tenant:
+ * revoke their membership + delete their profile and any position assignments. The
+ * user ACCOUNT itself is left intact (it may belong to other tenants). Best-effort
+ * on the related rows so a missing model/column never blocks the removal.
+ */
+export async function destroySupervisor(req: Request, userId: string): Promise<any> {
+  const database = db(req);
+  const tid = tenantId(req);
+  const tu = await supervisorTenantUser(req, userId); // 404 if not a supervisor here
+
+  try { await database.supervisorPositionAssignment?.destroy?.({ where: { tenantId: tid, supervisorUserId: userId } }); } catch { /* best-effort */ }
+  try { await database.supervisorPosition?.update?.({ supervisorUserId: null }, { where: { tenantId: tid, supervisorUserId: userId } }); } catch { /* best-effort */ }
+  try { await database.supervisorProfile?.destroy?.({ where: { tenantId: tid, supervisorUserId: userId } }); } catch { /* best-effort */ }
+  await database.tenantUser.destroy({ where: { id: tu.id } });
+
+  return { deleted: true, userId };
+}
+
+/**
  * POST /tenant/:id/supervisors/:userId/resend-invite — (re)send the "acceso a la
  * app" invitation so the supervisor can create their account. Mirrors the guard
  * resend flow but points at the supervisor app registration screen
