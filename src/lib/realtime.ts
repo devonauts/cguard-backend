@@ -393,23 +393,33 @@ function registerCoBrowse(io: any, socket: any): void {
   });
 
   // Superadmin: start watching a specific user's session.
-  socket.on('cobrowse:watch', (payload: any, cb: any) => {
+  socket.on('cobrowse:watch', async (payload: any, cb: any) => {
     try {
       if (!sd().superadmin) return typeof cb === 'function' && cb({ ok: false, error: 'forbidden' });
       const tenantId = String(payload?.tenantId || '');
       const userId = String(payload?.userId || '');
       if (!tenantId || !userId) return typeof cb === 'function' && cb({ ok: false, error: 'bad_request' });
       socket.join(roomOf(tenantId, userId));
+      const targetRoom = `tenant:${tenantId}:user:${userId}`;
+      const targets = await watchersInCluster(targetRoom);
+      console.log(`[cobrowse] WATCH by=${sd().userId} tenant=${tenantId} user=${userId} targetSockets=${targets}`);
       // Tell the target CRM to (re)start recording + show the consent banner.
       // `fresh:true` asks it to send a full snapshot so a late watcher isn't blank.
-      io.to(`tenant:${tenantId}:user:${userId}`).emit('cobrowse:start', {
+      io.to(targetRoom).emit('cobrowse:start', {
         by: sd().name || sd().userId || 'Soporte',
         fresh: true,
       });
-      typeof cb === 'function' && cb({ ok: true });
-    } catch {
+      typeof cb === 'function' && cb({ ok: true, targets });
+    } catch (e: any) {
+      console.error('[cobrowse] WATCH error', e?.message || e);
       typeof cb === 'function' && cb({ ok: false, error: 'error' });
     }
+  });
+
+  // CRM → server ACK: lets us trace the flow server-side without the tenant's
+  // browser console. Logs whether the CRM received the start signal + recorded.
+  socket.on('cobrowse:ack', (payload: any) => {
+    console.log(`[cobrowse] ACK stage=${payload?.stage} tenant=${sd().tenantId} user=${sd().userId}`);
   });
 
   // Superadmin: stop watching (or the tab closes → 'disconnecting' below).
@@ -429,10 +439,15 @@ function registerCoBrowse(io: any, socket: any): void {
   // ever broadcast its own session. The Redis adapter delivers to watchers on
   // any instance — no local membership guard (that was cluster-broken and made
   // the viewer hang on "conectando" whenever emitter and watcher split workers).
+  let _evtLogged = 0;
   socket.on('cobrowse:event', (payload: any) => {
     const tenantId = sd().tenantId;
     const userId = sd().userId;
     if (!tenantId || !userId || sd().superadmin) return;
+    if (_evtLogged < 3) {
+      _evtLogged++;
+      console.log(`[cobrowse] EVENT tenant=${tenantId} user=${userId} events=${payload?.events?.length ?? '?'}`);
+    }
     socket.to(roomOf(String(tenantId), String(userId))).emit('cobrowse:stream', payload);
   });
 
