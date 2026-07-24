@@ -23,12 +23,33 @@ export default async (req: any, res: any) => {
     const rangeStart = parseDate(req.query?.from) || now;
     const rangeEnd = parseDate(req.query?.to) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+    // Belt-and-suspenders: never show a turno that belongs to an assignment the
+    // guard no longer holds (ended / removed). Their future shifts SHOULD be
+    // pruned when the assignment ends, but a legacy row (ended before pruning
+    // existed) or any future path that forgets to prune would otherwise leave the
+    // app showing phantom turnos — out of sync with Programador › Horario, which
+    // computes live from the ACTIVE assignment. Exclude shifts whose parent
+    // assignment is ended/soft-deleted; ad-hoc shifts (no assignment) are kept.
+    const deadAssignments = await db.guardAssignment.findAll({
+      where: {
+        guardId: userId,
+        tenantId,
+        [Op.or]: [{ deletedAt: { [Op.ne]: null } }, { status: 'ended' }],
+      },
+      attributes: ['id'],
+      paranoid: false,
+    });
+    const deadIds = deadAssignments.map((a: any) => a.id).filter(Boolean);
+
     const shifts = await db.shift.findAll({
       where: {
         guardId: userId,
         tenantId,
         startTime: { [Op.lte]: rangeEnd },
         endTime: { [Op.gte]: rangeStart },
+        ...(deadIds.length
+          ? { [Op.or]: [{ guardAssignmentId: null }, { guardAssignmentId: { [Op.notIn]: deadIds } }] }
+          : {}),
       },
       attributes: ['id', 'startTime', 'endTime', 'stationId', 'postSiteId'],
       include: [
