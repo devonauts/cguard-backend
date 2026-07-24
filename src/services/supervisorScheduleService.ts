@@ -28,6 +28,75 @@ async function tenantTz(db: any, tenantId: string): Promise<string> {
   } catch { return 'UTC'; }
 }
 
+/** día/noche by the block's start hour (18/6). A supervisor puesto is a single
+ *  block, so its noche-ness lives in the hour, not the rotation counts. */
+function halfByStart(hhmm?: string | null): 'day' | 'night' {
+  const h = parseInt(String(hhmm || '').split(':')[0], 10);
+  if (Number.isNaN(h)) return 'day';
+  return h >= 18 || h < 6 ? 'night' : 'day';
+}
+
+/**
+ * AUTHORITATIVE day-by-day schedule for a supervisor (the backend is the source
+ * of truth; the app just paints this). Returns [{date, code}] where code is
+ * 'D' | 'N' | 'L' | '' (unassigned), computed from the supervisor's ACTIVE puesto
+ * assignment rotation — same math + tz as the generator, incl. rest days and days
+ * the generator hasn't materialised. `tz` is returned alongside for the caller.
+ */
+export async function computeSupervisorDays(
+  db: any, tenantId: string, userId: string, from: Date, to: Date,
+): Promise<{ tz: string; days: { date: string; code: string }[] }> {
+  const tz = await tenantTz(db, tenantId);
+  const assignment = await db.supervisorPositionAssignment.findOne({
+    where: { supervisorUserId: userId, tenantId, status: 'active' },
+    order: [['createdAt', 'DESC']],
+  });
+  let position: any = null, rot: any = null;
+  if (assignment) {
+    position = await db.supervisorPosition.findOne({
+      where: { id: assignment.positionId, tenantId },
+      include: [{ model: db.rotationStyle, as: 'rotationStyle' }],
+    });
+    rot = position && position.rotationStyle;
+  }
+
+  const localYmd = (d: Date): string => {
+    try { return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); }
+    catch { return d.toISOString().slice(0, 10); }
+  };
+  const dseOf = (y: number, m: number, d: number) => Math.round((Date.UTC(y, m - 1, d) - ROTATION_EPOCH.getTime()) / 86400000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const sd = assignment && assignment.startDate ? String(assignment.startDate).slice(0, 10) : null;
+  const ed = assignment && assignment.endDate ? String(assignment.endDate).slice(0, 10) : null;
+  const dayStart = (position && position.startTime) || '07:00';
+  const dayEnd = (position && position.endTime) || '19:00';
+  const cycle = rot ? (rot.dayShifts || 0) + (rot.nightShifts || 0) + (rot.restDays || 0) : 0;
+
+  const startYmd = localYmd(from);
+  const endYmd = localYmd(to);
+  const days: { date: string; code: string }[] = [];
+  let cur = new Date(`${startYmd}T12:00:00Z`);
+  const endCur = new Date(`${endYmd}T12:00:00Z`);
+  let g = 0;
+  while (cur <= endCur && g < 400) {
+    g++;
+    const y = cur.getUTCFullYear(), m = cur.getUTCMonth() + 1, d = cur.getUTCDate();
+    const ds = `${y}-${pad(m)}-${pad(d)}`;
+    let code = '';
+    if (assignment && rot && cycle > 0) {
+      if ((sd && ds < sd) || (ed && ds > ed)) code = '';
+      else {
+        const status = getRotationStatus(dseOf(y, m, d), assignment.platoonOffset || 0, rot.dayShifts, rot.nightShifts, rot.restDays);
+        if (status === 'rest') code = 'L';
+        else code = halfByStart(status === 'day' ? dayStart : dayEnd) === 'night' ? 'N' : 'D';
+      }
+    }
+    days.push({ date: ds, code });
+    cur = new Date(cur.getTime() + 86400000);
+  }
+  return { tz, days };
+}
+
 /** Compute the shift rows for one assignment (does not persist). */
 function computeShifts(assignment: any, position: any, rotationStyle: any, tz: string): any[] {
   const dayShifts = rotationStyle.dayShifts ?? 0;
