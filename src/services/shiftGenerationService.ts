@@ -133,6 +133,20 @@ function getRotationStatus(
  * actually covers the NIGHT half — so map by scheduleType, not the raw status.
  * Returns null when the fijo is resting.
  */
+/**
+ * Classify a shift as día/noche by the wall-clock hour it STARTS. This is the
+ * only reliable signal for a CUSTOM single-block puesto: a 20:00→08:00 block is a
+ * NIGHT shift even though its 22-8 rotation stores the work count in `dayShifts`
+ * (so getRotationStatus returns 'day'). A block starting in the evening or the
+ * small hours is night (same 18/6 threshold the sacafranco gap-detector uses).
+ * For standard 07:00/19:00 día/noche windows this agrees with the rotation status.
+ */
+function shiftHalfByStart(hhmm?: string | null): 'day' | 'night' {
+  const h = parseInt(String(hhmm || '').split(':')[0], 10);
+  if (Number.isNaN(h)) return 'day';
+  return h >= 18 || h < 6 ? 'night' : 'day';
+}
+
 function coveredHalf(scheduleType: string | null | undefined, status: 'day' | 'night' | 'rest'): TurnoHalf | null {
   if (status === 'rest') return null;
   if (scheduleType === '12h-day') return 'day';
@@ -471,6 +485,11 @@ export async function computeShiftsForAssignment(
         endTime = wallClockToUtc(dateStr, nightEndTime, tz);
       }
       if (endTime <= startTime) endTime = new Date(endTime.getTime() + 86400000);
+      // Label día/noche by the block's actual start hour, NOT the rotation status:
+      // a custom 20:00→08:00 puesto (or a 12h-night one) stores its work count in
+      // dayShifts, so `status` is 'day' even though the block runs at night. The
+      // window itself is already correct above; only the label needs the time.
+      const shiftType = shiftHalfByStart(status === 'day' ? dayStartTime : nightStartTime);
       rows.push({
         guardId: assignment.guardId,
         stationId: assignment.stationId,
@@ -479,7 +498,7 @@ export async function computeShiftsForAssignment(
         postSiteId,
         startTime,
         endTime,
-        shiftType: status,
+        shiftType,
       });
     }
     cursor.setDate(cursor.getDate() + 1);
