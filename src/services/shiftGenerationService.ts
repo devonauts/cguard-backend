@@ -113,7 +113,7 @@ export function getGlobalEpoch(_referenceDate?: Date): Date {
  * Uses days since GLOBAL EPOCH (Jan 1) + platoonOffset for consistency across all stations.
  * Returns: 'day' | 'night' | 'rest'
  */
-function getRotationStatus(
+export function getRotationStatus(
   daysSinceEpoch: number,
   platoonOffset: number,
   dayShifts: number,
@@ -141,7 +141,7 @@ function getRotationStatus(
  * small hours is night (same 18/6 threshold the sacafranco gap-detector uses).
  * For standard 07:00/19:00 día/noche windows this agrees with the rotation status.
  */
-function shiftHalfByStart(hhmm?: string | null): 'day' | 'night' {
+export function shiftHalfByStart(hhmm?: string | null): 'day' | 'night' {
   const h = parseInt(String(hhmm || '').split(':')[0], 10);
   if (Number.isNaN(h)) return 'day';
   return h >= 18 || h < 6 ? 'night' : 'day';

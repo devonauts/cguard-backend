@@ -7,6 +7,9 @@ import ApiResponseHandler from '../apiResponseHandler';
 import Error401 from '../../errors/Error401';
 import { Op } from 'sequelize';
 import { timeLabelInTz } from '../../lib/tenantTime';
+// Reuse the SAME rotation functions the shift generator (and the Programador's
+// math) use — one source of truth for día/noche/libre, so the app just displays.
+import { getRotationStatus, shiftHalfByStart } from '../../services/shiftGenerationService';
 
 export default async (req: any, res: any) => {
   try {
@@ -100,6 +103,80 @@ export default async (req: any, res: any) => {
     const tenant = await db.tenant.findByPk(tenantId, { attributes: ['timezone'] });
     const tz = (tenant && tenant.timezone) || 'UTC';
 
+    // ─── AUTHORITATIVE DAY-BY-DAY SCHEDULE ──────────────────────────────────
+    // The backend is the SINGLE source of truth: compute each day's code
+    // (D/N/L, or a novedad) with the SAME functions the generator + Programador
+    // use — getRotationStatus + shiftHalfByStart — so the app just paints this
+    // and can never diverge. Covers the whole window (incl. past days the
+    // generator hasn't materialised as shift rows).
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localYmd = (d: Date): string => {
+      try { return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); }
+      catch { return d.toISOString().slice(0, 10); }
+    };
+    const dseOf = (y: number, m: number, d: number) => Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2024, 0, 1)) / 86400000);
+
+    const asg = await db.guardAssignment.findOne({
+      where: { guardId: userId, tenantId, status: 'active', deletedAt: null },
+      attributes: ['id', 'stationId', 'positionId', 'platoonOffset', 'startDate', 'endDate', 'rotationStyleId'],
+      order: [['createdAt', 'DESC']],
+    });
+    let rot: any = null, station: any = null, position: any = null;
+    if (asg) {
+      station = await db.station.findByPk(asg.stationId, { attributes: ['scheduleType', 'rotationStyleId'] });
+      const rotId = (station && station.rotationStyleId) || asg.rotationStyleId;
+      rot = rotId ? await db.rotationStyle.findByPk(rotId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] }) : null;
+      position = asg.positionId ? await db.stationPosition.findByPk(asg.positionId, { attributes: ['startTime'] }) : null;
+    }
+
+    const startYmd = localYmd(rangeStart);
+    const endYmd = localYmd(rangeEnd);
+
+    // Novedades (overrides) take precedence over the rotation — same as Programador.
+    const overrideByDate: Record<string, string> = {};
+    try {
+      const ovs = await db.scheduleOverride.findAll({
+        where: { guardId: userId, tenantId, date: { [Op.between]: [startYmd, endYmd] } },
+        attributes: ['date', 'type'],
+      });
+      for (const o of ovs) overrideByDate[String((o as any).date).slice(0, 10)] = (o as any).type;
+    } catch { /* overrides optional */ }
+    const timeOffByDate: Record<string, string> = {};
+    for (const to of timeOff) {
+      const c = new Date(to.startDate); const e = new Date(to.endDate);
+      while (c <= e) { timeOffByDate[c.toISOString().slice(0, 10)] = to.type || 'V'; c.setDate(c.getDate() + 1); }
+    }
+
+    const dayCode = (status: 'day' | 'night' | 'rest'): string => {
+      if (status === 'rest') return 'L';
+      const st = station && station.scheduleType;
+      if (st === '24h') return status === 'night' ? 'N' : 'D';
+      if (st === '12h-night') return 'N';
+      if (st === '12h-day') return 'D';
+      return shiftHalfByStart(position && position.startTime) === 'night' ? 'N' : 'D'; // custom → by block hour
+    };
+
+    const days: { date: string; code: string }[] = [];
+    let cur = new Date(`${startYmd}T12:00:00Z`);
+    const endCur = new Date(`${endYmd}T12:00:00Z`);
+    let guardCnt = 0;
+    while (cur <= endCur && guardCnt < 400) {
+      guardCnt++;
+      const y = cur.getUTCFullYear(), m = cur.getUTCMonth() + 1, d = cur.getUTCDate();
+      const ds = `${y}-${pad(m)}-${pad(d)}`;
+      let code = '';
+      if (overrideByDate[ds]) code = overrideByDate[ds];
+      else if (timeOffByDate[ds]) code = timeOffByDate[ds];
+      else if (asg && rot) {
+        const sd = asg.startDate ? String(asg.startDate).slice(0, 10) : null;
+        const ed = asg.endDate ? String(asg.endDate).slice(0, 10) : null;
+        if ((sd && ds < sd) || (ed && ds > ed)) code = '';
+        else code = dayCode(getRotationStatus(dseOf(y, m, d), asg.platoonOffset || 0, rot.dayShifts, rot.nightShifts, rot.restDays));
+      }
+      days.push({ date: ds, code });
+      cur = new Date(cur.getTime() + 86400000);
+    }
+
     return ApiResponseHandler.success(req, res, {
       timezone: tz,
       shifts: shifts.map((s: any) => {
@@ -112,6 +189,8 @@ export default async (req: any, res: any) => {
       }),
       timeOff,
       freeDays: [...new Set(freeDays)],
+      // Authoritative per-day schedule — the app should render THIS directly.
+      days,
     });
   } catch (error) {
     return ApiResponseHandler.error(req, res, error);
