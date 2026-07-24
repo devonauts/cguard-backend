@@ -14,6 +14,7 @@ import {
   system,
   dbPerformance,
   jobs,
+  integrity,
   slowQueries,
   resetSlowQueries,
   workers,
@@ -49,6 +50,7 @@ export default (router) => {
   route('/observability/system', system);
   route('/observability/db', dbPerformance);
   route('/observability/jobs', jobs);
+  route('/observability/integrity', integrity);
   route('/observability/slow-queries', slowQueries);
   route('/observability/workers', workers);
   route('/observability/errors', errors);

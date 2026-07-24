@@ -159,42 +159,26 @@ export async function createAssignment(
       );
     }
 
-    // The phase is normally the station position's staggered offset — never a
-    // date-derived value from the request. This guarantees the two fijos of a 24h
-    // station are opposite (Fijo 1 day ⇄ Fijo 2 night, swapping each cycle) and they
-    // can never overlap on the same turno. (Old bug: the UI sent a start-date-derived
-    // platoonOffset that clobbered Fijo 2's offset to 0, double-staffing the day.)
+    // PHASE = START DATE, ALWAYS. The rotation cycle's day-0 (the guard's FIRST work
+    // day) is simply their startDate: "lo agrego para el día 20 ⇒ el ciclo D/N/L
+    // arranca el 20". There is no epoch-relative stagger anymore — the start date is
+    // the single control; to stagger two guards you just give them different start
+    // dates. platoonOffset is now nothing more than the phase derived from startDate.
+    //
+    // Only SACAFRANCO (relief) is left untouched: it doesn't auto-generate shifts on
+    // this path (manualSf) and its coverage is placed by hand / the SF planner.
     platoonOffset = position?.platoonOffset || 0;
 
-    // EXCEPTION — ALTERNATION (custom station, ≥2 fijos SHARING one block, e.g.
-    // 24x24): the fijos cover the SAME block on OPPOSITE days (día por medio), so
-    // the phase must follow THIS guard's startDate — "empieza hoy" ⇒ trabaja hoy,
-    // regardless of which slot or the epoch parity. This is the class of bug where
-    // a guard assigned "para hoy" started tomorrow because the position's offset
-    // put today on a rest day. Two guards with consecutive start dates then
-    // alternate automatically. NOT applied to standard 24h (day/night at once) or
-    // sacafranco stations, where the engine must own the stagger.
     if (position && position.type !== 'sacafranco') {
-      const stFull = await database.station.findByPk(stationId, { attributes: ['scheduleType', 'rotationStyleId'] });
-      if (stFull?.scheduleType === 'custom') {
-        const posFull = await database.stationPosition.findByPk(positionId, { attributes: ['startTime', 'endTime'] });
-        if (posFull) {
-          const siblingBlocks = await database.stationPosition.count({
-            where: { stationId, tenantId, deletedAt: null, type: 'fijo', startTime: posFull.startTime, endTime: posFull.endTime },
-          });
-          if (siblingBlocks >= 2) {
-            const rot = await database.rotationStyle.findByPk(stFull.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
-            const cycle = (rot?.dayShifts || 0) + (rot?.nightShifts || 0) + (rot?.restDays || 0);
-            if (cycle > 0) {
-              // work-day-0 = startDate ⇒ offset ≡ dse(startDate) (mod cycle). The
-              // startDate string is already the tenant-local calendar date; dse is
-              // computed against the same 2024-01-01 epoch the generator uses.
-              const dseStart = Math.floor((Date.parse(`${String(startDate).slice(0, 10)}T00:00:00Z`) - Date.UTC(2024, 0, 1)) / 86400000);
-              if (Number.isFinite(dseStart)) {
-                platoonOffset = ((dseStart % cycle) + cycle) % cycle;
-              }
-            }
-          }
+      const stFull = await database.station.findByPk(stationId, { attributes: ['rotationStyleId'] });
+      if (stFull?.rotationStyleId) {
+        const rot = await database.rotationStyle.findByPk(stFull.rotationStyleId, { attributes: ['dayShifts', 'nightShifts', 'restDays'] });
+        const cycle = (rot?.dayShifts || 0) + (rot?.nightShifts || 0) + (rot?.restDays || 0);
+        if (cycle > 0) {
+          // offset ≡ dse(startDate) (mod cycle). startDate is the tenant-local calendar
+          // date; dse uses the same 2024-01-01 epoch the generator uses.
+          const dseStart = Math.floor((Date.parse(`${String(startDate).slice(0, 10)}T00:00:00Z`) - Date.UTC(2024, 0, 1)) / 86400000);
+          if (Number.isFinite(dseStart)) platoonOffset = ((dseStart % cycle) + cycle) % cycle;
         }
       }
     }

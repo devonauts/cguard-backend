@@ -275,8 +275,16 @@ export async function guardAssignmentDelete(req, res) {
 
     // Remove ALL generated shifts for this assignment (past + future) so removing
     // a vigilante leaves no lingering turnos. Attendance (guardShift) is separate.
+    // Purge by guardAssignmentId OR the position — a shift whose guardAssignmentId
+    // was nulled (legacy) but still carries this fijo position would otherwise
+    // linger on the grid after the guard is removed.
+    // The positionId arm is scoped to guardAssignmentId=NULL so it only reaps
+    // legacy ORPHAN rows on this fijo's slot — never a different active occupant's
+    // shifts (those carry their own guardAssignmentId).
+    const shiftOr: any[] = [{ guardAssignmentId: id }];
+    if (record.positionId && !record.isRelief) shiftOr.push({ positionId: record.positionId, guardAssignmentId: null });
     await req.database.shift.destroy({
-      where: { guardAssignmentId: id, tenantId },
+      where: { tenantId, [req.database.Sequelize.Op.or]: shiftOr },
     });
 
     // Soft-delete the assignment row itself (paranoid → sets deletedAt). Marking it

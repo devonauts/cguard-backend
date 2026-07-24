@@ -404,6 +404,14 @@ export async function jobs(_req: Request): Promise<any> {
   return { jobs: await getMergedJobs(), pid: process.pid, timestamp: new Date().toISOString() };
 }
 
+/** GET /observability/integrity → live schedule-data integrity findings. */
+export async function integrity(req: Request): Promise<any> {
+  const database = db(req);
+  const { computeIntegrityFindings } = require('../scheduleIntegrityService');
+  const findings = await computeIntegrityFindings(database);
+  return { ...findings, pid: process.pid, timestamp: new Date().toISOString() };
+}
+
 /** GET /observability/slow-queries → captured queries >= threshold (0.1s). */
 export async function slowQueries(_req: Request): Promise<any> {
   return { ...getSlowQueries(), pid: process.pid, timestamp: new Date().toISOString() };

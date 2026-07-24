@@ -523,6 +523,24 @@ export async function generateShiftsForAssignment(
   if ((assignment as any).positionId) destroyWhere[Op.or].push({ positionId: (assignment as any).positionId });
   await database.shift.destroy({ where: destroyWhere, force: true, transaction: t });
 
+  // CROSS-STATION LEAK PURGE (fijos/adhoc only). A fijo's shifts must live on its
+  // OWN station. If this assignment — or its position — ever left rows on a
+  // DIFFERENT station (a re-homed position, a legacy move, a null-guardAssignment
+  // row later relinked), reap them now with NO startTime floor (past leaks pollute
+  // the grid too). Relief/global sacafrancos LEGITIMATELY cover other stations, so
+  // they are exempt. This is what self-heals the "turnos de otra estación" class
+  // (e.g. a guard's Biomar shifts showing on Pontevedra) on every regeneration.
+  const isReliefAssignment = !!(assignment as any).isRelief;
+  if (!isReliefAssignment && assignment.stationId) {
+    const leakOr: any[] = [{ guardAssignmentId: assignment.id }];
+    if ((assignment as any).positionId) leakOr.push({ positionId: (assignment as any).positionId });
+    await database.shift.destroy({
+      where: { tenantId, stationId: { [Op.ne]: assignment.stationId }, [Op.or]: leakOr },
+      force: true,
+      transaction: t,
+    });
+  }
+
   // Enterprise guarantee — no double-booking: a guard holds at most ONE active
   // assignment, so any of their FUTURE shifts tied to a DIFFERENT, non-active
   // (ended/replaced) assignment are stale leftovers that would overlap this one.
@@ -568,6 +586,18 @@ export async function generateShiftsForAssignment(
     createdById: userId,
     updatedById: userId,
   }));
+
+  // INVARIANT (fijo/adhoc): every generated row belongs to THIS assignment's
+  // station. computeShiftsForAssignment already writes assignment.stationId on the
+  // non-relief branches, so this is a defensive assert — a mismatch means the
+  // station wiring diverged; drop + warn rather than persist a cross-station row.
+  if (!isReliefAssignment) {
+    const beforeStation = rows.length;
+    rows = rows.filter((r) => String(r.stationId) === String(assignment.stationId));
+    if (rows.length !== beforeStation) {
+      console.warn(`[shiftGen] dropped ${beforeStation - rows.length} row(s) with mismatched stationId for assignment ${assignment.id} (station ${assignment.stationId})`);
+    }
+  }
 
   // No double-booking — the universal backstop. Drop any computed shift that would
   // overlap an existing shift for the SAME guard from ANOTHER assignment. This

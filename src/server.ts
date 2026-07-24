@@ -351,6 +351,22 @@ leaderTimeout(() => runJob("LicenseExpiry", async () => {
   await runLicenseExpirySweep(database);
 }), 90 * 1000);
 
+// Schedule-data integrity audit (daily): detects turnos leaked onto the wrong
+// station, phantom turnos of removed guards, and fijos whose assignment offset
+// drifted from their position — surfaces them in the observability panel.
+nodeSetInterval(() => {
+  runJob("IntegrityAudit", async () => {
+    const database = await databaseInit();
+    const { runIntegrityAudit } = require('./services/scheduleIntegrityService');
+    await runIntegrityAudit(database);
+  });
+}, 24 * 60 * 60 * 1000);
+leaderTimeout(() => runJob("IntegrityAudit", async () => {
+  const database = await databaseInit();
+  const { runIntegrityAudit } = require('./services/scheduleIntegrityService');
+  await runIntegrityAudit(database);
+}), 120 * 1000);
+
 // Run once on startup after a short delay. NOTE: boot kicks (here and below) go
 // through runJob too, so its in-flight guard prevents a slow boot run from
 // overlapping the first interval tick.
