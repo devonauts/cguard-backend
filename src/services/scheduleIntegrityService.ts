@@ -23,12 +23,10 @@ export interface IntegritySample {
 export interface IntegrityFindings {
   mismatchedStationShifts: number;
   phantomShiftsOnEndedAssignments: number;
-  offsetDriftAssignments: number;
   total: number;
   samples: {
     mismatch: IntegritySample[];
     phantom: IntegritySample[];
-    drift: IntegritySample[];
   };
   scannedAt: string;
 }
@@ -73,7 +71,7 @@ export async function computeIntegrityFindings(db: any): Promise<IntegrityFindin
   const dialect = String(db.sequelize.getDialect());
   const qc = dialect === 'mysql' || dialect === 'mariadb' ? '`' : '"';
   const q = (id: string) => `${qc}${id}${qc}`;
-  const S = q(t.shifts), GA = q(t.guardAssignments), SP = q(t.stationPositions), ST = q(t.stations), U = q(t.users);
+  const S = q(t.shifts), GA = q(t.guardAssignments), ST = q(t.stations), U = q(t.users);
 
   // 1) Cross-station leak: a NON-relief shift whose station ≠ its assignment's
   //    station. Relief/global sacafrancos legitimately cover other stations.
@@ -119,34 +117,10 @@ export async function computeIntegrityFindings(db: any): Promise<IntegrityFindin
     { now },
   );
 
-  // 3) Offset drift: an active fijo rotation whose assignment.platoonOffset ≠ its
-  //    position.platoonOffset. They must stay in sync — otherwise a re-assign
-  //    silently re-phases the guard (this is exactly what put a rest day on the
-  //    wrong weekday). Only fijos with a live position.
-  const driftWhere = `ga.deletedAt IS NULL AND ga.status = 'active' AND ga.isRelief = false AND ga.kind = 'rotation' AND sp.deletedAt IS NULL AND ga.platoonOffset <> sp.platoonOffset`;
-  const offsetDriftAssignments = await count(
-    db,
-    `SELECT COUNT(*) AS n FROM ${GA} ga JOIN ${SP} sp ON sp.id = ga.positionId WHERE ${driftWhere}`,
-    {},
-  );
-  const driftRows = await rows(
-    db,
-    `SELECT ga.tenantId AS tenantId, ga.platoonOffset AS asgOffset, sp.platoonOffset AS posOffset,
-            gu.fullName AS guardName, st.stationName AS stationName
-       FROM ${GA} ga
-       JOIN ${SP} sp ON sp.id = ga.positionId
-       LEFT JOIN ${U} gu ON gu.id = ga.guardId
-       LEFT JOIN ${ST} st ON st.id = ga.stationId
-      WHERE ${driftWhere}
-      LIMIT 8`,
-    {},
-  );
-
   const findings: IntegrityFindings = {
     mismatchedStationShifts,
     phantomShiftsOnEndedAssignments,
-    offsetDriftAssignments,
-    total: mismatchedStationShifts + phantomShiftsOnEndedAssignments + offsetDriftAssignments,
+    total: mismatchedStationShifts + phantomShiftsOnEndedAssignments,
     samples: {
       mismatch: mismatchRows.map((r: any) => ({
         tenantId: r.tenantId,
@@ -157,11 +131,6 @@ export async function computeIntegrityFindings(db: any): Promise<IntegrityFindin
         tenantId: r.tenantId,
         label: r.guardName || 'Vigilante',
         detail: `${Number(r.n)} turno(s) futuros en "${r.stationName || '—'}" de una asignación ya terminada`,
-      })),
-      drift: driftRows.map((r: any) => ({
-        tenantId: r.tenantId,
-        label: r.guardName || 'Vigilante',
-        detail: `"${r.stationName || '—'}": offset asignación ${r.asgOffset} ≠ puesto ${r.posOffset}`,
       })),
     },
     scannedAt: now.toISOString(),
@@ -192,7 +161,6 @@ export async function runIntegrityAudit(db?: any): Promise<void> {
   const parts: string[] = [];
   if (findings.mismatchedStationShifts) parts.push(`${findings.mismatchedStationShifts} turno(s) en estación equivocada`);
   if (findings.phantomShiftsOnEndedAssignments) parts.push(`${findings.phantomShiftsOnEndedAssignments} turno(s) de asignaciones terminadas`);
-  if (findings.offsetDriftAssignments) parts.push(`${findings.offsetDriftAssignments} rotación(es) con offset desalineado`);
 
   await createNotification(database, {
     type: 'integrity.schedule',
@@ -203,7 +171,6 @@ export async function runIntegrityAudit(db?: any): Promise<void> {
     metadata: {
       mismatchedStationShifts: findings.mismatchedStationShifts,
       phantomShiftsOnEndedAssignments: findings.phantomShiftsOnEndedAssignments,
-      offsetDriftAssignments: findings.offsetDriftAssignments,
       samples: findings.samples,
       scannedAt: findings.scannedAt,
     },
